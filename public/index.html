@@ -6,112 +6,207 @@
 <title>影片剪輯部門排程系統</title>
 <style>
   :root{
-    --bg:#0f1419; --panel:#1a212b; --panel2:#232c38; --line:#2e3a48;
-    --txt:#e6edf3; --muted:#8b98a9; --accent:#3b82f6; --accent2:#2563eb;
-    --green:#22c55e; --yellow:#eab308; --red:#ef4444; --chip:#2d3744;
+    /* 米白/象牙表面 */
+    --bg:#F7F3EC; --panel:#FFFFFF; --panel2:#FBF8F2; --chip:#F0E9DC;
+    /* 髮絲線 */
+    --line:#E7DFD0; --line2:#D8CDB8;
+    /* 文字（暖黑/暖灰） */
+    --txt:#2B2620; --muted:#8C8474;
+    /* 香檳金 */
+    --accent:#B6892F; --accent2:#9A7325; --gold-soft:#F3E7C9; --gold-line:#E3CE9B;
+    /* 語意色（亮底仍清晰） */
+    --green:#2E7D5B; --yellow:#C08A1E; --red:#C0392B;
+    --green-bg:#E6F2EB; --yellow-bg:#FBF0DA; --red-bg:#FBE9E6;
+    /* 柔和陰影（暖色調） */
+    --sh-sm:0 1px 2px rgba(94,74,32,.06); --sh:0 6px 18px rgba(94,74,32,.08); --sh-lg:0 18px 48px rgba(94,74,32,.16);
+    /* 圓角 */
+    --r-sm:8px; --r:12px; --r-lg:16px; --r-pill:999px;
+    /* 字體 */
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei","Heiti TC","Noto Sans TC",sans-serif;
+    --font-serif:"Songti TC","Noto Serif TC",Georgia,"Times New Roman",serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
-       background:var(--bg);color:var(--txt);font-size:15px;line-height:1.5}
+  body{margin:0;font-family:var(--font-sans);
+       background:linear-gradient(180deg,#FAF6EF,#F4EFE6) fixed;color:var(--txt);
+       font-size:15px;line-height:1.6;letter-spacing:.1px;-webkit-font-smoothing:antialiased}
   button{font-family:inherit;cursor:pointer}
   a{color:var(--accent)}
   .hidden{display:none !important}
+  :focus-visible{outline:none;box-shadow:0 0 0 3px var(--gold-soft)}
 
   /* 登入畫面 */
-  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+  #login{position:fixed;inset:0;background:linear-gradient(180deg,#FAF6EF,#F1E9DA);display:flex;align-items:center;
          justify-content:center;flex-direction:column;z-index:50;padding:20px}
-  #login h1{font-size:22px;margin:0 0 6px}
+  #login h1{font-family:var(--font-serif);font-size:26px;font-weight:600;letter-spacing:.5px;margin:0 0 6px;color:var(--txt)}
   #login p{color:var(--muted);margin:0 0 24px;text-align:center}
-  .userGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:520px}
-  .userBtn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
-           padding:16px 22px;border-radius:12px;font-size:17px;min-width:110px}
-  .userBtn:hover{border-color:var(--accent)}
-  .addRow{margin-top:20px;display:flex;gap:8px}
-  .addRow input{padding:10px;border-radius:8px;border:1px solid var(--line);
+  .userGrid{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:540px}
+  .userBtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);
+           padding:16px 24px;border-radius:var(--r-lg);font-size:16px;min-width:112px;box-shadow:var(--sh);
+           transition:transform .1s,box-shadow .15s,border-color .15s}
+  .userBtn:hover{border-color:var(--accent);box-shadow:var(--sh-lg);transform:translateY(-2px)}
+  .addRow{margin-top:22px;display:flex;gap:8px}
+  .addRow input{padding:10px;border-radius:var(--r-sm);border:1px solid var(--line);
                 background:var(--panel);color:var(--txt)}
 
   /* 頂列 */
   header{position:sticky;top:0;z-index:30;background:var(--panel);border-bottom:1px solid var(--line);
-         display:flex;align-items:center;gap:10px;padding:8px 14px}
-  header .brand{font-weight:700;white-space:nowrap}
+         box-shadow:var(--sh-sm);display:flex;align-items:center;gap:10px;padding:9px 16px}
+  header .brand{font-family:var(--font-serif);font-weight:600;font-size:17px;letter-spacing:.5px;white-space:nowrap;color:var(--accent2)}
   header .spacer{flex:1}
-  .whoami{display:flex;align-items:center;gap:8px;background:var(--accent2);
-          padding:6px 12px;border-radius:20px;font-weight:600}
-  .whoami .dot{width:8px;height:8px;border-radius:50%;background:#fff}
-  .offline{background:var(--red)!important}
+  .whoami{display:flex;align-items:center;gap:8px;background:var(--gold-soft);color:var(--accent2);
+          border:1px solid var(--gold-line);padding:6px 14px;border-radius:var(--r-pill);font-weight:600}
+  .whoami .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .whoami.offline{background:var(--red-bg)!important;color:var(--red);border-color:var(--red)}
+  .whoami.offline .dot{background:var(--red)}
 
   nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);
-      padding:0 8px;position:sticky;top:49px;z-index:29}
-  nav button{background:none;border:none;color:var(--muted);padding:12px 14px;font-size:14px;
-             white-space:nowrap;border-bottom:2px solid transparent}
-  nav button.active{color:var(--txt);border-bottom-color:var(--accent)}
+      padding:0 8px;position:sticky;top:50px;z-index:29}
+  nav button{background:none;border:none;color:var(--muted);padding:12px 16px;font-size:14px;
+             white-space:nowrap;border-bottom:2px solid transparent;border-radius:8px 8px 0 0;
+             transition:color .15s,background .15s}
+  nav button:hover{color:var(--txt)}
+  nav button.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--gold-soft);font-weight:600}
 
-  main{padding:16px;max-width:1200px;margin:0 auto}
-  h2{font-size:18px;margin:0 0 14px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  main{padding:20px;max-width:1180px;margin:0 auto}
+  h2{font-family:var(--font-serif);font-size:19px;font-weight:600;letter-spacing:.3px;margin:0 0 14px;
+     padding-bottom:10px;border-bottom:1px solid var(--gold-line)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);
+        box-shadow:var(--sh);padding:18px;margin-bottom:18px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .grid{display:grid;gap:12px}
-  label{font-size:13px;color:var(--muted);display:block;margin:8px 0 4px}
-  input,select,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);
-         background:var(--panel2);color:var(--txt);font-size:14px}
+  label{font-size:12px;font-weight:500;letter-spacing:.3px;color:var(--muted);display:block;margin:8px 0 4px}
+  input,select,textarea{width:100%;padding:9px 11px;border-radius:var(--r-sm);border:1px solid var(--line);
+         background:var(--panel2);color:var(--txt);font-size:14px;transition:border-color .15s,box-shadow .15s}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--gold-soft)}
   textarea{min-height:60px}
-  .btn{background:var(--accent2);border:none;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600}
-  .btn:hover{background:var(--accent)}
-  .btn.sec{background:var(--chip);}
-  .btn.danger{background:var(--red)}
-  .btn.sm{padding:6px 10px;font-size:13px}
+  .btn{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:var(--r-sm);
+       font-weight:600;letter-spacing:.3px;box-shadow:var(--sh-sm);transition:background .15s,transform .05s}
+  .btn:hover{background:var(--accent2)}
+  .btn:active{transform:translateY(1px)}
+  .btn.sec{background:var(--chip);color:var(--txt);border:1px solid var(--line);box-shadow:none}
+  .btn.sec:hover{background:#E9E0CF}
+  .btn.danger{background:var(--red);color:#fff}
+  .btn.danger:hover{background:#A93226}
+  .btn.sm{padding:6px 12px;font-size:13px}
   table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
-  .tag{display:inline-block;padding:2px 8px;border-radius:12px;background:var(--chip);font-size:12px}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:1px;border-bottom-color:var(--line2)}
+  tbody tr:hover{background:var(--panel2)}
+  .tag{display:inline-block;padding:2px 10px;border-radius:var(--r-pill);background:var(--chip);
+       border:1px solid var(--line);font-size:12px}
   .light{display:inline-block;width:12px;height:12px;border-radius:50%}
-  .green{background:var(--green)} .yellow{background:var(--yellow)} .red{background:var(--red)}
+  .green{background:var(--green);box-shadow:0 0 0 2px var(--green-bg)}
+  .yellow{background:var(--yellow);box-shadow:0 0 0 2px var(--yellow-bg)}
+  .red{background:var(--red);box-shadow:0 0 0 2px var(--red-bg)}
   .muted{color:var(--muted)}
-  .pill{padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
-  .pill.em{background:rgba(239,68,68,.18);color:#fca5a5}
-  .pill.wa{background:rgba(234,179,8,.18);color:#fde047}
-  .pill.ok{background:rgba(34,197,94,.18);color:#86efac}
+  .pill{padding:3px 10px;border-radius:var(--r-pill);font-size:12px;font-weight:600}
+  .pill.em{background:var(--red-bg);color:var(--red)}
+  .pill.wa{background:var(--yellow-bg);color:var(--yellow)}
+  .pill.ok{background:var(--green-bg);color:var(--green)}
 
   /* 彈窗 */
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;
+  .modal{position:fixed;inset:0;background:rgba(43,38,32,.45);backdrop-filter:blur(2px);display:flex;align-items:center;
          justify-content:center;z-index:40;padding:16px}
-  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
-              padding:20px;max-width:680px;width:100%;max-height:88vh;overflow:auto}
-  .modal h3{margin:0 0 14px}
-  .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+  .modal .box{background:var(--panel);border:none;border-radius:var(--r-lg);box-shadow:var(--sh-lg);
+              padding:24px;max-width:680px;width:100%;max-height:88vh;overflow:auto}
+  .modal h3{font-family:var(--font-serif);font-size:18px;font-weight:600;margin:0 0 14px}
+  .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 
   /* 月曆 */
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-  .cal .dow{color:var(--muted);text-align:center;font-size:12px;padding:4px}
-  .day{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px;min-height:84px;
-       cursor:pointer}
-  .day:hover{border-color:var(--accent)}
+  .cal .dow{color:var(--muted);text-align:center;font-size:12px;letter-spacing:1px;padding:4px}
+  .day{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh-sm);
+       padding:7px;min-height:88px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .day:hover{border-color:var(--accent);box-shadow:var(--sh)}
   .day .dnum{font-weight:700;font-size:13px}
   .day .mini{font-size:11px;color:var(--muted)}
-  .day.em{border-color:var(--red)} .day.wa{border-color:var(--yellow)}
+  .day.em{background:var(--red-bg);border-color:var(--red)}
+  .day.wa{background:var(--yellow-bg);border-color:var(--yellow)}
 
-  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);
-         border:1px solid var(--line);padding:12px 18px;border-radius:10px;z-index:60;opacity:0;
-         transition:opacity .2s;pointer-events:none}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);color:var(--txt);
+         border:1px solid var(--line);border-left:3px solid var(--accent);padding:12px 18px;border-radius:var(--r);
+         box-shadow:var(--sh-lg);z-index:60;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
-  .toast.err{border-color:var(--red)}
+  .toast.err{border-color:var(--red);border-left-color:var(--red);color:var(--red)}
 
   /* 手機自適應（老闆用手機看儀表板） */
   @media (max-width:640px){
-    main{padding:12px}
+    main{padding:14px}
     .hideMobile{display:none}
     table.responsive thead{display:none}
-    table.responsive tr{display:block;border:1px solid var(--line);border-radius:10px;
-       margin-bottom:10px;padding:8px;background:var(--panel2)}
+    table.responsive tr{display:block;border:1px solid var(--line);border-radius:var(--r);
+       box-shadow:var(--sh-sm);margin-bottom:10px;padding:10px;background:var(--panel2)}
+    table.responsive tr:hover{background:var(--panel2)}
     table.responsive td{display:flex;justify-content:space-between;border:none;padding:5px 4px}
     table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;margin-right:10px}
     .grid.cols2,.grid.cols3{grid-template-columns:1fr !important}
   }
   .grid.cols2{grid-template-columns:1fr 1fr}
   .grid.cols3{grid-template-columns:1fr 1fr 1fr}
-  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
-  .stat .n{font-size:26px;font-weight:700}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-top:2px solid var(--gold-line);
+        border-radius:var(--r);box-shadow:var(--sh-sm);padding:16px}
+  .stat .n{font-family:var(--font-serif);font-size:28px;font-weight:700}
   .stat .l{color:var(--muted);font-size:13px}
+
+  /* === v2：戰情 / 排程 / 看板 === */
+  .hero{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .hero .big{font-family:var(--font-serif);font-size:22px;font-weight:700;letter-spacing:.3px}
+  .hero .big.bad{color:var(--red)} .hero .big.good{color:var(--green)} .hero .big.warn{color:var(--yellow)}
+  .strip{display:grid;grid-template-columns:repeat(15,1fr);gap:5px;margin-top:14px}
+  @media(max-width:640px){.strip{grid-template-columns:repeat(8,1fr)}}
+  .cell{border-radius:8px;padding:7px 2px;text-align:center;font-size:11px;border:1px solid var(--line);
+        background:var(--panel2);cursor:pointer;transition:transform .1s}
+  .cell:hover{transform:translateY(-2px)}
+  .cell .d{font-weight:700;font-size:13px}
+  .cell.ok{background:var(--green-bg);border-color:var(--green)}
+  .cell.late{background:var(--red-bg);border-color:var(--red)}
+  .cell.todo{background:var(--yellow-bg);border-color:var(--yellow)}
+  .buckets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:640px){.buckets{grid-template-columns:1fr 1fr}}
+  .bucket{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:14px;
+          cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .bucket:hover{border-color:var(--accent);box-shadow:var(--sh)}
+  .bucket .n{font-family:var(--font-serif);font-size:26px;font-weight:700}
+  .bucket.alert{border-top:2px solid var(--red)} .bucket.alert .n{color:var(--red)}
+  .bucket.good{border-top:2px solid var(--green)}
+  .bucket .l{color:var(--muted);font-size:12px;margin-top:2px}
+  .wgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:12px}
+  @media(max-width:900px){.wgrid{grid-template-columns:repeat(2,1fr)}}
+  .wday{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:9px;
+        min-height:128px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+  .wday:hover{border-color:var(--accent);box-shadow:var(--sh)}
+  .wday.ok{background:var(--green-bg)} .wday.late{background:var(--red-bg)} .wday.todo{background:var(--yellow-bg)}
+  .wday-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  .slotline{font-size:12px;padding:4px 0;border-top:1px dashed var(--line)}
+  .kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:900px){.kanban{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.kanban{grid-template-columns:1fr}}
+  .kcol{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+  .kcol h4{margin:0 0 8px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .kcol h4 .cnt{background:var(--chip);border-radius:var(--r-pill);padding:1px 9px;font-size:12px;color:var(--muted)}
+  .kcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);
+         box-shadow:var(--sh-sm);padding:10px;margin-bottom:8px}
+  .kcard.slow{border-color:var(--red);box-shadow:0 0 0 1px var(--red-bg)}
+  .kcard .meta{font-size:12px;color:var(--muted);margin:4px 0}
+  .kcard .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .role-badge{font-size:11px;padding:1px 8px;border-radius:var(--r-pill);background:var(--gold-soft);
+              color:var(--accent2);border:1px solid var(--gold-line)}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px}
+  @media(max-width:760px){.pgrid{grid-template-columns:1fr 1fr}}
+  @media(max-width:480px){.pgrid{grid-template-columns:1fr}}
+  .pcard{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+  .pcard.behind{border-left:3px solid var(--red)} .pcard.ahead{border-left:3px solid var(--green)}
+  .pcard .pname{font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .pcard .ptask{font-size:13px;margin:6px 0;color:var(--txt)}
+  .taskbig{background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:var(--r);
+           padding:12px;margin-bottom:8px}
+  .taskbig .t{font-weight:600}
+  .bar{height:8px;border-radius:var(--r-pill);background:var(--chip);overflow:hidden;margin:8px 0}
+  .bar>span{display:block;height:100%;background:var(--accent)}
+  .seg-toggle{display:inline-flex;background:var(--chip);border-radius:var(--r-pill);padding:3px;gap:2px}
+  .seg-toggle button{border:none;background:none;padding:6px 16px;border-radius:var(--r-pill);
+                     color:var(--muted);font-weight:600;font-size:13px}
+  .seg-toggle button.on{background:var(--accent);color:#fff}
 </style>
 </head>
 <body>
@@ -148,12 +243,11 @@
 // 基礎：身分、裝置指紋、API、輪詢、離線
 // ===================================================================
 const TABS = [
-  ["warn","🚨 預警中心"],["cal","📅 月排程"],["work","✂️ 素材工作台"],
-  ["dash","📊 部門儀表板"],["prod","💎 寵粉商品庫"],["videos","🎞 影片資料庫"],
-  ["score","🏆 績效報表"],["settings","⚙️ 設定"]
+  ["today","🎯 今日焦點"],["sched","📅 排程戰情"],["pipe","🎬 製作流程"],
+  ["war","📊 戰情儀表板"],["prod","💎 商品庫"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]
 ];
 let STATE = null;        // 伺服器回傳的整份資料
-let CUR_TAB = "warn";
+let CUR_TAB = "today";
 let ONLINE = true;
 
 function deviceId(){
@@ -267,6 +361,80 @@ function fmtDate(d){ return d; }
 function lightDot(l){ return `<span class="light ${l||'green'}"></span>`; }
 
 // ===================================================================
+// v2 計算工具：日期 / 設定 / 排程體檢 / 製作流程 / 個人指標
+// ===================================================================
+const today = new Date().toISOString().slice(0,10);
+function ymd(d){ return d.toISOString().slice(0,10); }
+function addDays(ds,n){ const d=new Date(ds+"T00:00:00"); d.setDate(d.getDate()+n); return ymd(d); }
+function daysBetween(a,b){ return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000); }
+function weekdayCh(ds){ return "日一二三四五六"[new Date(ds+"T00:00:00").getDay()]; }
+function cfg(){ return STATE.settings||{}; }
+function memberMap(){ return cfg().members||{}; }
+function memberOf(name){
+  const m=memberMap()[name]||{}; const role=m.role||"剪輯";
+  const def = role==="剪輯"?3:0;
+  return {role, target:(m.target!=null?Number(m.target):def)};
+}
+function publishTarget(){ return Number(cfg().publishTarget||4); }
+function horizonDays(){ return Number(cfg().horizonDays||15); }
+function emergencyDays(){ return Number(cfg().emergencyDays||7); }
+function slowDays(){ return Number(cfg().slowDays||2); }
+function dayTarget(ds){ const o=cfg().dayTargets||{}; return o[ds]!=null?Number(o[ds]):publishTarget(); }
+function slotsOf(ds){ return (STATE.schedule&&STATE.schedule[ds]&&STATE.schedule[ds].slots)||[]; }
+
+// 排程體檢：未來 horizon 天，每天 已排/目標、落後(緊急門檻內未滿)/待排/已滿
+function scheduleHealth(){
+  const H=horizonDays(), E=emergencyDays(); const days=[];
+  for(let i=0;i<H;i++){ const ds=addDays(today,i); const t=dayTarget(ds); const n=slotsOf(ds).length;
+    const status = n>=t?"ok":(i<E?"late":"todo");
+    days.push({ds,i,target:t,count:n,need:Math.max(0,t-n),status}); }
+  const late=days.filter(d=>d.status==="late");
+  const filled=days.filter(d=>d.count>=d.target);
+  const lastFilled=filled.length?filled[filled.length-1].i:-1;
+  const totalNeed=days.reduce((a,d)=>a+d.need,0);
+  return {days,late,lastFilled,totalNeed,horizon:H,emergency:E};
+}
+// 製作流程分桶
+function pipelineBuckets(){
+  const M=STATE.materials||[];
+  return {
+    unshot:M.filter(m=>m.status!=="已完成" && m.hasShot===false),
+    unclaimed:M.filter(m=>m.status==="待剪" && !m.claimedBy && m.hasShot!==false),
+    editing:M.filter(m=>m.status==="剪輯中"),
+    done:M.filter(m=>m.status==="已完成")
+  };
+}
+function ageDays(iso){ if(!iso) return 0; return Math.floor((Date.now()-new Date(iso).getTime())/86400000); }
+function slowEditing(){ return pipelineBuckets().editing.filter(m=>ageDays(m.claimedAt)>=slowDays()); }
+function readyVideos(){ return (STATE.videos||[]).filter(v=>v.light!=="red"); }
+// 片源不足：緊急窗內未排滿的需求 vs 可餵的供給（可排成片＋待剪＋剪輯中；待拍尚非供給）
+function footageShortfall(){
+  const need=scheduleHealth().late.reduce((a,d)=>a+d.need,0);
+  const b=pipelineBuckets();
+  const supply=readyVideos().length + b.unclaimed.length + b.editing.length;
+  return {need,supply,short:Math.max(0,need-supply)};
+}
+function langTodos(){ return (STATE.videos||[]).filter(v=>{const L=v.languages||{};return ["未開始","二創中"].includes((L.en||{}).status)||["未開始","二創中"].includes((L.th||{}).status);}); }
+function todayLog(){ return (STATE.auditLog||[]).filter(l=>(l.ts||"").slice(0,10)===today); }
+function finishedToday(name){ return todayLog().filter(l=>l.user===name && l.action==="material.finish").length; }
+function myTasks(name){
+  const mats=(STATE.materials||[]).filter(m=>m.claimedBy===name && m.status==="剪輯中");
+  const langs=langTodos().filter(v=>{const L=v.languages||{};return (L.en&&L.en.editor===name)||(L.th&&L.th.editor===name);});
+  return {mats,langs};
+}
+function personStat(name){
+  const {role,target}=memberOf(name);
+  const fin=finishedToday(name);
+  const inProg=(STATE.materials||[]).filter(m=>m.claimedBy===name && m.status==="剪輯中");
+  const short=footageShortfall().short>0;
+  let status="observer";
+  if(target>0){ status = fin>target?"ahead":(fin>=target?"met":(short?"blocked":"behind")); }
+  return {role,target,fin,inProg,status};
+}
+function allNames(){ return (STATE.users||[]).map(u=>u.name); }
+function statusLabel(s){ return {ahead:"🚀 超前",met:"✅ 達標",behind:"⚠️ 落後",blocked:"⏸ 片源不足",observer:"👀 觀察"}[s]||s; }
+
+// ===================================================================
 // 畫面路由
 // ===================================================================
 function render(){
@@ -275,69 +443,128 @@ function render(){
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   v.innerHTML = banner + ({
-    warn:viewWarn, cal:viewCal, work:viewWork, dash:viewDash,
-    prod:viewProd, videos:viewVideos, score:viewScore, settings:viewSettings
+    today:viewToday, sched:viewSched, pipe:viewPipe, war:viewWar,
+    prod:viewProd, videos:viewVideos, settings:viewSettings
   }[CUR_TAB]||(()=>""))();
 }
 
-// ---- 預警中心 ----
-function viewWarn(){
-  const w = STATE._warnings||{emergency:[],warning:[]};
-  const s = STATE.settings||{};
-  const lowMat = (STATE.materials||[]).filter(m=>m.status==="待剪").length < (s.materialLowThreshold||5);
-  const uncovered = (STATE.videos||[]).filter(v=>v.status==="舊片" && !(v.coverChanged&&v.titleChanged));
-  const laggedLang = (STATE.videos||[]).filter(v=>["未開始","二創中"].includes((v.languages?.en?.status))||["未開始","二創中"].includes((v.languages?.th?.status)));
+// ---- 今日焦點 ----
+function viewToday(){
+  const me=currentUser();
+  const h=scheduleHealth(); const fs=footageShortfall();
+  const b=pipelineBuckets(); const slow=slowEditing();
+  let big,cls;
+  if(h.late.length){ big=`⚠️ 未來 ${h.emergency} 天有 ${h.late.length} 天沒排滿`; cls="bad"; }
+  else { const reach=h.lastFilled>=0?addDays(today,h.lastFilled):null;
+    big = reach?`✅ 已預排到 ${reach.slice(5)}，進度超前`:"✅ 排程正常"; cls="good"; }
+  const strip=h.days.map(d=>`<div class="cell ${d.status}" onclick="goSchedDay('${d.ds}')">
+      <div class="d">${d.ds.slice(8)}</div><div class="muted">${weekdayCh(d.ds)}</div>
+      <div>${d.count}/${d.target}</div></div>`).join("");
+  const mine=myTasks(me);
+  const myCards = mine.mats.map(m=>`<div class="taskbig"><div class="t">✂️ ${esc(m.name)} <span class="tag">${esc(m.type||"")}</span></div>
+      <div class="muted" style="font-size:12px">商品：${esc((prod(m.productId)||{}).name||"—")}　已剪 ${ageDays(m.claimedAt)} 天</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sm" onclick="finishMat('${m.id}')">完成 ✔</button>
+        <button class="btn sm sec" onclick="helpMat('${m.id}',${!m.needHelp})">${m.needHelp?"取消求援":"求支援"}</button>
+        <button class="btn sm sec" onclick="assignMat('${m.id}')">轉交</button>
+      </div></div>`).join("")
+    + mine.langs.map(v=>`<div class="taskbig"><div class="t">🌐 二創：${esc(v.name)}</div>
+        <div class="muted" style="font-size:12px">英:${esc(((v.languages||{}).en||{}).status||"-")}　泰:${esc(((v.languages||{}).th||{}).status||"-")}</div></div>`).join("");
+  const ms=personStat(me);
+  const myHead = memberOf(me).target>0
+     ? `今日完成 <b>${ms.fin}</b> / 目標 ${ms.target}　<span class="pill ${ms.status==='behind'?'em':(ms.status==='ahead'||ms.status==='met'?'ok':'wa')}">${statusLabel(ms.status)}</span>`
+     : `<span class="role-badge">${esc(memberOf(me).role)}</span> 觀察視角`;
+  const help=(STATE.materials||[]).filter(m=>m.needHelp && m.status!=="已完成");
+  const heroes=allNames().map(n=>({n,s:personStat(n)})).filter(x=>x.s.status==="ahead").sort((a,b)=>b.s.fin-a.s.fin);
   return `
-  <h2>🚨 預警中心</h2>
+  <h2>🎯 今日焦點 <span class="muted" style="font-size:13px">${today} ${weekdayCh(today)}</span></h2>
   <div class="card">
-    <div class="row" style="gap:24px">
-      <div><span class="pill em">緊急 ${w.emergency.length}</span> <span class="muted">距今 ≤3 天未排滿</span></div>
-      <div><span class="pill wa">警告 ${w.warning.length}</span> <span class="muted">距今 4–7 天未排滿</span></div>
-    </div>
-    ${w.emergency.length?`<p><b>🔴 緊急（最晚 3 天前要排好）：</b> ${w.emergency.map(d=>`<span class="tag">${d}</span>`).join(" ")}</p>`:""}
-    ${w.warning.length?`<p><b>🟡 警告（預排須 7 天前完成）：</b> ${w.warning.map(d=>`<span class="tag">${d}</span>`).join(" ")}</p>`:""}
-    ${!w.emergency.length&&!w.warning.length?`<p class="pill ok">✅ 未來一週都已排滿</p>`:""}
+    <div class="hero"><span class="big ${cls}">${big}</span>
+      <button class="btn sm sec" onclick="CUR_TAB='sched';buildNav();render()">看排程 →</button></div>
+    <div class="strip">${strip}</div>
+    <p class="muted" style="margin-top:8px">🟩 已排滿　🟥 ${h.emergency} 天內未排滿(落後)　🟨 待排（${h.horizon} 天內）</p>
   </div>
   <div class="card">
-    <h2>其他提醒</h2>
-    <p>${lowMat?"🟠":"✅"} 待剪素材：庫存 ${(STATE.materials||[]).filter(m=>m.status==="待剪").length} 支 ${lowMat?"（低於門檻，請補拍/補剪）":""}</p>
-    <p>${uncovered.length?"🟠":"✅"} 舊片未換封面/標題：${uncovered.length} 支 ${uncovered.length?"（重用前須先更換）":""}</p>
-    <p>${laggedLang.length?"🟠":"✅"} 二創未跟上（英/泰）：${laggedLang.length} 支</p>
+    <b>🔎 問題在哪裡？</b>
+    ${fs.short>0?`<span class="pill em" style="display:inline-block;margin:8px 0">片源不足：尚缺約 ${fs.short} 支（需求 ${fs.need}／供給 ${fs.supply}）</span>`:`<span class="pill ok" style="display:inline-block;margin:8px 0">片源充足 👍</span>`}
+    <div class="buckets">
+      <div class="bucket ${b.unshot.length?'alert':''}" onclick="CUR_TAB='pipe';buildNav();render()"><div class="n">${b.unshot.length}</div><div class="l">🎥 還沒拍（片源不足）</div></div>
+      <div class="bucket ${b.unclaimed.length?'alert':''}" onclick="CUR_TAB='pipe';buildNav();render()"><div class="n">${b.unclaimed.length}</div><div class="l">✂️ 沒人認領剪輯</div></div>
+      <div class="bucket ${slow.length?'alert':''}" onclick="CUR_TAB='pipe';buildNav();render()"><div class="n">${slow.length}</div><div class="l">⏳ 剪輯中卡關（≥${slowDays()}天）</div></div>
+      <div class="bucket good" onclick="CUR_TAB='pipe';buildNav();render()"><div class="n">${readyVideos().length}</div><div class="l">📦 可排成片</div></div>
+    </div>
+    ${slow.length?`<p class="muted" style="margin-top:10px">卡關：${slow.map(m=>`${esc(m.claimedBy||"?")}·${esc(m.name)}(${ageDays(m.claimedAt)}天)`).join("、")}</p>`:""}
+  </div>
+  <div class="card">
+    <b>📋 我今天要做什麼（${esc(me)}）</b>　${myHead}
+    <div style="margin-top:10px">${myCards||`<span class="pill ok" style="display:inline-block">✅ 你的任務都完成了！要不要到「製作流程」認領待剪素材幫團隊超前？</span>`}</div>
+  </div>
+  <div class="card">
+    <b>🤝 團隊協作</b>
+    <p style="margin:8px 0">🆘 需要支援：${help.length?help.map(m=>`<span class="tag">${esc(m.claimedBy||"?")}·${esc(m.name)}${m.helpNote?"："+esc(m.helpNote):""}</span>`).join(" "):'<span class="muted">目前沒有人需要支援 👍</span>'}</p>
+    <p style="margin:8px 0">🚀 今日超前/幫忙：${heroes.length?heroes.map(x=>`<span class="pill ok">${esc(x.n)} ${x.s.fin}支</span>`).join(" "):'<span class="muted">尚無</span>'}</p>
   </div>`;
 }
+function goSchedDay(ds){ CUR_TAB='sched'; buildNav(); render(); openDay(ds); }
 
-// ---- 月排程 ----
-let CAL_YM = null;
-function viewCal(){
-  if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
-  const [y,m] = CAL_YM;
-  const first = new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
-  const w = STATE._warnings||{emergency:[],warning:[]};
-  let cells = "";
-  for(let i=0;i<startDow;i++) cells += `<div></div>`;
-  for(let d=1;d<=days;d++){
-    const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const day = (STATE.schedule||{})[ds];
-    const cnt = (day?.slots||[]).length;
-    const cls = w.emergency.includes(ds)?"em":(w.warning.includes(ds)?"wa":"");
-    cells += `<div class="day ${cls}" onclick="openDay('${ds}')">
-      <div class="dnum">${d}</div>
-      <div class="mini">${cnt?`已排 ${cnt} 支`:`<span class="muted">未排</span>`}</div>
-    </div>`;
+// ---- 排程戰情（週/月切換）----
+let SCHED_MODE="week", SCHED_OFFSET=0, CAL_YM=null;
+function setSched(m){ SCHED_MODE=m; render(); }
+function weekMove(n){ SCHED_OFFSET+=n; render(); }
+function viewSched(){
+  const seg=`<div class="seg-toggle">
+    <button class="${SCHED_MODE==='week'?'on':''}" onclick="setSched('week')">週視圖</button>
+    <button class="${SCHED_MODE==='month'?'on':''}" onclick="setSched('month')">月視圖</button></div>`;
+  return `<h2>📅 排程戰情 <span class="muted" style="font-size:13px">每日目標 ${publishTarget()} 支</span></h2>
+    <div style="margin-bottom:12px">${seg}</div>
+    ${SCHED_MODE==='week'?weekView():monthView()}`;
+}
+function weekView(){
+  const start=addDays(today, SCHED_OFFSET*7); const E=emergencyDays();
+  let cols="";
+  for(let i=0;i<7;i++){ const ds=addDays(start,i); const t=dayTarget(ds); const sl=slotsOf(ds);
+    const off=daysBetween(today,ds);
+    const cls= sl.length>=t?"ok":((off>=0&&off<E)?"late":"todo");
+    const lines=sl.map(s=>{ const v=vid(s.videoId); return `<div class="slotline">
+        <span class="muted">${esc(s.time||"")}</span> ${esc(v?v.name:(s.videoId||""))}
+        ${s.editor?`<span class="muted"> ·${esc(s.editor)}</span>`:""}
+        ${s.locked?'<span class="pill ok">上架</span>':'<span class="pill wa">待上</span>'}</div>`;}).join("")
+      || `<div class="muted" style="font-size:12px;padding-top:4px">尚未排片</div>`;
+    cols+=`<div class="wday ${cls}" onclick="openDay('${ds}')">
+      <div class="wday-h"><b>${weekdayCh(ds)} ${ds.slice(5)}</b>
+        <span class="pill ${sl.length>=t?'ok':(cls==='late'?'em':'wa')}">${sl.length}/${t}</span></div>
+      ${sl.length<t?`<div style="font-size:12px;color:var(--red);font-weight:600">缺 ${t-sl.length} 支</div>`:""}
+      ${lines}</div>`;
   }
-  return `
-  <h2>📅 月排程</h2>
-  <div class="card">
+  const title = SCHED_OFFSET===0?"本週":(SCHED_OFFSET>0?`${SCHED_OFFSET} 週後`:`${-SCHED_OFFSET} 週前`);
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between">
+      <button class="btn sm sec" onclick="weekMove(-1)">← 上週</button>
+      <b>${title}（${start.slice(5)} 起 7 天）</b>
+      <button class="btn sm sec" onclick="weekMove(1)">下週 →</button></div>
+    <div class="wgrid">${cols}</div>
+    <p class="muted" style="margin-top:10px">🟥 ${E} 天內未排滿=落後　🟨 待排　🟩 已排滿（含超前）。點任一天排片。</p>
+  </div>`;
+}
+function monthView(){
+  if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
+  const [y,m]=CAL_YM; const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
+  const E=emergencyDays(); let cells="";
+  for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  for(let d=1;d<=days;d++){ const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const t=dayTarget(ds), n=slotsOf(ds).length, off=daysBetween(today,ds);
+    const cls= (n>=t&&n>0)?"":((off>=0&&off<E&&n<t)?"em":(n<t?"wa":""));
+    cells+=`<div class="day ${cls}" onclick="openDay('${ds}')">
+      <div class="dnum">${d}</div><div class="mini">${n?`${n}/${t}`:'<span class="muted">未排</span>'}</div></div>`;
+  }
+  return `<div class="card">
     <div class="row" style="justify-content:space-between">
       <button class="btn sm sec" onclick="calMove(-1)">← 上月</button>
       <b>${y} 年 ${m+1} 月</b>
-      <button class="btn sm sec" onclick="calMove(1)">下月 →</button>
-    </div>
+      <button class="btn sm sec" onclick="calMove(1)">下月 →</button></div>
     <div class="cal" style="margin-top:12px">
-      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
-      ${cells}
-    </div>
-    <p class="muted" style="margin-top:10px">🔴 邊框=緊急(≤3天未排滿)　🟡 邊框=警告(4–7天)　點任一天進入時段排程</p>
+      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}${cells}</div>
+    <p class="muted" style="margin-top:10px">🔴 ${E} 天內未排滿　🟡 未排滿　🟢 已排滿。點任一天排片。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -361,7 +588,12 @@ function openDay(ds){
     </tr>`;
   }).join("");
   const tplBtns = templates.map(t=>`<button class="btn sm sec" onclick="pickVideo('${ds}','${t.time}','${esc(t.type)}')">${t.time} ${esc(t.type)}</button>`).join(" ");
-  showModal(`📅 ${ds} 排程`, `
+  showModal(`📅 ${ds} 排程（${weekdayCh(ds)}）`, `
+    <div class="card"><b>本日上片目標</b>（預設 ${publishTarget()}，已排 ${(day.slots||[]).length} 支）
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div style="max-width:140px"><label>目標支數</label><input type="number" id="dayTgt" min="0" value="${dayTarget(ds)}"></div>
+        <button class="btn sm" onclick="saveDayTarget('${ds}')">儲存目標（需密碼）</button></div>
+    </div>
     <div class="card"><b>每日各類別目標數量</b>（可不同天不同）
       <div class="grid cols3" style="margin-top:8px">${quotaInputs}</div>
       <div class="modalFoot"><button class="btn" onclick="saveQuota('${ds}')">確認送出數量</button></div>
@@ -378,6 +610,13 @@ async function saveQuota(ds){
   const cats = (STATE.settings?.categories)||[];
   const quotas = {}; cats.forEach(c=>quotas[c]=parseInt(document.getElementById("q_"+c).value||"0",10));
   if(await write("POST",`/api/schedule/${ds}/quota`,{quotas},"已更新目標數量")) closeModal();
+}
+async function saveDayTarget(ds){
+  const v=parseInt(val("dayTgt")||"0",10);
+  return withAdmin(async(pw)=>{
+    const dayTargets=Object.assign({}, cfg().dayTargets||{}); dayTargets[ds]=v;
+    await writeAdminPw("PUT","/api/settings",{settings:{dayTargets},adminPassword:pw},"已更新本日目標");
+  });
 }
 function delSlot(ds,i){ withAdminMaybe(()=>write("DELETE",`/api/schedule/${ds}/slot/${i}`,{},"已移除"),true).then(()=>openDay(ds)); }
 async function publishSlot(ds,i){
@@ -413,47 +652,52 @@ async function addSlot(ds,time,type,videoId){
   if(await write("POST",`/api/schedule/${ds}/slot`,{slot},"已排入")) openDay(ds);
 }
 
-// ---- 素材工作台 ----
-function viewWork(){
-  const me = currentUser();
-  const mine = (STATE.materials||[]).filter(m=>m.claimedBy===me && m.status!=="已完成");
-  const pool = (STATE.materials||[]).filter(m=>m.status==="待剪" && !m.claimedBy);
-  const langTasks = (STATE.videos||[]).filter(v=>["未開始","二創中"].includes(v.languages?.en?.status)||["未開始","二創中"].includes(v.languages?.th?.status));
-  const matRow = (m,inPool)=>{
-    return `<tr>
-      <td data-label="素材">${esc(m.name)} <span class="tag">${esc(m.type||"")}</span>${m.hasShot?"":' <span class="pill wa">未拍攝</span>'}</td>
-      <td data-label="商品">${esc(prod(m.productId)?.name||"")}</td>
-      <td data-label="負責">${esc(m.claimedBy||"")}${m.needHelp?' <span class="pill em">需支援</span>':""}</td>
-      <td data-label="">${inPool
-        ? `<button class="btn sm" onclick="claimMat('${m.id}')">我來剪 ✋</button>`
-        : `<button class="btn sm" onclick="finishMat('${m.id}')">完成✔</button>
-           <button class="btn sm sec" onclick="helpMat('${m.id}',${!m.needHelp})">${m.needHelp?"取消支援":"求支援"}</button>`}
-      </td></tr>`;
-  };
-  return `
-  <h2>✂️ 素材工作台</h2>
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><b>我的今日工作（${esc(me)}）</b></div>
-    <table class="responsive"><thead><tr><th>素材</th><th>商品</th><th>負責</th><th></th></tr></thead>
-    <tbody>${mine.map(m=>matRow(m,false)).join("")||`<tr><td class="muted">目前沒有進行中的工作，去下方搶單吧</td></tr>`}</tbody></table>
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><b>待剪素材庫（可自己搶單）</b>
+// ---- 製作流程看板 ----
+function viewPipe(){
+  const b=pipelineBuckets(); const slow=new Set(slowEditing().map(m=>m.id));
+  const langTasks=langTodos();
+  const card=(m,col)=>{ const pn=(prod(m.productId)||{}).name||""; const isSlow=slow.has(m.id);
+    let acts="";
+    if(col==="unclaimed") acts=`<button class="btn sm" onclick="claimMat('${m.id}')">我來剪 ✋</button>
+        <button class="btn sm sec" onclick="assignMat('${m.id}')">指派</button>`;
+    else if(col==="editing") acts=`<button class="btn sm" onclick="finishMat('${m.id}')">完成 ✔</button>
+        <button class="btn sm sec" onclick="assignMat('${m.id}')">轉交</button>
+        <button class="btn sm sec" onclick="helpMat('${m.id}',${!m.needHelp})">${m.needHelp?"取消求援":"求援"}</button>`;
+    else if(col==="unshot") acts=`<span class="pill wa">待拍攝</span>`;
+    return `<div class="kcard ${isSlow?'slow':''}">
+      <b>${esc(m.name)}</b> <span class="tag">${esc(m.type||"")}</span>
+      <div class="meta">${pn?"商品："+esc(pn):""}${m.claimedBy?`　負責：${esc(m.claimedBy)}`:""}${col==="editing"?`　已剪 ${ageDays(m.claimedAt)} 天${isSlow?" ⚠️卡關":""}`:""}${m.needHelp?'　<span class="pill em">需支援</span>':""}</div>
+      <div class="acts">${acts}</div></div>`;};
+  const col=(title,arr,key,emoji)=>`<div class="kcol"><h4><span>${emoji} ${title}</span><span class="cnt">${arr.length}</span></h4>
+      ${arr.length?arr.map(m=>card(m,key)).join(""):'<div class="muted" style="font-size:12px">—</div>'}</div>`;
+  const recentDone=b.done.slice(-8).reverse();
+  return `<h2>🎬 製作流程</h2>
+    <div class="card"><div class="row" style="justify-content:space-between">
+      <span class="muted">拍 → 剪 → 完成，一眼看瓶頸在哪、誰卡住、誰超前</span>
       <button class="btn sm" onclick="newMaterial()">＋ 新增素材</button></div>
-    <table class="responsive"><thead><tr><th>素材</th><th>商品</th><th>負責</th><th></th></tr></thead>
-    <tbody>${pool.map(m=>matRow(m,true)).join("")||`<tr><td class="muted">沒有待剪素材</td></tr>`}</tbody></table>
-  </div>
-  <div class="card">
-    <b>多語二創待辦（中文母版完成後）</b>
-    <table class="responsive"><thead><tr><th>影片</th><th>英文</th><th>泰文</th><th></th></tr></thead>
-    <tbody>${langTasks.map(v=>`<tr>
-      <td data-label="影片">${esc(v.name)}</td>
-      <td data-label="英文">${esc(v.languages?.en?.status||"未開始")}</td>
-      <td data-label="泰文">${esc(v.languages?.th?.status||"未開始")}</td>
-      <td data-label=""><button class="btn sm" onclick="langTask('${v.id}','en')">認領英文</button>
-                        <button class="btn sm" onclick="langTask('${v.id}','th')">認領泰文</button></td>
-    </tr>`).join("")||`<tr><td class="muted">沒有待二創的影片</td></tr>`}</tbody></table>
-  </div>`;
+      <div class="kanban" style="margin-top:12px">
+        ${col("待拍攝",b.unshot,"unshot","🎥")}
+        ${col("待認領剪輯",b.unclaimed,"unclaimed","✂️")}
+        ${col("剪輯中",b.editing,"editing","⏳")}
+        ${col("已完成（近期）",recentDone,"done","✅")}
+      </div></div>
+    <div class="card"><b>🌐 多語二創待辦（中文母版完成後）</b>
+      <table class="responsive"><thead><tr><th>影片</th><th>英文</th><th>泰文</th><th></th></tr></thead>
+      <tbody>${langTasks.map(v=>{const L=v.languages||{};return `<tr>
+        <td data-label="影片">${esc(v.name)}</td>
+        <td data-label="英文">${esc((L.en||{}).status||"未開始")}</td>
+        <td data-label="泰文">${esc((L.th||{}).status||"未開始")}</td>
+        <td data-label=""><button class="btn sm" onclick="langTask('${v.id}','en')">認領英文</button>
+                          <button class="btn sm" onclick="langTask('${v.id}','th')">認領泰文</button></td>
+      </tr>`;}).join("")||`<tr><td class="muted">沒有待二創的影片</td></tr>`}</tbody></table>
+    </div>`;
+}
+function assignMat(id){
+  const names=allNames(); if(!names.length){ toast("沒有可指派的成員",true); return; }
+  const name=prompt("指派接手給誰？輸入成員名字：\n"+names.join("、"));
+  if(name===null) return; const t=(name||"").trim(); if(!t) return;
+  if(!names.includes(t)){ toast("查無此成員："+t,true); return; }
+  write("POST",`/api/materials/${id}/assign`,{assignee:t},`已指派給 ${t}`);
 }
 function claimMat(id){ write("POST",`/api/materials/${id}/claim`,{},"已認領，加入今日工作"); }
 function finishMat(id){
@@ -489,41 +733,43 @@ function newMaterial(){
   });
 }
 
-// ---- 部門儀表板（手機友善） ----
-let DASH=null;
-async function loadDash(){ try{ DASH = await api("GET","/api/dashboard?date="+today); }catch(e){} render(); }
-const today = new Date().toISOString().slice(0,10);
-function viewDash(){
-  if(!DASH){ loadDash(); return `<h2>📊 部門儀表板</h2><p class="muted">載入中…</p>`; }
-  const p = DASH.progress;
-  const perUser = DASH.perUser||{};
-  const help = DASH.helpList||[];
-  const userCards = Object.entries(perUser).map(([name,d])=>{
-    const acts = (d.今日動作||[]);
-    return `<div class="stat">
-      <div class="l">${esc(name)}</div>
-      <div>搶單 ${d.搶單.length}　動作 ${acts.length}</div>
-      <div class="muted" style="font-size:12px">${acts.slice(-4).map(a=>esc(a.action)).join("、")||"今日尚無紀錄"}</div>
+// ---- 戰情儀表板（老闆手機）----
+function viewWar(){
+  const h=scheduleHealth(); const fs=footageShortfall();
+  const todaySlots=slotsOf(today); const tTarget=dayTarget(today);
+  const published=todaySlots.filter(s=>s.locked).length;
+  const reach=h.lastFilled>=0?addDays(today,h.lastFilled):null;
+  const people=allNames().map(n=>({n,s:personStat(n)}));
+  const help=(STATE.materials||[]).filter(m=>m.needHelp&&m.status!=="已完成");
+  const pcard=({n,s})=>{ const t=myTasks(n).mats[0];
+    const cls=s.status==="behind"?"behind":(s.status==="ahead"?"ahead":"");
+    return `<div class="pcard ${cls}">
+      <div class="pname"><span>${esc(n)}</span><span class="role-badge">${esc(s.role)}</span></div>
+      <div class="ptask">${t?`✂️ ${esc(t.name)}（${ageDays(t.claimedAt)}天）`:'<span class="muted">目前無進行中任務</span>'}</div>
+      ${s.target>0
+        ? `<div class="muted" style="font-size:12px">今日 ${s.fin}/${s.target} 支　<span class="pill ${s.status==='behind'?'em':(s.status==='blocked'?'wa':'ok')}">${statusLabel(s.status)}</span></div>`
+        : `<span class="pill ok">${statusLabel(s.status)}</span>`}
+    </div>`;};
+  const pct=tTarget?Math.min(100,Math.round(todaySlots.length/tTarget*100)):0;
+  return `<h2>📊 戰情儀表板 <span class="muted" style="font-size:13px">${today} ${weekdayCh(today)}</span></h2>
+    <div class="grid cols3">
+      <div class="stat"><div class="n" style="color:var(--red)">${h.late.length}</div><div class="l">緊急落後天數（${h.emergency}天內未排滿）</div></div>
+      <div class="stat"><div class="n">${reach?reach.slice(5):"—"}</div><div class="l">已預排到（超前進度）</div></div>
+      <div class="stat"><div class="n" style="color:${fs.short?'var(--red)':'var(--green)'}">${fs.short?("缺"+fs.short):"充足"}</div><div class="l">片源狀態（需求${fs.need}/供給${fs.supply}）</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <b>今日上片進度</b>　${todaySlots.length}/${tTarget} 支（已上架 ${published}）
+      <div class="bar"><span style="width:${pct}%"></span></div>
+    </div>
+    <div class="card">
+      <b>🆘 需要支援／協助</b>
+      ${help.length?help.map(m=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
+          <span>${esc(m.name)} <span class="muted">(${esc(m.claimedBy||"")})</span></span>
+          <span class="muted">${esc(m.helpNote||"")}</span></div>`).join(""):`<p class="muted">目前沒有人需要支援 👍</p>`}
+    </div>
+    <div class="card"><b>👥 每人今日戰情</b>
+      <div class="pgrid">${people.map(pcard).join("")}</div>
     </div>`;
-  }).join("");
-  return `
-  <h2>📊 部門儀表板 <span class="muted" style="font-size:13px">${today}</span></h2>
-  <div class="grid cols3">
-    <div class="stat"><div class="n" style="color:var(--red)">${p.本週緊急.length}</div><div class="l">緊急待排</div></div>
-    <div class="stat"><div class="n" style="color:var(--yellow)">${p.本週警告.length}</div><div class="l">警告待排</div></div>
-    <div class="stat"><div class="n">${p.待剪素材數}</div><div class="l">待剪素材</div></div>
-    <div class="stat"><div class="n">${p.新片庫數}</div><div class="l">新片庫</div></div>
-    <div class="stat"><div class="n">${p.二創待辦}</div><div class="l">二創待辦</div></div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <b>🆘 目前需要支援／協助</b>
-    ${help.length?help.map(h=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
-        <span>${esc(h.name)} <span class="muted">(${esc(h.by||"")})</span></span>
-        <span class="muted">${esc(h.note||"")}</span></div>`).join(""):`<p class="muted">目前沒有人需要支援 👍</p>`}
-  </div>
-  <div class="card"><b>👥 每人今日工作</b>
-    <div class="grid cols3" style="margin-top:10px">${userCards}</div>
-  </div>`;
 }
 
 // ---- 寵粉商品庫 ----
@@ -615,68 +861,60 @@ function editVideo(id){
   });
 }
 
-// ---- 績效報表 ----
-function viewScore(){
-  // 用 dashboard 的 scores（即時計算）
-  const scores = DASH?.scores;
-  if(!scores){ loadDash(); return `<h2>🏆 績效報表</h2><p class="muted">載入中…</p>`; }
-  const rows=Object.entries(scores).map(([n,r])=>`<tr>
-    <td data-label="剪輯師"><b>${esc(n)}</b></td>
-    <td data-label="新片">${r.新片數}</td><td data-label="首次達標">${r.首次達標}</td>
-    <td data-label="舊片二次">${r.舊片二次達標}</td><td data-label="帶貨">${r.帶貨片數}</td>
-    <td data-label="二創">${r.二創數}</td><td data-label="總積分"><b>${r.總積分}</b></td>
-  </tr>`).join("");
-  return `<h2>🏆 績效報表</h2>
-  <div class="card"><table class="responsive"><thead><tr><th>剪輯師</th><th>新片</th><th>首次達標</th><th>舊片二次</th><th>帶貨片</th><th>二創</th><th>總積分</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <p class="muted">計分：新片+${STATE.settings?.newVideoScore}／首次達標+${STATE.settings?.firstHitScore}／舊片二次+${STATE.settings?.reuseHitScore}／帶貨+${STATE.settings?.promoScore}／二創+${STATE.settings?.derivativeScore}</p></div>`;
-}
+// 績效（KPI）已整合進「戰情儀表板」viewWar 的每人今日戰情
 
 // ---- 設定（管理者） ----
 function viewSettings(){
   const s=STATE.settings||{};
+  const roles=["剪輯","老闆(IP)","HR觀察","支援"];
+  const memberRows=(STATE.users||[]).map(u=>{ const mo=memberOf(u.name);
+    return `<tr>
+      <td data-label="成員"><b>${esc(u.name)}</b></td>
+      <td data-label="角色"><select id="role_${esc(u.name)}">${roles.map(r=>`<option ${mo.role===r?"selected":""}>${r}</option>`).join("")}</select></td>
+      <td data-label="每日KPI"><input type="number" id="tgt_${esc(u.name)}" min="0" value="${mo.target}" style="max-width:90px"></td>
+    </tr>`;}).join("");
   return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
-  <div class="card"><b>影片類型</b>（逗號分隔，可自行增改）
-    <input id="set_cats" value="${esc((s.categories||[]).join(","))}"></div>
-  <div class="card"><b>平台清單</b>
-    <input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
-  <div class="card"><b>語言</b>
-    <input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
+  <div class="card"><b>排程 / 製作目標</b>
+    <div class="grid cols2" style="margin-top:8px">
+      <div><label>每日上片目標（必需底線）</label><input type="number" id="set_ptgt" value="${s.publishTarget||4}"></div>
+      <div><label>預排天數（超前目標）</label><input type="number" id="set_horizon" value="${s.horizonDays||15}"></div>
+      <div><label>緊急門檻（幾天內未排滿=落後）</label><input type="number" id="set_emerg" value="${s.emergencyDays||7}"></div>
+      <div><label>剪輯逾時（幾天算太慢）</label><input type="number" id="set_slow" value="${s.slowDays||2}"></div>
+    </div></div>
+  <div class="card"><b>成員角色與每日 KPI</b>
+    <p class="muted" style="font-size:12px">觀察者（老闆 / HR）KPI 設 0 即不列入落後判斷；支援者可設不同數字。</p>
+    <table class="responsive"><thead><tr><th>成員</th><th>角色</th><th>每日 KPI</th></tr></thead>
+    <tbody>${memberRows}</tbody></table></div>
+  <div class="card"><b>影片類型</b>（逗號分隔）<input id="set_cats" value="${esc((s.categories||[]).join(","))}"></div>
+  <div class="card"><b>平台清單</b><input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
+  <div class="card"><b>語言</b><input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
   <div class="card"><b>上片時段範本</b>（格式 時間=類型，逗號分隔，例 10:00=舊片,12:00=每日寵粉）
     <input id="set_tpl" value="${esc((STATE.slotTemplates||[]).map(t=>t.time+"="+t.type).join(","))}"></div>
-  <div class="card"><b>發片帳號命名樣板</b>
-    <input id="set_acct" value="${esc(s.accountTemplate||"YYYYMMDDg##平台")}"></div>
-  <div class="card"><div class="grid cols3">
+  <div class="card"><div class="grid cols2">
     <div><label>30天使用上限</label><input type="number" id="set_cap" value="${s.reuseCap||3}"></div>
     <div><label>疲乏視窗(天)</label><input type="number" id="set_win" value="${s.reuseWindowDays||30}"></div>
-    <div><label>素材低庫存門檻</label><input type="number" id="set_low" value="${s.materialLowThreshold||5}"></div>
-  </div>
-  <label><input type="checkbox" id="set_newreq" ${s.requireDailyNewVideo?"checked":""} style="width:auto"> 每天固定至少 1 支新片（強制）</label>
-  <label>異地備份資料夾（Google Drive 同步路徑，留空=不啟用）</label><input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}">
-  </div>
-  <div class="card"><b>變更管理者密碼</b>
-    <input id="set_pw" type="text" placeholder="留空則不變更">
-    <p class="muted">目前密碼用於下方送出驗證</p></div>
+  </div></div>
+  <div class="card"><b>變更管理者密碼</b><input id="set_pw" type="text" placeholder="留空則不變更"></div>
   <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定（需密碼）</button></div>`;
 }
 async function saveSettings(){
+  const mems=Object.assign({}, cfg().members||{});
+  (STATE.users||[]).forEach(u=>{ mems[u.name]={role:val("role_"+u.name)||"剪輯", target:parseInt(val("tgt_"+u.name)||"0",10)}; });
   const settings={
+    members:mems,
+    publishTarget:parseInt(val("set_ptgt"))||4,
+    horizonDays:parseInt(val("set_horizon"))||15,
+    emergencyDays:parseInt(val("set_emerg"))||7,
+    slowDays:parseInt(val("set_slow"))||2,
     categories:val("set_cats").split(",").map(x=>x.trim()).filter(Boolean),
     languages:val("set_langs").split(",").map(x=>x.trim()).filter(Boolean),
-    accountTemplate:val("set_acct"),
-    reuseCap:parseInt(val("set_cap"))||3, reuseWindowDays:parseInt(val("set_win"))||30,
-    materialLowThreshold:parseInt(val("set_low"))||5,
-    requireDailyNewVideo:document.getElementById("set_newreq").checked,
-    offsiteBackupDir:val("set_offsite")
+    reuseCap:parseInt(val("set_cap"))||3, reuseWindowDays:parseInt(val("set_win"))||30
   };
   const plats=val("set_plat").split(",").map(x=>x.trim()).filter(Boolean);
   const tpl=val("set_tpl").split(",").map(x=>{const[a,b]=x.split("=");return{time:(a||"").trim(),type:(b||"").trim()};}).filter(t=>t.time);
   settings.platforms=plats; settings.slotTemplates=tpl;
   const pw=val("set_pw"); if(pw) settings.adminPassword=pw;
-  withAdmin(async (adminPassword)=>{
-    // platforms/slotTemplates 存在頂層；後端 settings.update 會處理 settings.*，這裡分兩次
-    const ok = await writeAdminPw("PUT","/api/settings",{settings,adminPassword},"已更新設定");
-  });
+  withAdmin(async (adminPassword)=>{ await writeAdminPw("PUT","/api/settings",{settings,adminPassword},"已更新設定"); });
 }
 
 // ===================================================================
@@ -687,8 +925,7 @@ async function writeAdmin(method,path,body,okMsg){
 }
 async function writeAdminPw(method,path,body,okMsg){
   if(!ONLINE){ toast("離線中，無法編輯",true); return false; }
-  try{ await api(method,path,body); if(okMsg)toast(okMsg); closeModal(); await refresh();
-       if(CUR_TAB==="dash"||CUR_TAB==="score") loadDash(); return true; }
+  try{ await api(method,path,body); if(okMsg)toast(okMsg); closeModal(); await refresh(); return true; }
   catch(e){ toast(e.message,true); return false; }
 }
 function withAdminMaybe(fn){ return fn(); }
@@ -709,8 +946,7 @@ function showModal(title, inner, onConfirm){
 }
 function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
 
-// 每 10 秒刷新時，若在儀表板也更新儀表板資料
-setInterval(()=>{ if(CUR_TAB==="dash"||CUR_TAB==="score") loadDash(); }, 10000);
+// 主資料由 enterApp 的 10 秒輪詢自動更新；所有戰情/進度皆即時由 STATE 推算
 
 // 啟動
 if(currentUser()){ enterApp(); } else { bootLogin(); }
