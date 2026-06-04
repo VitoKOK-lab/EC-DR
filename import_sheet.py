@@ -1,191 +1,291 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-【舊版工具・暫不適用】此匯入腳本對應的是舊資料模型（每日寵粉/銷售/招商/吾家、
-materials/videos 分表）。系統已於 v2 重新設計（兩大類 流量型/帶貨型、影片任務單表、
-片源、三角色、KPI）。此檔保留作參考，欄位對應尚未更新到新 schema；
-若要重新對接新試算表，請先更新此處的欄位比對再使用。
+把舊 Google 試算表（任一分頁的 CSV）匯入成 v2 新 schema 的 data/db.json。
 
-一次性把既有 Google 試算表匯入成系統的起始 data/db.json。
+v2 重新設計後的資料模型：
+  - 影片任務（單表）：原片 → 成品 → 上片；欄位含 mainType（流量型/帶貨型）、
+    subTag、source（老闆自拍/外部公司）、editor、scriptStatus、多語二創(中/英/泰/馬)。
+  - 帶貨商品庫：name / shoplineLink / keywords / priceRange …
+
+舊試算表欄位命名極不一致（同一概念有多種表頭、常夾雜空欄與星期字樣），
+所以本工具用「關鍵字比對表頭」的最佳努力方式，並自動在多列中尋找最像表頭的那一列。
 
 用法（在 Mac mini 上）：
-  1. 在 Google 試算表把要匯入的分頁「檔案 → 下載 → 逗號分隔值 (.csv)」。
-  2. 執行：
-       python3 import_sheet.py --products 寵粉商品庫.csv --videos 原片清單.csv
-     （兩個參數都可選，沒有就略過該類。）
-  3. 完成後啟動 server.py 即可看到帶入的資料；不正確的再到系統內手動修正。
+  1. 在 Google 試算表，把要匯入的分頁「檔案 → 下載 → 逗號分隔值 (.csv)」。
+     - 影片排程主表（含 預計上片日期/類型/原影片/剪輯人員/已剪輯成片…）→ 當 --videos
+     - 商品庫（含 編號/標題/商品連結/關鍵字…）→ 當 --products
+  2. 執行（兩參數皆可選）：
+       python3 import_sheet.py --videos 排程主表.csv --products 商品庫.csv
+       python3 import_sheet.py --videos 排程主表.csv --year 2026   # 指定無年份日期的年份
+  3. 匯入會先把舊 data/db.json 備份成 data/db.json.bak，再把商品/影片「附加」進去。
+     完成後啟動 server.py，到「影片庫 / 帶貨商品庫」校對修正（匯入為最佳努力）。
 
-注意：因試算表欄位命名不一，匯入採「關鍵字比對表頭」的最佳努力方式，
-      匯入後會印出摘要，請務必在系統內校對。
-      若已有 data/db.json，會先備份成 data/db.json.bak 再覆寫商品/影片區塊。
+注意：本工具只「附加」資料、不覆蓋既有項目；重覆執行會產生重覆資料，請先確認。
 """
 
 import argparse
 import csv
-import json
+import datetime
 import os
 import re
 import sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "db.json")
+import server  # 重用 v2 的資料結構與存檔，確保格式一致
 
-# 表頭關鍵字 → 系統欄位
-PRODUCT_MAP = {
-    "name": ["片名", "商品", "正式名稱", "品名"],
-    "nickname": ["簡稱", "暱稱", "代號"],
-    "shoplineLink": ["shopline", "連結", "後台", "後臺"],
-    "keywords": ["關鍵字", "關鍵詞"],
-    "priceRange": ["價錢", "價格", "價位"],
-    "backendQty": ["數量", "後台商品數量", "後臺商品數量"],
-    "driveFolder": ["雲端", "drive", "影片雲端", "資料夾"],
-    "postCopy": ["發布文案", "貼文", "文案"],
-    "status": ["進度", "狀態", "上架"],
+# ---------------------------------------------------------------------------
+# 欄位關鍵字比對表（小寫比對；命中其一即視為該欄）
+# ---------------------------------------------------------------------------
+VIDEO_KEYS = {
+    "scheduledDate": ["預計上片日期", "上片日期", "日期"],
+    "rawName":       ["原影片", "原片", "影片名稱", "影片標題", "片名", "標題", "內容"],
+    "name":          ["已剪輯成片", "成品", "成片"],
+    "editor":        ["剪輯人員", "影片剪輯師", "剪輯師", "剪輯", "負責人"],
+    "type":          ["類型", "屬性"],
+    "product":       ["寵粉商品", "商品"],
+    "script":        ["文案"],
+    "prodStatus":    ["目前進度", "完成進度", "進度", "備註"],
+    "shot":          ["有無拍攝", "已拍"],
+    "en":            ["english"],
+    "th":            ["thai", "泰"],
+    "ms":            ["malay", "馬來", "馬"],
 }
-VIDEO_MAP = {
-    "name": ["成品", "已剪輯成片", "片名", "原影片", "原片", "標題"],
-    "type": ["類型", "分類"],
-    "status": ["新舊", "新片", "舊片"],
-    "editor": ["剪輯人員", "剪輯", "負責"],
-    "voiceCopy": ["口播文案", "口播"],
-    "postCopy": ["貼文文案", "貼文"],
-    "driveFolder": ["雲端", "drive", "資料夾"],
+PRODUCT_KEYS = {
+    "id":       ["編號"],
+    "name":     ["標題", "片名", "名稱", "商品名", "商品"],
+    "link":     ["商品連結", "連結", "網址", "原片網址", "shopline"],
+    "keywords": ["關鍵字"],
+    "price":    ["價位", "價錢", "價格", "價"],
+    "status":   ["狀態", "進度"],
+    "person":   ["出鏡人物", "出鏡"],
 }
 
+# 舊「類型」→ 新兩大類的對應（可依需要調整）
+TYPE_TO_MAIN = {
+    "銷售": "帶貨型", "招商": "帶貨型", "寵粉": "帶貨型", "帶貨": "帶貨型", "新品": "帶貨型",
+    "吾家": "流量型", "流量": "流量型", "新片": "流量型", "舊片": "流量型",
+}
+# 把舊類型保留成子標籤，方便日後篩選
+SUBTAG_FROM_TYPE = True
 
-def _find_col(headers, keywords):
-    # 依關鍵字優先順序比對（前面的關鍵字優先），再看欄位位置
-    for kw in keywords:
-        for i, h in enumerate(headers):
-            if kw.lower() in (h or "").strip().lower():
-                return i
+
+# ---------------------------------------------------------------------------
+# 小工具
+# ---------------------------------------------------------------------------
+def norm(s):
+    return re.sub(r"\s+", "", str(s or "")).strip().lower()
+
+
+def match_col(header_cell, keyset):
+    h = norm(header_cell)
+    if not h:
+        return None
+    for field, kws in keyset.items():
+        for kw in kws:
+            if norm(kw) in h:
+                return field
     return None
 
 
-def _read_csv(path):
-    with open(path, "r", encoding="utf-8-sig", newline="") as fh:
-        rows = list(csv.reader(fh))
-    # 找出表頭列：取第一個有 2 個以上非空欄位的列
-    header_idx = 0
-    for i, r in enumerate(rows[:10]):
-        if sum(1 for c in r if (c or "").strip()) >= 2:
-            header_idx = i
-            break
-    return rows[header_idx], rows[header_idx + 1:]
+def find_header_row(rows, keyset):
+    """在前 30 列中，找出「命中關鍵字的欄位數」最多的那一列當表頭。"""
+    best_idx, best_map, best_hits = -1, {}, 0
+    for i, row in enumerate(rows[:30]):
+        colmap, used = {}, set()
+        for ci, cell in enumerate(row):
+            f = match_col(cell, keyset)
+            if f and f not in used:
+                colmap[f] = ci
+                used.add(f)
+        # 至少要有「名稱類」欄位才算數
+        key_anchor = ("name" in colmap or "rawName" in colmap)
+        hits = len(colmap)
+        if key_anchor and hits > best_hits:
+            best_idx, best_map, best_hits = i, colmap, hits
+    return best_idx, best_map
 
 
-def import_products(path):
-    headers, rows = _read_csv(path)
-    cols = {k: _find_col(headers, kws) for k, kws in PRODUCT_MAP.items()}
-    out = []
-    n = 0
-    for r in rows:
-        get = lambda k: (r[cols[k]].strip() if cols[k] is not None and cols[k] < len(r) else "")
-        name = get("name")
+def cell(row, idx):
+    if idx is None or idx >= len(row):
+        return ""
+    return str(row[idx] or "").strip()
+
+
+def parse_date(s, default_year):
+    s = str(s or "").strip()
+    if not s:
+        return None
+    m = re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", s)          # 2026/6/1
+    if m:
+        y, mo, d = map(int, m.groups())
+    else:
+        m = re.search(r"(\d{1,2})月(\d{1,2})日", s)                       # 5月27日
+        if m:
+            y, mo, d = default_year, int(m.group(1)), int(m.group(2))
+        else:
+            return None
+    try:
+        return datetime.date(y, mo, d).isoformat()
+    except ValueError:
+        return None
+
+
+def map_main_type(old_type, has_product):
+    t = norm(old_type)
+    for k, v in TYPE_TO_MAIN.items():
+        if norm(k) in t:
+            return v
+    return "帶貨型" if has_product else "流量型"
+
+
+def script_status(raw):
+    v = norm(raw)
+    if not v:
+        return "未開始"
+    if "完成" in v or "ok" in v:
+        return "完成"
+    if "處理" in v or "撰寫" in v or "中" in v:
+        return "撰寫中"
+    return "未開始"
+
+
+def read_csv(path):
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        return [row for row in csv.reader(fh)]
+
+
+# ---------------------------------------------------------------------------
+# 匯入：商品
+# ---------------------------------------------------------------------------
+def import_products(db, path):
+    rows = read_csv(path)
+    hidx, cmap = find_header_row(rows, PRODUCT_KEYS)
+    if hidx < 0:
+        print("  ⚠️ 商品 CSV 找不到可辨識的表頭，略過。")
+        return 0, {}
+    print("  表頭在第 %d 列，對應欄位：%s" % (hidx + 1, {k: v for k, v in cmap.items()}))
+    added, name_to_id = 0, {}
+    for row in rows[hidx + 1:]:
+        name = cell(row, cmap.get("name"))
         if not name:
             continue
-        n += 1
-        out.append({
-            "id": "P%03d" % n,
+        kws = cell(row, cmap.get("keywords"))
+        product = {
+            "id": server.next_id(db["products"], "P"),
             "name": name,
-            "nickname": get("nickname"),
-            "shoplineLink": get("shoplineLink"),
-            "keywords": [x.strip() for x in re.split(r"[,\s、，]+", get("keywords")) if x.strip()],
-            "priceRange": get("priceRange"),
-            "backendQty": get("backendQty"),
-            "driveFolder": get("driveFolder"),
-            "postCopy": get("postCopy"),
-            "status": get("status") or "待確認",
-            "autoReply": "",
-        })
-    return out
+            "nickname": "",
+            "shoplineLink": cell(row, cmap.get("link")),
+            "keywords": [k.strip() for k in re.split(r"[，,、|]", kws) if k.strip()],
+            "priceRange": cell(row, cmap.get("price")),
+            "driveFolder": "",
+            "postCopy": "",
+            "status": cell(row, cmap.get("status")) or "待確認",
+            "legacyCode": cell(row, cmap.get("id")),
+        }
+        db["products"].append(product)
+        name_to_id[norm(name)] = product["id"]
+        added += 1
+    return added, name_to_id
 
 
-def import_videos(path):
-    headers, rows = _read_csv(path)
-    cols = {k: _find_col(headers, kws) for k, kws in VIDEO_MAP.items()}
-    out = []
-    n = 0
-    for r in rows:
-        get = lambda k: (r[cols[k]].strip() if cols[k] is not None and cols[k] < len(r) else "")
-        name = get("name")
-        if not name:
+# ---------------------------------------------------------------------------
+# 匯入：影片任務
+# ---------------------------------------------------------------------------
+def import_videos(db, path, default_year, name_to_id):
+    rows = read_csv(path)
+    hidx, cmap = find_header_row(rows, VIDEO_KEYS)
+    if hidx < 0:
+        print("  ⚠️ 影片 CSV 找不到可辨識的表頭，略過。")
+        return 0
+    print("  表頭在第 %d 列，對應欄位：%s" % (hidx + 1, {k: v for k, v in cmap.items()}))
+    langs = db.get("settings", {}).get("languages", ["zh"])
+    added = 0
+    for row in rows[hidx + 1:]:
+        raw = cell(row, cmap.get("rawName"))
+        name = cell(row, cmap.get("name"))
+        if not raw and not name:
             continue
-        n += 1
-        status = "舊片" if ("舊" in get("status")) else ("新片" if get("status") else "舊片")
-        editor = get("editor")
-        out.append({
-            "id": "V%03d" % n,
-            "name": name,
-            "type": get("type") or "每日寵粉",
-            "status": status,
-            "productId": None,
-            "editor": editor,
-            "ctr": 0, "completionRate": 0, "firstHit": False,
-            "totalUsed": 0, "lastUsedDate": None, "usageHistory": [],
-            "coverChanged": False, "titleChanged": False,
-            "driveFolder": get("driveFolder"),
-            "voiceCopy": get("voiceCopy"), "postCopy": get("postCopy"),
-            "languages": {
-                "zh": {"status": "完成", "title": name, "editor": editor},
-                "en": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-                "th": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-            },
-        })
-    return out
+        prod_name = cell(row, cmap.get("product"))
+        pid = name_to_id.get(norm(prod_name)) if prod_name else None
+        old_type = cell(row, cmap.get("type"))
+        has_prod = bool(prod_name)
+        main = map_main_type(old_type, has_prod)
+        sub = old_type if (SUBTAG_FROM_TYPE and old_type) else ""
+
+        v = server.new_video_record(
+            db,
+            rawName=raw,
+            name=name,
+            mainType=main,
+            subTag=sub,
+            editor=cell(row, cmap.get("editor")),
+            scheduledDate=parse_date(cell(row, cmap.get("scheduledDate")), default_year),
+            productId=pid,
+            scriptStatus=script_status(cell(row, cmap.get("script")) or cell(row, cmap.get("prodStatus"))),
+        )
+        # 完成狀態：成品有填、或進度顯示完成 → 視為已完成
+        prod_done = "完成" in norm(cell(row, cmap.get("prodStatus")))
+        if name and (prod_done or cell(row, cmap.get("prodStatus")) == ""):
+            v["stage"] = "已完成"
+            v["languages"]["zh"]["status"] = "完成"
+            v["languages"]["zh"]["editor"] = v.get("editor", "")
+        # 多語二創：對應欄位有填內容 → 標記完成
+        for lg, key in (("en", "en"), ("th", "th"), ("ms", "ms")):
+            if lg in langs and cmap.get(key) is not None:
+                txt = cell(row, cmap.get(key))
+                if txt:
+                    v["languages"].setdefault(lg, {})["status"] = "完成"
+        db["videos"].append(v)
+        added += 1
+    return added
 
 
-def load_or_default():
-    if os.path.exists(DB_PATH):
-        try:
-            with open(DB_PATH, "r", encoding="utf-8") as fh:
-                return json.load(fh)
-        except Exception:
-            pass
-    # 借用 server.py 的預設
-    sys.path.insert(0, BASE_DIR)
-    import server  # noqa
-    return server.default_db()
-
-
+# ---------------------------------------------------------------------------
+# 入口
+# ---------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="匯入 Google 試算表 CSV 成起始 db.json")
-    ap.add_argument("--products", help="寵粉商品庫 CSV 路徑")
-    ap.add_argument("--videos", help="原片/成品清單 CSV 路徑")
+    ap = argparse.ArgumentParser(description="把舊試算表 CSV 匯入 v2 新 schema 的 data/db.json")
+    ap.add_argument("--videos", help="影片排程主表 CSV")
+    ap.add_argument("--products", help="商品庫 CSV")
+    ap.add_argument("--year", type=int, default=datetime.date.today().year,
+                    help="無年份日期（如 5月27日）預設使用的年份")
     args = ap.parse_args()
+    if not args.videos and not args.products:
+        ap.error("請至少提供 --videos 或 --products 其中之一")
 
-    if not args.products and not args.videos:
-        ap.print_help()
-        return
+    server.ensure_dirs()
+    db = server.load_db()
 
-    os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
-    db = load_or_default()
-
-    if os.path.exists(DB_PATH):
+    # 先備份既有 db.json
+    if os.path.exists(server.DB_PATH):
+        bak = server.DB_PATH + ".bak"
         try:
             import shutil
-            shutil.copy2(DB_PATH, DB_PATH + ".bak")
-            print("已備份原 db.json → db.json.bak")
-        except Exception:
-            pass
+            shutil.copy2(server.DB_PATH, bak)
+            print("已備份既有資料：%s" % bak)
+        except Exception as e:
+            print("[備份警告] %s" % e)
 
-    summary = []
+    name_to_id = {}
+    # 也把既有商品納入名稱對照（影片可連到已存在的商品）
+    for p in db.get("products", []):
+        if p.get("name"):
+            name_to_id[norm(p["name"])] = p["id"]
+
     if args.products:
-        ps = import_products(args.products)
-        db["products"] = ps
-        summary.append("寵粉商品 %d 筆" % len(ps))
+        print("匯入商品：%s" % args.products)
+        n, m = import_products(db, args.products)
+        name_to_id.update(m)
+        print("  → 新增 %d 筆商品" % n)
+
     if args.videos:
-        vs = import_videos(args.videos)
-        db["videos"] = vs
-        summary.append("影片 %d 筆" % len(vs))
+        print("匯入影片：%s" % args.videos)
+        n = import_videos(db, args.videos, args.year, name_to_id)
+        print("  → 新增 %d 筆影片任務" % n)
 
-    db.setdefault("_meta", {})["source"] = "import"
-    with open(DB_PATH, "w", encoding="utf-8") as fh:
-        json.dump(db, fh, ensure_ascii=False, indent=2)
-
-    print("✅ 匯入完成：" + "、".join(summary))
-    print("→ 寫入 %s" % DB_PATH)
-    print("⚠️ 因試算表欄位不一，請啟動系統後到『寵粉商品庫／影片資料庫』校對修正。")
+    server.save_db(db)
+    print("完成。請啟動 server.py 後到「影片庫 / 帶貨商品庫」校對修正。")
+    print("（匯入為最佳努力；類型已用對照表轉成 流量型/帶貨型，原類型保留在子標籤。）")
 
 
 if __name__ == "__main__":
