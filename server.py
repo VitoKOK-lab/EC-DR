@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-影片剪輯部門排程系統 — 後端伺服器
+IP 短影音排程 × KPI 追蹤系統 — 後端伺服器
 純 Python 標準函式庫，無第三方依賴。
 啟動：  python3 server.py          （預設埠 3000）
         PORT=8080 python3 server.py
 資料：  data/db.json （伺服器當權威，前端不能直接改檔）
 備份：  data/backups/（滾動備份）、data/backups/daily/（每日快照）
+
+設計重點：
+- 兩大類影片：流量型 / 帶貨型（下可再分子標籤）。
+- 片源：老闆自拍 / 外部公司。中文母版完成後可追多語二創（英/泰/馬）。
+- KPI：每日應上片 dailyPublishTarget（預設 4）；每位剪輯每日應完成 editorDailyQuota（預設 3）。
+- 角色：老闆 boss / 人資 hr / 剪輯 editor。
 """
 
 import json
@@ -31,47 +37,37 @@ PORT = int(os.environ.get("PORT", "3000"))
 
 _LOCK = threading.RLock()
 
+ROLES = ("boss", "hr", "editor")  # 老闆 / 人資 / 剪輯
+
 
 # ---------------------------------------------------------------------------
-# 預設資料（首次啟動或匯入前的種子）
+# 預設資料（首次啟動的乾淨種子；不含任何範例影片/商品/排程）
 # ---------------------------------------------------------------------------
 def default_db():
     return {
-        "users": [
-            {"name": "冠廷", "isDefault": True},
-            {"name": "健加", "isDefault": True},
-            {"name": "鴻閔", "isDefault": True},
-            {"name": "泓儒", "isDefault": True},
-            {"name": "怡如", "isDefault": True},
-        ],
-        "products": [],
-        "materials": [],
-        "videos": [],
-        "schedule": {},
-        "defaultQuotas": {"每日寵粉": 2, "銷售": 1, "招商": 0, "吾家": 1},
-        "slotTemplates": [
-            {"time": "10:00", "type": "舊片"},
-            {"time": "12:00", "type": "每日寵粉"},
-            {"time": "17:00", "type": "銷售"},
-            {"time": "18:00", "type": "新片"},
-        ],
+        "users": [],            # 登入頁新增成員時必填 role（boss/hr/editor）
+        "products": [],         # 帶貨商品庫（Shopline）
+        "videos": [],           # 影片任務（原片 → 成品 → 上片）
+        "schedule": {},         # 依日期；slots 參照 videoId
         "platforms": ["ig", "fb", "youtube", "tk", "wapp", "line", "threads"],
         "devices": [],
         "auditLog": [],
         "settings": {
             "adminPassword": "1234",
-            "requireDailyNewVideo": True,
-            "categories": ["每日寵粉", "銷售", "招商", "吾家"],
-            "languages": ["zh", "en", "th"],
-            "accountTemplate": "YYYYMMDDg##平台",
-            "materialLowThreshold": 5,
+            "mainTypes": ["流量型", "帶貨型"],
+            "subTags": {
+                "流量型": ["名人話題", "珠寶知識", "家庭", "理財"],
+                "帶貨型": ["新品", "促銷", "開箱"],
+            },
+            "sources": ["老闆自拍", "外部公司"],
+            "languages": ["zh", "en", "th", "ms"],   # 中 / 英 / 泰 / 馬
+            "dailyPublishTarget": 4,                 # 每日應上片數
+            "editorDailyQuota": 3,                   # 每位剪輯每日應完成片數
+            "scheduleHorizonDays": 30,               # 應提前排滿的天數（預排一個月）
+            "kpiStartDate": today_str(),             # 超前/落後累計的計算基準日
             "reuseCap": 3,
             "reuseWindowDays": 30,
-            "newVideoScore": 10,
-            "firstHitScore": 20,
-            "reuseHitScore": 5,
-            "promoScore": 15,
-            "derivativeScore": 8,
+            "materialLowThreshold": 5,
             "offsiteBackupDir": "",
             "backupKeep": 50,
         },
@@ -91,13 +87,67 @@ def today_str():
 
 
 def next_id(items, prefix):
-    """依現有項目產生下一個遞增 ID，如 P001 / M012 / V034。"""
+    """依現有項目產生下一個遞增 ID，如 P001 / V034。"""
     mx = 0
     for it in items:
         m = re.match(r"^%s(\d+)$" % re.escape(prefix), str(it.get("id", "")))
         if m:
             mx = max(mx, int(m.group(1)))
     return "%s%03d" % (prefix, mx + 1)
+
+
+def parse_date(s):
+    try:
+        return datetime.date.fromisoformat(str(s)[:10])
+    except Exception:
+        return None
+
+
+def workdays_between(start, end):
+    """含 start、含 end 的工作日數（週一~週五）。end < start 回傳 0。"""
+    if not start or not end or end < start:
+        return 0
+    days = 0
+    cur = start
+    while cur <= end:
+        if cur.weekday() < 5:  # 0=週一 ... 4=週五
+            days += 1
+        cur += datetime.timedelta(days=1)
+    return days
+
+
+def new_video_record(db, **over):
+    """建立一筆乾淨的影片任務，套用預設語言結構。"""
+    langs = db.get("settings", {}).get("languages", ["zh"])
+    languages = {}
+    for lg in langs:
+        if lg == "zh":
+            languages[lg] = {"status": "完成", "editor": ""}
+        else:
+            languages[lg] = {"status": "未開始", "editor": "", "driveFolder": ""}
+    rec = {
+        "id": next_id(db["videos"], "V"),
+        "scheduledDate": None,
+        "rawName": "",
+        "name": "",
+        "mainType": (db.get("settings", {}).get("mainTypes") or ["流量型"])[0],
+        "subTag": "",
+        "source": (db.get("settings", {}).get("sources") or [""])[0],
+        "productId": None,
+        "editor": "",
+        "stage": "待處理",          # 待處理 / 剪輯中 / 已完成 / 已上片
+        "claimedBy": "", "claimedAt": "", "assignedBy": "",
+        "needHelp": False, "helpNote": "",
+        "scriptStatus": "未開始",   # 未開始 / 撰寫中 / 完成
+        "languages": languages,
+        "finishedAt": "",
+        "usageHistory": [], "totalUsed": 0,
+        "ctr": 0, "completionRate": 0,
+        "driveFolder": "", "voiceCopy": "", "postCopy": "",
+        "locked": False,
+    }
+    rec.update(over)
+    return rec
 
 
 # ---------------------------------------------------------------------------
@@ -230,45 +280,56 @@ def is_admin(db, body):
     )
 
 
+def find_by_id(items, _id):
+    for it in items:
+        if it.get("id") == _id:
+            return it
+    return None
+
+
+def find_user(db, name):
+    for u in db.get("users", []):
+        if u.get("name") == name:
+            return u
+    return None
+
+
+def editor_names(db):
+    return [u["name"] for u in db.get("users", []) if u.get("role", "editor") == "editor"]
+
+
 # ---------------------------------------------------------------------------
-# 衍生計算：30 天內使用次數、燈號、預警、儀表板、績效
+# 衍生計算：重用次數、排程達標、預警、工作量、儀表板
 # ---------------------------------------------------------------------------
 def used_in_window(video, window_days):
     cutoff = datetime.date.today() - datetime.timedelta(days=window_days)
     cnt = 0
     for d in video.get("usageHistory", []):
-        try:
-            if datetime.date.fromisoformat(d[:10]) >= cutoff:
-                cnt += 1
-        except Exception:
-            pass
+        dd = parse_date(d)
+        if dd and dd >= cutoff:
+            cnt += 1
     return cnt
 
 
-def day_is_complete(db, date_str):
+def day_scheduled_count(db, date_str):
     day = db.get("schedule", {}).get(date_str)
     if not day:
-        return False
-    quotas = day.get("quotas", db.get("defaultQuotas", {}))
-    counts = {}
-    has_new = False
-    for s in day.get("slots", []):
-        counts[s.get("type", "")] = counts.get(s.get("type", ""), 0) + 1
-        vid = find_by_id(db["videos"], s.get("videoId"))
-        if (vid and vid.get("status") == "新片") or s.get("type") == "新片":
-            has_new = True
-    for cat, need in quotas.items():
-        if counts.get(cat, 0) < int(need or 0):
-            return False
-    if db.get("settings", {}).get("requireDailyNewVideo", True) and not has_new:
-        return False
-    return True
+        return 0
+    return len(day.get("slots", []))
+
+
+def day_is_complete(db, date_str):
+    target = int(db.get("settings", {}).get("dailyPublishTarget", 4))
+    return day_scheduled_count(db, date_str) >= target
 
 
 def compute_warnings(db):
+    """未來 scheduleHorizonDays 天內，哪幾天尚未排滿（達 dailyPublishTarget）。
+    ≤3 天=緊急；其餘=警告。"""
     today = datetime.date.today()
+    horizon = int(db.get("settings", {}).get("scheduleHorizonDays", 30))
     emergency, warning = [], []
-    for offset in range(0, 8):
+    for offset in range(0, horizon + 1):
         d = today + datetime.timedelta(days=offset)
         ds = d.isoformat()
         if day_is_complete(db, ds):
@@ -277,85 +338,116 @@ def compute_warnings(db):
             emergency.append(ds)
         else:
             warning.append(ds)
-    return {"emergency": emergency, "warning": warning}
+    return {"emergency": emergency, "warning": warning, "horizon": horizon}
 
 
-def find_by_id(items, _id):
-    for it in items:
-        if it.get("id") == _id:
-            return it
-    return None
+def _finished_on(v, date_str):
+    return (v.get("stage") in ("已完成", "已上片")) and (str(v.get("finishedAt", ""))[:10] == date_str)
 
 
-def compute_scores(db):
+def _finished_in_range(v, start, end):
+    """v 的 finishedAt 是否落在 [start, end]（date 物件）。"""
+    if v.get("stage") not in ("已完成", "已上片"):
+        return False
+    fd = parse_date(v.get("finishedAt", ""))
+    return bool(fd and start <= fd <= end)
+
+
+def compute_workload(db, date_str):
+    """人資視角：每位剪輯的完成量 vs KPI、本週/本月累計、超前/落後。"""
     s = db.get("settings", {})
-    table = {}
-    for u in db.get("users", []):
-        table[u["name"]] = {
-            "新片數": 0, "首次達標": 0, "舊片二次達標": 0,
-            "帶貨片數": 0, "二創數": 0, "總積分": 0,
-        }
-    for v in db.get("videos", []):
-        ed = v.get("editor")
-        if ed not in table:
-            continue
-        row = table[ed]
-        if v.get("status") == "新片":
-            row["新片數"] += 1
-            row["總積分"] += s.get("newVideoScore", 10)
-        if v.get("firstHit"):
-            row["首次達標"] += 1
-            row["總積分"] += s.get("firstHitScore", 20)
-        if v.get("type") in ("每日寵粉", "銷售"):
-            row["帶貨片數"] += 1
-            row["總積分"] += s.get("promoScore", 15)
-        # 二創：英/泰由不同剪輯人員完成
-        for lang in ("en", "th"):
-            lv = v.get("languages", {}).get(lang, {})
-            led = lv.get("editor")
-            if lv.get("status") == "完成" and led in table:
-                table[led]["二創數"] += 1
-                table[led]["總積分"] += s.get("derivativeScore", 8)
-    return table
+    quota = int(s.get("editorDailyQuota", 3))
+    today = parse_date(date_str) or datetime.date.today()
+    week_start = today - datetime.timedelta(days=today.weekday())  # 本週一
+    month_start = today.replace(day=1)
+    kpi_start = parse_date(s.get("kpiStartDate")) or month_start
+
+    rows = []
+    for name in editor_names(db):
+        mine = [v for v in db.get("videos", []) if (v.get("editor") == name or v.get("claimedBy") == name)]
+        today_done = sum(1 for v in mine if _finished_on(v, date_str))
+        week_done = sum(1 for v in mine if _finished_in_range(v, week_start, today))
+        month_done = sum(1 for v in mine if _finished_in_range(v, month_start, today))
+        total_done = sum(1 for v in mine if _finished_in_range(v, kpi_start, today))
+        # 應完成累計＝自基準日起的工作日數 × 每日配額
+        expected = workdays_between(kpi_start, today) * quota
+        diff = total_done - expected      # 正=超前、負=落後
+        inprogress = sum(1 for v in mine if v.get("stage") == "剪輯中")
+        rows.append({
+            "name": name,
+            "todayDone": today_done,
+            "todayQuota": quota,
+            "todayMet": today_done >= quota,
+            "weekDone": week_done,
+            "monthDone": month_done,
+            "totalDone": total_done,
+            "expected": expected,
+            "diff": diff,
+            "status": "超前" if diff > 0 else ("落後" if diff < 0 else "達標"),
+            "inProgress": inprogress,
+        })
+    rows.sort(key=lambda r: r["diff"], reverse=True)
+    return {
+        "date": date_str, "quota": quota,
+        "weekStart": week_start.isoformat(), "monthStart": month_start.isoformat(),
+        "kpiStart": kpi_start.isoformat(), "rows": rows,
+    }
 
 
 def compute_dashboard(db, date_str):
-    """大方向進度 + 每人當日工作 + 需要支援清單。"""
+    """老闆視角：未來一個月排程達標、今日上片 vs 目標、需支援、各剪輯完成數。"""
     warnings = compute_warnings(db)
-    # 每人當日工作（取自稽核紀錄 + 素材/影片狀態）
-    per_user = {u["name"]: {"今日動作": [], "完成片": [], "搶單": [], "二創": []}
-                for u in db.get("users", [])}
-    for log in db.get("auditLog", []):
-        if log.get("ts", "")[:10] != date_str:
-            continue
-        u = log.get("user")
-        if u in per_user:
-            per_user[u]["今日動作"].append(
-                {"ts": log["ts"], "action": log["action"], "target": log["target"]}
-            )
-    for m in db.get("materials", []):
-        if m.get("claimedBy") in per_user and (m.get("claimedAt", "")[:10] == date_str):
-            per_user[m["claimedBy"]]["搶單"].append(m.get("name"))
-    # 需要支援清單
+    s = db.get("settings", {})
+    target = int(s.get("dailyPublishTarget", 4))
+    horizon = int(s.get("scheduleHorizonDays", 30))
+    today = datetime.date.today()
+
+    # 未來 horizon 天排滿率
+    full_days = 0
+    for offset in range(0, horizon):
+        ds = (today + datetime.timedelta(days=offset)).isoformat()
+        if day_is_complete(db, ds):
+            full_days += 1
+    fill_rate = round(full_days * 100.0 / horizon) if horizon else 0
+
+    today_pub = sum(1 for v in db.get("videos", []) if v.get("stage") == "已上片"
+                    and str(v.get("scheduledDate", ""))[:10] == date_str)
+    today_scheduled = day_scheduled_count(db, date_str)
+
     help_list = [
-        {"materialId": m["id"], "name": m.get("name"), "by": m.get("claimedBy"),
-         "note": m.get("helpNote", "")}
-        for m in db.get("materials", []) if m.get("needHelp")
+        {"videoId": v["id"], "name": v.get("name") or v.get("rawName"),
+         "by": v.get("claimedBy") or v.get("editor"), "note": v.get("helpNote", "")}
+        for v in db.get("videos", []) if v.get("needHelp")
     ]
-    # 大方向進度
+
+    # 各剪輯今日完成數
+    wl = compute_workload(db, date_str)
+    lagging = sum(1 for r in wl["rows"] if r["diff"] < 0)
+
+    langs = [lg for lg in s.get("languages", []) if lg != "zh"]
+    deriv_todo = sum(
+        1 for v in db.get("videos", [])
+        for lg in langs
+        if v.get("languages", {}).get(lg, {}).get("status") in ("未開始", "二創中")
+        and v.get("languages", {}).get("zh", {}).get("status") == "完成"
+    )
+
     progress = {
-        "待剪素材數": sum(1 for m in db.get("materials", []) if m.get("status") == "待剪"),
-        "新片庫數": sum(1 for v in db.get("videos", []) if v.get("status") == "新片"),
+        "排滿率": fill_rate,
+        "排滿天數": full_days,
+        "視窗天數": horizon,
+        "今日已排": today_scheduled,
+        "今日已上片": today_pub,
+        "每日目標": target,
+        "待處理任務": sum(1 for v in db.get("videos", []) if v.get("stage") == "待處理"),
+        "剪輯中": sum(1 for v in db.get("videos", []) if v.get("stage") == "剪輯中"),
+        "落後人數": lagging,
+        "二創待辦": deriv_todo,
         "本週緊急": warnings["emergency"],
         "本週警告": warnings["warning"],
-        "二創待辦": sum(
-            1 for v in db.get("videos", [])
-            for lang in ("en", "th")
-            if v.get("languages", {}).get(lang, {}).get("status") in ("未開始", "二創中")
-        ),
     }
-    return {"date": date_str, "progress": progress, "perUser": per_user,
-            "helpList": help_list, "scores": compute_scores(db)}
+    return {"date": date_str, "progress": progress, "helpList": help_list,
+            "workload": wl}
 
 
 def public_state(db):
@@ -376,7 +468,7 @@ def public_state(db):
 # HTTP 處理
 # ---------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ECDR/1.0"
+    server_version = "ECDR/2.0"
 
     def log_message(self, fmt, *args):
         pass  # 安靜
@@ -435,6 +527,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/dashboard":
                 date_str = (qs.get("date", [today_str()])[0])
                 return self._send_json(compute_dashboard(db, date_str))
+            if path == "/api/workload":
+                date_str = (qs.get("date", [today_str()])[0])
+                return self._send_json(compute_workload(db, date_str))
             if path == "/api/export":
                 return self._send_json(db)
         return self._err("not found", 404)
@@ -498,7 +593,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- 路由 ---
     def _route(self, method, parts, body, db, user, device_id):
-        # parts 例：["api","materials","M001","claim"]
+        # parts 例：["api","videos","V001","claim"]
         seg = parts[1:] if len(parts) > 1 else []
         if not seg:
             return None
@@ -509,10 +604,12 @@ class Handler(BaseHTTPRequestHandler):
             if not is_admin(db, body):
                 raise PermissionError("管理者密碼錯誤")
             incoming = body.get("settings", {})
-            # 不允許把密碼設為 ***
             if incoming.get("adminPassword") == "***":
                 incoming.pop("adminPassword", None)
             db["settings"].update(incoming)
+            # platforms 存頂層
+            if "platforms" in incoming:
+                db["platforms"] = incoming.pop("platforms")
             audit(db, user, device_id, "settings.update", detail=list(incoming.keys()))
             return {"ok": True, "settings": {**db["settings"], "adminPassword": "***"}}
 
@@ -520,12 +617,26 @@ class Handler(BaseHTTPRequestHandler):
         if head == "users":
             if method == "POST":
                 name = (body.get("name") or "").strip()
+                role = (body.get("role") or "editor").strip()
                 if not name:
                     raise ValueError("請輸入名稱")
+                if role not in ROLES:
+                    raise ValueError("角色不正確（boss/hr/editor）")
                 if any(u["name"] == name for u in db["users"]):
                     raise ValueError("名稱已存在")
-                db["users"].append({"name": name, "isDefault": False})
-                audit(db, user, device_id, "user.add", name)
+                db["users"].append({"name": name, "role": role, "isDefault": False})
+                audit(db, user, device_id, "user.add", name, {"role": role})
+                return {"ok": True, "users": db["users"]}
+            if method == "PUT":
+                if not is_admin(db, body):
+                    raise PermissionError("修改成員需管理者密碼")
+                name = seg[1] if len(seg) > 1 else body.get("name")
+                target = find_user(db, name)
+                if not target:
+                    return None
+                if body.get("role") in ROLES:
+                    target["role"] = body["role"]
+                audit(db, user, device_id, "user.update", name, {"role": target.get("role")})
                 return {"ok": True, "users": db["users"]}
             if method == "DELETE":
                 if not is_admin(db, body):
@@ -534,13 +645,11 @@ class Handler(BaseHTTPRequestHandler):
                 target = find_user(db, name)
                 if not target:
                     return None
-                if target.get("isDefault"):
-                    raise ValueError("預設成員受保護，不可刪除")
                 db["users"] = [u for u in db["users"] if u["name"] != name]
                 audit(db, user, device_id, "user.delete", name)
                 return {"ok": True, "users": db["users"]}
 
-        # ---- 寵粉商品庫 ----
+        # ---- 帶貨商品庫 ----
         if head == "products":
             if method == "POST":
                 p = body.get("product", {})
@@ -567,94 +676,14 @@ class Handler(BaseHTTPRequestHandler):
                 audit(db, user, device_id, "product.delete", pid)
                 return {"ok": True}
 
-        # ---- 素材 ----
-        if head == "materials":
-            if method == "POST" and len(seg) == 1:
-                m = body.get("material", {})
-                m["id"] = next_id(db["materials"], "M")
-                m.setdefault("status", "待剪")
-                m.setdefault("needHelp", False)
-                db["materials"].append(m)
-                audit(db, user, device_id, "material.add", m["id"])
-                return {"ok": True, "id": m["id"]}
-            if len(seg) >= 2:
-                mid = seg[1]
-                m = find_by_id(db["materials"], mid)
-                if not m:
-                    return None
-                action = seg[2] if len(seg) > 2 else None
-                if action == "claim" and method == "POST":
-                    m["claimedBy"] = user
-                    m["claimedAt"] = now_iso()
-                    m["assignedBy"] = ""
-                    m["status"] = "剪輯中"
-                    audit(db, user, device_id, "material.claim", mid)
-                    return {"ok": True}
-                if action == "assign" and method == "POST":
-                    m["claimedBy"] = body.get("assignee")
-                    m["claimedAt"] = now_iso()
-                    m["assignedBy"] = user
-                    m["status"] = "剪輯中"
-                    audit(db, user, device_id, "material.assign", mid,
-                          {"assignee": body.get("assignee")})
-                    return {"ok": True}
-                if action == "help" and method == "POST":
-                    m["needHelp"] = bool(body.get("needHelp", True))
-                    m["helpNote"] = body.get("helpNote", "")
-                    audit(db, user, device_id, "material.help", mid,
-                          {"needHelp": m["needHelp"]})
-                    return {"ok": True}
-                if action == "finish" and method == "POST":
-                    # 完成剪輯 → 進新片庫並鎖定回報
-                    v = {
-                        "id": next_id(db["videos"], "V"),
-                        "name": body.get("name") or m.get("name"),
-                        "type": m.get("type"),
-                        "status": "新片",
-                        "productId": m.get("productId"),
-                        "editor": m.get("claimedBy") or user,
-                        "ctr": 0, "completionRate": 0, "firstHit": False,
-                        "totalUsed": 0, "lastUsedDate": None, "usageHistory": [],
-                        "coverChanged": False, "titleChanged": False,
-                        "driveFolder": body.get("driveFolder", ""),
-                        "voiceCopy": body.get("voiceCopy", ""),
-                        "postCopy": body.get("postCopy", ""),
-                        "languages": {
-                            "zh": {"status": "完成", "title": body.get("name") or m.get("name"),
-                                   "editor": m.get("claimedBy") or user},
-                            "en": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-                            "th": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-                        },
-                    }
-                    db["videos"].append(v)
-                    m["status"] = "已完成"
-                    m["finishedVideoId"] = v["id"]
-                    m["locked"] = True
-                    audit(db, user, device_id, "material.finish", mid, {"videoId": v["id"]})
-                    return {"ok": True, "videoId": v["id"]}
-                if method == "PUT":
-                    if m.get("locked") and not is_admin(db, body):
-                        raise PermissionError("此回報已鎖定，需管理者才能修改")
-                    if not is_admin(db, body):
-                        raise PermissionError("修改既有素材需管理者密碼")
-                    m.update(body.get("material", {}))
-                    m["id"] = mid
-                    audit(db, user, device_id, "material.update", mid)
-                    return {"ok": True}
-
-        # ---- 影片 ----
+        # ---- 影片任務 ----
         if head == "videos":
             if method == "POST" and len(seg) == 1:
-                v = body.get("video", {})
-                v["id"] = next_id(db["videos"], "V")
-                v.setdefault("usageHistory", [])
-                v.setdefault("totalUsed", 0)
-                v.setdefault("languages", {
-                    "zh": {"status": "完成", "title": v.get("name", ""),
-                           "editor": v.get("editor", "")},
-                    "en": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-                    "th": {"status": "未開始", "title": "", "editor": "", "driveFolder": ""},
-                })
+                incoming = body.get("video", {})
+                v = new_video_record(db, **{k: incoming[k] for k in incoming if k != "id"})
+                # 中文母版剪輯人員預設帶入
+                if v.get("editor"):
+                    v["languages"].setdefault("zh", {})["editor"] = v["editor"]
                 db["videos"].append(v)
                 audit(db, user, device_id, "video.add", v["id"])
                 return {"ok": True, "id": v["id"]}
@@ -664,11 +693,49 @@ class Handler(BaseHTTPRequestHandler):
                 if not v and method != "DELETE":
                     return None
                 action = seg[2] if len(seg) > 2 else None
+
+                if action == "claim" and method == "POST":
+                    v["claimedBy"] = user
+                    v["claimedAt"] = now_iso()
+                    v["assignedBy"] = ""
+                    if not v.get("editor"):
+                        v["editor"] = user
+                    v["stage"] = "剪輯中"
+                    audit(db, user, device_id, "video.claim", vid)
+                    return {"ok": True}
+                if action == "assign" and method == "POST":
+                    assignee = body.get("assignee")
+                    v["claimedBy"] = assignee
+                    v["editor"] = assignee
+                    v["claimedAt"] = now_iso()
+                    v["assignedBy"] = user
+                    v["stage"] = "剪輯中"
+                    audit(db, user, device_id, "video.assign", vid, {"assignee": assignee})
+                    return {"ok": True}
+                if action == "help" and method == "POST":
+                    v["needHelp"] = bool(body.get("needHelp", True))
+                    v["helpNote"] = body.get("helpNote", "")
+                    audit(db, user, device_id, "video.help", vid, {"needHelp": v["needHelp"]})
+                    return {"ok": True}
+                if action == "finish" and method == "POST":
+                    v["stage"] = "已完成"
+                    v["finishedAt"] = now_iso()
+                    v["needHelp"] = False
+                    if not v.get("editor"):
+                        v["editor"] = v.get("claimedBy") or user
+                    v.setdefault("languages", {}).setdefault("zh", {})
+                    v["languages"]["zh"]["status"] = "完成"
+                    v["languages"]["zh"]["editor"] = v.get("editor") or user
+                    if body.get("driveFolder"):
+                        v["driveFolder"] = body["driveFolder"]
+                    if body.get("name"):
+                        v["name"] = body["name"]
+                    v["locked"] = True
+                    audit(db, user, device_id, "video.finish", vid)
+                    return {"ok": True}
                 if action == "performance" and method == "POST":
                     v["ctr"] = body.get("ctr", v.get("ctr", 0))
                     v["completionRate"] = body.get("completionRate", v.get("completionRate", 0))
-                    if "firstHit" in body:
-                        v["firstHit"] = bool(body["firstHit"])
                     audit(db, user, device_id, "video.performance", vid)
                     return {"ok": True}
                 if action == "lang" and method == "PUT":
@@ -678,8 +745,8 @@ class Handler(BaseHTTPRequestHandler):
                     audit(db, user, device_id, "video.lang", vid, {"lang": lang})
                     return {"ok": True}
                 if method == "PUT":
-                    if not is_admin(db, body):
-                        raise PermissionError("修改既有影片需管理者密碼")
+                    if v.get("locked") and not is_admin(db, body):
+                        raise PermissionError("此影片已鎖定，需管理者才能修改")
                     v.update(body.get("video", {}))
                     v["id"] = vid
                     audit(db, user, device_id, "video.update", vid)
@@ -695,18 +762,15 @@ class Handler(BaseHTTPRequestHandler):
         if head == "schedule" and len(seg) >= 3:
             date_str = seg[1]
             sub = seg[2]
-            day = db["schedule"].setdefault(
-                date_str,
-                {"quotas": dict(db.get("defaultQuotas", {})), "slots": []},
-            )
-            if sub == "quota" and method == "POST":
-                day["quotas"] = body.get("quotas", day["quotas"])
-                audit(db, user, device_id, "schedule.quota", date_str)
-                return {"ok": True}
+            day = db["schedule"].setdefault(date_str, {"slots": []})
             if sub == "slot" and method == "POST":
                 slot = body.get("slot", {})
                 self._validate_slot(db, date_str, slot)
                 day["slots"].append(slot)
+                # 影片掛上排程日期
+                v = find_by_id(db["videos"], slot.get("videoId"))
+                if v:
+                    v["scheduledDate"] = date_str
                 audit(db, user, device_id, "schedule.slot.add", date_str,
                       {"videoId": slot.get("videoId")})
                 return {"ok": True}
@@ -737,14 +801,9 @@ class Handler(BaseHTTPRequestHandler):
         s = db.get("settings", {})
         vid = find_by_id(db["videos"], slot.get("videoId"))
         if vid:
-            # 規則1：30 天內使用次數上限
+            # 30 天內使用次數上限（避免疲乏）
             if used_in_window(vid, s.get("reuseWindowDays", 30)) >= s.get("reuseCap", 3):
                 raise ValueError("此影片 30 天內已達使用上限（%d 次），不可再排" % s.get("reuseCap", 3))
-            # 規則2：舊片重用須換封面+標題
-            if vid.get("status") == "舊片" and not (
-                vid.get("coverChanged") and vid.get("titleChanged")
-            ):
-                raise ValueError("舊片重用前必須先勾選『已換封面』與『已換標題』")
 
     def _publish_slot(self, db, date_str, idx, slot):
         # 產生發片帳號 YYYYMMDD g## 平台
@@ -757,21 +816,13 @@ class Handler(BaseHTTPRequestHandler):
         slot["publishedLink"] = "?utm_source=ecdr&utm_campaign=%s" % base
         slot["locked"] = True
         slot["publishedAt"] = now_iso()
-        # 累加使用次數
+        # 累加使用次數、標記已上片
         vid = find_by_id(db["videos"], slot.get("videoId"))
         if vid:
             vid["totalUsed"] = vid.get("totalUsed", 0) + 1
             vid.setdefault("usageHistory", []).append(date_str)
-            vid["lastUsedDate"] = date_str
-            if vid.get("status") == "新片":
-                vid["status"] = "舊片"  # 上架後變舊片
-
-
-def find_user(db, name):
-    for u in db.get("users", []):
-        if u.get("name") == name:
-            return u
-    return None
+            vid["stage"] = "已上片"
+            vid["scheduledDate"] = date_str
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +832,7 @@ def main():
     ensure_dirs()
     load_db()  # 確保 db.json 存在 / 損毀時還原
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print("影片排程系統已啟動： http://localhost:%d" % PORT)
+    print("IP 短影音排程系統已啟動： http://localhost:%d" % PORT)
     print("（區網其他電腦請用本機 IP；遠端請搭配 Cloudflare Tunnel，見 README）")
     try:
         httpd.serve_forever()
