@@ -450,11 +450,10 @@ function viewDash(){
   </div>
 
   <div class="grid cols4">
-    <div class="stat"><div class="n">${p.今日已排}/${p.每日目標}</div><div class="l">今日已排片</div></div>
-    <div class="stat"><div class="n">${p.排滿率}%</div><div class="l">未來${p.視窗天數}天排滿率</div>
-      <div class="progbar"><i style="width:${p.排滿率}%"></i></div></div>
-    <div class="stat"><div class="n">${p.待處理任務}</div><div class="l">未處理片源</div></div>
+    <div class="stat"><div class="n">${p.今日已排}/${p.每日目標}</div><div class="l">今日已上片</div></div>
+    <div class="stat"><div class="n" style="color:${p.落後人數?'var(--red)':'var(--green)'}">${p.落後人數}</div><div class="l">落後人數</div></div>
     <div class="stat"><div class="n">${p.剪輯中}</div><div class="l">剪輯中</div></div>
+    <div class="stat"><div class="n">${p.二創待辦}</div><div class="l">多語二創待辦</div></div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -487,15 +486,19 @@ function viewWorkload(){
   const q0 = STATE.settings?.editorDailyQuota||3;
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const wl=computeWorkload(date); const byName={}; wl.rows.forEach(r=>byName[r.name]=r);
-  const cards = editors.map(u=>{
+  const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
+  // 先算好每人當日資料，未達標的排前面
+  const data=editors.map(u=>{
     const name=u.name; const q=userQuota(name); const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"];
     const vids=(STATE.videos||[]).filter(v=> langs.some(lg=>langFinishedOn(v,lg,name,date)));
     const vmin=vids.reduce((a,v)=>a+videoDur(v,langs),0);
     const tasks=(STATE.tasks||[]).filter(t=>t.user===name && t.date===date);
     const tmin=tasks.reduce((a,t)=>a+(t.minutes||0),0);
     const met = q>0 ? vids.length>=q : true;
-    const r=byName[name]||{diff:0,totalDone:0,expected:0};
-    const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
+    return {u,name,q,vids,vmin,tasks,tmin,met,r:byName[name]||{diff:0,totalDone:0,expected:0}};
+  }).sort((a,b)=> (a.met?1:0)-(b.met?1:0));
+  const kpiEds=data.filter(d=>d.q>0); const metCnt=kpiEds.filter(d=>d.met).length;
+  const cards = data.map(({u,name,q,vids,vmin,tasks,tmin,met,r})=>{
     return `<div class="ucard ${met?'good':'bad'}">
       <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[u.lang||"zh"]}</span></span>
         <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
@@ -515,8 +518,9 @@ function viewWorkload(){
         <button class="btn sm sec" onclick="wlMove(1)">後一天 →</button></div>
       ${isToday?"":`<button class="btn sm sec" onclick="WL_DATE=null;render()">回今天</button>`}
     </div>
-    <p class="muted" style="font-size:12px">每位剪輯每日最少 ${q0} 片（綠＝當日達標、紅＝未達）。剪片清單為當天完成的影片；其他交辦工作由本人於工作台填寫。「到前一日累積」的達標判斷不含今天。</p>
-    <div class="grid cols2" style="margin-top:10px">${cards}</div>
+    <div class="row" style="gap:10px;margin:8px 0"><span class="pill ${metCnt===kpiEds.length?'ok':'em'}" style="font-size:14px">當日達標 ${metCnt}/${kpiEds.length} 人</span>
+      <span class="muted" style="font-size:12px">每位剪輯每日最少 ${q0} 片（綠＝達標、紅＝未達，未達者排前面）。其他交辦工作由本人於工作台填寫；「到前一日累積」不含今天。</span></div>
+    <div class="grid cols2" style="margin-top:6px">${cards}</div>
   </div>`;
 }
 
@@ -683,31 +687,6 @@ function unscheduleLang(id,lang,ds){ if(!confirm("把這支影片移出"+(LANG_L
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:L},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
 function unscheduleVid(id,ds){ if(!confirm("把這支影片移出此日（清除上片日期）？")) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
-function pickVideo(ds){
-  const cap = STATE.settings?.reuseCap||3;
-  let list = (STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)).slice();
-  list.sort((a,b)=>(b.ctr||0)-(a.ctr||0) || (b.completionRate||0)-(a.completionRate||0));
-  const rows = list.map(v=>{
-    const disabled = v.light==="red";
-    return `<tr>
-      <td data-label="">${lightDot(v.light)}</td>
-      <td data-label="影片">${esc(v.name||v.rawName)} ${typeTag(v.mainType)} ${v.subTag?`<span class="tag">${esc(v.subTag)}</span>`:""}</td>
-      <td data-label="成效">CTR ${v.ctr||0}% / 完播 ${v.completionRate||0}%</td>
-      <td data-label="使用">總 ${v.totalUsed||0}｜30天 ${v.last30dUsed||0}</td>
-      <td data-label="">${disabled?`<span class="pill em">已達上限</span>`:`<button class="btn sm" onclick="addSlot('${ds}','${v.id}')">排入 ✅</button>`}</td>
-    </tr>`;
-  }).join("");
-  showModal(`選片排入 ${ds}`, `
-    <p class="muted">🟢 可用(<${cap}次)　🟡 剩1次　🔴 已達上限不可選。只列出已完成的影片。</p>
-    <table class="responsive"><thead><tr><th></th><th>影片</th><th>成效</th><th>使用次數</th><th></th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無已完成影片，請先到工作台完成影片</td></tr>`}</tbody></table>`, null);
-}
-async function addSlot(ds,videoId){
-  const v = vid(videoId);
-  const slot = {videoId, mainType:v?.mainType, productId:v?.productId||null,
-                platforms:(STATE.platforms||[]), languages:(STATE.settings?.languages||["zh"])};
-  if(await write("POST",`/api/schedule/${ds}/slot`,{slot},"已排入")) openDay(ds);
-}
 
 // ---- 我的工作台（依語言別） ----
 function viewWork(){
@@ -968,12 +947,16 @@ function setKpiToday(){ writeAdmin("PUT","/api/settings",{settings:{kpiStartDate
 function viewSettings(){
   const s=STATE.settings||{};
   const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
+  const tt=s.typeTargets||{"流量型":2,"帶貨型":2};
   return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
-  <div class="card"><div class="grid cols3">
+  <div class="card"><div class="grid cols4">
     <div><label>每日應上片數</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
     <div><label>每位剪輯每日配額</label><input type="number" id="set_quota" value="${s.editorDailyQuota||3}"></div>
-    <div><label>預排天數（一個月）</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
+    <div><label>新片片源低庫存門檻</label><input type="number" id="set_low" value="${s.materialLowThreshold||5}"></div>
+    <div><label>預排天數視窗</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
   </div>
+  <label>每日各類型最低數量（月曆判斷「缺哪種」用，總和建議＝每日應上片數）</label>
+  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div></div>
   <label>KPI 起算日（超前/落後從這天開始算，建議設成正式上線那天）</label>
   <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
     <button class="btn sm sec" onclick="setKpiToday()">設為今天</button></div>
@@ -1001,12 +984,15 @@ async function saveSettings(){
     const k=line.slice(0,i).trim(); const arr=line.slice(i+1).split("|").map(x=>x.trim()).filter(Boolean);
     if(k) subTags[k]=arr;
   });
+  const mainTypes=val("set_main").split(",").map(x=>x.trim()).filter(Boolean);
+  const typeTargets={}; mainTypes.forEach(mt=>{ const e=document.getElementById("set_tt_"+mt); if(e) typeTargets[mt]=parseInt(e.value)||0; });
   const settings={
     dailyPublishTarget:parseInt(val("set_pub"))||4,
     editorDailyQuota:parseInt(val("set_quota"))||3,
     scheduleHorizonDays:parseInt(val("set_horizon"))||30,
+    materialLowThreshold:parseInt(val("set_low"))||5,
     kpiStartDate:val("set_kpistart")||undefined,
-    mainTypes:val("set_main").split(",").map(x=>x.trim()).filter(Boolean),
+    mainTypes, typeTargets,
     subTags,
     sources:val("set_src").split(",").map(x=>x.trim()).filter(Boolean),
     languages:val("set_langs").split(",").map(x=>x.trim()).filter(Boolean),
