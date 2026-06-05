@@ -4,8 +4,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
-  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["videos","🎞 影片庫"]],
+  boss:   [["dash","📊 總覽"],["workload","👥 人員工作量"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
+  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"]],
   editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
@@ -413,13 +413,10 @@ function viewDash(){
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
     const rep=(STATE.reports||[]).find(x=>x.user===r.name && x.date===today);
-    const tks=(STATE.tasks||[]).filter(x=>x.user===r.name && x.date===today);
-    const tksHtml = tks.length? `<div style="margin-top:4px"><b>其他工作</b>${tks.map(tk=>`<div>・${esc(tk.title)} <span class="muted">(${tk.minutes||0}分)</span></div>`).join("")}</div>`:"";
     const repHtml = `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
-        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">今日未匯報</span>`}</div>
+        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep&&rep.done?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">今日未匯報</span>`}</div>
         ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
         ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}
-        ${tksHtml}
       </div>`;
     return `<div class="ucard ${good?'good':'bad'}">
       <div class="uh">
@@ -435,7 +432,7 @@ function viewDash(){
       ${repHtml}
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  const noReport=(wl.rows||[]).filter(r=>!(STATE.reports||[]).some(x=>x.user===r.name && x.date===today)).length;
+  const noReport=(wl.rows||[]).filter(r=>!(STATE.reports||[]).some(x=>x.user===r.name && x.date===today && x.done)).length;
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
   const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
     <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
@@ -491,7 +488,7 @@ function sparkBars(last7, q){ if(!last7||!last7.length) return "";
 
 // ---- 人員工作量（HR 每日檢核）----
 let WL_DATE=null;
-function wlMove(n){ const d=parseDate(WL_DATE||today)||new Date(); d.setDate(d.getDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
+function wlMove(n){ const d=new Date((WL_DATE||today)+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
 function videoDur(v, langs){ if(v.durationMin!=null) return v.durationMin; for(const lg of langs){ const dm=v.languages?.[lg]?.durationMin; if(dm!=null) return dm; } return 0; }
 function viewWorkload(){
   const date = WL_DATE||today; const isToday=(date===today);
@@ -513,17 +510,16 @@ function viewWorkload(){
   const cards = data.map(({u,name,q,vids,vmin,tasks,tmin,met,r})=>{
     const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===date);
     const repHtml = `<div style="margin-top:6px;padding:8px;background:var(--panel2);border-radius:6px;font-size:13px">
-        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">未填</span>`}</div>
+        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep&&rep.done?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">未填</span>`}</div>
         ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
         ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}</div>`;
     return `<div class="ucard ${met?'good':'bad'}">
       <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[u.lang||"zh"]}</span></span>
         <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
       <div style="margin-top:6px;font-size:13px"><b>當日剪片清單</b>${vids.length?"："+vids.map(v=>esc(v.name||v.rawName)).join("、"):'<span class="muted"> 無</span>'}</div>
-      <div style="margin-top:5px;font-size:13px"><b>其他交辦工作</b>${tasks.length?"："+tasks.map(t=>`<div>・${esc(t.title)} <span class='muted'>(${t.minutes||0}分)</span></div>`).join(""):'<span class="muted"> 無</span>'}</div>
       ${repHtml}
       <div style="margin-top:6px;font-size:12px;display:flex;justify-content:space-between">
-        <span class="muted">當日總工時 <b>${minToText(vmin+tmin)}</b></span>
+        <span class="muted">剪片工時 <b>${minToText(vmin)}</b></span>
         <span class="muted">到前一日累積 ${r.totalDone}/${r.expected}（<span class="${r.diff>=0?'pos':'neg'}">${r.diff>0?"超前+"+r.diff:(r.diff<0?"落後"+r.diff:"達標")}</span>）</span>
       </div>
     </div>`;
@@ -594,18 +590,18 @@ function myDailyReport(me){
   for(let i=0;i<14;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dstr=d.toISOString().slice(0,10);
     const vlist=(STATE.videos||[]).filter(v=>langs.some(lg=>langFinishedOn(v,lg,me,dstr)));
     const vmin=vlist.reduce((a,v)=>a+videoDur(v,langs),0);
-    const tks=(STATE.tasks||[]).filter(t=>t.user===me&&t.date===dstr); const tmin=tks.reduce((a,t)=>a+(t.minutes||0),0);
+    const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===dstr);
     const met=q>0?vlist.length>=q:true;
     rows.push(`<tr>
       <td data-label="日期">${dstr.slice(5)}${dstr===today?" (今天)":""}</td>
       <td data-label="完成"><span class="${met?'pos':'neg'}">${vlist.length}/${q}</span></td>
-      <td data-label="其他工作">${tks.length?tks.map(t=>esc(t.title)+"("+(t.minutes||0)+"分)").join("、"):"-"}</td>
-      <td data-label="當日總工時">${minToText(vmin+tmin)}</td>
+      <td data-label="剪片工時">${minToText(vmin)}</td>
+      <td data-label="下班匯報">${rep&&rep.done?'<span class="pos">✓ 已匯報</span>':'<span class="muted">未匯報</span>'}</td>
       <td data-label="達標">${met?'<span class="pos">✓</span>':'<span class="neg">✗</span>'}</td></tr>`);
   }
   return `<div class="card"><b>📋 我的每日工作日報（近 14 天）</b>
-    <p class="muted" style="font-size:12px">每天最少 ${q} 片；含剪片與其他交辦工作的當日總工時。</p>
-    <table class="responsive"><thead><tr><th>日期</th><th>完成片數</th><th>其他工作</th><th>當日總工時</th><th>達標</th></tr></thead>
+    <p class="muted" style="font-size:12px">每天最少 ${q} 片；下班匯報由本人於工作台填寫。</p>
+    <table class="responsive"><thead><tr><th>日期</th><th>完成片數</th><th>剪片工時</th><th>下班匯報</th><th>達標</th></tr></thead>
     <tbody>${rows.join("")}</tbody></table></div>`;
 }
 
@@ -756,50 +752,29 @@ function viewWork(){
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${pool.map(v=>matRow(v,true)).join("")||`<tr><td class="muted">${isZh?"目前沒有未處理片源":"目前沒有待二創的影片（要中文母版先完成）"}</td></tr>`}</tbody></table>
   </div>
-  ${reportCard(me)}
   ${taskCard(me)}`;
 }
-// 今日下班匯報（打卡＋工作內容）
-function reportCard(me){
-  const r=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+// 今日下班匯報：打卡 + 自由書寫工作內容（自己一條一條寫）
+function taskCard(me){
+  const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
   const doneT=(STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && (v.finishedAt||"").slice(0,10)===today).length;
   const inprog=(STATE.videos||[]).filter(v=>(v.editor===me||v.claimedBy===me)&&v.stage==="剪輯中").length;
   const todo=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
   const tmpl=`今天已完成剪輯 ${doneT} 支。\n目前剪輯中 ${inprog} 支、未開始 ${todo} 支。\n其他工作：（例如完成 7 張粉專圖片…）`;
-  return `<div class="card"><b>📝 今日下班匯報（打卡）</b><span class="muted" style="font-size:12px"> ${today}</span>
+  return `<div class="card"><div class="row" style="justify-content:space-between">
+      <b>📝 今日下班匯報（打卡）</b>${rep.done?`<span class="pill ok" style="font-size:11px">✓ 本日匯報已完成</span>`:`<span class="pill em" style="font-size:11px">尚未完成</span>`}</div>
     <div class="grid cols2" style="margin-top:6px">
-      <div><label>上班時間</label><input id="rp_in" type="time" value="${esc(r.clockIn||"")}"></div>
-      <div><label>下班時間</label><input id="rp_out" type="time" value="${esc(r.clockOut||"")}"></div>
+      <div><label>上班時間</label><input id="rp_in" type="time" value="${esc(rep.clockIn||"")}"></div>
+      <div><label>下班時間</label><input id="rp_out" type="time" value="${esc(rep.clockOut||"")}"></div>
     </div>
-    <label>今日工作內容（除剪片外的工作，可一條一條寫）</label>
-    <textarea id="rp_content" style="min-height:130px" placeholder="${esc(tmpl)}">${esc(r.content||"")}</textarea>
-    <div class="modalFoot"><button class="btn" onclick="saveReport()">儲存匯報</button></div>
+    <label>今日工作內容（自己寫，可一條一條）</label>
+    <textarea id="rp_content" style="min-height:150px" placeholder="${esc(tmpl)}">${esc(rep.content||"")}</textarea>
+    <div class="modalFoot"><button class="btn" onclick="finishReport()">✅ 完成下班匯報（打卡送出）</button></div>
   </div>`;
 }
-async function saveReport(){ const me=currentUser();
-  const rec={id:me+"__"+today, user:me, date:today, clockIn:val("rp_in"), clockOut:val("rp_out"), content:val("rp_content")};
-  try{ await window.DB.set("reports", rec.id, rec); toast("已儲存下班匯報"); }catch(e){ toast("儲存失敗，請稍後再試",true); } }
-// 今日其他交辦工作（下班匯報）
-function taskCard(me){
-  const mine=(STATE.tasks||[]).filter(t=>t.user===me && t.date===today);
-  const tmin=mine.reduce((a,t)=>a+(t.minutes||0),0);
-  const rows=mine.map(t=>`<div class="vrow"><span>${esc(t.title)}　<span class="muted">${t.minutes||0} 分</span></span>
-    <button class="btn sm danger" onclick="delTask('${t.id}')">刪除</button></div>`).join("")||`<p class="muted">今天還沒有其他工作紀錄</p>`;
-  return `<div class="card"><b>📋 今日其他交辦工作（下班匯報）</b>
-    <p class="muted" style="font-size:12px">基本剪片之外的交辦工作，填內容與花費時間（以 10 分鐘為單位，可調）。今日其他工作合計 ${minToText(tmin)}。</p>
-    <div style="margin:6px 0">${rows}</div>
-    <div class="row" style="gap:8px;margin-top:8px">
-      <input id="tk_title" placeholder="工作內容（例：商品文案、縮圖設計）" style="flex:2;min-width:160px">
-      <input id="tk_min" type="number" min="0" step="10" value="10" style="width:90px"><span class="muted">分鐘</span>
-      <button class="btn sm" onclick="addTask()">＋ 新增</button>
-    </div>
-  </div>`;
-}
-async function addTask(){ const me=currentUser(); const title=val("tk_title").trim(); const minutes=parseInt(val("tk_min"))||0;
-  if(!title){ toast("請輸入工作內容",true); return; }
-  const id="T"+Date.now()+Math.random().toString(36).slice(2,5);
-  try{ await window.DB.set("tasks", id, {id, user:me, date:today, title, minutes}); toast("已記錄"); }catch(e){ toast("失敗，請稍後再試",true); } }
-function delTask(id){ if(!confirm("刪除這筆工作？")) return; window.DB.del("tasks", id).then(()=>toast("已刪除")).catch(()=>toast("失敗",true)); }
+async function finishReport(){ const me=currentUser();
+  const rec={id:me+"__"+today, user:me, date:today, clockIn:val("rp_in"), clockOut:val("rp_out"), content:val("rp_content"), done:true};
+  try{ await window.DB.set("reports", rec.id, rec); toast("已完成今日下班匯報"); }catch(e){ toast("失敗，請稍後再試",true); } }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
@@ -1208,12 +1183,7 @@ async function loadDemoData(){
   // 工作台池：待處理(刻意<5觸發片源警示) + 剪輯中
   for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
   base.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
-  // 其他交辦工作（示範）：近 20 天各人偶爾一筆
-  const TASK_NAMES=["商品文案撰寫","縮圖設計","腳本發想","回覆社群留言","素材整理","開會討論","上字幕","與外部公司對接"];
-  const taskRecs=[];
-  base.forEach(u=>{ for(let n=-20;n<=0;n++){ if(Math.random()<0.35){ const d=dOff(n); seq++;
-    taskRecs.push({demo:true, id:"T"+seq+Math.random().toString(36).slice(2,5), user:u.name, date:ds(d), title:pick(TASK_NAMES), minutes:(1+Math.floor(Math.random()*9))*10}); } } });
-  // 下班匯報（示範）：近 14 天各人多數有填，含打卡與工作內容
+  // 下班匯報（示範）：近 14 天各人多數有填（打卡＋自由書寫工作內容）
   const reportRecs=[];
   const REPORT_TMPL=[
     "今天已完成剪輯 {d} 支影片。Boss 拍攝的 3 支正在剪輯中，其中 1 支已接近完成，另有 3 支尚未開始。",
@@ -1224,11 +1194,10 @@ async function loadDemoData(){
   ];
   base.forEach(u=>{ for(let n=-14;n<=0;n++){ if(Math.random()<0.8){ const d=dOff(n); const dstr=ds(d);
     const doneT=recs.filter(v=>v.editor===u.name && v.scheduledDate===dstr).length;
-    reportRecs.push({demo:true, id:u.name+"__"+dstr, user:u.name, date:dstr,
+    reportRecs.push({demo:true, id:u.name+"__"+dstr, user:u.name, date:dstr, done:true,
       clockIn:"09:0"+Math.floor(Math.random()*6), clockOut:(20+Math.floor(Math.random()*3))+":"+(Math.random()<0.5?"00":"30"),
       content:pick(REPORT_TMPL).replace("{d}", doneT)}); } } });
   BULK_BUSY=true;
-  for(const tr of taskRecs){ try{ await window.DB.set("tasks", tr.id, tr); }catch(e){} }
   for(const rr of reportRecs){ try{ await window.DB.set("reports", rr.id, rr); }catch(e){} }
   BULK_BUSY=false;
   const ok=await bulkCreateVideos(recs);
