@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IP 短影音排程 × KPI 儀表板（雲端版）</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a212b; --panel2:#232c38; --line:#2e3a48;
+    --txt:#e6edf3; --muted:#8b98a9; --accent:#3b82f6; --accent2:#2563eb;
+    --green:#22c55e; --yellow:#eab308; --red:#ef4444; --chip:#2d3744;
+    --traffic:#0ea5e9; --sales:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+       background:var(--bg);color:var(--txt);font-size:15px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer}
+  a{color:var(--accent)}
+  .hidden{display:none !important}
+
+  /* 登入畫面 */
+  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;
+         justify-content:center;flex-direction:column;z-index:50;padding:20px}
+  #login h1{font-size:22px;margin:0 0 6px}
+  #login p{color:var(--muted);margin:0 0 20px;text-align:center}
+  .userGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:560px}
+  .userBtn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+           padding:14px 20px;border-radius:12px;font-size:16px;min-width:120px;text-align:center}
+  .userBtn:hover{border-color:var(--accent)}
+  .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+  .addRow{margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .addRow input,.addRow select{padding:10px;border-radius:8px;border:1px solid var(--line);
+                background:var(--panel);color:var(--txt)}
+
+  /* 頂列 */
+  header{position:sticky;top:0;z-index:30;background:var(--panel);border-bottom:1px solid var(--line);
+         display:flex;align-items:center;gap:10px;padding:8px 14px}
+  header .brand{font-weight:700;white-space:nowrap}
+  header .spacer{flex:1}
+  .whoami{display:flex;align-items:center;gap:8px;background:var(--accent2);
+          padding:6px 12px;border-radius:20px;font-weight:600}
+  .whoami .dot{width:8px;height:8px;border-radius:50%;background:#fff}
+  .whoami .rb{font-size:11px;opacity:.85}
+  .offline{background:var(--red)!important}
+
+  nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);
+      padding:0 8px;position:sticky;top:49px;z-index:29}
+  nav button{background:none;border:none;color:var(--muted);padding:12px 14px;font-size:14px;
+             white-space:nowrap;border-bottom:2px solid transparent}
+  nav button.active{color:var(--txt);border-bottom-color:var(--accent)}
+
+  main{padding:16px;max-width:1200px;margin:0 auto}
+  h2{font-size:18px;margin:0 0 14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .grid{display:grid;gap:12px}
+  label{font-size:13px;color:var(--muted);display:block;margin:8px 0 4px}
+  input,select,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);
+         background:var(--panel2);color:var(--txt);font-size:14px}
+  textarea{min-height:60px}
+  .btn{background:var(--accent2);border:none;color:#fff;padding:10px 16px;border-radius:8px;font-weight:600}
+  .btn:hover{background:var(--accent)}
+  .btn.sec{background:var(--chip);}
+  .btn.danger{background:var(--red)}
+  .btn.sm{padding:6px 10px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .tag{display:inline-block;padding:2px 8px;border-radius:12px;background:var(--chip);font-size:12px}
+  .tag.traffic{background:rgba(14,165,233,.2);color:#7dd3fc}
+  .tag.sales{background:rgba(245,158,11,.2);color:#fcd34d}
+  .light{display:inline-block;width:12px;height:12px;border-radius:50%}
+  .green{background:var(--green)} .yellow{background:var(--yellow)} .red{background:var(--red)}
+  .muted{color:var(--muted)}
+  .pill{padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
+  .pill.em{background:rgba(239,68,68,.18);color:#fca5a5}
+  .pill.wa{background:rgba(234,179,8,.18);color:#fde047}
+  .pill.ok{background:rgba(34,197,94,.18);color:#86efac}
+  .pos{color:var(--green);font-weight:700}
+  .neg{color:var(--red);font-weight:700}
+
+  .progbar{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:6px}
+  .progbar > i{display:block;height:100%;background:var(--accent)}
+
+  /* 彈窗 */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;
+         justify-content:center;z-index:40;padding:16px}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+              padding:20px;max-width:680px;width:100%;max-height:88vh;overflow:auto}
+  .modal h3{margin:0 0 14px}
+  .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+  /* 月曆 */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal .dow{color:var(--muted);text-align:center;font-size:12px;padding:4px}
+  .day{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px;min-height:84px;
+       cursor:pointer}
+  .day:hover{border-color:var(--accent)}
+  .day .dnum{font-weight:700;font-size:13px}
+  .day .mini{font-size:11px;color:var(--muted)}
+  .day.full{border-color:var(--green)}
+  .day.em{border-color:var(--red)} .day.wa{border-color:var(--yellow)}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);
+         border:1px solid var(--line);padding:12px 18px;border-radius:10px;z-index:60;opacity:0;
+         transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--red)}
+
+  @media (max-width:640px){
+    main{padding:12px}
+    .hideMobile{display:none}
+    table.responsive thead{display:none}
+    table.responsive tr{display:block;border:1px solid var(--line);border-radius:10px;
+       margin-bottom:10px;padding:8px;background:var(--panel2)}
+    table.responsive td{display:flex;justify-content:space-between;border:none;padding:5px 4px}
+    table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;margin-right:10px}
+    .grid.cols2,.grid.cols3,.grid.cols4{grid-template-columns:1fr !important}
+  }
+  .grid.cols2{grid-template-columns:1fr 1fr}
+  .grid.cols3{grid-template-columns:1fr 1fr 1fr}
+  .grid.cols4{grid-template-columns:repeat(4,1fr)}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .stat .n{font-size:26px;font-weight:700}
+  .stat .l{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- 尚未設定 Firebase 時顯示 -->
+<div id="setup" class="hidden" style="position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px">
+  <div class="card" style="max-width:640px">
+    <h2>⚙️ 還沒設定 Firebase</h2>
+    <p class="muted">請依 <b>README.md</b> 建一個 Firebase 專案，把網頁設定貼到 <code>public/firebase-config.js</code>，重新整理即可。</p>
+    <ol class="muted" style="line-height:1.9">
+      <li>到 console.firebase.google.com 建立專案</li>
+      <li>建立 <b>Firestore Database</b>（正式或測試模式皆可，規則用 README 提供的）</li>
+      <li>啟用 <b>Authentication → 匿名登入</b></li>
+      <li>專案設定 → 你的應用程式 → 複製 <code>firebaseConfig</code> 貼進 <code>firebase-config.js</code></li>
+    </ol>
+  </div>
+</div>
+
+<!-- 登入 / 選擇使用者 -->
+<div id="login">
+  <h1>🎬 IP 短影音排程 × KPI 儀表板</h1>
+  <p>請選擇你的名字（老闆／人資／剪輯，多人即時同步）</p>
+  <div class="userGrid" id="userGrid"><p class="muted">連線中…</p></div>
+  <div class="addRow">
+    <input id="newUserName" placeholder="新增成員名字…">
+    <select id="newUserRole">
+      <option value="editor">剪輯</option>
+      <option value="boss">老闆</option>
+      <option value="hr">人資</option>
+    </select>
+    <button class="btn" onclick="addUser()">新增</button>
+  </div>
+  <p class="muted" style="margin-top:18px;font-size:12px">新增成員後請選擇角色；成員角色／刪除由管理者於設定調整</p>
+</div>
+
+<!-- 主畫面 -->
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">🎬 排程系統<span class="muted" style="font-size:11px">・雲端</span></span>
+    <span class="spacer"></span>
+    <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
+    <button class="btn sm sec" onclick="logout()">切換</button>
+  </header>
+  <nav id="nav"></nav>
+  <main id="view"></main>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+<script type="module" src="fb.js"></script>
+</body>
+</html>
