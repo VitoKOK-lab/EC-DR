@@ -26,7 +26,8 @@ function deviceId(){ let id=localStorage.getItem("ecdr_device");
   return id; }
 // 領取→完成 耗時（含跨天）
 function durationMin(a,b){ const s=new Date(a), e=new Date(b||nowIso()); if(isNaN(s)||isNaN(e)||e<s) return null; return Math.round((e-s)/60000); }
-function durationText(a,b){ const m=durationMin(a,b); if(m==null) return "-";
+function durationText(a,b){ const m=durationMin(a,b); return minToText(m); }
+function minToText(m){ if(m==null) return "-";
   const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mi=m%60;
   return (d?d+"天":"")+(h?h+"時":"")+mi+"分"; }
 
@@ -139,10 +140,17 @@ function computeWorkload(date){
     const todayDone=cnt((v,lg,nm)=>langFinishedOn(v,lg,nm,date));
     const weekDone =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,wkStart,tod));
     const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,moStart,tod));
+    // 平均工時（本月已完成且有計時者）
+    const durs=[];
+    (STATE.videos||[]).forEach(v=>langs.forEach(lg=>{ if(langFinishedInRange(v,lg,name,moStart,tod)){
+      const dm = lg==="zh"? v.durationMin : v.languages?.[lg]?.durationMin;
+      if(dm!=null && dm>=0) durs.push(dm); } }));
+    const avgMin = durs.length? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : null;
+    const maxMin = durs.length? Math.max(...durs) : null;
     const expected=workdaysBetween(moStart,tod)*q; const diff=monthDone-expected;
     return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone,
       totalDone:monthDone, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
-      inProgress: 0};
+      avgMin, maxMin, timedCount:durs.length, inProgress: 0};
   }).sort((a,b)=>b.diff-a.diff);
   return {date, quota:(s.editorDailyQuota||3), monthStart:moStart.toISOString().slice(0,10), rows};
 }
@@ -358,6 +366,7 @@ function viewDash(){
     return `<div class="stat">
       <div class="l">${esc(r.name)}　<span class="${r.todayMet?'pos':'neg'}">今日 ${r.todayDone}/${r.todayQuota}</span></div>
       <div>本月完成 ${r.totalDone} ／ 應達 ${r.expected}</div>
+      <div class="muted" style="font-size:12px">平均工時 ${r.avgMin!=null?minToText(r.avgMin):"-"}</div>
       <div class="${cls}" style="font-size:13px">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
@@ -413,15 +422,15 @@ function viewWorkload(){
     <td data-label="今日"><span class="${r.todayMet?'pos':'neg'}">${r.todayDone}/${r.todayQuota}</span></td>
     <td data-label="本週">${r.weekDone}</td>
     <td data-label="本月">${r.monthDone}</td>
-    <td data-label="累計完成">${r.totalDone}</td>
-    <td data-label="應達">${r.expected}</td>
+    <td data-label="平均工時">${r.avgMin!=null?minToText(r.avgMin):'-'}${r.timedCount?` <span class="muted">(${r.timedCount}筆)</span>`:""}</td>
+    <td data-label="最長工時">${r.maxMin!=null?minToText(r.maxMin):'-'}</td>
     <td data-label="超前/落後"><span class="${r.diff>0?'pos':(r.diff<0?'neg':'')}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span></td>
   </tr>`).join("") || `<tr><td class="muted">尚無剪輯成員</td></tr>`;
   return `<h2>👥 人員工作量 <span class="muted" style="font-size:13px">${today}</span></h2>
   <div class="card">
-    <p class="muted">KPI：每位剪輯每日應完成 ${wl.quota||3} 片。績效以「月」為單位累積，每月 1 號（${wl.monthStart||""}）自動重置，以工作日（週一~週五）計算應達量。</p>
+    <p class="muted">KPI：每位剪輯每日應完成 ${wl.quota||3} 片。績效以「月」累積、每月 1 號（${wl.monthStart||""}）重置。<b>平均工時</b>＝本月已完成且有計時的影片，其「領取→完成」時間平均（避免單支特別久而誤判）。</p>
     <table class="responsive"><thead><tr>
-      <th>剪輯師</th><th>今日</th><th>本週</th><th>本月</th><th>累計完成</th><th>應達</th><th>超前/落後</th>
+      <th>剪輯師</th><th>今日</th><th>本週</th><th>本月</th><th>平均工時</th><th>最長工時</th><th>超前/落後</th>
     </tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -913,9 +922,24 @@ test,全語言剪輯,0</textarea>
     <p class="muted">已存在的名字會自動略過，可重複按。</p>
   </div>
   <div class="card"><b>匯入舊 Excel 工作</b>
-    <p class="muted">把之前 Google 試算表的影片工作（共 ${ (window.LEGACY_SEED||[]).length } 筆）一次匯入影片庫。已完成的會帶上片日期、顯示在月行事曆。</p>
+    <p class="muted">把之前 Google 試算表的影片工作（共 ${ (window.LEGACY_SEED||[]).length } 筆，皆含 Drive 備份連結）一次匯入影片庫。已完成的會帶上片日期、顯示在月行事曆。</p>
     <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
+  </div>
+  <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
+    <p class="muted">清空所有影片與排程（不影響成員與設定）。常用於重新匯入或測試歸零，無法復原。</p>
+    <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
   </div>`;
+}
+async function clearAllVideos(){
+  if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
+  await withAdmin(async ()=>{
+    const vids=(STATE.videos||[]).slice(); const dates=Object.keys(STATE.schedule||{});
+    let n=0;
+    for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
+    for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
+    try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空所有影片("+n+")"}); }catch(e){}
+    await delay(400); toast("已清空 "+n+" 支影片與排程");
+  });
 }
 async function importLegacy(){
   const seed=window.LEGACY_SEED||[];
