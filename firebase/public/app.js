@@ -435,14 +435,24 @@ function viewDash(){
     <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
     <span class="muted"> — 報表上的落後／缺口是「示範資料」造成的，不是真實狀況。正式使用前到「成員管理 → 清空所有影片」即可移除。</span></div>`:"";
   const safeCol = runway>=5?'var(--green)':(runway>=3?'var(--amber)':'var(--red)');
+  const newSrc=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
+  const lowTh=STATE.settings?.materialLowThreshold||5;
+  const srcLow=newSrc<lowTh; const srcCol=srcLow?'var(--red)':'var(--green)';
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
   ${demoBanner}
 
-  <div class="card" style="text-align:center;border-color:${safeCol}">
-    <div style="font-size:64px;font-weight:900;line-height:1;color:${safeCol}">${runway}<span style="font-size:24px;font-weight:700"> 天</span></div>
-    <div class="l" style="font-size:15px;margin-top:4px">安全天數　<span class="muted">（從今天起連續已排滿的天數）</span></div>
-    ${runway<3?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 不足 3 天，請盡快補排！</p>`:(runway<5?`<p class="pill wa" style="display:inline-block;margin-top:8px">尚可，建議補到 5 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 排程安全</p>`)}
+  <div class="grid cols2">
+    <div class="card" style="text-align:center;border-color:${safeCol}">
+      <div style="font-size:60px;font-weight:900;line-height:1;color:${safeCol}">${runway}<span style="font-size:22px;font-weight:700"> 天</span></div>
+      <div class="l" style="font-size:15px;margin-top:4px">安全天數　<span class="muted">（連續已排滿）</span></div>
+      ${runway<3?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 不足 3 天，盡快補排！</p>`:(runway<5?`<p class="pill wa" style="display:inline-block;margin-top:8px">尚可，建議補到 5 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 排程安全</p>`)}
+    </div>
+    <div class="card" style="text-align:center;border-color:${srcLow?srcCol:'var(--line)'};${srcLow?'background:var(--redbg)':''}">
+      <div style="font-size:60px;font-weight:900;line-height:1;color:${srcCol}">${newSrc}<span style="font-size:22px;font-weight:700"> 支</span></div>
+      <div class="l" style="font-size:15px;margin-top:4px">新片片源庫存　<span class="muted">（待剪）</span></div>
+      ${srcLow?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 低於 ${lowTh} 支，需趕快加拍補片源！</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 片源充足（門檻 ${lowTh}）</p>`}
+    </div>
   </div>
 
   <div class="grid cols2">
@@ -1027,7 +1037,8 @@ function viewMembers(){
   <div class="card"><b>現有成員（${users.length}）</b>
     <table class="responsive"><thead><tr><th>名字</th><th>角色／語言</th><th>每日KPI</th><th></th></tr></thead>
     <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <p class="muted">語言剪輯只看自己語言的行事曆；全語言剪輯可看全部。「每日KPI」每人可不同。改角色／KPI／刪除需管理者密碼。</p>
+    <div class="row" style="justify-content:space-between"><p class="muted" style="margin:0">語言剪輯只看自己語言的行事曆；「每日KPI」每人可不同。改角色／KPI／刪除需管理密碼。</p>
+      <button class="btn sec sm" onclick="setAllQuota(3)">全部剪輯 KPI 設為 3</button></div>
   </div>
   <div class="card"><b>新增單一成員</b>
     <div class="grid cols4">
@@ -1101,13 +1112,9 @@ async function loadDemoData(){
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
   const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 只在「每日KPI>0」的剪輯中分一半超前、一半落後（KPI=0 者本來就達標，不佔名額）
-  const kpiEds=eds.filter(u=>userQuota(u.name)>0);
-  const base = kpiEds.length?kpiEds:eds;
-  const nBehind=Math.max(1, Math.round(base.length/2));
-  const behind=base.slice(0,nBehind).map(u=>u.name);
-  const good=base.slice(nBehind).map(u=>u.name);
-  if(!good.length && behind.length>1){ good.push(behind.pop()); } // 至少留一個正常組
+  // 糟糕狀況：只留 1 位正常/超前，其餘全部落後
+  const good=eds.slice(0,1).map(u=>u.name);
+  const behind=eds.slice(1).map(u=>u.name);
   let seq=0; let rr=0;
   const mkVideo=(d, kind, editor)=>{ seq++;
     let mainType, subTag, name;
@@ -1145,7 +1152,7 @@ async function loadDemoData(){
     // else 留空：沒人補
   }
   // 工作台池：待處理 + 剪輯中
-  for(let k=0;k<6;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
+  for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); } // 片源刻意偏低(<5)觸發警示
   eds.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
   const ok=await bulkCreateVideos(recs);
   await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
@@ -1156,6 +1163,11 @@ async function addMember(){ const name=val("mb_name").trim(); const rl=tokenToRL
   await write("POST","/api/users",{name,role:rl.role,lang:rl.lang,dailyQuota},"已新增成員"); }
 function changeRole(name,token){ const rl=tokenToRL(token); writeAdmin("PUT","/api/users/"+name,{role:rl.role,lang:rl.lang},"已更新角色／語言"); }
 function changeQuota(name,q){ writeAdmin("PUT","/api/users/"+name,{dailyQuota:parseInt(q)||0},"已更新每日 KPI"); }
+function setAllQuota(n){ if(!confirm("將『所有剪輯』的每日KPI都設為 "+n+"？")) return;
+  withAdmin(async()=>{ const eds=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor"); let c=0; BULK_BUSY=true;
+    try{ for(const u of eds){ try{ await window.DB.update("users",u.name,{dailyQuota:n}); c++; }catch(e){} } }
+    finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已將 "+c+" 位剪輯的每日KPI設為 "+n); }); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
 

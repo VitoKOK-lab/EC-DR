@@ -28,18 +28,18 @@
   #login p{color:var(--muted);margin:0 0 22px;text-align:center}
   .userGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;max-width:600px}
   .userBtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);box-shadow:var(--shadow);
-           padding:16px 22px;border-radius:14px;font-size:16px;min-width:130px;text-align:center;font-weight:600;transition:.15s}
+           padding:16px 22px;border-radius:8px;font-size:16px;min-width:130px;text-align:center;font-weight:600;transition:.15s}
   .userBtn:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow2)}
   .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:4px;font-weight:500}
   .addRow{margin-top:22px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  .addRow input,.addRow select{padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+  .addRow input,.addRow select{padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
   /* 頂列 */
   header{position:sticky;top:0;z-index:30;background:var(--panel);border-bottom:1px solid var(--line);
          display:flex;align-items:center;gap:10px;padding:10px 16px;box-shadow:var(--shadow)}
   header .brand{font-weight:800;white-space:nowrap;letter-spacing:.2px}
   header .spacer{flex:1}
-  .whoami{display:flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:7px 14px;border-radius:24px;font-weight:600}
+  .whoami{display:flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:7px 14px;border-radius:8px;font-weight:600}
   .whoami .dot{width:8px;height:8px;border-radius:50%;background:#fff}
   .whoami .rb{font-size:11px;opacity:.9}
   .offline{background:var(--red)!important}
@@ -51,21 +51,21 @@
 
   main{padding:18px;max-width:1240px;margin:0 auto}
   h2{font-size:19px;margin:0 0 16px;font-weight:800}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
   .card>b{font-size:15px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .grid{display:grid;gap:14px}
   label{font-size:13px;color:var(--muted);display:block;margin:10px 0 4px;font-weight:500}
-  input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:14px}
+  input,select,textarea{width:100%;padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:14px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
   textarea{min-height:60px}
-  .btn{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;transition:.15s}
+  .btn{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:6px;font-weight:700;transition:.15s}
   .btn:hover{background:var(--accent2)}
   .btn.sec{background:#eef1f6;color:#2a3242;border:1px solid var(--line)}
   .btn.sec:hover{background:#e3e8f0}
   .btn.danger{background:var(--red);color:#fff}
   .btn.danger:hover{filter:brightness(.94)}
-  .btn.sm{padding:7px 11px;font-size:13px;border-radius:9px}
+  .btn.sm{padding:7px 11px;font-size:13px;border-radius:6px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -89,14 +89,14 @@
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(17,24,39,.5);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
-  .modal .box{background:var(--panel);border-radius:18px;padding:22px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow2)}
+  .modal .box{background:var(--panel);border-radius:6px;padding:22px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow2)}
   .modal h3{margin:0 0 14px}
   .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
 
   /* 月曆：填色大色塊＋大數字 */
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
   .cal .dow{color:var(--muted);text-align:center;font-size:12px;font-weight:700;padding:4px}
-  .day{position:relative;border:1px solid var(--line);border-radius:12px;padding:8px;min-height:96px;cursor:pointer;
+  .day{position:relative;border:1px solid var(--line);border-radius:7px;padding:8px;min-height:96px;cursor:pointer;
        background:var(--panel2);display:flex;flex-direction:column;transition:.12s;overflow:hidden}
   .day:hover{transform:translateY(-1px);box-shadow:var(--shadow2)}
   .day .dnum{font-size:12px;font-weight:700;color:var(--muted)}
@@ -117,7 +117,7 @@
   .day .todaymk{position:absolute;top:5px;right:6px;font-size:9px;font-weight:800;color:#fff;background:var(--accent);padding:1px 5px;border-radius:8px}
 
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2433;color:#fff;
-         padding:12px 18px;border-radius:12px;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:var(--shadow2)}
+         padding:12px 18px;border-radius:7px;z-index:60;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:var(--shadow2)}
   .toast.show{opacity:1}
   .toast.err{background:var(--red)}
 
@@ -129,21 +129,21 @@
     .whoami{padding:6px 10px;font-size:13px}
     nav{top:51px;padding:0 6px}
     nav button{padding:11px 10px;font-size:13px}
-    .card{padding:14px;border-radius:14px}
+    .card{padding:14px;border-radius:8px}
     .hideMobile{display:none}
     table.responsive thead{display:none}
-    table.responsive tr{display:block;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:10px;background:var(--panel)}
+    table.responsive tr{display:block;border:1px solid var(--line);border-radius:7px;margin-bottom:10px;padding:10px;background:var(--panel)}
     table.responsive td{display:flex;justify-content:space-between;align-items:center;border:none;padding:6px 2px;gap:10px}
     table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600}
     table.responsive td:empty{display:none}
     .grid.cols2{grid-template-columns:1fr !important}
     .grid.cols3{grid-template-columns:1fr !important}
     .grid.cols4{grid-template-columns:1fr 1fr !important}
-    .modal .box{padding:16px;border-radius:14px}
+    .modal .box{padding:16px;border-radius:8px}
     .addRow{flex-direction:column}
     /* 月曆：手機壓縮成小色塊 */
     .cal{gap:4px}
-    .day{min-height:58px;padding:4px;border-radius:9px}
+    .day{min-height:58px;padding:4px;border-radius:6px}
     .day .dnum{font-size:10px}
     .day .big{font-size:16px}
     .day .big span{font-size:10px !important}
@@ -159,11 +159,11 @@
   .grid.cols2{grid-template-columns:1fr 1fr}
   .grid.cols3{grid-template-columns:repeat(3,1fr)}
   .grid.cols4{grid-template-columns:repeat(4,1fr)}
-  .stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px;box-shadow:var(--shadow)}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px;box-shadow:var(--shadow)}
   .stat .n{font-size:27px;font-weight:800;line-height:1.1}
   .stat .l{color:var(--muted);font-size:13px;margin-top:2px}
   /* 剪輯卡片 */
-  .ucard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:var(--shadow);border-left:4px solid var(--line)}
+  .ucard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:var(--shadow);border-left:4px solid var(--line)}
   .ucard.good{border-left-color:var(--green)}
   .ucard.bad{border-left-color:var(--red)}
   .ucard .uh{display:flex;justify-content:space-between;align-items:center}
