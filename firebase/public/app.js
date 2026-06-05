@@ -24,6 +24,11 @@ function nowIso(){ return new Date().toISOString().slice(0,19); }
 function deviceId(){ let id=localStorage.getItem("ecdr_device");
   if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
   return id; }
+// 領取→完成 耗時（含跨天）
+function durationMin(a,b){ const s=new Date(a), e=new Date(b||nowIso()); if(isNaN(s)||isNaN(e)||e<s) return null; return Math.round((e-s)/60000); }
+function durationText(a,b){ const m=durationMin(a,b); if(m==null) return "-";
+  const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mi=m%60;
+  return (d?d+"天":"")+(h?h+"時":"")+mi+"分"; }
 
 // ---------- 語言別（多語分軌排程） ----------
 const SCHED_LANGS = ["zh","en","th"];
@@ -217,6 +222,7 @@ async function _route(method, path, body){
       const ed=v.editor||v.claimedBy||user; const langs=Object.assign({},v.languages); langs.zh=Object.assign({},langs.zh,{status:"完成",editor:ed});
       const patch={stage:"已完成",finishedAt:nowIso(),needHelp:false,editor:ed,languages:langs,locked:true,
         scheduledDate:date, published:true, backupDone:true, socialScheduled:true};
+      if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
       await window.DB.update("videos",id,patch); return;
     }
@@ -546,10 +552,11 @@ function viewWork(){
             (!v.languages?.[lang] || !v.languages?.[lang]?.status || v.languages?.[lang]?.status==="未開始"));
   }
   const owner = v => isZh ? (v.claimedBy||"") : (v.languages?.[lang]?.claimedBy||"");
+  const claimAtOf = v => isZh ? v.claimedAt : (v.languages?.[lang]?.claimedAt);
   const matRow = (v,inPool)=>`<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a> ${typeTag(v.mainType)}</td>
       <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
-      <td data-label="負責">${esc(owner(v))}</td>
+      <td data-label="負責">${esc(owner(v))}${(!inPool&&claimAtOf(v))?` <span class="muted">·已 ${durationText(claimAtOf(v))}</span>`:""}</td>
       <td data-label="">${inPool
         ? `<button class="btn sm" onclick="${isZh?`claimVid('${v.id}')`:`claimLang('${v.id}','${lang}')`}" ${atLimit?"disabled style=\"opacity:.5\"":""}>我來做</button>`
         : `<button class="btn sm" onclick="${isZh?`finishVid('${v.id}')`:`finishLang('${v.id}','${lang}')`}">完成✔</button>
@@ -584,7 +591,7 @@ function viewWork(){
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser(),claimedBy:currentUser()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
+  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser(),claimedBy:currentUser(),claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
 }
 function finishLang(id,lang){
   const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today;
@@ -602,9 +609,11 @@ function finishLang(id,lang){
     const pub=document.getElementById("fl_pub").checked, bk=document.getElementById("fl_backup").checked, so=document.getElementById("fl_social").checked;
     if(!date){ toast("請選擇上片日期",true); return false; }
     if(!(pub&&bk&&so)){ toast("三項條件都要勾選才算完成",true); return false; }
+    const fin=nowIso(); const cAt=L.claimedAt||null;
     return await write("PUT",`/api/videos/${id}/lang/${lang}`,
-      {lang:{status:"完成", finishedAt:nowIso(), scheduledDate:date, editor:currentUser(),
-             claimedBy:currentUser(), driveFolder:val("fl_drive")}}, "已完成，已加入"+(LANG_LABEL[lang]||lang)+"行事曆");
+      {lang:{status:"完成", finishedAt:fin, scheduledDate:date, editor:currentUser(),
+             claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null), driveFolder:val("fl_drive")}},
+      "已完成，已加入"+(LANG_LABEL[lang]||lang)+"行事曆");
   });
 }
 function finishVid(id){
@@ -728,7 +737,10 @@ function editVideo(id){
       <div><label>CTR (%)</label><input type="number" step="0.1" id="e_ctr" value="${v.ctr||0}"></div>
       <div><label>完播率 (%)</label><input type="number" step="0.1" id="e_comp" value="${v.completionRate||0}"></div>
     </div>
-    ${id?`<p class="muted">完成時間：${esc(v.finishedAt||"-")}</p>`:""}
+    ${id?`<div class="card" style="background:var(--panel2)"><b>⏱ 工時</b>
+      <p class="muted" style="margin:6px 0">中文：領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?durationText(0,v.durationMin*60000):"-")}</b></p>
+      ${nonZh().map(l=>{ const L=v.languages?.[l]||{}; return (L.claimedAt||L.finishedAt)?`<p class="muted" style="margin:6px 0">${LANG_LABEL[l]||l}：領取 ${esc(L.claimedAt||"-")}　完成 ${esc(L.finishedAt||"-")}　耗時 <b>${L.claimedAt&&L.finishedAt?durationText(L.claimedAt,L.finishedAt):"-"}</b></p>`:""; }).join("")}
+    </div>`:""}
   `, async ()=>{
     const langsPatch=Object.assign({}, v.languages||{});
     nonZh().forEach(l=>{ const cur=Object.assign({}, langsPatch[l]||{});
@@ -910,7 +922,8 @@ async function importLegacy(){
   if(!seed.length){ toast("找不到匯入資料",true); return; }
   if(!confirm("將匯入 "+seed.length+" 筆舊工作到影片庫，確定？")) return;
   let ok=0, fail=0;
-  for(const r of seed){
+  for(const r0 of seed){
+    const r=Object.assign({}, r0); delete r.enDrive; delete r.thDrive;  // 只取主備份連結，避免誤帶
     try{ await route("POST","/api/videos",{video:r}); ok++; }
     catch(e){ fail++; }
   }
