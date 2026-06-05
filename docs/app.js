@@ -412,6 +412,11 @@ function viewDash(){
     const good = r.diff>=0;
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
+    const rep=(STATE.reports||[]).find(x=>x.user===r.name && x.date===today);
+    const repHtml = rep ? `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
+        <div><b>📝 下班匯報</b>${(rep.clockIn||rep.clockOut)?` <span class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</span>`:""}</div>
+        <div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content||"")}</div></div>`
+      : `<div style="margin-top:8px;font-size:12px" class="muted">📝 今日下班匯報：<span class="neg">未填</span></div>`;
     return `<div class="ucard ${good?'good':'bad'}">
       <div class="uh">
         <span class="nm"><span class="statusdot" style="background:${dotCol}"></span>${esc(r.name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[r.lang]||""}</span></span>
@@ -423,6 +428,7 @@ function viewDash(){
         <span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span>
         <span class="muted">本月 ${r.totalDone}/${r.expected}・均 ${r.avgMin!=null?minToText(r.avgMin):"-"}</span>
       </div>
+      ${repHtml}
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
@@ -451,9 +457,9 @@ function viewDash(){
     </div>
   </div>
 
-  <div class="card"><b>👥 每位剪輯 KPI（每日應完成數，綠＝達標/超前、紅＝落後）</b>
+  <div class="card"><b>👥 每日匯報（每人 KPI＋今日下班匯報，綠＝達標/超前、紅＝落後）</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
-    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。績效以「月」累積、每月 1 號重置。</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。下方為本人填寫的今日下班匯報。績效以「月」累積、每月 1 號重置。</p>
   </div>
 
   <div class="grid cols3">
