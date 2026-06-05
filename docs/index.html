@@ -146,18 +146,10 @@
 <!-- 登入 / 選擇使用者 -->
 <div id="login">
   <h1>🎬 IP 短影音排程 × KPI 儀表板</h1>
-  <p>請選擇你的名字（老闆／人資／剪輯，多人即時同步）</p>
+  <p>請選擇你的名字（多人即時同步）</p>
   <div class="userGrid" id="userGrid"><p class="muted">連線中…</p></div>
-  <div class="addRow">
-    <input id="newUserName" placeholder="新增成員名字…">
-    <select id="newUserRole">
-      <option value="editor">剪輯</option>
-      <option value="boss">管理員</option>
-      <option value="hr">人資</option>
-    </select>
-    <button class="btn" onclick="addUser()">新增</button>
-  </div>
-  <p class="muted" style="margin-top:18px;font-size:12px">新增成員後請選擇角色；成員角色／刪除由管理者於設定調整</p>
+  <div class="addRow"><button class="btn sec" onclick="ownerLogin()">🔒 管理員登入</button></div>
+  <p class="muted" style="margin-top:14px;font-size:12px">成員由管理員新增；管理員以密碼進入後可管理成員與查看稽核紀錄</p>
 </div>
 
 <!-- 主畫面 -->

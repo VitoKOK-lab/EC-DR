@@ -74,24 +74,28 @@ function computeWarnings(){
 function workdaysBetween(start,end){ if(!start||!end||end<start) return 0; let n=0; const c=new Date(start);
   while(c<=end){ const w=c.getDay(); if(w>=1&&w<=5) n++; c.setDate(c.getDate()+1);} return n; }
 function editorNames(){ return (STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name); }
+// 每位成員可有自己的每日 KPI 支數；沒設就用全域預設
+function userQuota(name){ const u=(STATE.users||[]).find(x=>x.name===name); const q=u&&Number(u.dailyQuota);
+  return (q&&q>0)?q:(STATE.settings?.editorDailyQuota||3); }
 function finishedOn(v,date){ return ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===date; }
 function finishedInRange(v,start,end){ if(!["已完成","已上片"].includes(v.stage)) return false; const fd=parseDate(v.finishedAt); return !!(fd && fd>=start && fd<=end); }
 // 績效以「月」為單位累積、每月自動重置（從當月 1 號到今天的工作日 × 配額為應達量）
 function computeWorkload(date){
-  const s=STATE.settings||{}; const quota=s.editorDailyQuota||3; const tod=parseDate(date)||new Date();
+  const s=STATE.settings||{}; const tod=parseDate(date)||new Date();
   const wkStart=new Date(tod); wkStart.setDate(tod.getDate()-((tod.getDay()+6)%7));
   const moStart=new Date(tod.getFullYear(),tod.getMonth(),1);
   const rows=editorNames().map(name=>{
+    const q=userQuota(name);  // 每人各自的每日 KPI 支數
     const mine=(STATE.videos||[]).filter(v=>v.editor===name||v.claimedBy===name);
     const todayDone=mine.filter(v=>finishedOn(v,date)).length;
     const weekDone=mine.filter(v=>finishedInRange(v,wkStart,tod)).length;
     const monthDone=mine.filter(v=>finishedInRange(v,moStart,tod)).length;
-    const expected=workdaysBetween(moStart,tod)*quota; const diff=monthDone-expected;  // 本月累積，月初重置
-    return {name, todayDone, todayQuota:quota, todayMet:todayDone>=quota, weekDone, monthDone,
+    const expected=workdaysBetween(moStart,tod)*q; const diff=monthDone-expected;  // 本月累積，月初重置
+    return {name, todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone,
       totalDone:monthDone, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
       inProgress: mine.filter(v=>v.stage==="剪輯中").length};
   }).sort((a,b)=>b.diff-a.diff);
-  return {date, quota, monthStart:moStart.toISOString().slice(0,10), rows};
+  return {date, quota:(s.editorDailyQuota||3), monthStart:moStart.toISOString().slice(0,10), rows};
 }
 function computeDashboard(date){
   const w=computeWarnings(); const s=STATE.settings||{}; const target=s.dailyPublishTarget||4;
@@ -134,8 +138,10 @@ async function _route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      await window.DB.set("users", name, {name, role, isDefault:false}); return; }
-    if(method==="PUT"){ await window.DB.update("users", seg[1], {role:body.role}); return; }
+      const doc={name, role, isDefault:false}; if(body.dailyQuota!=null) doc.dailyQuota=Number(body.dailyQuota)||0;
+      await window.DB.set("users", name, doc); return; }
+    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.dailyQuota!=null) patch.dailyQuota=Number(body.dailyQuota)||0;
+      await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
   if(head==="products"){
@@ -178,7 +184,6 @@ async function _route(method, path, body){
     const date=seg[1], sub=seg[2]; const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
     if(sub==="slot" && method==="POST"){
       const slot=body.slot||{}; const tv=vidLocal(slot.videoId);
-      if(tv){ const cap=STATE.settings?.reuseCap||3; if(usedInWindow(tv, STATE.settings?.reuseWindowDays||30)>=cap) throw new Error("此影片 30 天內已達使用上限（"+cap+" 次）"); }
       slots.push(slot); await window.DB.scheduleSet(date,{slots});
       if(tv) await window.DB.update("videos", slot.videoId, {scheduledDate:date}); return;
     }
@@ -220,17 +225,18 @@ function buildNav(){
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
   const users=(STATE?.users)||[];
-  if(!users.length){ g.innerHTML = '<p class="muted">尚無成員，請於下方新增第一位（建議先建一位老闆）</p>'; }
+  if(!users.length){ g.innerHTML = '<p class="muted">尚無成員，請按下方「🔒 管理員登入」進入後新增</p>'; }
   users.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+'</span>';
     b.onclick=()=>{ setUser(u.name); localStorage.setItem("ecdr_role",u.role||"editor"); applyState(LAST_RAW); };
     g.appendChild(b); });
 }
-async function addUser(){
-  const name=document.getElementById("newUserName").value.trim(); const role=document.getElementById("newUserRole").value;
-  if(!name) return;
-  try{ await route("POST","/api/users",{name,role}); document.getElementById("newUserName").value=""; toast("已新增成員"); }
-  catch(e){ toast(e.message,true); }
+// 管理員（owner）以密碼進入；成員管理／稽核只有這條路徑能看到
+function ownerLogin(){
+  if(!STATE){ toast("連線中，請稍候再試",true); return; }
+  const pw=prompt("管理員密碼："); if(pw===null) return;
+  if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
+  setUser(ownerName()); localStorage.setItem("ecdr_role","boss"); applyState(LAST_RAW);
 }
 function logout(){ localStorage.removeItem("ecdr_user"); location.reload(); }
 
@@ -480,7 +486,7 @@ function viewWork(){
   // 今日 KPI
   const myDoneToday = (STATE.videos||[]).filter(v=>(v.editor===me||v.claimedBy===me) &&
       ["已完成","已上片"].includes(v.stage) && (v.finishedAt||"").slice(0,10)===today).length;
-  const quota = STATE.settings?.editorDailyQuota||3;
+  const quota = userQuota(me);
   const matRow = (v,inPool)=>`<tr>
       <td data-label="影片">${esc(v.name||v.rawName||"(未命名)")} ${typeTag(v.mainType)}${v.subTag?` <span class="tag">${esc(v.subTag)}</span>`:""}</td>
       <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
@@ -700,11 +706,8 @@ function viewSettings(){
     <input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
   <div class="card"><b>平台清單</b>
     <input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
-  <div class="card"><div class="grid cols3">
-    <div><label>30天使用上限</label><input type="number" id="set_cap" value="${s.reuseCap||3}"></div>
-    <div><label>疲乏視窗(天)</label><input type="number" id="set_win" value="${s.reuseWindowDays||30}"></div>
-    <div><label>異地備份資料夾</label><input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
-  </div></div>
+  <div class="card"><b>異地備份資料夾</b>（選填）
+    <input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
   <div class="card"><b>變更管理者密碼</b>
     <input id="set_pw" type="text" placeholder="留空則不變更"></div>
   <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定（需密碼）</button></div>`;
@@ -726,7 +729,6 @@ async function saveSettings(){
     sources:val("set_src").split(",").map(x=>x.trim()).filter(Boolean),
     languages:val("set_langs").split(",").map(x=>x.trim()).filter(Boolean),
     platforms:val("set_plat").split(",").map(x=>x.trim()).filter(Boolean),
-    reuseCap:parseInt(val("set_cap"))||3, reuseWindowDays:parseInt(val("set_win"))||30,
     offsiteBackupDir:val("set_offsite")
   };
   const pw=val("set_pw"); if(pw) settings.adminPassword=pw;
@@ -763,37 +765,40 @@ function roleCode(s){ s=String(s||"").trim().toLowerCase();
   return m[s]||m[String(s)]||"editor"; }
 function viewMembers(){
   const users=STATE.users||[];
+  const defQ=STATE.settings?.editorDailyQuota||3;
   const rows=users.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label="角色">
       <select onchange="changeRole('${esc(u.name)}',this.value)">
         ${["boss","hr","editor"].map(r=>`<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}
       </select></td>
+    <td data-label="每日KPI"><input type="number" min="0" style="width:70px" value="${u.dailyQuota||defQ}" onchange="changeQuota('${esc(u.name)}',this.value)"> 片</td>
     <td data-label=""><button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
-  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理者）</span></h2>
+  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
   <div class="card"><b>現有成員（${users.length}）</b>
-    <table class="responsive"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
+    <table class="responsive"><thead><tr><th>名字</th><th>角色</th><th>每日KPI</th><th></th></tr></thead>
     <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <p class="muted">改角色或刪除需管理者密碼。</p>
+    <p class="muted">「每日KPI」＝該成員每天應完成的影片支數（每人可不同）。改角色、改KPI、刪除需管理者密碼。</p>
   </div>
   <div class="card"><b>新增單一成員</b>
-    <div class="grid cols3">
+    <div class="grid cols4">
       <div><label>名字</label><input id="mb_name"></div>
       <div><label>角色</label><select id="mb_role"><option value="editor">剪輯</option><option value="boss">管理員</option><option value="hr">人資</option></select></div>
+      <div><label>每日KPI支數</label><input id="mb_quota" type="number" min="0" value="${defQ}"></div>
       <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addMember()">新增</button></div>
     </div>
   </div>
-  <div class="card"><b>批次新增</b>（每行一位，格式 <code>名字,角色</code>；角色可填 老闆／人資／剪輯）
+  <div class="card"><b>批次新增</b>（每行一位，格式 <code>名字,角色,每日KPI</code>；KPI 可省略，省略就用預設 ${defQ}）
     <textarea id="mb_bulk" style="min-height:170px">Regina,管理員
 Vito,管理員
 Benny,人資
-健加,剪輯
-鴻閔,剪輯
-芋頭,剪輯
-怡如,剪輯
-艾斯姆,剪輯
-玲玲,剪輯</textarea>
+健加,剪輯,3
+鴻閔,剪輯,3
+芋頭,剪輯,3
+怡如,剪輯,3
+艾斯姆,剪輯,3
+玲玲,剪輯,3</textarea>
     <div class="modalFoot"><button class="btn" onclick="bulkAdd()">批次建立</button></div>
     <p class="muted">已存在的名字會自動略過，可重複按。</p>
   </div>
@@ -813,10 +818,11 @@ async function importLegacy(){
   }
   await delay(400); toast("匯入完成：成功 "+ok+" 筆"+(fail?("，失敗 "+fail):"")+"。請到影片庫／月排程查看");
 }
-async function addMember(){ const name=val("mb_name").trim(); const role=val("mb_role");
+async function addMember(){ const name=val("mb_name").trim(); const role=val("mb_role"); const dailyQuota=parseInt(val("mb_quota"))||0;
   if(!name){ toast("請輸入名字",true); return; }
-  await write("POST","/api/users",{name,role},"已新增成員"); }
+  await write("POST","/api/users",{name,role,dailyQuota},"已新增成員"); }
 function changeRole(name,role){ writeAdmin("PUT","/api/users/"+name,{role},"已更新角色"); }
+function changeQuota(name,q){ writeAdmin("PUT","/api/users/"+name,{dailyQuota:parseInt(q)||0},"已更新每日 KPI"); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
 async function bulkAdd(){
@@ -824,7 +830,8 @@ async function bulkAdd(){
   let ok=0, skip=0;
   for(const line of lines){ const parts=line.split(/[,，]/); const name=(parts[0]||"").trim();
     if(!name) continue;
-    try{ await route("POST","/api/users",{name, role:roleCode(parts[1])}); ok++; }
+    const q=parseInt((parts[2]||"").trim())||0;
+    try{ await route("POST","/api/users",{name, role:roleCode(parts[1]), dailyQuota:q}); ok++; }
     catch(e){ skip++; } }
   await delay(250); toast("批次完成：新增 "+ok+" 位，略過 "+skip+" 位");
 }
