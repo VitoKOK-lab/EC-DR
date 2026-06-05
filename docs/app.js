@@ -6,7 +6,7 @@ const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
   boss:   [["dash","📊 總覽"],["workload","👥 人員KPI"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
   hr:     [["workload","👥 人員KPI"],["dash","📊 部門總覽"]],
-  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["workload","👥 人員KPI"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
 const today = new Date().toISOString().slice(0,10);
@@ -517,7 +517,7 @@ function viewWorkload(){
       </div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  return `<h2>👥 人員KPI <span class="muted" style="font-size:13px">HR 每日檢核</span></h2>
+  return `<h2>👥 人員KPI <span class="muted" style="font-size:13px">全員每日成效一覽</span></h2>
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row" style="gap:8px"><button class="btn sm sec" onclick="wlMove(-1)">← 前一天</button>
