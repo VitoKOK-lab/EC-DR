@@ -6,7 +6,7 @@ const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
   boss:   [["dash","📊 總覽"],["cal","📅 月排程"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["prod","💎 帶貨商品"],["settings","⚙️ 設定"]],
   hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
-  editor: [["work","✂️ 我的工作台"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
 const today = new Date().toISOString().slice(0,10);
@@ -64,6 +64,20 @@ function dayLangList(date,lang){
     .map(v=>({videoId:v.id, fromVideo:true, lang}));
 }
 function dayLangCount(date,lang){ return dayLangList(date,lang).length; }
+// 每日類型配額與寵粉(週五六)規則
+function typeTargets(){ return STATE.settings?.typeTargets || {"流量型":2,"帶貨型":2}; }
+function isPamperedDay(date){ const w=new Date(date+"T00:00:00").getDay(); return w===5||w===6; } // 週五、六
+function dayBreakdown(date){
+  const list=dayLangList(date,"zh"); const byType={}; let pampered=0;
+  list.forEach(it=>{ const v=vid(it.videoId); if(!v) return; byType[v.mainType]=(byType[v.mainType]||0)+1;
+    if(String(v.subTag||"").includes("寵粉")||v.pampered) pampered++; });
+  const tg=typeTargets(); const deficits={};
+  Object.keys(tg).forEach(tp=>{ const d=Math.max(0,(tg[tp]||0)-(byType[tp]||0)); if(d>0) deficits[tp]=d; });
+  const needPampered = isPamperedDay(date) && pampered<1;
+  const target=STATE.settings?.dailyPublishTarget||4;
+  const full = list.length>=target && Object.keys(deficits).length===0 && !needPampered;
+  return {total:list.length, target, byType, deficits, pampered, needPampered, full};
+}
 // 某語言、某人、某日是否完成一支
 function langFinishedOn(v,lg,name,date){
   if(lg==="zh") return v.editor===name && ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===date;
@@ -318,8 +332,11 @@ function decorate(raw){
   st.platforms = s.platforms || st.platforms || [];
   STATE=st; STATE._warnings=computeWarnings(); return st;
 }
+let BULK_BUSY=false;
 function applyState(raw){
-  if(!raw) return; LAST_RAW=raw; decorate(raw); DASH=computeDashboard(today);
+  if(!raw) return;
+  if(BULK_BUSY){ LAST_RAW=raw; return; }   // 批次寫入期間暫停重繪，避免卡頓
+  LAST_RAW=raw; decorate(raw); DASH=computeDashboard(today);
   const has=(STATE.users||[]).some(u=>u.name===currentUser());
   if(currentUser() && has){
     document.getElementById("login").classList.add("hidden");
@@ -352,16 +369,25 @@ const LANG_LABEL={zh:"中",en:"英",th:"泰",ms:"馬"};
 // ===================================================================
 // 畫面路由
 // ===================================================================
+let CHARTS={}, PENDING_CHARTS=[];
+function chartCanvas(id, config, height){ PENDING_CHARTS.push({id,config}); return `<div style="position:relative;height:${height||160}px"><canvas id="${id}"></canvas></div>`; }
+function renderCharts(){
+  if(!window.Chart) return;
+  Object.values(CHARTS).forEach(c=>{ try{c.destroy();}catch(e){} }); CHARTS={};
+  PENDING_CHARTS.forEach(s=>{ const el=document.getElementById(s.id); if(el){ try{ s.config.options=Object.assign({responsive:true,maintainAspectRatio:false},s.config.options||{}); CHARTS[s.id]=new window.Chart(el,s.config); }catch(e){} } });
+}
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
+  PENDING_CHARTS=[];
   const fn = {
     dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
-    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit
+    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit, mine:viewMine
   }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
+  renderCharts();
 }
 
 // ---- 總覽 ----
@@ -387,8 +413,27 @@ function viewDash(){
       <div style="font-size:13px;margin-top:4px"><span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span> <span class="muted">本月 ${r.totalDone}/${r.expected}</span></div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
+  // 近 21 天每日上片數（中文）
+  const days21=[]; for(let i=20;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+    days21.push({ds, n:dayLangCount(ds,"zh")}); }
+  const target=p.每日目標||4;
+  const deptChart=chartCanvas("c_dept",{type:"bar",
+    data:{labels:days21.map(d=>d.ds.slice(5)),datasets:[{label:"每日上片",data:days21.map(d=>d.n),
+      backgroundColor:days21.map(d=>d.n>=target?"#16a34a":"#dc2626")}]},
+    options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,suggestedMax:target+2}}}},170);
+  const names=(wl.rows||[]).map(r=>r.name);
+  const kpiChart=chartCanvas("c_kpi",{type:"bar",
+    data:{labels:names,datasets:[
+      {label:"本月完成",data:(wl.rows||[]).map(r=>r.totalDone),backgroundColor:"#2563eb"},
+      {label:"應達",data:(wl.rows||[]).map(r=>r.expected),backgroundColor:"#cbd5e1"}]},
+    options:{scales:{y:{beginAtZero:true}}}},170);
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
+
+  <div class="grid cols2">
+    <div class="card"><b>📈 近 21 天每日上片數</b><p class="muted" style="font-size:11px">綠＝達每日目標 ${target}，紅＝不足</p>${deptChart}</div>
+    <div class="card"><b>📊 本月各剪輯：完成 vs 應達</b>${kpiChart}</div>
+  </div>
 
   <div class="card"><b>👥 每位剪輯 KPI（每日應完成數，綠＝達標/超前、紅＝落後）</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
@@ -465,6 +510,51 @@ function viewWorkload(){
   </div>`;
 }
 
+// ---- 我的儀表板（個人，只看自己）----
+function viewMine(){
+  const me=currentUser();
+  const wl=computeWorkload(today); const r=wl.rows.find(x=>x.name===me)||{todayDone:0,todayQuota:userQuota(me),monthDone:0,expected:0,diff:0,avgMin:null};
+  const mineAll=(STATE.videos||[]).filter(v=>v.editor===me||SCHED_LANGS.some(l=>v.languages?.[l]?.editor===me));
+  const done=mineAll.filter(v=>["已完成","已上片"].includes(v.stage)||SCHED_LANGS.some(l=>v.languages?.[l]?.editor===me&&v.languages?.[l]?.status==="完成"));
+  const last30=[]; for(let i=29;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+    last30.push({ds, n:(STATE.videos||[]).reduce((a,v)=>a+(SCHED_LANGS.some(l=>langFinishedOn(v,l,me,ds))?1:0),0)}); }
+  const typeCount={}; done.forEach(v=>{ typeCount[v.mainType]=(typeCount[v.mainType]||0)+1; });
+  const ctrs=done.map(v=>v.ctr).filter(x=>x>0), comps=done.map(v=>v.completionRate).filter(x=>x>0);
+  const avgCtr=ctrs.length?(ctrs.reduce((a,b)=>a+b,0)/ctrs.length).toFixed(1):"-";
+  const avgComp=comps.length?Math.round(comps.reduce((a,b)=>a+b,0)/comps.length):"-";
+  const c1=chartCanvas("m_daily",{type:"bar",data:{labels:last30.map(d=>d.ds.slice(5)),datasets:[{label:"完成",data:last30.map(d=>d.n),backgroundColor:"#2563eb"}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}},170);
+  const tk=Object.keys(typeCount);
+  const c2=chartCanvas("m_type",{type:"doughnut",data:{labels:tk,datasets:[{data:tk.map(k=>typeCount[k]),backgroundColor:["#0284c7","#d97706","#16a34a","#9333ea"]}]}},170);
+  const recent=done.slice().sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||""))).slice(0,20);
+  const rows=recent.map(v=>`<tr>
+     <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName)}</a></td>
+     <td data-label="類別">${typeTag(v.mainType)}</td>
+     <td data-label="上片日">${esc(v.scheduledDate||"-")}</td>
+     <td data-label="CTR">${v.ctr||0}%</td><td data-label="完播">${v.completionRate||0}%</td>
+     <td data-label="工時">${v.durationMin!=null?minToText(v.durationMin):"-"}</td></tr>`).join("");
+  const good=r.diff>=0;
+  return `
+  <h2>📊 我的儀表板（${esc(me)}）</h2>
+  <div class="grid cols4">
+    <div class="stat"><div class="n ${r.todayDone>=r.todayQuota?'pos':'neg'}">${r.todayDone}/${r.todayQuota}</div><div class="l">今日完成／KPI</div></div>
+    <div class="stat"><div class="n">${r.monthDone}<span class="muted" style="font-size:13px">/${r.expected}</span></div><div class="l">本月完成／應達</div></div>
+    <div class="stat"><div class="n ${good?'pos':'neg'}">${r.diff>0?'超前 +'+r.diff:(r.diff<0?'落後 '+r.diff:'達標')}</div><div class="l">進度</div></div>
+    <div class="stat"><div class="n">${r.avgMin!=null?minToText(r.avgMin):'-'}</div><div class="l">平均工時</div></div>
+  </div>
+  <div class="grid cols2">
+    <div class="card"><b>📈 我近 30 天每日完成</b>${c1}</div>
+    <div class="card"><b>🍩 我的影片類型分布</b>${tk.length?c2:'<p class="muted">尚無資料</p>'}</div>
+  </div>
+  <div class="grid cols3">
+    <div class="stat"><div class="n">${avgCtr}%</div><div class="l">平均 CTR</div></div>
+    <div class="stat"><div class="n">${avgComp}${avgComp==="-"?"":"%"}</div><div class="l">平均完播率</div></div>
+    <div class="stat"><div class="n">${done.length}</div><div class="l">累計完成影片</div></div>
+  </div>
+  <div class="card"><b>🎬 我的影片（近 20 筆）</b>
+    <table class="responsive"><thead><tr><th>影片</th><th>類別</th><th>上片日</th><th>CTR</th><th>完播</th><th>工時</th></tr></thead>
+    <tbody>${rows||`<tr><td class="muted">尚無完成的影片</td></tr>`}</tbody></table></div>`;
+}
+
 // ---- 月排程 ----
 let CAL_YM = null;
 function viewCal(){
@@ -474,16 +564,26 @@ function viewCal(){
   const w = STATE._warnings||{emergency:[],warning:[]};
   const target = STATE.settings?.dailyPublishTarget||4;
   const lang = curLang(); const isZh=(lang==="zh");
+  const tCol={"流量型":"var(--traffic)","帶貨型":"var(--sales)"};
+  const chip=(label,col,short)=>`<span style="display:inline-block;font-size:10px;padding:1px 5px;border-radius:8px;margin:1px 2px 0 0;background:${short?'transparent':col};color:${short?'var(--red)':'#fff'};border:${short?'1px solid var(--red)':'none'}">${label}</span>`;
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div></div>`;
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const cnt = dayLangCount(ds, lang);
-    let cls = isZh ? (cnt>=target ? "full" : (w.emergency.includes(ds)?"em":(w.warning.includes(ds)?"wa":"")))
-                   : (cnt>0 ? "full" : "");
+    if(!isZh){ const cnt=dayLangCount(ds,lang);
+      cells += `<div class="day ${cnt>0?'full':''}" onclick="openDay('${ds}')"><div class="dnum">${d}</div>
+        <div class="mini">${cnt?`${cnt} 片`:`<span class="muted">未排</span>`}</div></div>`;
+      continue; }
+    const b=dayBreakdown(ds);
+    const cls = b.full ? "full" : (b.total>=target ? "wa" : (w.emergency.includes(ds)?"em":(w.warning.includes(ds)?"wa":"")));
+    // 類型小標：已達綠/橙、不足紅框
+    const chips=Object.keys(typeTargets()).map(tp=>{ const have=b.byType[tp]||0; const short=(b.deficits[tp]||0)>0;
+      return chip((tp==="流量型"?"流":"帶")+have, tCol[tp]||"var(--chip)", short); }).join("");
+    const pamp = isPamperedDay(ds)? (b.needPampered?`<span style="color:var(--red);font-size:10px">缺寵粉</span>`:`<span style="color:var(--green);font-size:10px">寵粉✓</span>`) : "";
     cells += `<div class="day ${cls}" onclick="openDay('${ds}')">
-      <div class="dnum">${d}</div>
-      <div class="mini">${cnt?(isZh?`已排 ${cnt}/${target}`:`${cnt} 片`):`<span class="muted">未排</span>`}</div>
+      <div class="row" style="justify-content:space-between"><span class="dnum">${d}</span><span style="font-size:11px;font-weight:700;color:${b.total>=target?'var(--green)':'var(--red)'}">${b.total}/${target}</span></div>
+      <div style="margin-top:2px">${b.total?chips:`<span class="muted" style="font-size:11px">未排</span>`}</div>
+      <div>${pamp}</div>
     </div>`;
   }
   const switcher = canAllLang()
@@ -502,7 +602,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:10px">${isZh?`🟢 已排滿(≥${target})　🔴 緊急(≤3天未滿)　🟡 警告(未來一個月內未滿)`:`🟢 當日有${LANG_LABEL[lang]||lang}影片`}　點任一天查看</p>
+    <p class="muted" style="margin-top:10px">${isZh?`🟢 完整排滿（量＋類型＋週五六寵粉都齊）　🟡 量夠但類型/寵粉缺　🔴 量不足。<span style="color:var(--traffic)">流</span>=流量型 <span style="color:var(--sales)">帶</span>=帶貨型，紅框=該類型缺`:`🟢 當日有${LANG_LABEL[lang]||lang}影片`}　點任一天查看</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -530,11 +630,19 @@ function openDay(ds){
     </tr>`;
   }).join("");
   const cnt = list.length;
+  let summary="";
+  if(isZh){ const b=dayBreakdown(ds); const tg=typeTargets();
+    summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
+      Object.keys(tg).map(tp=>{ const have=b.byType[tp]||0; const ok=have>=tg[tp];
+        return `<span class="pill ${ok?'ok':'em'}">${tp} ${have}/${tg[tp]}</span>`; }).join("")+
+      (isPamperedDay(ds)?`<span class="pill ${b.needPampered?'em':'ok'}">寵粉(週五六) ${b.pampered}/1</span>`:"")+
+      `<span class="pill ${cnt>=target?'ok':'em'}">總量 ${cnt}/${target}</span></div>`;
+  }
   showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
     <div class="card"><b>當日影片</b>
+      ${summary}
       <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>狀態</th><th></th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-      ${isZh?(cnt<target?`<p class="pill wa" style="display:inline-block;margin-top:8px">尚缺 ${target-cnt} 片才達每日目標</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 已達每日目標</p>`):""}
     </div>
     ${isZh?`<div class="card"><b>手動排入（重播舊片）</b>
       <button class="btn" onclick="pickVideo('${ds}')">＋ 選片排入</button></div>`:`<p class="muted">${LANG_LABEL[lang]||lang}影片由該語言剪輯「完成」時選定上片日期，會自動出現在這裡。</p>`}`, null);
@@ -925,7 +1033,7 @@ function viewMembers(){
     <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
   </div>
   <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
-    <p class="muted">載入模擬資料供展示（前後各約一個月、表現不均、安全天數約 5 天）；或清空所有影片與排程。皆不影響成員與設定。</p>
+    <p class="muted">載入模擬資料供展示（前後各約兩個月、每日≥4片、各人表現不均、週五六含寵粉，約 500+ 筆，可能要 1 分鐘）；或清空所有影片與排程。皆不影響成員與設定。</p>
     <div class="row">
       <button class="btn sec" onclick="loadDemoData()">🧪 載入模擬資料</button>
       <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
@@ -936,24 +1044,28 @@ async function clearAllVideos(){
   if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
   await withAdmin(async ()=>{
     const vids=(STATE.videos||[]).slice(); const dates=Object.keys(STATE.schedule||{});
-    let n=0;
-    for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
-    for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
-    try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空所有影片("+n+")"}); }catch(e){}
-    await delay(400); toast("已清空 "+n+" 支影片與排程");
+    let n=0; BULK_BUSY=true;
+    try{
+      for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
+      for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
+      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空所有影片("+n+")"}); }catch(e){}
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已清空 "+n+" 支影片與排程");
   });
 }
 // 批次建立影片：本地遞增 ID（避免連續寫入時 nextId 撞號），直接寫 Firestore
 async function bulkCreateVideos(list){
   let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
-  let ok=0;
-  for(let i=0;i<list.length;i++){
-    const id="V"+String(base+i+1).padStart(3,"0");
-    const rec=Object.assign(newVideoRecord(list[i]), {id});
-    if(rec.editor) rec.languages.zh.editor=rec.editor;
-    try{ await window.DB.set("videos", id, rec); ok++; }catch(e){}
-  }
-  try{ if(window.DB&&window.DB.addAudit) await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"批次建立影片("+ok+")"}); }catch(e){}
+  let ok=0; BULK_BUSY=true;
+  try{
+    for(let i=0;i<list.length;i++){
+      const id="V"+String(base+i+1).padStart(3,"0");
+      const rec=Object.assign(newVideoRecord(list[i]), {id});
+      if(rec.editor) rec.languages.zh.editor=rec.editor;
+      try{ await window.DB.set("videos", id, rec); ok++; }catch(e){}
+    }
+    try{ if(window.DB&&window.DB.addAudit) await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"批次建立影片("+ok+")"}); }catch(e){}
+  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
   return ok;
 }
 async function importLegacy(){
@@ -964,46 +1076,54 @@ async function importLegacy(){
   const ok=await bulkCreateVideos(list);
   await delay(400); toast("匯入完成：成功 "+ok+" 筆。請到影片庫／月排程查看");
 }
-// 模擬資料（前後各約一個月、表現不均、安全天數=5）
+// 完整模擬資料：前後各約兩個月、每日≥4片、含片名/剪輯/成效、週五六寵粉、各人不均
+const DEMO_TRAFFIC=["劉亦菲紅毯1.2億珠寶竟是假的","八大珠寶派系你是哪一派","有錢人的保值密碼","真假寶石30秒分辨","婚戒避坑指南","名人最愛的冷門寶石","女人的底氣從哪來","黃金跟你的原始階層有關","為什麼貴婦都戴這款","珠寶商不告訴你的秘密","古董珠寶的真實價值","這顆鑽石為何值千萬","明星同款的平價替代","寶石顏色的等級秘密","收藏級翡翠長這樣"];
+const DEMO_SALES=["寵粉金運球開箱","本月新品鑽石項鍊","限時促銷紅寶石戒","母親節必買套組","招財貔貅手鍊","結婚對戒推薦","送禮自用兩相宜","週年慶下殺三折","新品試戴實拍","熱銷耳環補貨到"];
+const DEMO_PAMPER=["寵粉日五行法寶","寵粉專屬金運球","寵粉社群限定款","寵粉週末驚喜價","寵粉回饋開箱"];
 async function loadDemoData(){
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  if(!editors.length){ toast("請先建立至少一位剪輯成員再載入模擬資料",true); return; }
-  if(!confirm("載入模擬資料？會新增約 150 筆影片（可之後用『清空所有影片』移除）。")) return;
-  const target=STATE.settings?.dailyPublishTarget||4;
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor" && (u.lang==="zh"||u.lang==="all"||!u.lang));
+  const allEd=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const eds = editors.length?editors:allEd;
+  if(!eds.length){ toast("請先建立至少一位剪輯成員再載入模擬資料",true); return; }
+  if(!confirm("載入完整模擬資料？前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘。")) return;
   const T=new Date(today+"T00:00:00");
   const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
   const ds=x=>x.toISOString().slice(0,10);
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
-  const topics=["珠寶知識快問快答","名人紅毯珠寶比較","婚戒避坑指南","有錢人的理財思維","家庭關係的真相","新品開箱","促銷快報","保值密碼","真假寶石鑑定","女人的底氣"];
-  const mains=STATE.settings?.mainTypes||["流量型","帶貨型"]; const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
+  const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  let seq=0; const recs=[];
-  const mk=o=>{ seq++; return Object.assign({rawName:pick(topics), name:pick(topics)+" #"+seq, mainType:pick(mains), source:pick(srcs),
-     driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq}, o); };
-  const monthStart=new Date(T.getFullYear(),T.getMonth(),1);
-  const daysSinceMonth=Math.max(1, Math.round((T-monthStart)/86400000));
-  const preMonthDays=30-daysSinceMonth;
-  // 1) 前一個月舊片
-  for(let n=-30; n<-daysSinceMonth; n++){ const d=dOff(n);
-    recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,12), durationMin:20+Math.floor(Math.random()*1300)})); }
-  // 2) 本月至昨天：各人不均
-  const mults=[1.3,1.0,0.55,0.9,1.15];
-  const expWd=Math.max(1, workdaysBetween(monthStart, dOff(-1)));
-  editors.forEach((u,ei)=>{ const q=userQuota(u.name)||3; const total=Math.round(q*(mults[ei%mults.length])*expWd);
-    for(let k=0;k<total;k++){ const back=1+Math.floor(Math.pow(Math.random(),1.6)*daysSinceMonth); const d=dOff(-back);
-      recs.push(mk({editor:u.name, stage:"已完成", scheduledDate:ds(d), claimedAt:at(d,8), finishedAt:at(d,9+Math.floor(Math.random()*9)),
-        durationMin:20+Math.floor(Math.random()*1300)})); } });
-  // 3) 安全天數=5：今天~今天+4 各排滿
-  for(let n=0;n<5;n++){ const d=dOff(n);
-    for(let j=0;j<target;j++) recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,10)})); }
-  // 4) 今天+6 起部分（不滿，使安全天數停在 5）
-  for(let n=6;n<=24;n+=2){ const d=dOff(n);
-    for(let j=0;j<Math.min(2,target-1);j++) recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,10)})); }
-  // 5) 工作台池
-  for(let k=0;k<6;k++) recs.push(mk({stage:"待處理"}));
-  editors.slice(0,3).forEach(u=>recs.push(mk({editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)})));
+  // 各剪輯權重（造成明顯不均：有人超前有人落後）
+  const weights={}; eds.forEach((u,i)=>weights[u.name]=[2.4,1.0,0.5,1.6,0.8,1.3][i%6]);
+  const wpick=()=>{ const tot=eds.reduce((a,u)=>a+weights[u.name],0); let r=Math.random()*tot;
+    for(const u of eds){ r-=weights[u.name]; if(r<=0) return u.name; } return eds[0].name; };
+  let seq=0;
+  const mkVideo=(d, kind)=>{ seq++;
+    let mainType, subTag, name;
+    if(kind==="pamper"){ mainType="帶貨型"; subTag="寵粉"; name=pick(DEMO_PAMPER); }
+    else if(kind==="sales"){ mainType="帶貨型"; subTag=pick(["新品","促銷","開箱"]); name=pick(DEMO_SALES); }
+    else { mainType="流量型"; subTag=pick(["名人話題","珠寶知識","家庭","理財"]); name=pick(DEMO_TRAFFIC); }
+    const editor=wpick(); const past = d < T;
+    return {rawName:name, name:name+"（"+ds(d).slice(5)+"）", mainType, subTag, pampered:kind==="pamper",
+      source:pick(srcs), editor, stage:"已完成", scheduledDate:ds(d),
+      claimedAt:past?at(dOff(((d-T)/86400000|0)-(Math.random()<0.3?1:0)),8):"",
+      finishedAt:at(d, 9+Math.floor(Math.random()*9)),
+      durationMin:20+Math.floor(Math.random()*1200),
+      ctr:+(2+Math.random()*10).toFixed(1), completionRate:30+Math.floor(Math.random()*55),
+      driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
+  };
+  const recs=[];
+  for(let n=-60;n<=60;n++){ const d=dOff(n); const w=d.getDay(); const pamperDay=(w===5||w===6);
+    // 每日：流量 2~3、帶貨 2~3（一定≥4、且各類型≥2），週五六再加寵粉 1~2
+    const traffic=2+Math.floor(Math.random()*2); const sales=2+Math.floor(Math.random()*2);
+    for(let i=0;i<traffic;i++) recs.push(mkVideo(d,"traffic"));
+    for(let i=0;i<sales;i++) recs.push(mkVideo(d,"sales"));
+    if(pamperDay){ const p=1+Math.floor(Math.random()*2); for(let i=0;i<p;i++) recs.push(mkVideo(d,"pamper")); }
+  }
+  // 工作台池：待處理 + 剪輯中
+  for(let k=0;k<6;k++){ seq++; recs.push({rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
+  eds.slice(0,3).forEach(u=>{ seq++; recs.push({rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
   const ok=await bulkCreateVideos(recs);
-  await delay(400); toast("已載入模擬資料 "+ok+" 筆，請看總覽／月排程");
+  await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
 }
 function tokenToRL(tk){ const [role,lang]=String(tk||"editor:zh").split(":"); return {role, lang: role==="editor"?(lang||"zh"):"all"}; }
 async function addMember(){ const name=val("mb_name").trim(); const rl=tokenToRL(val("mb_role")); const dailyQuota=parseInt(val("mb_quota"))||0;
