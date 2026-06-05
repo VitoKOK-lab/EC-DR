@@ -925,8 +925,11 @@ function viewMembers(){
     <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
   </div>
   <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
-    <p class="muted">清空所有影片與排程（不影響成員與設定）。常用於重新匯入或測試歸零，無法復原。</p>
-    <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
+    <p class="muted">載入模擬資料供展示（前後各約一個月、表現不均、安全天數約 5 天）；或清空所有影片與排程。皆不影響成員與設定。</p>
+    <div class="row">
+      <button class="btn sec" onclick="loadDemoData()">🧪 載入模擬資料</button>
+      <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
+    </div>
   </div>`;
 }
 async function clearAllVideos(){
@@ -940,17 +943,67 @@ async function clearAllVideos(){
     await delay(400); toast("已清空 "+n+" 支影片與排程");
   });
 }
+// 批次建立影片：本地遞增 ID（避免連續寫入時 nextId 撞號），直接寫 Firestore
+async function bulkCreateVideos(list){
+  let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
+  let ok=0;
+  for(let i=0;i<list.length;i++){
+    const id="V"+String(base+i+1).padStart(3,"0");
+    const rec=Object.assign(newVideoRecord(list[i]), {id});
+    if(rec.editor) rec.languages.zh.editor=rec.editor;
+    try{ await window.DB.set("videos", id, rec); ok++; }catch(e){}
+  }
+  try{ if(window.DB&&window.DB.addAudit) await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"批次建立影片("+ok+")"}); }catch(e){}
+  return ok;
+}
 async function importLegacy(){
   const seed=window.LEGACY_SEED||[];
   if(!seed.length){ toast("找不到匯入資料",true); return; }
   if(!confirm("將匯入 "+seed.length+" 筆舊工作到影片庫，確定？")) return;
-  let ok=0, fail=0;
-  for(const r0 of seed){
-    const r=Object.assign({}, r0); delete r.enDrive; delete r.thDrive;  // 只取主備份連結，避免誤帶
-    try{ await route("POST","/api/videos",{video:r}); ok++; }
-    catch(e){ fail++; }
-  }
-  await delay(400); toast("匯入完成：成功 "+ok+" 筆"+(fail?("，失敗 "+fail):"")+"。請到影片庫／月排程查看");
+  const list=seed.map(r0=>{ const r=Object.assign({}, r0); delete r.enDrive; delete r.thDrive; return r; });
+  const ok=await bulkCreateVideos(list);
+  await delay(400); toast("匯入完成：成功 "+ok+" 筆。請到影片庫／月排程查看");
+}
+// 模擬資料（前後各約一個月、表現不均、安全天數=5）
+async function loadDemoData(){
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  if(!editors.length){ toast("請先建立至少一位剪輯成員再載入模擬資料",true); return; }
+  if(!confirm("載入模擬資料？會新增約 150 筆影片（可之後用『清空所有影片』移除）。")) return;
+  const target=STATE.settings?.dailyPublishTarget||4;
+  const T=new Date(today+"T00:00:00");
+  const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
+  const ds=x=>x.toISOString().slice(0,10);
+  const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
+  const topics=["珠寶知識快問快答","名人紅毯珠寶比較","婚戒避坑指南","有錢人的理財思維","家庭關係的真相","新品開箱","促銷快報","保值密碼","真假寶石鑑定","女人的底氣"];
+  const mains=STATE.settings?.mainTypes||["流量型","帶貨型"]; const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
+  const pick=a=>a[Math.floor(Math.random()*a.length)];
+  let seq=0; const recs=[];
+  const mk=o=>{ seq++; return Object.assign({rawName:pick(topics), name:pick(topics)+" #"+seq, mainType:pick(mains), source:pick(srcs),
+     driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq}, o); };
+  const monthStart=new Date(T.getFullYear(),T.getMonth(),1);
+  const daysSinceMonth=Math.max(1, Math.round((T-monthStart)/86400000));
+  const preMonthDays=30-daysSinceMonth;
+  // 1) 前一個月舊片
+  for(let n=-30; n<-daysSinceMonth; n++){ const d=dOff(n);
+    recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,12), durationMin:20+Math.floor(Math.random()*1300)})); }
+  // 2) 本月至昨天：各人不均
+  const mults=[1.3,1.0,0.55,0.9,1.15];
+  const expWd=Math.max(1, workdaysBetween(monthStart, dOff(-1)));
+  editors.forEach((u,ei)=>{ const q=userQuota(u.name)||3; const total=Math.round(q*(mults[ei%mults.length])*expWd);
+    for(let k=0;k<total;k++){ const back=1+Math.floor(Math.pow(Math.random(),1.6)*daysSinceMonth); const d=dOff(-back);
+      recs.push(mk({editor:u.name, stage:"已完成", scheduledDate:ds(d), claimedAt:at(d,8), finishedAt:at(d,9+Math.floor(Math.random()*9)),
+        durationMin:20+Math.floor(Math.random()*1300)})); } });
+  // 3) 安全天數=5：今天~今天+4 各排滿
+  for(let n=0;n<5;n++){ const d=dOff(n);
+    for(let j=0;j<target;j++) recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,10)})); }
+  // 4) 今天+6 起部分（不滿，使安全天數停在 5）
+  for(let n=6;n<=24;n+=2){ const d=dOff(n);
+    for(let j=0;j<Math.min(2,target-1);j++) recs.push(mk({editor:pick(editors).name, stage:"已完成", scheduledDate:ds(d), finishedAt:at(d,10)})); }
+  // 5) 工作台池
+  for(let k=0;k<6;k++) recs.push(mk({stage:"待處理"}));
+  editors.slice(0,3).forEach(u=>recs.push(mk({editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)})));
+  const ok=await bulkCreateVideos(recs);
+  await delay(400); toast("已載入模擬資料 "+ok+" 筆，請看總覽／月排程");
 }
 function tokenToRL(tk){ const [role,lang]=String(tk||"editor:zh").split(":"); return {role, lang: role==="editor"?(lang||"zh"):"all"}; }
 async function addMember(){ const name=val("mb_name").trim(); const rl=tokenToRL(val("mb_role")); const dailyQuota=parseInt(val("mb_quota"))||0;
