@@ -832,30 +832,26 @@ function newVideo(){
   window._subOpts = subOptions;
 }
 
-// ---- 影片庫（分 新片未剪 / 舊片已完成）----
-function videoRow(v){ return `<tr>
-    <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a></td>
-    <td data-label="類別">${typeTag(v.mainType)}${v.subTag?` <span class="tag">${esc(v.subTag)}</span>`:""}</td>
-    <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
-    <td data-label="階段"><span class="tag">${esc(v.stage||"")}</span></td>
-    <td data-label="剪輯">${esc(v.editor||"")}</td>
-    <td data-label="上片日">${esc(v.scheduledDate||"-")}</td>
-    <td data-label=""><button class="btn sm sec" onclick="editVideo('${v.id}')">編輯</button></td>
-  </tr>`; }
-function videoTable(list){
-  return `<table class="responsive"><thead><tr><th>影片</th><th>類別</th><th>片源</th><th>階段</th><th>剪輯</th><th>上片日</th><th></th></tr></thead>
-  <tbody>${list.map(videoRow).join("")||`<tr><td class="muted">無</td></tr>`}</tbody></table>`;
-}
+// ---- 影片庫（精簡：只列標題，點進去看細節）----
+function videoItem(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(--traffic)";
+  return `<div class="vrow" onclick="editVideo('${v.id}')">
+    <span style="display:flex;align-items:center;gap:8px;min-width:0">
+      <span class="light" style="background:${dot};flex:none"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||v.rawName||"(未命名)")}</span></span>
+    <span class="muted" style="font-size:12px;white-space:nowrap">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span>
+  </div>`; }
+function videoList(list){ return list.length? list.map(videoItem).join("") : `<p class="muted">無</p>`; }
 function viewVideos(){
   const all=STATE.videos||[];
-  const fresh=all.filter(v=>["待處理","剪輯中"].includes(v.stage));   // 新片・未剪/製作中
-  const old=all.filter(v=>["已完成","已上片"].includes(v.stage));     // 舊片・已完成
-  return `<h2>🎞 影片庫</h2>
+  const fresh=all.filter(v=>["待處理","剪輯中"].includes(v.stage));
+  const old=all.filter(v=>["已完成","已上片"].includes(v.stage))
+    .sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")));
+  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點標題看細節／改連結</span></h2>
   <div class="card"><div class="row" style="justify-content:space-between"><b>🆕 新片（未剪／製作中）${fresh.length}</b>
     <button class="btn sm" onclick="newVideo()">＋ 新增片源</button></div>
-    ${videoTable(fresh)}</div>
+    <div style="margin-top:6px">${videoList(fresh)}</div></div>
   <div class="card"><b>📁 舊片（已完成）${old.length}</b>
-    ${videoTable(old)}</div>`;
+    <div style="margin-top:6px">${videoList(old)}</div></div>`;
 }
 function editVideo(id){
   const v = vid(id)||{};
