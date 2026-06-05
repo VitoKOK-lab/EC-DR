@@ -4,7 +4,8 @@
 // ===================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot }
+import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
+         addDoc, query, orderBy, limit, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -44,6 +45,12 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     del:         (c, id)    => deleteDoc(doc(db, c, id)),
     scheduleSet: (date, o)  => setDoc(doc(db, "schedule", date), o),
     setSettings: (p)        => setDoc(doc(db, "meta", "settings"), p, { merge: true }),
+    addAudit:    (entry)    => addDoc(collection(db, "audit"), entry),
+    recentAudit: async (n)  => {
+      const q = query(collection(db, "audit"), orderBy("ts", "desc"), limit(n || 300));
+      const s = await getDocs(q);
+      return s.docs.map(d => d.data());
+    },
   };
 
   signInAnonymously(auth).catch(e => { if (window.__authError) window.__authError(e.message); });

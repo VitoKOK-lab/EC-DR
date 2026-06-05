@@ -2,9 +2,9 @@
 // EC-DR Firebase 版 — 主程式（資料層改接 Firestore，畫面沿用）
 // 商業邏輯（排程預警 / KPI 超前落後 / 防疲乏）在前端計算。
 // ===================================================================
-const ROLE_LABEL = {boss:"老闆", hr:"人資", editor:"剪輯"};
+const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 老闆總覽"],["cal","📅 月排程"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["prod","💎 帶貨商品"],["settings","⚙️ 設定"]],
+  boss:   [["dash","📊 管理員總覽"],["cal","📅 月排程"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["prod","💎 帶貨商品"],["settings","⚙️ 設定"]],
   hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
   editor: [["work","✂️ 我的工作台"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
@@ -19,8 +19,11 @@ function currentRole(){
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  if(currentUser()===ownerName()) t.push(["members","👥 成員管理"]); return t; }
+  if(currentUser()===ownerName()){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
 function nowIso(){ return new Date().toISOString().slice(0,19); }
+function deviceId(){ let id=localStorage.getItem("ecdr_device");
+  if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
+  return id; }
 
 function toast(msg, isErr){
   const t = document.getElementById("toast");
@@ -106,7 +109,15 @@ function loadDash(){ DASH=computeDashboard(today); render(); }
 function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function prodLocal(id){ return (STATE.products||[]).find(p=>p.id===id); }
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
+// 對外的 route：執行寫入後寫一筆稽核紀錄（誰／哪台裝置／做了什麼）
 async function route(method, path, body){
+  const res = await _route(method, path, body);
+  try{ if(window.DB && window.DB.addAudit){
+    await window.DB.addAudit({ ts: nowIso(), user: currentUser()||"?", deviceId: deviceId(), action: method+" "+path });
+  } }catch(e){ /* 稽核失敗不影響主動作 */ }
+  return res;
+}
+async function _route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
   const seg=segOf(path), head=seg[0], user=currentUser();
   if(head==="settings" && method==="PUT"){ await window.DB.setSettings(body.settings||{}); return; }
@@ -184,7 +195,7 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ CUR_TAB = id; buildNav(); render(); if(id==="dash"||id==="workload") loadDash(); };
+    b.onclick = ()=>{ CUR_TAB = id; buildNav(); render(); if(id==="dash"||id==="workload") loadDash(); if(id==="audit"){ AUDIT=null; loadAudit(); } };
     nav.appendChild(b);
   });
 }
@@ -254,7 +265,7 @@ function render(){
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   const fn = {
     dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
-    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers
+    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit
   }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
@@ -680,7 +691,7 @@ function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
 // 成員管理（只有 owner，預設 Vito 看得到此頁）
 // ===================================================================
 function roleCode(s){ s=String(s||"").trim().toLowerCase();
-  const m={"老闆":"boss","boss":"boss","ceo":"boss","顧問":"boss","consultant":"boss",
+  const m={"老闆":"boss","管理員":"boss","boss":"boss","ceo":"boss","顧問":"boss","consultant":"boss",
            "人資":"hr","hr":"hr","剪輯":"editor","editor":"editor"};
   return m[s]||m[String(s)]||"editor"; }
 function viewMembers(){
@@ -702,13 +713,13 @@ function viewMembers(){
   <div class="card"><b>新增單一成員</b>
     <div class="grid cols3">
       <div><label>名字</label><input id="mb_name"></div>
-      <div><label>角色</label><select id="mb_role"><option value="editor">剪輯</option><option value="boss">老闆</option><option value="hr">人資</option></select></div>
+      <div><label>角色</label><select id="mb_role"><option value="editor">剪輯</option><option value="boss">管理員</option><option value="hr">人資</option></select></div>
       <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addMember()">新增</button></div>
     </div>
   </div>
   <div class="card"><b>批次新增</b>（每行一位，格式 <code>名字,角色</code>；角色可填 老闆／人資／剪輯）
-    <textarea id="mb_bulk" style="min-height:170px">Regina,老闆
-Vito,老闆
+    <textarea id="mb_bulk" style="min-height:170px">Regina,管理員
+Vito,管理員
 Benny,人資
 健加,剪輯
 鴻閔,剪輯
@@ -734,4 +745,51 @@ async function bulkAdd(){
     try{ await route("POST","/api/users",{name, role:roleCode(parts[1])}); ok++; }
     catch(e){ skip++; } }
   await delay(250); toast("批次完成：新增 "+ok+" 位，略過 "+skip+" 位");
+}
+
+// ===================================================================
+// 稽核紀錄（只有 owner 看得到）：誰、哪台裝置、做了什麼
+// ===================================================================
+let AUDIT=null;
+async function loadAudit(){ try{ AUDIT = (window.DB&&window.DB.recentAudit)? await window.DB.recentAudit(300) : []; }catch(e){ AUDIT=[]; } render(); }
+function humanAction(a){
+  const m=(a.action||""); const seg=m.split(" ")[1]||""; const p=seg.split("/").filter(Boolean).slice(1);
+  const id=p[1]||""; const act=p[2]||"";
+  if(p[0]==="videos"){ if(m.startsWith("POST /api/videos ")||(p.length===1&&m.startsWith("POST"))) return "新增影片";
+    if(act==="claim") return "認領影片 "+id; if(act==="assign") return "指派影片 "+id;
+    if(act==="finish") return "完成影片 "+id; if(act==="help") return "求支援 "+id;
+    if(act==="lang") return "更新二創 "+id; if(m.startsWith("PUT")) return "編輯影片 "+id;
+    if(m.startsWith("DELETE")) return "刪除影片 "+id; return "影片 "+id; }
+  if(p[0]==="schedule"){ if(act==="publish") return "上架 "+(p[1]||""); if(act==="slot"&&m.startsWith("POST")) return "排入影片 "+(p[1]||"");
+    if(act==="slot"&&m.startsWith("DELETE")) return "移除排片 "+(p[1]||""); return "排程 "+(p[1]||""); }
+  if(p[0]==="products"){ if(m.startsWith("POST")) return "新增商品"; if(m.startsWith("PUT")) return "編輯商品 "+id; if(m.startsWith("DELETE")) return "刪除商品 "+id; }
+  if(p[0]==="users"){ if(m.startsWith("POST")) return "新增成員"; if(m.startsWith("PUT")) return "改成員角色 "+id; if(m.startsWith("DELETE")) return "刪除成員 "+id; }
+  if(p[0]==="settings") return "變更設定";
+  return m;
+}
+function viewAudit(){
+  if(!AUDIT){ loadAudit(); return `<h2>🛡 稽核紀錄</h2><p class="muted">載入中…</p>`; }
+  // 同一裝置用過哪些名字（>1 即標記）
+  const byDev={}; AUDIT.forEach(a=>{ (byDev[a.deviceId]=byDev[a.deviceId]||new Set()).add(a.user); });
+  const shared=Object.entries(byDev).filter(([d,s])=>s.size>1);
+  const sharedHtml = shared.length
+    ? shared.map(([d,s])=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
+        <span class="neg">⚠ 同一台裝置出現多個身分</span>
+        <span>${[...s].map(esc).join("、")} <span class="muted">(${esc((d||"").slice(0,12))}…)</span></span></div>`).join("")
+    : `<p class="pill ok">✅ 沒有發現同一裝置跨身分操作</p>`;
+  const rows=AUDIT.slice(0,250).map(a=>`<tr>
+    <td data-label="時間">${esc((a.ts||"").replace("T"," "))}</td>
+    <td data-label="操作者"><b>${esc(a.user)}</b></td>
+    <td data-label="裝置"><span class="muted">${esc((a.deviceId||"").slice(0,12))}</span></td>
+    <td data-label="動作">${esc(humanAction(a))}</td>
+  </tr>`).join("");
+  return `<h2>🛡 稽核紀錄 <span class="muted" style="font-size:13px">最近 ${AUDIT.length} 筆　<a href="javascript:void(0)" onclick="loadAudit()">🔄重新整理</a></span></h2>
+  <div class="card"><b>裝置／身分檢查</b>
+    <p class="muted">每台裝置（瀏覽器）第一次使用會有固定代碼。若同一台裝置用了不同人的名字去操作，就會在這裡標紅——代表可能有人登了別人的帳號。</p>
+    ${sharedHtml}
+  </div>
+  <div class="card"><b>操作明細</b>
+    <table class="responsive"><thead><tr><th>時間</th><th>操作者</th><th>裝置</th><th>動作</th></tr></thead>
+    <tbody>${rows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table>
+  </div>`;
 }
