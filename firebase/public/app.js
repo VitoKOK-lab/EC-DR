@@ -4,8 +4,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["cal","📅 月排程"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["prod","💎 帶貨商品"],["settings","⚙️ 設定"]],
-  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  boss:   [["dash","📊 總覽"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
+  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["videos","🎞 影片庫"]],
   editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
@@ -436,7 +436,8 @@ function viewDash(){
   const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
     <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
     <span class="muted"> — 報表上的落後／缺口是「示範資料」造成的，不是真實狀況。正式使用前到「成員管理 → 清空所有影片」即可移除。</span></div>`:"";
-  const safeCol = runway>=5?'var(--green)':(runway>=3?'var(--amber)':'var(--red)');
+  const PRETARGET=15; // 預排目標：連續排滿要達 15 天以上
+  const safeCol = runway>=PRETARGET?'var(--green)':(runway>=7?'var(--amber)':'var(--red)');
   const newSrc=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
   const lowTh=STATE.settings?.materialLowThreshold||5;
   const srcLow=newSrc<lowTh; const srcCol=srcLow?'var(--red)':'var(--green)';
@@ -447,8 +448,8 @@ function viewDash(){
   <div class="grid cols2">
     <div class="card" style="text-align:center;border-color:${safeCol}">
       <div style="font-size:60px;font-weight:900;line-height:1;color:${safeCol}">${runway}<span style="font-size:22px;font-weight:700"> 天</span></div>
-      <div class="l" style="font-size:15px;margin-top:4px">安全天數　<span class="muted">（連續已排滿）</span></div>
-      ${runway<3?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 不足 3 天，盡快補排！</p>`:(runway<5?`<p class="pill wa" style="display:inline-block;margin-top:8px">尚可，建議補到 5 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 排程安全</p>`)}
+      <div class="l" style="font-size:15px;margin-top:4px">預排天數　<span class="muted">（從今天起連續排滿）</span></div>
+      ${runway<PRETARGET?`<p class="pill ${runway<7?'em':'wa'}" style="display:inline-block;margin-top:8px">⚠ 未達 15 天，請往後補排到 15 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 已預排 15 天以上</p>`}
     </div>
     <div class="card" style="text-align:center;border-color:${srcLow?srcCol:'var(--line)'};${srcLow?'background:var(--redbg)':''}">
       <div style="font-size:60px;font-weight:900;line-height:1;color:${srcCol}">${newSrc}<span style="font-size:22px;font-weight:700"> 支</span></div>
@@ -489,7 +490,8 @@ function viewDash(){
     ${help.length?help.map(h=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
         <span>${esc(h.name||"")} <span class="muted">(${esc(h.by||"")})</span></span>
         <span class="muted">${esc(h.note||"")}</span></div>`).join(""):`<p class="muted">目前沒有人需要支援 👍</p>`}
-  </div>`;
+  </div>
+  ${viewCal()}`;
 }
 // 近 7 天迷你長條圖
 function sparkBars(last7, q){ if(!last7||!last7.length) return "";
@@ -586,9 +588,31 @@ function viewMine(){
     <div class="stat"><div class="n">${avgComp}${avgComp==="-"?"":"%"}</div><div class="l">平均完播率</div></div>
     <div class="stat"><div class="n">${done.length}</div><div class="l">累計完成影片</div></div>
   </div>
+  ${myDailyReport(me)}
   <div class="card"><b>🎬 我的影片（近 20 筆）</b>
     <table class="responsive"><thead><tr><th>影片</th><th>類別</th><th>上片日</th><th>CTR</th><th>完播</th><th>工時</th></tr></thead>
     <tbody>${rows||`<tr><td class="muted">尚無完成的影片</td></tr>`}</tbody></table></div>`;
+}
+// 個人每日工作日報總表（近 14 天）
+function myDailyReport(me){
+  const meU=(STATE.users||[]).find(u=>u.name===me)||{}; const langs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||"zh"]; const q=userQuota(me);
+  const rows=[];
+  for(let i=0;i<14;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dstr=d.toISOString().slice(0,10);
+    const vlist=(STATE.videos||[]).filter(v=>langs.some(lg=>langFinishedOn(v,lg,me,dstr)));
+    const vmin=vlist.reduce((a,v)=>a+videoDur(v,langs),0);
+    const tks=(STATE.tasks||[]).filter(t=>t.user===me&&t.date===dstr); const tmin=tks.reduce((a,t)=>a+(t.minutes||0),0);
+    const met=q>0?vlist.length>=q:true;
+    rows.push(`<tr>
+      <td data-label="日期">${dstr.slice(5)}${dstr===today?" (今天)":""}</td>
+      <td data-label="完成"><span class="${met?'pos':'neg'}">${vlist.length}/${q}</span></td>
+      <td data-label="其他工作">${tks.length?tks.map(t=>esc(t.title)+"("+(t.minutes||0)+"分)").join("、"):"-"}</td>
+      <td data-label="當日總工時">${minToText(vmin+tmin)}</td>
+      <td data-label="達標">${met?'<span class="pos">✓</span>':'<span class="neg">✗</span>'}</td></tr>`);
+  }
+  return `<div class="card"><b>📋 我的每日工作日報（近 14 天）</b>
+    <p class="muted" style="font-size:12px">每天最少 ${q} 片；含剪片與其他交辦工作的當日總工時。</p>
+    <table class="responsive"><thead><tr><th>日期</th><th>完成片數</th><th>其他工作</th><th>當日總工時</th><th>達標</th></tr></thead>
+    <tbody>${rows.join("")}</tbody></table></div>`;
 }
 
 // ---- 月排程 ----
