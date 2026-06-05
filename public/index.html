@@ -167,7 +167,7 @@ const ROLE_LABEL = {boss:"老闆", hr:"人資", editor:"剪輯"};
 // 各角色可見頁籤
 const ROLE_TABS = {
   boss:   [["dash","📊 老闆總覽"],["cal","📅 月排程"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["prod","💎 帶貨商品"],["settings","⚙️ 設定"]],
-  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  hr:     [["workload","👥 人員KPI"],["dash","📊 部門總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
   editor: [["work","✂️ 我的工作台"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null;        // 伺服器回傳的整份資料
@@ -352,9 +352,9 @@ function viewDash(){
   </div>`;
 }
 
-// ---- 人員工作量（人資） ----
+// ---- 人員KPI（人資） ----
 function viewWorkload(){
-  if(!DASH){ loadDash(); return `<h2>👥 人員工作量</h2><p class="muted">載入中…</p>`; }
+  if(!DASH){ loadDash(); return `<h2>👥 人員KPI</h2><p class="muted">載入中…</p>`; }
   const wl = DASH.workload||{rows:[]};
   const rows = (wl.rows||[]).map(r=>`<tr>
     <td data-label="剪輯師"><b>${esc(r.name)}</b>${r.inProgress?` <span class="muted">(剪輯中 ${r.inProgress})</span>`:""}</td>
@@ -365,7 +365,7 @@ function viewWorkload(){
     <td data-label="應達">${r.expected}</td>
     <td data-label="超前/落後"><span class="${r.diff>0?'pos':(r.diff<0?'neg':'')}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span></td>
   </tr>`).join("") || `<tr><td class="muted">尚無剪輯成員</td></tr>`;
-  return `<h2>👥 人員工作量 <span class="muted" style="font-size:13px">${today}</span></h2>
+  return `<h2>👥 人員KPI <span class="muted" style="font-size:13px">${today}</span></h2>
   <div class="card">
     <p class="muted">KPI：每位剪輯每日應完成 ${wl.quota||3} 片。累計自 ${wl.kpiStart||""} 起，以工作日（週一~週五）計算應達量。</p>
     <table class="responsive"><thead><tr>

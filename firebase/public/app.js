@@ -4,8 +4,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["workload","👥 人員工作量"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
-  hr:     [["workload","👥 人員工作量"],["dash","📊 部門總覽"]],
+  boss:   [["dash","📊 總覽"],["workload","👥 人員KPI"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
+  hr:     [["workload","👥 人員KPI"],["dash","📊 部門總覽"]],
   editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
@@ -76,7 +76,7 @@ function daySum(date){ const t=dayTargets(date); return Object.values(t).reduce(
 function dayBreakdown(date){
   const list=dayLangList(date,"zh"); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
   list.forEach(it=>{ const v=vid(it.videoId); if(!v) return;
-    const isP=String(v.subTag||"").includes("寵粉")||v.pampered;
+    const isP=v.mainType==="寵粉"||String(v.subTag||"").includes("寵粉")||v.pampered;
     if(isP) cnt["寵粉"]++; else if(v.mainType==="流量型") cnt["流量型"]++; else cnt["帶貨型"]++; });
   const tg=dayTargets(date); const deficits={};
   Object.keys(tg).forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
@@ -481,7 +481,7 @@ function sparkBars(last7, q){ if(!last7||!last7.length) return "";
         <div style="font-size:9px;color:var(--muted);margin-top:2px">${d.date.slice(8)}</div></div>`; }).join("")
     +`</div>`; }
 
-// ---- 人員工作量（HR 每日檢核）----
+// ---- 人員KPI（HR 每日檢核）----
 let WL_DATE=null;
 function wlMove(n){ const d=new Date((WL_DATE||today)+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
 function videoDur(v, langs){ if(v.durationMin!=null) return v.durationMin; for(const lg of langs){ const dm=v.languages?.[lg]?.durationMin; if(dm!=null) return dm; } return 0; }
@@ -517,7 +517,7 @@ function viewWorkload(){
       </div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  return `<h2>👥 人員工作量 <span class="muted" style="font-size:13px">HR 每日檢核</span></h2>
+  return `<h2>👥 人員KPI <span class="muted" style="font-size:13px">HR 每日檢核</span></h2>
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row" style="gap:8px"><button class="btn sm sec" onclick="wlMove(-1)">← 前一天</button>
@@ -814,29 +814,30 @@ function langTask(id,lang){
 }
 function newVideo(){
   const s=STATE.settings||{};
-  const mains=s.mainTypes||["流量型","帶貨型"];
+  const mains=s.mainTypes||["流量型","帶貨型","寵粉"];
   const sources=s.sources||["老闆自拍","外部公司"];
-  const subOptions = (mt)=> (s.subTags?.[mt]||[]).map(t=>`<option>${esc(t)}</option>`).join("");
+  const subOptions = (mt)=> (s.subTags?.[mt]||[]).map(t=>`<option value="${esc(t)}">`).join("");
+  const prodOptions = (STATE.products||[]).map(p=>`<option value="${esc(p.name)}">`).join("");
   showModal("新增影片任務", `
     <label>原片（素材／主題）</label><input id="m_raw" placeholder="例：劉亦菲珠寶比較">
     <label>成品名稱（可後補）</label><input id="m_name">
     <div class="grid cols2">
-      <div><label>主類別</label><select id="m_main" onchange="document.getElementById('m_sub').innerHTML=window._subOpts(this.value)">${mains.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>子標籤</label><select id="m_sub">${subOptions(mains[0])}</select></div>
+      <div><label>主類別</label><select id="m_main" onchange="window._subOpts(this.value)">${mains.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>子標籤</label><input id="m_sub" list="m_sub_list" placeholder="輸入或選擇"><datalist id="m_sub_list">${subOptions(mains[0])}</datalist></div>
     </div>
     <div class="grid cols2">
       <div><label>片源</label><select id="m_src">${sources.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>預計上片日期（可空）</label><input id="m_date" type="date"></div>
     </div>
-    <label>對應帶貨商品（帶貨型用，可空）</label><select id="m_prod"><option value="">— 無 —</option>${(STATE.products||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
+    <label>對應帶貨商品（帶貨型用，可空）</label><input id="m_prod" list="m_prod_list" placeholder="輸入或選擇商品名稱"><datalist id="m_prod_list">${prodOptions}</datalist>
   `, async ()=>{
     const video={rawName:val("m_raw").trim(), name:val("m_name").trim(),
-      mainType:val("m_main"), subTag:val("m_sub"), source:val("m_src"),
-      scheduledDate:val("m_date")||null, productId:val("m_prod")||null};
+      mainType:val("m_main"), subTag:val("m_sub").trim(), source:val("m_src"),
+      scheduledDate:val("m_date")||null, productId:val("m_prod").trim()||null};
     if(!video.rawName && !video.name){ toast("請輸入原片或成品名稱",true); return false; }
     return await write("POST","/api/videos",{video},"已新增影片任務");
   });
-  window._subOpts = subOptions;
+  window._subOpts = (mt)=>{ const dl=document.getElementById("m_sub_list"); if(dl) dl.innerHTML=subOptions(mt); };
 }
 
 // ---- 影片庫（精簡：只列標題，點進去看細節）----
@@ -863,17 +864,18 @@ function viewVideos(){
 function editVideo(id){
   const v = vid(id)||{};
   const s=STATE.settings||{};
-  const mains=s.mainTypes||["流量型","帶貨型"];
+  const mains=s.mainTypes||["流量型","帶貨型","寵粉"];
   const sources=s.sources||["老闆自拍","外部公司"];
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   const stages=["待處理","剪輯中","已完成","已上片"];
-  const subOptions = (mt,cur)=> (s.subTags?.[mt]||[]).map(t=>`<option ${cur===t?"selected":""}>${esc(t)}</option>`).join("");
+  const subOptions = (mt)=> (s.subTags?.[mt]||[]).map(t=>`<option value="${esc(t)}">`).join("");
+  const prodOptions = (STATE.products||[]).map(p=>`<option value="${esc(p.name)}">`).join("");
   showModal("編輯影片",`
     <label>原片</label><input id="e_raw" value="${esc(v.rawName||"")}">
     <label>成品名稱</label><input id="e_name" value="${esc(v.name||"")}">
     <div class="grid cols2">
-      <div><label>主類別</label><select id="e_main" onchange="document.getElementById('e_sub').innerHTML=window._subOpts2(this.value)">${mains.map(c=>`<option ${v.mainType===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>子標籤</label><select id="e_sub">${subOptions(v.mainType||mains[0], v.subTag)}</select></div>
+      <div><label>主類別</label><select id="e_main" onchange="window._subOpts2(this.value)">${mains.map(c=>`<option ${v.mainType===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>子標籤</label><input id="e_sub" list="e_sub_list" value="${esc(v.subTag||"")}" placeholder="輸入或選擇"><datalist id="e_sub_list">${subOptions(v.mainType||mains[0])}</datalist></div>
     </div>
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -881,6 +883,7 @@ function editVideo(id){
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
+    <label>對應帶貨商品（帶貨型用，可空）</label><input id="e_prod" list="e_prod_list" value="${esc(v.productId||"")}" placeholder="輸入或選擇商品名稱"><datalist id="e_prod_list">${prodOptions}</datalist>
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
@@ -893,14 +896,15 @@ function editVideo(id){
       <p class="muted" style="margin:6px 0">領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?minToText(v.durationMin):"-")}</b></p>
     </div>`:""}
   `, async ()=>{
-    const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub"),
+    const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,ctr:parseFloat(val("e_ctr"))||0,completionRate:parseFloat(val("e_comp"))||0,
+      productId:val("e_prod").trim()||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal(); return ok;
   });
-  window._subOpts2 = (mt)=>subOptions(mt,"");
+  window._subOpts2 = (mt)=>{ const dl=document.getElementById("e_sub_list"); if(dl) dl.innerHTML=subOptions(mt); };
 }
 
 // ---- 帶貨商品庫 ----
@@ -954,7 +958,7 @@ function viewSettings(){
     <div><label>預排天數視窗</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
   </div>
   <label>平日 每日各類型最低數量（一～四、六、日）</label>
-  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div>
+  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型","寵粉"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div>
   <label style="margin-top:10px">週五 特別配置</label>
   <div class="grid cols3">
     <div><label style="margin-top:0">流量型</label><input type="number" min="0" id="set_ft_流量型" value="${ft["流量型"]||0}"></div>
