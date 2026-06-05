@@ -1101,10 +1101,13 @@ async function loadDemoData(){
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
   const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 前半＝正常/超前、後半＝落後（決定性分配，確保剛好一半一半）
-  const half=Math.ceil(eds.length/2);
-  const good=eds.slice(0,half).map(u=>u.name);
-  const behind=eds.slice(half).map(u=>u.name);
+  // 只在「每日KPI>0」的剪輯中分一半超前、一半落後（KPI=0 者本來就達標，不佔名額）
+  const kpiEds=eds.filter(u=>userQuota(u.name)>0);
+  const base = kpiEds.length?kpiEds:eds;
+  const nBehind=Math.max(1, Math.round(base.length/2));
+  const behind=base.slice(0,nBehind).map(u=>u.name);
+  const good=base.slice(nBehind).map(u=>u.name);
+  if(!good.length && behind.length>1){ good.push(behind.pop()); } // 至少留一個正常組
   let seq=0; let rr=0;
   const mkVideo=(d, kind, editor)=>{ seq++;
     let mainType, subTag, name;
