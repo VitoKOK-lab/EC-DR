@@ -418,20 +418,6 @@ function viewDash(){
       </div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  // 近 21 天每日上片數（中文）
-  const days21=[]; for(let i=20;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-    days21.push({ds, n:dayLangCount(ds,"zh")}); }
-  const target=p.每日目標||4;
-  const deptChart=chartCanvas("c_dept",{type:"bar",
-    data:{labels:days21.map(d=>d.ds.slice(5)),datasets:[{label:"每日上片",data:days21.map(d=>d.n),
-      backgroundColor:days21.map(d=>d.n>=target?"#16a34a":"#dc2626")}]},
-    options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,suggestedMax:target+2}}}},170);
-  const names=(wl.rows||[]).map(r=>r.name);
-  const kpiChart=chartCanvas("c_kpi",{type:"bar",
-    data:{labels:names,datasets:[
-      {label:"本月完成",data:(wl.rows||[]).map(r=>r.totalDone),backgroundColor:"#2563eb"},
-      {label:"應達",data:(wl.rows||[]).map(r=>r.expected),backgroundColor:"#cbd5e1"}]},
-    options:{scales:{y:{beginAtZero:true}}}},170);
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
   const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
     <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
@@ -458,23 +444,9 @@ function viewDash(){
     </div>
   </div>
 
-  <div class="grid cols2">
-    <div class="card"><b>📈 近 21 天每日上片數</b><p class="muted" style="font-size:11px">綠＝達每日目標 ${target}，紅＝不足</p>${deptChart}</div>
-    <div class="card"><b>📊 本月各剪輯：完成 vs 應達</b>${kpiChart}</div>
-  </div>
-
   <div class="card"><b>👥 每位剪輯 KPI（每日應完成數，綠＝達標/超前、紅＝落後）</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
     <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。績效以「月」累積、每月 1 號重置。</p>
-  </div>
-
-  <div class="card">
-    <b>🏃 進度提示</b>
-    <div class="grid cols2" style="margin-top:8px">
-      <div><div class="l pos">超前的人</div>${ahead.length?ahead.map(r=>`<div class="pos">${esc(r.name)}　+${r.diff}</div>`).join(""):`<div class="muted">—</div>`}</div>
-      <div><div class="l neg">落後的人</div>${behind.length?behind.map(r=>`<div class="neg">${esc(r.name)}　${r.diff}</div>`).join(""):`<div class="muted">大家都跟上了 👍</div>`}</div>
-    </div>
-    <p class="muted" style="margin-top:8px">績效以「月」為單位累積、每月 1 號自動重置。</p>
   </div>
 
   <div class="grid cols4">
