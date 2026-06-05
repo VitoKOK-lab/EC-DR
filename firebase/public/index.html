@@ -120,14 +120,39 @@
   .toast.err{background:var(--red)}
 
   @media (max-width:640px){
-    main{padding:12px}
+    main{padding:10px}
+    h2{font-size:17px;margin-bottom:12px}
+    header{padding:8px 10px;gap:6px}
+    header .brand{font-size:14px;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+    .whoami{padding:6px 10px;font-size:13px}
+    nav{top:51px;padding:0 6px}
+    nav button{padding:11px 10px;font-size:13px}
+    .card{padding:14px;border-radius:14px}
     .hideMobile{display:none}
     table.responsive thead{display:none}
-    table.responsive tr{display:block;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:8px;background:var(--panel)}
-    table.responsive td{display:flex;justify-content:space-between;border:none;padding:5px 4px}
-    table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;margin-right:10px;font-weight:600}
-    .grid.cols2,.grid.cols3,.grid.cols4{grid-template-columns:1fr 1fr !important}
-    .day{min-height:74px}.day .big{font-size:20px}
+    table.responsive tr{display:block;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:10px;background:var(--panel)}
+    table.responsive td{display:flex;justify-content:space-between;align-items:center;border:none;padding:6px 2px;gap:10px}
+    table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600}
+    table.responsive td:empty{display:none}
+    .grid.cols2{grid-template-columns:1fr !important}
+    .grid.cols3{grid-template-columns:1fr !important}
+    .grid.cols4{grid-template-columns:1fr 1fr !important}
+    .modal .box{padding:16px;border-radius:14px}
+    .addRow{flex-direction:column}
+    /* 月曆：手機壓縮成小色塊 */
+    .cal{gap:4px}
+    .day{min-height:58px;padding:4px;border-radius:9px}
+    .day .dnum{font-size:10px}
+    .day .big{font-size:16px}
+    .day .big span{font-size:10px !important}
+    .day .pmk{display:none}
+    .day .tbar .seg{height:5px}
+  }
+  @media (max-width:380px){
+    .grid.cols4{grid-template-columns:1fr 1fr !important}
+    nav button{padding:10px 8px;font-size:12px}
+    .day{min-height:50px}.day .big{font-size:14px}
+    .day .tbar{display:none}
   }
   .grid.cols2{grid-template-columns:1fr 1fr}
   .grid.cols3{grid-template-columns:repeat(3,1fr)}
