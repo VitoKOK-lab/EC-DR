@@ -6,11 +6,13 @@
 <title>IP 短影音排程 × KPI 儀表板（雲端版）</title>
 <style>
   :root{
-    --bg:#0f1419; --panel:#1a212b; --panel2:#232c38; --line:#2e3a48;
-    --txt:#e6edf3; --muted:#8b98a9; --accent:#3b82f6; --accent2:#2563eb;
-    --green:#22c55e; --yellow:#eab308; --red:#ef4444; --chip:#2d3744;
-    --traffic:#0ea5e9; --sales:#f59e0b;
+    /* 白底主題；--accent / --accent2 為品牌主色（CIS），可在此一次改色 */
+    --bg:#ffffff; --panel:#ffffff; --panel2:#f5f7f9; --line:#e4e8ee;
+    --txt:#1b2430; --muted:#6b7785; --accent:#b8956a; --accent2:#9c7a4f;
+    --green:#16a34a; --yellow:#ca8a04; --red:#dc2626; --chip:#eef1f5;
+    --traffic:#0284c7; --sales:#d97706;
   }
+  header{box-shadow:0 1px 0 var(--line)}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
        background:var(--bg);color:var(--txt);font-size:15px;line-height:1.5}

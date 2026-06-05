@@ -17,7 +17,9 @@ function currentRole(){
   const u = (STATE?.users||[]).find(x=>x.name===currentUser());
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
-function myTabs(){ return ROLE_TABS[currentRole()] || ROLE_TABS.editor; }
+function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
+function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
+  if(currentUser()===ownerName()) t.push(["members","👥 成員管理"]); return t; }
 function nowIso(){ return new Date().toISOString().slice(0,19); }
 
 function toast(msg, isErr){
@@ -252,7 +254,7 @@ function render(){
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   const fn = {
     dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
-    videos:viewVideos, prod:viewProd, settings:viewSettings
+    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers
   }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
@@ -673,3 +675,63 @@ function showModal(title, inner, onConfirm){
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
 function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
+
+// ===================================================================
+// 成員管理（只有 owner，預設 Vito 看得到此頁）
+// ===================================================================
+function roleCode(s){ s=String(s||"").trim().toLowerCase();
+  const m={"老闆":"boss","boss":"boss","ceo":"boss","顧問":"boss","consultant":"boss",
+           "人資":"hr","hr":"hr","剪輯":"editor","editor":"editor"};
+  return m[s]||m[String(s)]||"editor"; }
+function viewMembers(){
+  const users=STATE.users||[];
+  const rows=users.map(u=>`<tr>
+    <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label="角色">
+      <select onchange="changeRole('${esc(u.name)}',this.value)">
+        ${["boss","hr","editor"].map(r=>`<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}
+      </select></td>
+    <td data-label=""><button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
+  </tr>`).join("");
+  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理者）</span></h2>
+  <div class="card"><b>現有成員（${users.length}）</b>
+    <table class="responsive"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+    <p class="muted">改角色或刪除需管理者密碼。</p>
+  </div>
+  <div class="card"><b>新增單一成員</b>
+    <div class="grid cols3">
+      <div><label>名字</label><input id="mb_name"></div>
+      <div><label>角色</label><select id="mb_role"><option value="editor">剪輯</option><option value="boss">老闆</option><option value="hr">人資</option></select></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addMember()">新增</button></div>
+    </div>
+  </div>
+  <div class="card"><b>批次新增</b>（每行一位，格式 <code>名字,角色</code>；角色可填 老闆／人資／剪輯）
+    <textarea id="mb_bulk" style="min-height:170px">Regina,老闆
+Vito,老闆
+Benny,人資
+健加,剪輯
+鴻閔,剪輯
+芋頭,剪輯
+怡如,剪輯
+艾斯姆,剪輯
+玲玲,剪輯</textarea>
+    <div class="modalFoot"><button class="btn" onclick="bulkAdd()">批次建立</button></div>
+    <p class="muted">已存在的名字會自動略過，可重複按。</p>
+  </div>`;
+}
+async function addMember(){ const name=val("mb_name").trim(); const role=val("mb_role");
+  if(!name){ toast("請輸入名字",true); return; }
+  await write("POST","/api/users",{name,role},"已新增成員"); }
+function changeRole(name,role){ writeAdmin("PUT","/api/users/"+name,{role},"已更新角色"); }
+function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
+  writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
+async function bulkAdd(){
+  const lines=val("mb_bulk").split("\n").map(l=>l.trim()).filter(Boolean);
+  let ok=0, skip=0;
+  for(const line of lines){ const parts=line.split(/[,，]/); const name=(parts[0]||"").trim();
+    if(!name) continue;
+    try{ await route("POST","/api/users",{name, role:roleCode(parts[1])}); ok++; }
+    catch(e){ skip++; } }
+  await delay(250); toast("批次完成：新增 "+ok+" 位，略過 "+skip+" 位");
+}
