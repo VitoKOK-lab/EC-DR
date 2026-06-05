@@ -238,6 +238,7 @@ async function _route(method, path, body){
         scheduledDate:date, published:true, backupDone:true, socialScheduled:true};
       if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
+      if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
     if(action==="performance"){ await window.DB.update("videos",id,{ctr:body.ctr??v.ctr, completionRate:body.completionRate??v.completionRate}); return; }
@@ -608,53 +609,43 @@ function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser(),claimedBy:currentUser(),claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
 }
+function finishGate(p){ const ok=val(p+"date")&&val(p+"pub").trim()&&val(p+"backup").trim()&&val(p+"social").trim();
+  const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
 function finishLang(id,lang){
-  const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today;
-  showModal("完成"+(LANG_LABEL[lang]||lang)+"二創：填上片資訊", `
-    <label>${LANG_LABEL[lang]||lang}雲端備份連結（可空）</label><input id="fl_drive" value="${esc(L.driveFolder||"")}">
-    <label>上片日期（會顯示在${LANG_LABEL[lang]||lang}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}">
-    <div class="card" style="background:var(--panel2);margin-top:10px">
-      <label style="color:var(--txt)"><input type="checkbox" id="fl_pub" style="width:auto"> 已上架</label>
-      <label style="color:var(--txt)"><input type="checkbox" id="fl_backup" style="width:auto"> 已上傳雲端備份</label>
-      <label style="color:var(--txt)"><input type="checkbox" id="fl_social" style="width:auto"> 社群平台已預排</label>
-    </div>
-    <p class="muted">三項都勾選並選好上片日期，才能標記完成。</p>
+  const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today; const lb=LANG_LABEL[lang]||lang;
+  showModal("完成"+lb+"二創：填上片資訊", `
+    <label>上片日期（會顯示在${lb}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}" oninput="finishGate('fl_')">
+    <label>上架連結</label><input id="fl_pub" value="${esc(L.publishedLink||"")}" oninput="finishGate('fl_')" placeholder="${lb}社群貼文／上架網址">
+    <label>雲端備份連結</label><input id="fl_backup" value="${esc(L.driveFolder||"")}" oninput="finishGate('fl_')" placeholder="Google Drive 備份">
+    <label>社群平台預排連結</label><input id="fl_social" value="${esc(L.socialLink||"")}" oninput="finishGate('fl_')" placeholder="排程工具／預約貼文連結">
+    <p class="muted">日期與三個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
-    const date=val("fl_date");
-    const pub=document.getElementById("fl_pub").checked, bk=document.getElementById("fl_backup").checked, so=document.getElementById("fl_social").checked;
-    if(!date){ toast("請選擇上片日期",true); return false; }
-    if(!(pub&&bk&&so)){ toast("三項條件都要勾選才算完成",true); return false; }
     const fin=nowIso(); const cAt=L.claimedAt||null;
     return await write("PUT",`/api/videos/${id}/lang/${lang}`,
-      {lang:{status:"完成", finishedAt:fin, scheduledDate:date, editor:currentUser(),
-             claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null), driveFolder:val("fl_drive")}},
-      "已完成，已加入"+(LANG_LABEL[lang]||lang)+"行事曆");
+      {lang:{status:"完成", finishedAt:fin, scheduledDate:val("fl_date"), editor:currentUser(),
+             claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null),
+             publishedLink:val("fl_pub"), driveFolder:val("fl_backup"), socialLink:val("fl_social")}},
+      "已完成，已加入"+lb+"行事曆");
   });
+  finishGate("fl_");
 }
 function finishVid(id){
   const v = vid(id)||{};
   const def = v.scheduledDate || today;
   showModal("完成影片：填上片資訊", `
     <label>成品名稱</label><input id="f_name" value="${esc(v.name||v.rawName||"")}">
-    <label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}">
-    <label>雲端備份連結（可空）</label><input id="f_drive" value="${esc(v.driveFolder||"")}">
-    <div class="card" style="background:var(--panel2);margin-top:10px">
-      <label style="color:var(--txt)"><input type="checkbox" id="f_pub" style="width:auto"> 已上架</label>
-      <label style="color:var(--txt)"><input type="checkbox" id="f_backup" style="width:auto"> 已上傳雲端備份</label>
-      <label style="color:var(--txt)"><input type="checkbox" id="f_social" style="width:auto"> 社群平台已預排</label>
-    </div>
-    <p class="muted">三項都勾選並選好上片日期，才能標記完成。</p>
+    <label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')">
+    <label>上架連結</label><input id="f_pub" value="${esc(v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="社群貼文／上架網址">
+    <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
+    <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
+    <p class="muted">日期與三個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
-    const date=val("f_date");
-    const pub=document.getElementById("f_pub").checked,
-          bk=document.getElementById("f_backup").checked,
-          so=document.getElementById("f_social").checked;
-    if(!date){ toast("請選擇上片日期",true); return false; }
-    if(!(pub&&bk&&so)){ toast("三項條件都要勾選才算完成",true); return false; }
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:val("f_name")||undefined, scheduledDate:date, driveFolder:val("f_drive"),
+      {name:val("f_name")||undefined, scheduledDate:val("f_date"),
+       publishedLink:val("f_pub"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
+  finishGate("f_");
 }
 function helpVid(id,need){
   let note="";
@@ -731,8 +722,9 @@ function editVideo(id){
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
-      <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>上架／發布連結</label><input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="社群貼文 / 上架網址">
+      <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
+      <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||"")}" placeholder="排程工具 / 預約貼文連結">
     </div>
     <div class="grid cols2">
       <div><label>CTR (%)</label><input type="number" step="0.1" id="e_ctr" value="${v.ctr||0}"></div>
@@ -745,7 +737,7 @@ function editVideo(id){
     const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub"),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,ctr:parseFloat(val("e_ctr"))||0,completionRate:parseFloat(val("e_comp"))||0,
-      driveFolder:val("e_drive"), publishedLink:val("e_pub")};
+      driveFolder:val("e_drive"), publishedLink:val("e_pub"), socialLink:val("e_social")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal(); return ok;
   });
