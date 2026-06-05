@@ -132,6 +132,11 @@ function computeWorkload(date){
   const s=STATE.settings||{}; const tod=parseDate(date)||new Date();
   const wkStart=new Date(tod); wkStart.setDate(tod.getDate()-((tod.getDay()+6)%7));
   const moStart=new Date(tod.getFullYear(),tod.getMonth(),1);
+  // 起算日：本月 1 號與「KPI 起算日」取較晚者（避免上線前的日子被算）
+  const ks=parseDate(s.kpiStartDate);
+  const periodStart=(ks && ks>moStart)?ks:moStart;
+  // 應完成只算「已過完」的工作日（不含今天），上線當天大家=0/0 達標
+  const yesterday=new Date(tod); yesterday.setDate(tod.getDate()-1);
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const rows=editors.map(u=>{
     const name=u.name; const q=userQuota(name);
@@ -139,20 +144,21 @@ function computeWorkload(date){
     const cnt=(pred)=> (STATE.videos||[]).reduce((n,v)=> n + (langs.some(lg=>pred(v,lg,name))?1:0), 0);
     const todayDone=cnt((v,lg,nm)=>langFinishedOn(v,lg,nm,date));
     const weekDone =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,wkStart,tod));
-    const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,moStart,tod));
-    // 平均工時（本月已完成且有計時者）
+    const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,tod));
+    // 平均工時（本期已完成且有計時者）
     const durs=[];
-    (STATE.videos||[]).forEach(v=>langs.forEach(lg=>{ if(langFinishedInRange(v,lg,name,moStart,tod)){
+    (STATE.videos||[]).forEach(v=>langs.forEach(lg=>{ if(langFinishedInRange(v,lg,name,periodStart,tod)){
       const dm = lg==="zh"? v.durationMin : v.languages?.[lg]?.durationMin;
       if(dm!=null && dm>=0) durs.push(dm); } }));
     const avgMin = durs.length? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : null;
     const maxMin = durs.length? Math.max(...durs) : null;
-    const expected=workdaysBetween(moStart,tod)*q; const diff=monthDone-expected;
+    const expected=workdaysBetween(periodStart,yesterday)*q; const diff=monthDone-expected;
     return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone,
       totalDone:monthDone, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
       avgMin, maxMin, timedCount:durs.length, inProgress: 0};
   }).sort((a,b)=>b.diff-a.diff);
-  return {date, quota:(s.editorDailyQuota||3), monthStart:moStart.toISOString().slice(0,10), rows};
+  return {date, quota:(s.editorDailyQuota||3), periodStart:periodStart.toISOString().slice(0,10),
+          monthStart:periodStart.toISOString().slice(0,10), rows};
 }
 function computeDashboard(date){
   const w=computeWarnings(); const s=STATE.settings||{}; const target=s.dailyPublishTarget||4;
@@ -783,6 +789,7 @@ function editProd(id){
 }
 
 // ---- 設定（管理者） ----
+function setKpiToday(){ writeAdmin("PUT","/api/settings",{settings:{kpiStartDate:today}},"已把 KPI 起算日設為今天"); }
 function viewSettings(){
   const s=STATE.settings||{};
   const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
@@ -792,7 +799,10 @@ function viewSettings(){
     <div><label>每位剪輯每日配額</label><input type="number" id="set_quota" value="${s.editorDailyQuota||3}"></div>
     <div><label>預排天數（一個月）</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
   </div>
-  <label>KPI 累計基準日</label><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}"></div>
+  <label>KPI 起算日（超前/落後從這天開始算，建議設成正式上線那天）</label>
+  <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
+    <button class="btn sm sec" onclick="setKpiToday()">設為今天</button></div>
+  <p class="muted">應完成只計算「已過完」的工作日（不含今天）。把起算日設成今天，所有人就會從 0/0 達標開始累積。</p></div>
   <div class="card"><b>主類別</b>（逗號分隔）
     <input id="set_main" value="${esc((s.mainTypes||[]).join(","))}"></div>
   <div class="card"><b>子標籤</b>（每行一個主類別，格式 主類別:標籤1|標籤2）
