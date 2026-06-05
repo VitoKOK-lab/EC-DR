@@ -415,8 +415,7 @@ function viewDash(){
     const rep=(STATE.reports||[]).find(x=>x.user===r.name && x.date===today);
     const repHtml = `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
         <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep&&rep.done?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">今日未匯報</span>`}</div>
-        ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
-        ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}
+        ${rep?reportItemsHtml(rep):""}
       </div>`;
     return `<div class="ucard ${good?'good':'bad'}">
       <div class="uh">
@@ -511,8 +510,7 @@ function viewWorkload(){
     const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===date);
     const repHtml = `<div style="margin-top:6px;padding:8px;background:var(--panel2);border-radius:6px;font-size:13px">
         <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep&&rep.done?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">未填</span>`}</div>
-        ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
-        ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}</div>`;
+        ${rep?reportItemsHtml(rep):""}</div>`;
     return `<div class="ucard ${met?'good':'bad'}">
       <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[u.lang||"zh"]}</span></span>
         <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
@@ -754,27 +752,28 @@ function viewWork(){
   </div>
   ${taskCard(me)}`;
 }
-// 今日下班匯報：打卡 + 自由書寫工作內容（自己一條一條寫）
+// 今日下班匯報：三項文字（第一/二/三項）
 function taskCard(me){
   const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  const it=rep.items||[];
   const doneT=(STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && (v.finishedAt||"").slice(0,10)===today).length;
-  const inprog=(STATE.videos||[]).filter(v=>(v.editor===me||v.claimedBy===me)&&v.stage==="剪輯中").length;
-  const todo=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
-  const tmpl=`今天已完成剪輯 ${doneT} 支。\n目前剪輯中 ${inprog} 支、未開始 ${todo} 支。\n其他工作：（例如完成 7 張粉專圖片…）`;
   return `<div class="card"><div class="row" style="justify-content:space-between">
-      <b>📝 今日下班匯報（打卡）</b>${rep.done?`<span class="pill ok" style="font-size:11px">✓ 本日匯報已完成</span>`:`<span class="pill em" style="font-size:11px">尚未完成</span>`}</div>
-    <div class="grid cols2" style="margin-top:6px">
-      <div><label>上班時間</label><input id="rp_in" type="time" value="${esc(rep.clockIn||"")}"></div>
-      <div><label>下班時間</label><input id="rp_out" type="time" value="${esc(rep.clockOut||"")}"></div>
-    </div>
-    <label>今日工作內容（自己寫，可一條一條）</label>
-    <textarea id="rp_content" style="min-height:150px" placeholder="${esc(tmpl)}">${esc(rep.content||"")}</textarea>
-    <div class="modalFoot"><button class="btn" onclick="finishReport()">✅ 完成下班匯報（打卡送出）</button></div>
+      <b>📝 今日下班匯報</b>${rep.done?`<span class="pill ok" style="font-size:11px">✓ 本日匯報已完成</span>`:`<span class="pill em" style="font-size:11px">尚未完成</span>`}</div>
+    <p class="muted" style="font-size:12px;margin-top:4px">寫下今天做了什麼（最多三項）。</p>
+    <label>第一項</label><input id="rp_1" value="${esc(it[0]||"")}" placeholder="例：今天已完成剪輯 ${doneT} 支">
+    <label>第二項</label><input id="rp_2" value="${esc(it[1]||"")}" placeholder="例：製作 7 張粉專圖片（AI 文字自行修正）">
+    <label>第三項</label><input id="rp_3" value="${esc(it[2]||"")}" placeholder="例：整理素材、回覆社群留言">
+    <div class="modalFoot"><button class="btn" onclick="finishReport()">✅ 完成下班匯報</button></div>
   </div>`;
 }
 async function finishReport(){ const me=currentUser();
-  const rec={id:me+"__"+today, user:me, date:today, clockIn:val("rp_in"), clockOut:val("rp_out"), content:val("rp_content"), done:true};
+  const items=[val("rp_1"),val("rp_2"),val("rp_3")].map(s=>s.trim()).filter(Boolean);
+  if(!items.length){ toast("請至少填一項",true); return; }
+  const rec={id:me+"__"+today, user:me, date:today, items, done:true};
   try{ await window.DB.set("reports", rec.id, rec); toast("已完成今日下班匯報"); }catch(e){ toast("失敗，請稍後再試",true); } }
+// 把匯報項目轉成編號清單
+function reportItemsHtml(rep){ if(!rep) return ""; const it=rep.items||(rep.content?[rep.content]:[]);
+  return it.filter(Boolean).map((s,i)=>`<div>${i+1}. ${esc(s)}</div>`).join(""); }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
@@ -1183,20 +1182,14 @@ async function loadDemoData(){
   // 工作台池：待處理(刻意<5觸發片源警示) + 剪輯中
   for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
   base.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
-  // 下班匯報（示範）：近 14 天各人多數有填（打卡＋自由書寫工作內容）
+  // 下班匯報（示範）：近 14 天各人多數有填（三項）
   const reportRecs=[];
-  const REPORT_TMPL=[
-    "今天已完成剪輯 {d} 支影片。Boss 拍攝的 3 支正在剪輯中，其中 1 支已接近完成，另有 3 支尚未開始。",
-    "完成剪輯 {d} 支；另製作 7 張粉絲專頁圖片，AI 生成文字易出錯，皆由我自行完成。",
-    "今日完成 {d} 支剪輯，並整理素材、回覆社群留言約 1 小時。",
-    "完成 {d} 支；與外部公司對接 2 支新片需求，討論腳本方向。",
-    "完成 {d} 支剪輯；協助拍攝寵粉商品圖、上字幕。",
-  ];
+  const ITEM2=["製作 7 張粉專圖片（AI 文字自行修正）","與外部公司對接 2 支新片需求","協助拍攝寵粉商品圖","設計本週縮圖"];
+  const ITEM3=["整理素材、回覆社群留言","上字幕、校對文案","開會討論下週腳本","回覆客戶私訊"];
   base.forEach(u=>{ for(let n=-14;n<=0;n++){ if(Math.random()<0.8){ const d=dOff(n); const dstr=ds(d);
     const doneT=recs.filter(v=>v.editor===u.name && v.scheduledDate===dstr).length;
     reportRecs.push({demo:true, id:u.name+"__"+dstr, user:u.name, date:dstr, done:true,
-      clockIn:"09:0"+Math.floor(Math.random()*6), clockOut:(20+Math.floor(Math.random()*3))+":"+(Math.random()<0.5?"00":"30"),
-      content:pick(REPORT_TMPL).replace("{d}", doneT)}); } } });
+      items:["今天已完成剪輯 "+doneT+" 支", pick(ITEM2), pick(ITEM3)]}); } } });
   BULK_BUSY=true;
   for(const rr of reportRecs){ try{ await window.DB.set("reports", rr.id, rr); }catch(e){} }
   BULK_BUSY=false;
