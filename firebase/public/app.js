@@ -1099,40 +1099,44 @@ async function loadDemoData(){
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
   const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 各剪輯權重：前半超前、後半落後（造成約一半落後的不好狀態）
+  // 前半＝正常/超前、後半＝落後（決定性分配，確保剛好一半一半）
   const half=Math.ceil(eds.length/2);
-  const weights={}; eds.forEach((u,i)=>weights[u.name]= i<half?2.5:0.55);
-  const wpick=()=>{ const tot=eds.reduce((a,u)=>a+weights[u.name],0); let r=Math.random()*tot;
-    for(const u of eds){ r-=weights[u.name]; if(r<=0) return u.name; } return eds[0].name; };
-  let seq=0;
-  const mkVideo=(d, kind)=>{ seq++;
+  const good=eds.slice(0,half).map(u=>u.name);
+  const behind=eds.slice(half).map(u=>u.name);
+  let seq=0; let rr=0;
+  const mkVideo=(d, kind, editor)=>{ seq++;
     let mainType, subTag, name;
     if(kind==="pamper"){ mainType="帶貨型"; subTag="寵粉"; name=pick(DEMO_PAMPER); }
     else if(kind==="sales"){ mainType="帶貨型"; subTag=pick(["新品","促銷","開箱"]); name=pick(DEMO_SALES); }
     else { mainType="流量型"; subTag=pick(["名人話題","珠寶知識","家庭","理財"]); name=pick(DEMO_TRAFFIC); }
-    const editor=wpick(); const past = d < T;
+    const past = d < T;
     return {rawName:name, name:name+"（"+ds(d).slice(5)+"）", mainType, subTag, pampered:kind==="pamper",
-      source:pick(srcs), editor, stage:"已完成", scheduledDate:ds(d),
-      claimedAt:past?at(dOff(((d-T)/86400000|0)-(Math.random()<0.3?1:0)),8):"",
+      source:pick(srcs), editor:editor||"", stage:"已完成", scheduledDate:ds(d),
+      claimedAt:(past&&editor)?at(d,8):"",
       finishedAt:at(d, 9+Math.floor(Math.random()*9)),
       durationMin:20+Math.floor(Math.random()*1200),
       ctr:+(2+Math.random()*10).toFixed(1), completionRate:30+Math.floor(Math.random()*55),
       driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
   };
   const recs=[];
-  const dailyTotal=Math.max(4, eds.length*2);  // 讓前半的人有機會超前、後半落後
-  const genDay=(d,total)=>{ const w=d.getDay(); const pamper=(w===5||w===6)?1+Math.floor(Math.random()*2):0;
-    const rest=Math.max(4,total)-pamper; let traffic=Math.max(2,Math.ceil(rest*0.55)); let sales=Math.max(2,rest-traffic);
-    for(let i=0;i<traffic;i++) recs.push(mkVideo(d,"traffic"));
-    for(let i=0;i<sales;i++) recs.push(mkVideo(d,"sales"));
-    for(let i=0;i<pamper;i++) recs.push(mkVideo(d,"pamper")); };
-  // 過去兩個月＋今天：完整排滿（歷史）
-  for(let n=-60;n<=0;n++) genDay(dOff(n), dailyTotal);
-  // 未來兩個月：刻意做出缺口（不好的狀態）— 約 45% 排滿、25% 不足、30% 空著沒人補
+  const ge=()=> good.length? good[(rr++)%good.length] : eds[0].name;   // 輪流給「正常組」
+  // 一天的完整內容：類型保底(流2帶2)＋週五六寵粉，正常組各自再多剪(超前)，落後組偶爾一支
+  const genDay=(d, full)=>{ const w=d.getDay(); const weekend=(w===5||w===6);
+    recs.push(mkVideo(d,"traffic",ge())); recs.push(mkVideo(d,"traffic",ge()));
+    recs.push(mkVideo(d,"sales",ge())); recs.push(mkVideo(d,"sales",ge()));
+    if(weekend){ recs.push(mkVideo(d,"pamper",ge())); }
+    if(full){
+      good.forEach(nm=>{ const extra=2; for(let k=0;k<extra;k++) recs.push(mkVideo(d, Math.random()<0.6?"traffic":"sales", nm)); }); // 正常組超前
+      behind.forEach(nm=>{ if(Math.random()<0.4) recs.push(mkVideo(d, Math.random()<0.6?"traffic":"sales", nm)); }); // 落後組偶爾
+    }
+  };
+  // 過去兩個月＋今天：完整排滿
+  for(let n=-60;n<=0;n++) genDay(dOff(n), true);
+  // 未來兩個月：刻意缺口（不好狀態）— 約45%排滿、25%不足、30%空著沒人補
   for(let n=1;n<=60;n++){ const d=dOff(n); const r=Math.random();
-    if(r<0.45){ genDay(d, dailyTotal); }
-    else if(r<0.70){ const tr=1+Math.floor(Math.random()*2); for(let i=0;i<tr;i++) recs.push(mkVideo(d,"traffic"));
-      if(Math.random()<0.5) recs.push(mkVideo(d,"sales")); }
+    if(r<0.45){ genDay(d, true); }
+    else if(r<0.70){ const tr=1+Math.floor(Math.random()*2); for(let i=0;i<tr;i++) recs.push(mkVideo(d,"traffic",ge()));
+      if(Math.random()<0.5) recs.push(mkVideo(d,"sales",ge())); }
     // else 留空：沒人補
   }
   // 工作台池：待處理 + 剪輯中
