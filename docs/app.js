@@ -1112,10 +1112,13 @@ async function loadDemoData(){
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
   const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 糟糕狀況：只留 1 位正常/超前，其餘全部落後
-  const good=eds.slice(0,1).map(u=>u.name);
-  const behind=eds.slice(1).map(u=>u.name);
-  let seq=0; let rr=0;
+  // 依活躍度分配：排序讓有 KPI 的剪輯在前（第1位最活躍≈接近達標，最後一位長期落後）
+  const base = eds.slice().sort((a,b)=> (userQuota(b.name)>0?1:0)-(userQuota(a.name)>0?1:0));
+  // 活躍度權重：第1位接近達標、之後遞減，最後一位長期落後（每天總量固定＝目標，不會塞爆某人）
+  const actW=base.map((u,i)=>[0.46,0.26,0.16,0.08,0.03,0.01][i] ?? 0.01);
+  const actTot=actW.reduce((a,b)=>a+b,0);
+  const pickEditor=()=>{ let r=Math.random()*actTot; for(let i=0;i<base.length;i++){ r-=actW[i]; if(r<=0) return base[i].name; } return base[base.length-1].name; };
+  let seq=0;
   const mkVideo=(d, kind, editor)=>{ seq++;
     let mainType, subTag, name;
     if(kind==="pamper"){ mainType="帶貨型"; subTag="寵粉"; name=pick(DEMO_PAMPER); }
@@ -1131,29 +1134,21 @@ async function loadDemoData(){
       driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
   };
   const recs=[];
-  const ge=()=> good.length? good[(rr++)%good.length] : eds[0].name;   // 輪流給「正常組」
-  // 一天的完整內容：類型保底(流2帶2)＋週五六寵粉，正常組各自再多剪(超前)，落後組偶爾一支
-  const genDay=(d, full)=>{ const w=d.getDay(); const weekend=(w===5||w===6);
-    recs.push(mkVideo(d,"traffic",ge())); recs.push(mkVideo(d,"traffic",ge()));
-    recs.push(mkVideo(d,"sales",ge())); recs.push(mkVideo(d,"sales",ge()));
-    if(weekend){ recs.push(mkVideo(d,"pamper",ge())); }
-    if(full){
-      good.forEach(nm=>{ const extra=2; for(let k=0;k<extra;k++) recs.push(mkVideo(d, Math.random()<0.6?"traffic":"sales", nm)); }); // 正常組超前
-      behind.forEach(nm=>{ if(Math.random()<0.4) recs.push(mkVideo(d, Math.random()<0.6?"traffic":"sales", nm)); }); // 落後組偶爾
-    }
-  };
-  // 過去兩個月＋今天：完整排滿
-  for(let n=-60;n<=0;n++) genDay(dOff(n), true);
-  // 未來兩個月：刻意缺口（不好狀態）— 約45%排滿、25%不足、30%空著沒人補
-  for(let n=1;n<=60;n++){ const d=dOff(n); const r=Math.random();
-    if(r<0.45){ genDay(d, true); }
-    else if(r<0.70){ const tr=1+Math.floor(Math.random()*2); for(let i=0;i<tr;i++) recs.push(mkVideo(d,"traffic",ge()));
-      if(Math.random()<0.5) recs.push(mkVideo(d,"sales",ge())); }
-    // else 留空：沒人補
-  }
-  // 工作台池：待處理 + 剪輯中
-  for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); } // 片源刻意偏低(<5)觸發警示
-  eds.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
+  const target=STATE.settings?.dailyPublishTarget||4;
+  // 一天剛好 target 片：流2帶2（週五六其中一支帶貨改寵粉），多的不塞同一天→往後天去排
+  const dayKinds=(d)=>{ const w=d.getDay(); const k=[]; let tr=2, sl=target-2;
+    for(let i=0;i<tr;i++) k.push("traffic");
+    if(w===5||w===6){ k.push("pamper"); sl=Math.max(0,sl-1); }
+    for(let i=0;i<sl;i++) k.push("sales");
+    return k; };
+  const genDay=(d)=>{ dayKinds(d).forEach(k=> recs.push(mkVideo(d,k,pickEditor()))); };
+  // 過去兩個月＋今天：每天就 target 片（歷史）
+  for(let n=-60;n<=0;n++) genDay(dOff(n));
+  // 未來：往後排（多數天有排，少數留缺口待補）— 安全天數自然形成
+  for(let n=1;n<=60;n++){ if(Math.random()<0.7) genDay(dOff(n)); }
+  // 工作台池：待處理(刻意<5觸發片源警示) + 剪輯中
+  for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
+  base.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
   const ok=await bulkCreateVideos(recs);
   await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
 }
