@@ -675,12 +675,10 @@ function newVideo(){
       <div><label>預計上片日期（可空）</label><input id="m_date" type="date"></div>
     </div>
     <label>對應帶貨商品（帶貨型用，可空）</label><select id="m_prod"><option value="">— 無 —</option>${(STATE.products||[]).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
-    <label>文案狀態</label><select id="m_script"><option>未開始</option><option>撰寫中</option><option>完成</option></select>
   `, async ()=>{
     const video={rawName:val("m_raw").trim(), name:val("m_name").trim(),
       mainType:val("m_main"), subTag:val("m_sub"), source:val("m_src"),
-      scheduledDate:val("m_date")||null, productId:val("m_prod")||null,
-      scriptStatus:val("m_script")};
+      scheduledDate:val("m_date")||null, productId:val("m_prod")||null};
     if(!video.rawName && !video.name){ toast("請輸入原片或成品名稱",true); return false; }
     return await write("POST","/api/videos",{video},"已新增影片任務");
   });
@@ -697,13 +695,12 @@ function viewVideos(){
     <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
     <td data-label="階段"><span class="tag">${esc(v.stage||"")}</span></td>
     <td data-label="剪輯">${esc(v.editor||"")}</td>
-    <td data-label="文案">${esc(v.scriptStatus||"")}</td>
     <td data-label="二創">${langs.map(l=>`${LANG_LABEL[l]||l}:${esc(v.languages?.[l]?.status||"-")}`).join(" ")}</td>
     <td data-label=""><button class="btn sm sec" onclick="editVideo('${v.id}')">編輯</button></td>
   </tr>`).join("");
   return `<h2>🎞 影片庫</h2>
   <div class="card"><div class="row" style="justify-content:flex-end"><button class="btn sm" onclick="newVideo()">＋ 新增影片任務</button></div>
-  <table class="responsive"><thead><tr><th></th><th>影片</th><th>類別</th><th>片源</th><th>階段</th><th>剪輯</th><th>文案</th><th>二創</th><th></th></tr></thead>
+  <table class="responsive"><thead><tr><th></th><th>影片</th><th>類別</th><th>片源</th><th>階段</th><th>剪輯</th><th>二創</th><th></th></tr></thead>
   <tbody>${rows||`<tr><td class="muted">尚無影片</td></tr>`}</tbody></table></div>`;
 }
 function editVideo(id){
@@ -725,40 +722,24 @@ function editVideo(id){
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
     </div>
-    <div class="grid cols2">
-      <div><label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select></div>
-      <div><label>文案狀態</label><select id="e_script">${["未開始","撰寫中","完成"].map(c=>`<option ${v.scriptStatus===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
-    </div>
-    <label>中文上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
+    <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
+    <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>上架／發布連結</label><input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="社群貼文 / 上架網址">
-    </div>
-    <div class="card" style="background:var(--panel2)"><b>🌐 多語版本（連結＋上片日期）</b>
-      ${nonZh().map(l=>{ const L=v.languages?.[l]||{}; return `
-        <div class="grid cols2" style="align-items:end">
-          <div><label>${LANG_LABEL[l]||l} 連結　<span class="muted">(${esc(L.status||"未開始")}${L.editor?(" · "+esc(L.editor)):""})</span></label>
-            <input id="e_l_drive_${l}" value="${esc(L.driveFolder||"")}"></div>
-          <div><label>${LANG_LABEL[l]||l} 上片日期</label><input id="e_l_date_${l}" type="date" value="${esc(L.scheduledDate||"")}"></div>
-        </div>`; }).join("")}
     </div>
     <div class="grid cols2">
       <div><label>CTR (%)</label><input type="number" step="0.1" id="e_ctr" value="${v.ctr||0}"></div>
       <div><label>完播率 (%)</label><input type="number" step="0.1" id="e_comp" value="${v.completionRate||0}"></div>
     </div>
     ${id?`<div class="card" style="background:var(--panel2)"><b>⏱ 工時</b>
-      <p class="muted" style="margin:6px 0">中文：領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?durationText(0,v.durationMin*60000):"-")}</b></p>
-      ${nonZh().map(l=>{ const L=v.languages?.[l]||{}; return (L.claimedAt||L.finishedAt)?`<p class="muted" style="margin:6px 0">${LANG_LABEL[l]||l}：領取 ${esc(L.claimedAt||"-")}　完成 ${esc(L.finishedAt||"-")}　耗時 <b>${L.claimedAt&&L.finishedAt?durationText(L.claimedAt,L.finishedAt):"-"}</b></p>`:""; }).join("")}
+      <p class="muted" style="margin:6px 0">領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?minToText(v.durationMin):"-")}</b></p>
     </div>`:""}
   `, async ()=>{
-    const langsPatch=Object.assign({}, v.languages||{});
-    nonZh().forEach(l=>{ const cur=Object.assign({}, langsPatch[l]||{});
-      cur.driveFolder=val("e_l_drive_"+l); const d=val("e_l_date_"+l); cur.scheduledDate=d||null;
-      langsPatch[l]=cur; });
     const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub"),
-      source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),scriptStatus:val("e_script"),
+      source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,ctr:parseFloat(val("e_ctr"))||0,completionRate:parseFloat(val("e_comp"))||0,
-      driveFolder:val("e_drive"), publishedLink:val("e_pub"), languages:langsPatch};
+      driveFolder:val("e_drive"), publishedLink:val("e_pub")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal(); return ok;
   });
@@ -907,20 +888,6 @@ function viewMembers(){
       <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addMember()">新增</button></div>
     </div>
   </div>
-  <div class="card"><b>批次新增</b>（每行一位，格式 <code>名字,角色,每日KPI</code>；KPI 可省略，省略就用預設 ${defQ}）
-    <textarea id="mb_bulk" style="min-height:185px">Regina,管理員
-Vito,管理員
-Benny,人資
-健加,中文剪輯,3
-鴻閔,中文剪輯,3
-芋頭,中文剪輯,3
-怡如,中文剪輯,3
-艾斯姆,英語剪輯,0
-玲玲,泰語剪輯,0
-test,全語言剪輯,0</textarea>
-    <div class="modalFoot"><button class="btn" onclick="bulkAdd()">批次建立</button></div>
-    <p class="muted">已存在的名字會自動略過，可重複按。</p>
-  </div>
   <div class="card"><b>匯入舊 Excel 工作</b>
     <p class="muted">把之前 Google 試算表的影片工作（共 ${ (window.LEGACY_SEED||[]).length } 筆，皆含 Drive 備份連結）一次匯入影片庫。已完成的會帶上片日期、顯示在月行事曆。</p>
     <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
@@ -961,16 +928,6 @@ function changeRole(name,token){ const rl=tokenToRL(token); writeAdmin("PUT","/a
 function changeQuota(name,q){ writeAdmin("PUT","/api/users/"+name,{dailyQuota:parseInt(q)||0},"已更新每日 KPI"); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
-async function bulkAdd(){
-  const lines=val("mb_bulk").split("\n").map(l=>l.trim()).filter(Boolean);
-  let ok=0, skip=0;
-  for(const line of lines){ const parts=line.split(/[,，]/); const name=(parts[0]||"").trim();
-    if(!name) continue;
-    const ri=roleInfo(parts[1]); const q=parseInt((parts[2]||"").trim())||0;
-    try{ await route("POST","/api/users",{name, role:ri.role, lang:ri.lang, dailyQuota:q}); ok++; }
-    catch(e){ skip++; } }
-  await delay(250); toast("批次完成：新增 "+ok+" 位，略過 "+skip+" 位");
-}
 
 // ===================================================================
 // 稽核紀錄（只有 owner 看得到）：誰、哪台裝置、做了什麼
