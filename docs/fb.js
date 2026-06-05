@@ -12,8 +12,8 @@ import { firebaseConfig } from "./firebase-config.js";
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）
 const DEFAULT_SETTINGS = {
   adminPassword: "1234",
-  mainTypes: ["流量型", "帶貨型"],
-  subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱","寵粉"] },
+  mainTypes: ["流量型", "帶貨型", "寵粉"],
+  subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱","寵粉"], "寵粉": ["寵粉日","回饋","社群限定","開箱"] },
   typeTargets: { "流量型": 3, "帶貨型": 1 },        // 平日每日各類型最低
   fridayTargets: { "流量型": 2, "寵粉": 3 },         // 週五特別配置
   sources: ["老闆自拍", "外部公司"],
@@ -63,6 +63,16 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     const sref = doc(db, "meta", "settings");
     const snap = await getDoc(sref);
     if (!snap.exists()) { await setDoc(sref, DEFAULT_SETTINGS); }
+    else {
+      // 既有設定補上「寵粉」主類別（只在缺少時補一次）
+      const cur = snap.data() || {};
+      const mt = Array.isArray(cur.mainTypes) ? cur.mainTypes : DEFAULT_SETTINGS.mainTypes;
+      if (!mt.includes("寵粉")) {
+        const subTags = cur.subTags || {};
+        if (!subTags["寵粉"]) subTags["寵粉"] = DEFAULT_SETTINGS.subTags["寵粉"];
+        await setDoc(sref, { mainTypes: [...mt, "寵粉"], subTags }, { merge: true });
+      }
+    }
 
     // 即時訂閱（任一變動即同步到所有人的畫面）
     onSnapshot(sref, d => { raw.settings = d.data() || {}; raw.platforms = raw.settings.platforms || []; push(); });
