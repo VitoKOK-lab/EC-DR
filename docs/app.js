@@ -158,7 +158,8 @@ function computeWorkload(date){
     const cnt=(pred)=> (STATE.videos||[]).reduce((n,v)=> n + (langs.some(lg=>pred(v,lg,name))?1:0), 0);
     const todayDone=cnt((v,lg,nm)=>langFinishedOn(v,lg,nm,date));
     const weekDone =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,wkStart,tod));
-    const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,tod));
+    const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,tod));      // 含今天(顯示用)
+    const doneYday =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,yesterday)); // 到前一日(達標判斷)
     // 平均工時（本期已完成且有計時者）
     const durs=[];
     (STATE.videos||[]).forEach(v=>langs.forEach(lg=>{ if(langFinishedInRange(v,lg,name,periodStart,tod)){
@@ -166,13 +167,14 @@ function computeWorkload(date){
       if(dm!=null && dm>=0) durs.push(dm); } }));
     const avgMin = durs.length? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : null;
     const maxMin = durs.length? Math.max(...durs) : null;
-    const expected=workdaysBetween(periodStart,yesterday)*q; const diff=monthDone-expected;
+    // 達標/超前/落後：算到「前一日」的累積 vs 應達（今天先不算）
+    const expected=workdaysBetween(periodStart,yesterday)*q; const diff=doneYday-expected;
     // 近 7 天每日完成數（舊→新）
     const last7=[]; for(let i=6;i>=0;i--){ const d=new Date(tod); d.setDate(tod.getDate()-i); const ds=d.toISOString().slice(0,10);
       last7.push({date:ds, n:(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0)}); }
     const last7Sum=last7.reduce((a,b)=>a+b.n,0);
-    return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone,
-      totalDone:monthDone, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
+    return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone, doneYday,
+      totalDone:doneYday, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
       avgMin, maxMin, timedCount:durs.length, last7, last7Sum, inProgress: 0};
   }).sort((a,b)=>b.diff-a.diff);
   return {date, quota:(s.editorDailyQuota||3), periodStart:periodStart.toISOString().slice(0,10),
@@ -494,32 +496,53 @@ function sparkBars(last7, q){ if(!last7||!last7.length) return "";
   const maxN=Math.max(q||1, ...last7.map(d=>d.n), 1);
   return `<div style="display:flex;gap:3px;align-items:flex-end;height:46px;margin:8px 0">`+
     last7.map(d=>{ const h=Math.round(d.n/maxN*36)+2;
-      const col = (q>0 && d.n>=q)?"var(--green)":(d.n>0?"var(--accent)":"var(--line)");
-      return `<div title="${d.date}：完成 ${d.n} 支" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
+      // 達當日 KPI=綠；有做但未達=紅；完全沒做=淺灰
+      const col = (q>0 && d.n>=q)?"var(--green)":(d.n>0?"var(--red)":"#dfe3ea");
+      return `<div title="${d.date}：完成 ${d.n} 支${q?(d.n>=q?'（達標）':'（未達 '+q+'）'):''}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
         <div style="font-size:9px;color:var(--muted)">${d.n||""}</div>
         <div style="width:100%;height:${h}px;background:${col};border-radius:3px"></div>
         <div style="font-size:9px;color:var(--muted);margin-top:2px">${d.date.slice(8)}</div></div>`; }).join("")
     +`</div>`; }
 
-// ---- 人員工作量（人資） ----
+// ---- 人員工作量（HR 每日檢核）----
+let WL_DATE=null;
+function wlMove(n){ const d=parseDate(WL_DATE||today)||new Date(); d.setDate(d.getDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
+function videoDur(v, langs){ if(v.durationMin!=null) return v.durationMin; for(const lg of langs){ const dm=v.languages?.[lg]?.durationMin; if(dm!=null) return dm; } return 0; }
 function viewWorkload(){
-  if(!DASH){ loadDash(); return `<h2>👥 人員工作量</h2><p class="muted">載入中…</p>`; }
-  const wl = DASH.workload||{rows:[]};
-  const rows = (wl.rows||[]).map(r=>`<tr>
-    <td data-label="剪輯師"><b>${esc(r.name)}</b>${r.inProgress?` <span class="muted">(剪輯中 ${r.inProgress})</span>`:""}</td>
-    <td data-label="今日"><span class="${r.todayMet?'pos':'neg'}">${r.todayDone}/${r.todayQuota}</span></td>
-    <td data-label="本週">${r.weekDone}</td>
-    <td data-label="本月">${r.monthDone}</td>
-    <td data-label="平均工時">${r.avgMin!=null?minToText(r.avgMin):'-'}${r.timedCount?` <span class="muted">(${r.timedCount}筆)</span>`:""}</td>
-    <td data-label="最長工時">${r.maxMin!=null?minToText(r.maxMin):'-'}</td>
-    <td data-label="超前/落後"><span class="${r.diff>0?'pos':(r.diff<0?'neg':'')}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span></td>
-  </tr>`).join("") || `<tr><td class="muted">尚無剪輯成員</td></tr>`;
-  return `<h2>👥 人員工作量 <span class="muted" style="font-size:13px">${today}</span></h2>
+  const date = WL_DATE||today; const isToday=(date===today);
+  const q0 = STATE.settings?.editorDailyQuota||3;
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const wl=computeWorkload(date); const byName={}; wl.rows.forEach(r=>byName[r.name]=r);
+  const cards = editors.map(u=>{
+    const name=u.name; const q=userQuota(name); const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"];
+    const vids=(STATE.videos||[]).filter(v=> langs.some(lg=>langFinishedOn(v,lg,name,date)));
+    const vmin=vids.reduce((a,v)=>a+videoDur(v,langs),0);
+    const tasks=(STATE.tasks||[]).filter(t=>t.user===name && t.date===date);
+    const tmin=tasks.reduce((a,t)=>a+(t.minutes||0),0);
+    const met = q>0 ? vids.length>=q : true;
+    const r=byName[name]||{diff:0,totalDone:0,expected:0};
+    const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
+    return `<div class="ucard ${met?'good':'bad'}">
+      <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[u.lang||"zh"]}</span></span>
+        <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
+      <div style="margin-top:6px;font-size:13px"><b>當日剪片清單</b>${vids.length?"："+vids.map(v=>esc(v.name||v.rawName)).join("、"):'<span class="muted"> 無</span>'}</div>
+      <div style="margin-top:5px;font-size:13px"><b>其他交辦工作</b>${tasks.length?"："+tasks.map(t=>esc(t.title)+" <span class='muted'>("+(t.minutes||0)+"分)</span>").join("、"):'<span class="muted"> 無</span>'}</div>
+      <div style="margin-top:6px;font-size:12px;display:flex;justify-content:space-between">
+        <span class="muted">當日總工時 <b>${minToText(vmin+tmin)}</b></span>
+        <span class="muted">到前一日累積 ${r.totalDone}/${r.expected}（<span class="${r.diff>=0?'pos':'neg'}">${r.diff>0?"超前+"+r.diff:(r.diff<0?"落後"+r.diff:"達標")}</span>）</span>
+      </div>
+    </div>`;
+  }).join("") || `<p class="muted">尚無剪輯成員</p>`;
+  return `<h2>👥 人員工作量 <span class="muted" style="font-size:13px">HR 每日檢核</span></h2>
   <div class="card">
-    <p class="muted">KPI：每位剪輯每日應完成 ${wl.quota||3} 片。績效以「月」累積、每月 1 號（${wl.monthStart||""}）重置。<b>平均工時</b>＝本月已完成且有計時的影片，其「領取→完成」時間平均（避免單支特別久而誤判）。</p>
-    <table class="responsive"><thead><tr>
-      <th>剪輯師</th><th>今日</th><th>本週</th><th>本月</th><th>平均工時</th><th>最長工時</th><th>超前/落後</th>
-    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="row" style="justify-content:space-between">
+      <div class="row" style="gap:8px"><button class="btn sm sec" onclick="wlMove(-1)">← 前一天</button>
+        <b style="min-width:120px;text-align:center">${date}${isToday?"（今天）":""}</b>
+        <button class="btn sm sec" onclick="wlMove(1)">後一天 →</button></div>
+      ${isToday?"":`<button class="btn sm sec" onclick="WL_DATE=null;render()">回今天</button>`}
+    </div>
+    <p class="muted" style="font-size:12px">每位剪輯每日最少 ${q0} 片（綠＝當日達標、紅＝未達）。剪片清單為當天完成的影片；其他交辦工作由本人於工作台填寫。「到前一日累積」的達標判斷不含今天。</p>
+    <div class="grid cols2" style="margin-top:10px">${cards}</div>
   </div>`;
 }
 
@@ -752,8 +775,30 @@ function viewWork(){
       ${isZh?`<button class="btn sm" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${pool.map(v=>matRow(v,true)).join("")||`<tr><td class="muted">${isZh?"目前沒有未處理片源":"目前沒有待二創的影片（要中文母版先完成）"}</td></tr>`}</tbody></table>
+  </div>
+  ${taskCard(me)}`;
+}
+// 今日其他交辦工作（下班匯報）
+function taskCard(me){
+  const mine=(STATE.tasks||[]).filter(t=>t.user===me && t.date===today);
+  const tmin=mine.reduce((a,t)=>a+(t.minutes||0),0);
+  const rows=mine.map(t=>`<div class="vrow"><span>${esc(t.title)}　<span class="muted">${t.minutes||0} 分</span></span>
+    <button class="btn sm danger" onclick="delTask('${t.id}')">刪除</button></div>`).join("")||`<p class="muted">今天還沒有其他工作紀錄</p>`;
+  return `<div class="card"><b>📋 今日其他交辦工作（下班匯報）</b>
+    <p class="muted" style="font-size:12px">基本剪片之外的交辦工作，填內容與花費時間（以 10 分鐘為單位，可調）。今日其他工作合計 ${minToText(tmin)}。</p>
+    <div style="margin:6px 0">${rows}</div>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <input id="tk_title" placeholder="工作內容（例：商品文案、縮圖設計）" style="flex:2;min-width:160px">
+      <input id="tk_min" type="number" min="0" step="10" value="10" style="width:90px"><span class="muted">分鐘</span>
+      <button class="btn sm" onclick="addTask()">＋ 新增</button>
+    </div>
   </div>`;
 }
+async function addTask(){ const me=currentUser(); const title=val("tk_title").trim(); const minutes=parseInt(val("tk_min"))||0;
+  if(!title){ toast("請輸入工作內容",true); return; }
+  const id="T"+Date.now()+Math.random().toString(36).slice(2,5);
+  try{ await window.DB.set("tasks", id, {id, user:me, date:today, title, minutes}); toast("已記錄"); }catch(e){ toast("失敗，請稍後再試",true); } }
+function delTask(id){ if(!confirm("刪除這筆工作？")) return; window.DB.del("tasks", id).then(()=>toast("已刪除")).catch(()=>toast("失敗",true)); }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
@@ -1103,6 +1148,8 @@ async function loadDemoData(){
   if(!eds.length){ toast("請先建立至少一位剪輯成員再載入模擬資料",true); return; }
   if(!confirm("載入完整模擬資料？前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘。")) return;
   const T=new Date(today+"T00:00:00");
+  // 把 KPI 起算日設為本月初，模擬才看得到累積落後（否則被設成今天會全是 0/0）
+  try{ await window.DB.setSettings({kpiStartDate: new Date(T.getFullYear(),T.getMonth(),1).toISOString().slice(0,10)}); }catch(e){}
   const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
   const ds=x=>x.toISOString().slice(0,10);
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
@@ -1145,6 +1192,12 @@ async function loadDemoData(){
   // 工作台池：待處理(刻意<5觸發片源警示) + 剪輯中
   for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
   base.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
+  // 其他交辦工作（示範）：近 20 天各人偶爾一筆
+  const TASK_NAMES=["商品文案撰寫","縮圖設計","腳本發想","回覆社群留言","素材整理","開會討論","上字幕","與外部公司對接"];
+  const taskRecs=[];
+  base.forEach(u=>{ for(let n=-20;n<=0;n++){ if(Math.random()<0.35){ const d=dOff(n); seq++;
+    taskRecs.push({demo:true, id:"T"+seq+Math.random().toString(36).slice(2,5), user:u.name, date:ds(d), title:pick(TASK_NAMES), minutes:(1+Math.floor(Math.random()*9))*10}); } } });
+  BULK_BUSY=true; for(const tr of taskRecs){ try{ await window.DB.set("tasks", tr.id, tr); }catch(e){} } BULK_BUSY=false;
   const ok=await bulkCreateVideos(recs);
   await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
 }

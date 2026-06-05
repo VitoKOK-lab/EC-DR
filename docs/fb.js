@@ -35,7 +35,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const auth = getAuth(app);
 
   // 本地彙整的原始資料；任一集合變動就推給畫面
-  const raw = { users: [], products: [], videos: [], schedule: {}, settings: {}, platforms: [] };
+  const raw = { users: [], products: [], videos: [], schedule: {}, settings: {}, platforms: [], tasks: [] };
   function push() { if (window.__onState) window.__onState(JSON.parse(JSON.stringify(raw))); }
 
   // 暴露給 app.js 的寫入介面
@@ -68,5 +68,6 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "videos"),   q => { raw.videos   = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
+    onSnapshot(collection(db, "tasks"),    q => { raw.tasks    = q.docs.map(d => d.data()); push(); });
   });
 }
