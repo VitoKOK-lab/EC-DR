@@ -430,8 +430,20 @@ function viewDash(){
       {label:"本月完成",data:(wl.rows||[]).map(r=>r.totalDone),backgroundColor:"#2563eb"},
       {label:"應達",data:(wl.rows||[]).map(r=>r.expected),backgroundColor:"#cbd5e1"}]},
     options:{scales:{y:{beginAtZero:true}}}},170);
+  const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
+  const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
+    <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
+    <span class="muted"> — 報表上的落後／缺口是「示範資料」造成的，不是真實狀況。正式使用前到「成員管理 → 清空所有影片」即可移除。</span></div>`:"";
+  const safeCol = runway>=5?'var(--green)':(runway>=3?'var(--amber)':'var(--red)');
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
+  ${demoBanner}
+
+  <div class="card" style="text-align:center;border-color:${safeCol}">
+    <div style="font-size:64px;font-weight:900;line-height:1;color:${safeCol}">${runway}<span style="font-size:24px;font-weight:700"> 天</span></div>
+    <div class="l" style="font-size:15px;margin-top:4px">安全天數　<span class="muted">（從今天起連續已排滿的天數）</span></div>
+    ${runway<3?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 不足 3 天，請盡快補排！</p>`:(runway<5?`<p class="pill wa" style="display:inline-block;margin-top:8px">尚可，建議補到 5 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 排程安全</p>`)}
+  </div>
 
   <div class="grid cols2">
     <div class="card"><b>📈 近 21 天每日上片數</b><p class="muted" style="font-size:11px">綠＝達每日目標 ${target}，紅＝不足</p>${deptChart}</div>
@@ -441,18 +453,6 @@ function viewDash(){
   <div class="card"><b>👥 每位剪輯 KPI（每日應完成數，綠＝達標/超前、紅＝落後）</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
     <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。績效以「月」累積、每月 1 號重置。</p>
-  </div>
-
-  <div class="card" style="border-color:${runway>=3?'var(--green)':'var(--red)'}">
-    <div class="row" style="gap:28px;align-items:flex-end">
-      <div><div class="n" style="font-size:34px;color:${runway>=3?'var(--green)':'var(--red)'}">${runway}</div>
-        <div class="l">安全天數（從今天起連續已排滿的天數）</div></div>
-      <div style="flex:1">
-        <div class="l">已完成／預排的日期</div>
-        <div style="margin-top:6px">${filled.length?filled.slice(0,14).map(d=>`<span class="tag" style="margin:2px">${d.slice(5)}</span>`).join(""):`<span class="muted">尚無已排滿的日期</span>`}</div>
-      </div>
-    </div>
-    ${runway<3?`<p class="pill em" style="display:inline-block;margin-top:10px">⚠ 安全天數不足 3 天，請盡快補排！</p>`:`<p class="pill ok" style="display:inline-block;margin-top:10px">✅ 排程安全</p>`}
   </div>
 
   <div class="card">
@@ -572,8 +572,10 @@ function viewCal(){
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const isToday = ds===today;
+    const tmk = isToday?`<span class="todaymk">今天</span>`:"";
     if(!isZh){ const cnt=dayLangCount(ds,lang);
-      cells += `<div class="day ${cnt>0?'full':'none'}" onclick="openDay('${ds}')"><div class="dnum">${d}</div>
+      cells += `<div class="day ${cnt>0?'full':'none'} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
         <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
@@ -586,8 +588,8 @@ function viewCal(){
     if(pcnt) segs.push(`<div class="seg" style="flex:${pcnt};background:var(--pamper)" title="寵粉 ${pcnt}"></div>`);
     const defTxt=[]; Object.keys(b.deficits).forEach(tp=>defTxt.push((tp==="流量型"?"流":"帶")+"缺"+b.deficits[tp]));
     if(b.needPampered) defTxt.push("缺寵粉");
-    cells += `<div class="day ${cls}" onclick="openDay('${ds}')">
-      <div class="dnum">${d}</div>
+    cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
+      ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total}<span style="font-size:13px;color:var(--muted);font-weight:600">/${target}</span></div>
       ${defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(isPamperedDay(ds)&&b.pampered?`<div class="pmk" style="color:var(--pamper)">寵粉✓</div>`:"")}
       <div class="tbar">${segs.join("")||'<div class="seg" style="flex:1;background:var(--line)"></div>'}</div>
@@ -1110,7 +1112,7 @@ async function loadDemoData(){
     else if(kind==="sales"){ mainType="帶貨型"; subTag=pick(["新品","促銷","開箱"]); name=pick(DEMO_SALES); }
     else { mainType="流量型"; subTag=pick(["名人話題","珠寶知識","家庭","理財"]); name=pick(DEMO_TRAFFIC); }
     const past = d < T;
-    return {rawName:name, name:name+"（"+ds(d).slice(5)+"）", mainType, subTag, pampered:kind==="pamper",
+    return {demo:true, rawName:name, name:name+"（"+ds(d).slice(5)+"）", mainType, subTag, pampered:kind==="pamper",
       source:pick(srcs), editor:editor||"", stage:"已完成", scheduledDate:ds(d),
       claimedAt:(past&&editor)?at(d,8):"",
       finishedAt:at(d, 9+Math.floor(Math.random()*9)),
@@ -1140,8 +1142,8 @@ async function loadDemoData(){
     // else 留空：沒人補
   }
   // 工作台池：待處理 + 剪輯中
-  for(let k=0;k<6;k++){ seq++; recs.push({rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
-  eds.slice(0,3).forEach(u=>{ seq++; recs.push({rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
+  for(let k=0;k<6;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
+  eds.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
   const ok=await bulkCreateVideos(recs);
   await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
 }
