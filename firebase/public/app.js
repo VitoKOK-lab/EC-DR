@@ -768,22 +768,21 @@ function claimLang(id,lang){
   if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser(),claimedBy:currentUser(),claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
 }
-function finishGate(p){ const ok=val(p+"date")&&val(p+"pub").trim()&&val(p+"backup").trim()&&val(p+"social").trim();
+function finishGate(p){ const ok=val(p+"date")&&val(p+"backup").trim()&&val(p+"social").trim();
   const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
 function finishLang(id,lang){
   const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today; const lb=LANG_LABEL[lang]||lang;
   showModal("完成"+lb+"二創：填上片資訊", `
     <label>上片日期（會顯示在${lb}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}" oninput="finishGate('fl_')">
-    <label>上架連結</label><input id="fl_pub" value="${esc(L.publishedLink||"")}" oninput="finishGate('fl_')" placeholder="${lb}社群貼文／上架網址">
     <label>雲端備份連結</label><input id="fl_backup" value="${esc(L.driveFolder||"")}" oninput="finishGate('fl_')" placeholder="Google Drive 備份">
-    <label>社群平台預排連結</label><input id="fl_social" value="${esc(L.socialLink||"")}" oninput="finishGate('fl_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期與三個連結都填好，才能按「確認送出」。</p>
+    <label>社群平台預排連結</label><input id="fl_social" value="${esc(L.socialLink||L.publishedLink||"")}" oninput="finishGate('fl_')" placeholder="排程工具／預約貼文連結">
+    <p class="muted">日期與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
     const fin=nowIso(); const cAt=L.claimedAt||null;
     return await write("PUT",`/api/videos/${id}/lang/${lang}`,
       {lang:{status:"完成", finishedAt:fin, scheduledDate:val("fl_date"), editor:currentUser(),
              claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null),
-             publishedLink:val("fl_pub"), driveFolder:val("fl_backup"), socialLink:val("fl_social")}},
+             publishedLink:val("fl_social"), driveFolder:val("fl_backup"), socialLink:val("fl_social")}},
       "已完成，已加入"+lb+"行事曆");
   });
   finishGate("fl_");
@@ -794,14 +793,13 @@ function finishVid(id){
   showModal("完成影片：填上片資訊", `
     <label>成品名稱</label><input id="f_name" value="${esc(v.name||v.rawName||"")}">
     <label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')">
-    <label>上架連結</label><input id="f_pub" value="${esc(v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="社群貼文／上架網址">
     <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
-    <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期與三個連結都填好，才能按「確認送出」。</p>
+    <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
+    <p class="muted">日期與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
     return await write("POST",`/api/videos/${id}/finish`,
       {name:val("f_name")||undefined, scheduledDate:val("f_date"),
-       publishedLink:val("f_pub"), driveFolder:val("f_backup"), socialLink:val("f_social"),
+       publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
   finishGate("f_");
@@ -884,9 +882,8 @@ function editVideo(id){
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
-      <label>上架／發布連結</label><input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="社群貼文 / 上架網址">
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
-      <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||"")}" placeholder="排程工具 / 預約貼文連結">
+      <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
     </div>
     <div class="grid cols2">
       <div><label>CTR (%)</label><input type="number" step="0.1" id="e_ctr" value="${v.ctr||0}"></div>
@@ -899,7 +896,7 @@ function editVideo(id){
     const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub"),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,ctr:parseFloat(val("e_ctr"))||0,completionRate:parseFloat(val("e_comp"))||0,
-      driveFolder:val("e_drive"), publishedLink:val("e_pub"), socialLink:val("e_social")};
+      driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal(); return ok;
   });
