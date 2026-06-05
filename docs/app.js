@@ -153,9 +153,13 @@ function computeWorkload(date){
     const avgMin = durs.length? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : null;
     const maxMin = durs.length? Math.max(...durs) : null;
     const expected=workdaysBetween(periodStart,yesterday)*q; const diff=monthDone-expected;
+    // 近 7 天每日完成數（舊→新）
+    const last7=[]; for(let i=6;i>=0;i--){ const d=new Date(tod); d.setDate(tod.getDate()-i); const ds=d.toISOString().slice(0,10);
+      last7.push({date:ds, n:(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0)}); }
+    const last7Sum=last7.reduce((a,b)=>a+b.n,0);
     return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone,
       totalDone:monthDone, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
-      avgMin, maxMin, timedCount:durs.length, inProgress: 0};
+      avgMin, maxMin, timedCount:durs.length, last7, last7Sum, inProgress: 0};
   }).sort((a,b)=>b.diff-a.diff);
   return {date, quota:(s.editorDailyQuota||3), periodStart:periodStart.toISOString().slice(0,10),
           monthStart:periodStart.toISOString().slice(0,10), rows};
@@ -368,17 +372,28 @@ function viewDash(){
   const filled = (p.已排滿日期||[]);
   const ahead = (wl.rows||[]).filter(r=>r.diff>0);
   const behind = (wl.rows||[]).filter(r=>r.diff<0);
+  const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
   const userCards = (wl.rows||[]).map(r=>{
-    const cls = r.diff>0?"pos":(r.diff<0?"neg":"");
+    const good = r.diff>=0;
+    const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     return `<div class="stat">
-      <div class="l">${esc(r.name)}　<span class="${r.todayMet?'pos':'neg'}">今日 ${r.todayDone}/${r.todayQuota}</span></div>
-      <div>本月完成 ${r.totalDone} ／ 應達 ${r.expected}</div>
-      <div class="muted" style="font-size:12px">平均工時 ${r.avgMin!=null?minToText(r.avgMin):"-"}</div>
-      <div class="${cls}" style="font-size:13px">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</div>
+      <div class="row" style="justify-content:space-between">
+        <b>${esc(r.name)} <span class="muted" style="font-size:11px">${LMAP[r.lang]||""}</span></b>
+        <span class="pill ${r.todayMet?'ok':'wa'}">今日 ${r.todayDone}/${r.todayQuota}</span>
+      </div>
+      ${sparkBars(r.last7, r.todayQuota)}
+      <div class="muted" style="font-size:11px">近 7 天完成 ${r.last7Sum} 支　·　平均工時 ${r.avgMin!=null?minToText(r.avgMin):"-"}</div>
+      <div class="progbar" style="margin-top:6px"><i style="width:${pct}%;background:${good?'var(--green)':'var(--red)'}"></i></div>
+      <div style="font-size:13px;margin-top:4px"><span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span> <span class="muted">本月 ${r.totalDone}/${r.expected}</span></div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
+
+  <div class="card"><b>👥 每位剪輯 KPI（每日應完成數，綠＝達標/超前、紅＝落後）</b>
+    <div class="grid cols3" style="margin-top:10px">${userCards}</div>
+    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。績效以「月」累積、每月 1 號重置。</p>
+  </div>
 
   <div class="card" style="border-color:${runway>=3?'var(--green)':'var(--red)'}">
     <div class="row" style="gap:28px;align-items:flex-end">
@@ -414,11 +429,19 @@ function viewDash(){
     ${help.length?help.map(h=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
         <span>${esc(h.name||"")} <span class="muted">(${esc(h.by||"")})</span></span>
         <span class="muted">${esc(h.note||"")}</span></div>`).join(""):`<p class="muted">目前沒有人需要支援 👍</p>`}
-  </div>
-  <div class="card"><b>👥 每位剪輯本月 KPI（每日應完成 ${wl.quota||3} 片）</b>
-    <div class="grid cols3" style="margin-top:10px">${userCards}</div>
   </div>`;
 }
+// 近 7 天迷你長條圖
+function sparkBars(last7, q){ if(!last7||!last7.length) return "";
+  const maxN=Math.max(q||1, ...last7.map(d=>d.n), 1);
+  return `<div style="display:flex;gap:3px;align-items:flex-end;height:46px;margin:8px 0">`+
+    last7.map(d=>{ const h=Math.round(d.n/maxN*36)+2;
+      const col = (q>0 && d.n>=q)?"var(--green)":(d.n>0?"var(--accent)":"var(--line)");
+      return `<div title="${d.date}：完成 ${d.n} 支" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
+        <div style="font-size:9px;color:var(--muted)">${d.n||""}</div>
+        <div style="width:100%;height:${h}px;background:${col};border-radius:3px"></div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">${d.date.slice(8)}</div></div>`; }).join("")
+    +`</div>`; }
 
 // ---- 人員工作量（人資） ----
 function viewWorkload(){
@@ -682,23 +705,30 @@ function newVideo(){
   window._subOpts = subOptions;
 }
 
-// ---- 影片庫 ----
-function viewVideos(){
-  const langs = nonZh();
-  const rows=(STATE.videos||[]).map(v=>`<tr>
-    <td data-label="">${lightDot(v.light)}</td>
+// ---- 影片庫（分 新片未剪 / 舊片已完成）----
+function videoRow(v){ return `<tr>
     <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a></td>
     <td data-label="類別">${typeTag(v.mainType)}${v.subTag?` <span class="tag">${esc(v.subTag)}</span>`:""}</td>
     <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
     <td data-label="階段"><span class="tag">${esc(v.stage||"")}</span></td>
     <td data-label="剪輯">${esc(v.editor||"")}</td>
-    <td data-label="二創">${langs.map(l=>`${LANG_LABEL[l]||l}:${esc(v.languages?.[l]?.status||"-")}`).join(" ")}</td>
+    <td data-label="上片日">${esc(v.scheduledDate||"-")}</td>
     <td data-label=""><button class="btn sm sec" onclick="editVideo('${v.id}')">編輯</button></td>
-  </tr>`).join("");
+  </tr>`; }
+function videoTable(list){
+  return `<table class="responsive"><thead><tr><th>影片</th><th>類別</th><th>片源</th><th>階段</th><th>剪輯</th><th>上片日</th><th></th></tr></thead>
+  <tbody>${list.map(videoRow).join("")||`<tr><td class="muted">無</td></tr>`}</tbody></table>`;
+}
+function viewVideos(){
+  const all=STATE.videos||[];
+  const fresh=all.filter(v=>["待處理","剪輯中"].includes(v.stage));   // 新片・未剪/製作中
+  const old=all.filter(v=>["已完成","已上片"].includes(v.stage));     // 舊片・已完成
   return `<h2>🎞 影片庫</h2>
-  <div class="card"><div class="row" style="justify-content:flex-end"><button class="btn sm" onclick="newVideo()">＋ 新增影片任務</button></div>
-  <table class="responsive"><thead><tr><th></th><th>影片</th><th>類別</th><th>片源</th><th>階段</th><th>剪輯</th><th>二創</th><th></th></tr></thead>
-  <tbody>${rows||`<tr><td class="muted">尚無影片</td></tr>`}</tbody></table></div>`;
+  <div class="card"><div class="row" style="justify-content:space-between"><b>🆕 新片（未剪／製作中）${fresh.length}</b>
+    <button class="btn sm" onclick="newVideo()">＋ 新增片源</button></div>
+    ${videoTable(fresh)}</div>
+  <div class="card"><b>📁 舊片（已完成）${old.length}</b>
+    ${videoTable(old)}</div>`;
 }
 function editVideo(id){
   const v = vid(id)||{};
