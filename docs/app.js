@@ -413,10 +413,14 @@ function viewDash(){
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
     const rep=(STATE.reports||[]).find(x=>x.user===r.name && x.date===today);
-    const repHtml = rep ? `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
-        <div><b>📝 下班匯報</b>${(rep.clockIn||rep.clockOut)?` <span class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</span>`:""}</div>
-        <div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content||"")}</div></div>`
-      : `<div style="margin-top:8px;font-size:12px" class="muted">📝 今日下班匯報：<span class="neg">未填</span></div>`;
+    const tks=(STATE.tasks||[]).filter(x=>x.user===r.name && x.date===today);
+    const tksHtml = tks.length? `<div style="margin-top:4px"><b>其他工作</b>${tks.map(tk=>`<div>・${esc(tk.title)} <span class="muted">(${tk.minutes||0}分)</span></div>`).join("")}</div>`:"";
+    const repHtml = `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
+        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">今日未匯報</span>`}</div>
+        ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
+        ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}
+        ${tksHtml}
+      </div>`;
     return `<div class="ucard ${good?'good':'bad'}">
       <div class="uh">
         <span class="nm"><span class="statusdot" style="background:${dotCol}"></span>${esc(r.name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[r.lang]||""}</span></span>
@@ -431,6 +435,7 @@ function viewDash(){
       ${repHtml}
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
+  const noReport=(wl.rows||[]).filter(r=>!(STATE.reports||[]).some(x=>x.user===r.name && x.date===today)).length;
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
   const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
     <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
@@ -457,9 +462,11 @@ function viewDash(){
     </div>
   </div>
 
-  <div class="card"><b>👥 每日匯報（每人 KPI＋今日下班匯報，綠＝達標/超前、紅＝落後）</b>
+  <div class="card"><div class="row" style="justify-content:space-between">
+      <b>👥 每日匯報（每人 KPI＋今日下班匯報，綠＝達標/超前、紅＝落後）</b>
+      <span class="pill ${noReport?'em':'ok'}">今日未匯報 ${noReport} 人</span></div>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
-    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。下方為本人填寫的今日下班匯報。績效以「月」累積、每月 1 號重置。</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。下方為本人填寫的今日下班匯報與其他工作。績效以「月」累積、每月 1 號重置。</p>
   </div>
 
   <div class="grid cols3">
@@ -505,15 +512,15 @@ function viewWorkload(){
   const kpiEds=data.filter(d=>d.q>0); const metCnt=kpiEds.filter(d=>d.met).length;
   const cards = data.map(({u,name,q,vids,vmin,tasks,tmin,met,r})=>{
     const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===date);
-    const repHtml = rep ? `<div style="margin-top:6px;padding:8px;background:var(--panel2);border-radius:6px;font-size:13px">
-        <div><b>📝 下班匯報</b>${(rep.clockIn||rep.clockOut)?` <span class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</span>`:""}</div>
-        <div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content||"")}</div></div>`
-      : `<div style="margin-top:6px;font-size:12px" class="muted">📝 下班匯報：<span class="neg">未填</span></div>`;
+    const repHtml = `<div style="margin-top:6px;padding:8px;background:var(--panel2);border-radius:6px;font-size:13px">
+        <div style="display:flex;justify-content:space-between"><b>📝 下班匯報</b>${rep?`<span style="color:var(--green);font-size:11px">✓ 本日匯報已完成</span>`:`<span class="neg" style="font-size:11px">未填</span>`}</div>
+        ${rep&&(rep.clockIn||rep.clockOut)?`<div class="muted">上班 ${esc(rep.clockIn||"-")}—${esc(rep.clockOut||"-")}</div>`:""}
+        ${rep&&rep.content?`<div style="white-space:pre-wrap;margin-top:3px">${esc(rep.content)}</div>`:""}</div>`;
     return `<div class="ucard ${met?'good':'bad'}">
       <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[u.lang||"zh"]}</span></span>
         <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
       <div style="margin-top:6px;font-size:13px"><b>當日剪片清單</b>${vids.length?"："+vids.map(v=>esc(v.name||v.rawName)).join("、"):'<span class="muted"> 無</span>'}</div>
-      <div style="margin-top:5px;font-size:13px"><b>其他交辦工作</b>${tasks.length?"："+tasks.map(t=>esc(t.title)+" <span class='muted'>("+(t.minutes||0)+"分)</span>").join("、"):'<span class="muted"> 無</span>'}</div>
+      <div style="margin-top:5px;font-size:13px"><b>其他交辦工作</b>${tasks.length?"："+tasks.map(t=>`<div>・${esc(t.title)} <span class='muted'>(${t.minutes||0}分)</span></div>`).join(""):'<span class="muted"> 無</span>'}</div>
       ${repHtml}
       <div style="margin-top:6px;font-size:12px;display:flex;justify-content:space-between">
         <span class="muted">當日總工時 <b>${minToText(vmin+tmin)}</b></span>
