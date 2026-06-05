@@ -13,7 +13,9 @@ import { firebaseConfig } from "./firebase-config.js";
 const DEFAULT_SETTINGS = {
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型"],
-  subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱"] },
+  subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱","寵粉"] },
+  typeTargets: { "流量型": 3, "帶貨型": 1 },        // 平日每日各類型最低
+  fridayTargets: { "流量型": 2, "寵粉": 3 },         // 週五特別配置
   sources: ["老闆自拍", "外部公司"],
   languages: ["zh", "en", "th", "ms"],
   dailyPublishTarget: 4,

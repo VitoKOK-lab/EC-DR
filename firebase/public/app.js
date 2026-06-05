@@ -65,18 +65,25 @@ function dayLangList(date,lang){
 }
 function dayLangCount(date,lang){ return dayLangList(date,lang).length; }
 // 每日類型配額與寵粉(週五六)規則
-function typeTargets(){ return STATE.settings?.typeTargets || {"流量型":2,"帶貨型":2}; }
-function isPamperedDay(date){ const w=new Date(date+"T00:00:00").getDay(); return w===5||w===6; } // 週五、六
+function isPamperedDay(date){ return new Date(date+"T00:00:00").getDay()===5; } // 週五
+// 當日各類型最低數量：平日 流量3/帶貨1；週五 流量2/寵粉3
+function dayTargets(date){
+  const s=STATE.settings||{};
+  if(isPamperedDay(date)) return s.fridayTargets || {"流量型":2,"寵粉":3};
+  return s.typeTargets || {"流量型":3,"帶貨型":1};
+}
+function daySum(date){ const t=dayTargets(date); return Object.values(t).reduce((a,b)=>a+(b||0),0); }
 function dayBreakdown(date){
-  const list=dayLangList(date,"zh"); const byType={}; let pampered=0;
-  list.forEach(it=>{ const v=vid(it.videoId); if(!v) return; byType[v.mainType]=(byType[v.mainType]||0)+1;
-    if(String(v.subTag||"").includes("寵粉")||v.pampered) pampered++; });
-  const tg=typeTargets(); const deficits={};
-  Object.keys(tg).forEach(tp=>{ const d=Math.max(0,(tg[tp]||0)-(byType[tp]||0)); if(d>0) deficits[tp]=d; });
-  const needPampered = isPamperedDay(date) && pampered<1;
-  const target=STATE.settings?.dailyPublishTarget||4;
-  const full = list.length>=target && Object.keys(deficits).length===0 && !needPampered;
-  return {total:list.length, target, byType, deficits, pampered, needPampered, full};
+  const list=dayLangList(date,"zh"); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
+  list.forEach(it=>{ const v=vid(it.videoId); if(!v) return;
+    const isP=String(v.subTag||"").includes("寵粉")||v.pampered;
+    if(isP) cnt["寵粉"]++; else if(v.mainType==="流量型") cnt["流量型"]++; else cnt["帶貨型"]++; });
+  const tg=dayTargets(date); const deficits={};
+  Object.keys(tg).forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
+  const target=daySum(date); const total=list.length;
+  const needPampered=(tg["寵粉"]||0)>cnt["寵粉"];
+  const full = Object.keys(deficits).length===0 && total>=target;
+  return {total, target, byType:cnt, deficits, pampered:cnt["寵粉"], needPampered, full, targets:tg};
 }
 // 某語言、某人、某日是否完成一支
 function langFinishedOn(v,lg,name,date){
@@ -124,7 +131,7 @@ function dayVideoList(date){
   return out;
 }
 function dayScheduledCount(date){ return dayVideoList(date).length; }
-function dayIsComplete(date){ return dayScheduledCount(date) >= (STATE.settings?.dailyPublishTarget||4); }
+function dayIsComplete(date){ return dayScheduledCount(date) >= daySum(date); }
 function computeWarnings(){
   const horizon=STATE.settings?.scheduleHorizonDays||30; const t=new Date(today+"T00:00:00");
   const em=[], wa=[];
@@ -181,7 +188,7 @@ function computeWorkload(date){
           monthStart:periodStart.toISOString().slice(0,10), rows};
 }
 function computeDashboard(date){
-  const w=computeWarnings(); const s=STATE.settings||{}; const target=s.dailyPublishTarget||4;
+  const w=computeWarnings(); const s=STATE.settings||{}; const target=daySum(date);
   const horizon=s.scheduleHorizonDays||30; const t=new Date(today+"T00:00:00");
   let full=0, runway=0, broke=false; const filled=[];
   for(let o=0;o<horizon;o++){ const d=new Date(t); d.setDate(d.getDate()+o); const ds=d.toISOString().slice(0,10);
@@ -449,18 +456,10 @@ function viewDash(){
     <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。績效以「月」累積、每月 1 號重置。</p>
   </div>
 
-  <div class="grid cols4">
+  <div class="grid cols3">
     <div class="stat"><div class="n">${p.今日已排}/${p.每日目標}</div><div class="l">今日已上片</div></div>
     <div class="stat"><div class="n" style="color:${p.落後人數?'var(--red)':'var(--green)'}">${p.落後人數}</div><div class="l">落後人數</div></div>
     <div class="stat"><div class="n">${p.剪輯中}</div><div class="l">剪輯中</div></div>
-    <div class="stat"><div class="n">${p.二創待辦}</div><div class="l">多語二創待辦</div></div>
-  </div>
-
-  <div class="card" style="margin-top:16px">
-    <b>🆘 目前需要支援</b>
-    ${help.length?help.map(h=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
-        <span>${esc(h.name||"")} <span class="muted">(${esc(h.by||"")})</span></span>
-        <span class="muted">${esc(h.note||"")}</span></div>`).join(""):`<p class="muted">目前沒有人需要支援 👍</p>`}
   </div>
   ${viewCal()}`;
 }
@@ -612,19 +611,18 @@ function viewCal(){
         <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
-    const cls = b.total===0 ? "bad" : (b.full ? "full" : (b.total>=target ? "warn" : "bad"));
-    // 類型色條（流量/帶貨/寵粉 依數量比例）
-    const segs=[]; const tcnt={"流量型":b.byType["流量型"]||0,"帶貨型":b.byType["帶貨型"]||0};
-    const pcnt=b.pampered||0; const totSeg=(tcnt["流量型"]+tcnt["帶貨型"]+pcnt)||1;
+    const cls = b.total===0 ? "bad" : (b.full ? "full" : (b.total>=b.target ? "warn" : "bad"));
+    // 類型色條：流量(藍)/帶貨(橙)/寵粉(紫)
+    const segs=[]; const tcnt=b.byType;
     if(tcnt["流量型"]) segs.push(`<div class="seg" style="flex:${tcnt["流量型"]};background:var(--traffic)" title="流量 ${tcnt['流量型']}"></div>`);
     if(tcnt["帶貨型"]) segs.push(`<div class="seg" style="flex:${tcnt["帶貨型"]};background:var(--sales)" title="帶貨 ${tcnt['帶貨型']}"></div>`);
-    if(pcnt) segs.push(`<div class="seg" style="flex:${pcnt};background:var(--pamper)" title="寵粉 ${pcnt}"></div>`);
-    const defTxt=[]; Object.keys(b.deficits).forEach(tp=>defTxt.push((tp==="流量型"?"流":"帶")+"缺"+b.deficits[tp]));
-    if(b.needPampered) defTxt.push("缺寵粉");
+    if(tcnt["寵粉"]) segs.push(`<div class="seg" style="flex:${tcnt["寵粉"]};background:var(--pamper)" title="寵粉 ${tcnt['寵粉']}"></div>`);
+    const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
+    const defTxt=Object.keys(b.deficits).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${b.total}<span style="font-size:13px;color:var(--muted);font-weight:600">/${target}</span></div>
-      ${defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(isPamperedDay(ds)&&b.pampered?`<div class="pmk" style="color:var(--pamper)">寵粉✓</div>`:"")}
+      <div class="big">${b.total}<span style="font-size:13px;color:var(--muted);font-weight:600">/${b.target}</span></div>
+      ${defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(isPamperedDay(ds)&&!b.needPampered?`<div class="pmk" style="color:var(--pamper)">寵粉✓</div>`:"")}
       <div class="tbar">${segs.join("")||'<div class="seg" style="flex:1;background:var(--line)"></div>'}</div>
     </div>`;
   }
@@ -667,12 +665,11 @@ function openDay(ds){
   }).join("");
   const cnt = list.length;
   let summary="";
-  if(isZh){ const b=dayBreakdown(ds); const tg=typeTargets();
+  if(isZh){ const b=dayBreakdown(ds); const tg=b.targets;
     summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
-      Object.keys(tg).map(tp=>{ const have=b.byType[tp]||0; const ok=have>=tg[tp];
-        return `<span class="pill ${ok?'ok':'em'}">${tp} ${have}/${tg[tp]}</span>`; }).join("")+
-      (isPamperedDay(ds)?`<span class="pill ${b.needPampered?'em':'ok'}">寵粉(週五六) ${b.pampered}/1</span>`:"")+
-      `<span class="pill ${cnt>=target?'ok':'em'}">總量 ${cnt}/${target}</span></div>`;
+      Object.keys(tg).map(k=>{ const have=b.byType[k]||0; const ok=have>=tg[k];
+        return `<span class="pill ${ok?'ok':'em'}">${k} ${have}/${tg[k]}</span>`; }).join("")+
+      `<span class="pill ${cnt>=b.target?'ok':'em'}">總量 ${cnt}/${b.target}</span></div>`;
   }
   showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
     <div class="card"><b>當日影片</b>
@@ -947,7 +944,8 @@ function setKpiToday(){ writeAdmin("PUT","/api/settings",{settings:{kpiStartDate
 function viewSettings(){
   const s=STATE.settings||{};
   const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
-  const tt=s.typeTargets||{"流量型":2,"帶貨型":2};
+  const tt=s.typeTargets||{"流量型":3,"帶貨型":1};
+  const ft=s.fridayTargets||{"流量型":2,"寵粉":3};
   return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
   <div class="card"><div class="grid cols4">
     <div><label>每日應上片數</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
@@ -955,8 +953,13 @@ function viewSettings(){
     <div><label>新片片源低庫存門檻</label><input type="number" id="set_low" value="${s.materialLowThreshold||5}"></div>
     <div><label>預排天數視窗</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
   </div>
-  <label>每日各類型最低數量（月曆判斷「缺哪種」用，總和建議＝每日應上片數）</label>
-  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div></div>
+  <label>平日 每日各類型最低數量（一～四、六、日）</label>
+  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div>
+  <label style="margin-top:10px">週五 特別配置</label>
+  <div class="grid cols3">
+    <div><label style="margin-top:0">流量型</label><input type="number" min="0" id="set_ft_流量型" value="${ft["流量型"]||0}"></div>
+    <div><label style="margin-top:0">寵粉</label><input type="number" min="0" id="set_ft_寵粉" value="${ft["寵粉"]||0}"></div>
+  </div></div>
   <label>KPI 起算日（超前/落後從這天開始算，建議設成正式上線那天）</label>
   <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
     <button class="btn sm sec" onclick="setKpiToday()">設為今天</button></div>
@@ -986,7 +989,9 @@ async function saveSettings(){
   });
   const mainTypes=val("set_main").split(",").map(x=>x.trim()).filter(Boolean);
   const typeTargets={}; mainTypes.forEach(mt=>{ const e=document.getElementById("set_tt_"+mt); if(e) typeTargets[mt]=parseInt(e.value)||0; });
+  const fridayTargets={"流量型":parseInt(val("set_ft_流量型"))||0,"寵粉":parseInt(val("set_ft_寵粉"))||0};
   const settings={
+    fridayTargets,
     dailyPublishTarget:parseInt(val("set_pub"))||4,
     editorDailyQuota:parseInt(val("set_quota"))||3,
     scheduleHorizonDays:parseInt(val("set_horizon"))||30,
@@ -1120,7 +1125,8 @@ async function loadDemoData(){
   if(!confirm("載入完整模擬資料？前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘。")) return;
   const T=new Date(today+"T00:00:00");
   // 把 KPI 起算日設為本月初，模擬才看得到累積落後（否則被設成今天會全是 0/0）
-  try{ await window.DB.setSettings({kpiStartDate: new Date(T.getFullYear(),T.getMonth(),1).toISOString().slice(0,10)}); }catch(e){}
+  try{ await window.DB.setSettings({kpiStartDate: new Date(T.getFullYear(),T.getMonth(),1).toISOString().slice(0,10),
+    typeTargets:{"流量型":3,"帶貨型":1}, fridayTargets:{"流量型":2,"寵粉":3}}); }catch(e){}
   const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
   const ds=x=>x.toISOString().slice(0,10);
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
@@ -1148,12 +1154,11 @@ async function loadDemoData(){
       driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
   };
   const recs=[];
-  const target=STATE.settings?.dailyPublishTarget||4;
-  // 一天剛好 target 片：流2帶2（週五六其中一支帶貨改寵粉），多的不塞同一天→往後天去排
-  const dayKinds=(d)=>{ const w=d.getDay(); const k=[]; let tr=2, sl=target-2;
-    for(let i=0;i<tr;i++) k.push("traffic");
-    if(w===5||w===6){ k.push("pamper"); sl=Math.max(0,sl-1); }
-    for(let i=0;i<sl;i++) k.push("sales");
+  // 平日 流量3/帶貨1；週五 流量2/寵粉3（依當日類型目標產生）
+  const dayKinds=(d)=>{ const tg=dayTargets(d.toISOString().slice(0,10)); const k=[];
+    for(let i=0;i<(tg["流量型"]||0);i++) k.push("traffic");
+    for(let i=0;i<(tg["帶貨型"]||0);i++) k.push("sales");
+    for(let i=0;i<(tg["寵粉"]||0);i++) k.push("pamper");
     return k; };
   const genDay=(d)=>{ dayKinds(d).forEach(k=> recs.push(mkVideo(d,k,pickEditor()))); };
   // 過去兩個月＋今天：每天就 target 片（歷史）
