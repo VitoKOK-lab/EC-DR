@@ -402,15 +402,18 @@ function viewDash(){
   const userCards = (wl.rows||[]).map(r=>{
     const good = r.diff>=0;
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
-    return `<div class="stat">
-      <div class="row" style="justify-content:space-between">
-        <b>${esc(r.name)} <span class="muted" style="font-size:11px">${LMAP[r.lang]||""}</span></b>
-        <span class="pill ${r.todayMet?'ok':'wa'}">今日 ${r.todayDone}/${r.todayQuota}</span>
+    const dotCol = good?"var(--green)":"var(--red)";
+    return `<div class="ucard ${good?'good':'bad'}">
+      <div class="uh">
+        <span class="nm"><span class="statusdot" style="background:${dotCol}"></span>${esc(r.name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[r.lang]||""}</span></span>
+        <span style="font-weight:800;color:${r.todayMet?'var(--green)':'var(--muted)'}">今日 ${r.todayDone}/${r.todayQuota}</span>
       </div>
       ${sparkBars(r.last7, r.todayQuota)}
-      <div class="muted" style="font-size:11px">近 7 天完成 ${r.last7Sum} 支　·　平均工時 ${r.avgMin!=null?minToText(r.avgMin):"-"}</div>
-      <div class="progbar" style="margin-top:6px"><i style="width:${pct}%;background:${good?'var(--green)':'var(--red)'}"></i></div>
-      <div style="font-size:13px;margin-top:4px"><span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span> <span class="muted">本月 ${r.totalDone}/${r.expected}</span></div>
+      <div class="progbar"><i style="width:${pct}%;background:${dotCol}"></i></div>
+      <div style="font-size:13px;margin-top:5px;display:flex;justify-content:space-between">
+        <span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span>
+        <span class="muted">本月 ${r.totalDone}/${r.expected}・均 ${r.avgMin!=null?minToText(r.avgMin):"-"}</span>
+      </div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
   // 近 21 天每日上片數（中文）
@@ -565,25 +568,29 @@ function viewCal(){
   const target = STATE.settings?.dailyPublishTarget||4;
   const lang = curLang(); const isZh=(lang==="zh");
   const tCol={"流量型":"var(--traffic)","帶貨型":"var(--sales)"};
-  const chip=(label,col,short)=>`<span style="display:inline-block;font-size:10px;padding:1px 5px;border-radius:8px;margin:1px 2px 0 0;background:${short?'transparent':col};color:${short?'var(--red)':'#fff'};border:${short?'1px solid var(--red)':'none'}">${label}</span>`;
   let cells = "";
-  for(let i=0;i<startDow;i++) cells += `<div></div>`;
+  for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     if(!isZh){ const cnt=dayLangCount(ds,lang);
-      cells += `<div class="day ${cnt>0?'full':''}" onclick="openDay('${ds}')"><div class="dnum">${d}</div>
-        <div class="mini">${cnt?`${cnt} 片`:`<span class="muted">未排</span>`}</div></div>`;
+      cells += `<div class="day ${cnt>0?'full':'none'}" onclick="openDay('${ds}')"><div class="dnum">${d}</div>
+        <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
-    const cls = b.full ? "full" : (b.total>=target ? "wa" : (w.emergency.includes(ds)?"em":(w.warning.includes(ds)?"wa":"")));
-    // 類型小標：已達綠/橙、不足紅框
-    const chips=Object.keys(typeTargets()).map(tp=>{ const have=b.byType[tp]||0; const short=(b.deficits[tp]||0)>0;
-      return chip((tp==="流量型"?"流":"帶")+have, tCol[tp]||"var(--chip)", short); }).join("");
-    const pamp = isPamperedDay(ds)? (b.needPampered?`<span style="color:var(--red);font-size:10px">缺寵粉</span>`:`<span style="color:var(--green);font-size:10px">寵粉✓</span>`) : "";
+    const cls = b.total===0 ? "bad" : (b.full ? "full" : (b.total>=target ? "warn" : "bad"));
+    // 類型色條（流量/帶貨/寵粉 依數量比例）
+    const segs=[]; const tcnt={"流量型":b.byType["流量型"]||0,"帶貨型":b.byType["帶貨型"]||0};
+    const pcnt=b.pampered||0; const totSeg=(tcnt["流量型"]+tcnt["帶貨型"]+pcnt)||1;
+    if(tcnt["流量型"]) segs.push(`<div class="seg" style="flex:${tcnt["流量型"]};background:var(--traffic)" title="流量 ${tcnt['流量型']}"></div>`);
+    if(tcnt["帶貨型"]) segs.push(`<div class="seg" style="flex:${tcnt["帶貨型"]};background:var(--sales)" title="帶貨 ${tcnt['帶貨型']}"></div>`);
+    if(pcnt) segs.push(`<div class="seg" style="flex:${pcnt};background:var(--pamper)" title="寵粉 ${pcnt}"></div>`);
+    const defTxt=[]; Object.keys(b.deficits).forEach(tp=>defTxt.push((tp==="流量型"?"流":"帶")+"缺"+b.deficits[tp]));
+    if(b.needPampered) defTxt.push("缺寵粉");
     cells += `<div class="day ${cls}" onclick="openDay('${ds}')">
-      <div class="row" style="justify-content:space-between"><span class="dnum">${d}</span><span style="font-size:11px;font-weight:700;color:${b.total>=target?'var(--green)':'var(--red)'}">${b.total}/${target}</span></div>
-      <div style="margin-top:2px">${b.total?chips:`<span class="muted" style="font-size:11px">未排</span>`}</div>
-      <div>${pamp}</div>
+      <div class="dnum">${d}</div>
+      <div class="big">${b.total}<span style="font-size:13px;color:var(--muted);font-weight:600">/${target}</span></div>
+      ${defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(isPamperedDay(ds)&&b.pampered?`<div class="pmk" style="color:var(--pamper)">寵粉✓</div>`:"")}
+      <div class="tbar">${segs.join("")||'<div class="seg" style="flex:1;background:var(--line)"></div>'}</div>
     </div>`;
   }
   const switcher = canAllLang()
@@ -602,7 +609,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:10px">${isZh?`🟢 完整排滿（量＋類型＋週五六寵粉都齊）　🟡 量夠但類型/寵粉缺　🔴 量不足。<span style="color:var(--traffic)">流</span>=流量型 <span style="color:var(--sales)">帶</span>=帶貨型，紅框=該類型缺`:`🟢 當日有${LANG_LABEL[lang]||lang}影片`}　點任一天查看</p>
+    <p class="muted" style="margin-top:12px;font-size:13px">${isZh?`大數字＝當日上片數／目標 ${target}。<b style="color:var(--green)">綠</b>=完整、<b style="color:var(--amber)">橙</b>=量夠但類型或寵粉缺、<b style="color:var(--red)">紅</b>=量不足。底部色條：<span style="color:var(--traffic)">■</span>流量 <span style="color:var(--sales)">■</span>帶貨 <span style="color:var(--pamper)">■</span>寵粉。`:`綠＝當日有${LANG_LABEL[lang]||lang}影片`}　點任一天查看明細</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -1092,8 +1099,9 @@ async function loadDemoData(){
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
   const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
   const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 各剪輯權重（造成明顯不均：有人超前有人落後）
-  const weights={}; eds.forEach((u,i)=>weights[u.name]=[2.4,1.0,0.5,1.6,0.8,1.3][i%6]);
+  // 各剪輯權重：前半超前、後半落後（造成約一半落後的不好狀態）
+  const half=Math.ceil(eds.length/2);
+  const weights={}; eds.forEach((u,i)=>weights[u.name]= i<half?2.5:0.55);
   const wpick=()=>{ const tot=eds.reduce((a,u)=>a+weights[u.name],0); let r=Math.random()*tot;
     for(const u of eds){ r-=weights[u.name]; if(r<=0) return u.name; } return eds[0].name; };
   let seq=0;
@@ -1112,12 +1120,20 @@ async function loadDemoData(){
       driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
   };
   const recs=[];
-  for(let n=-60;n<=60;n++){ const d=dOff(n); const w=d.getDay(); const pamperDay=(w===5||w===6);
-    // 每日：流量 2~3、帶貨 2~3（一定≥4、且各類型≥2），週五六再加寵粉 1~2
-    const traffic=2+Math.floor(Math.random()*2); const sales=2+Math.floor(Math.random()*2);
+  const dailyTotal=Math.max(4, eds.length*2);  // 讓前半的人有機會超前、後半落後
+  const genDay=(d,total)=>{ const w=d.getDay(); const pamper=(w===5||w===6)?1+Math.floor(Math.random()*2):0;
+    const rest=Math.max(4,total)-pamper; let traffic=Math.max(2,Math.ceil(rest*0.55)); let sales=Math.max(2,rest-traffic);
     for(let i=0;i<traffic;i++) recs.push(mkVideo(d,"traffic"));
     for(let i=0;i<sales;i++) recs.push(mkVideo(d,"sales"));
-    if(pamperDay){ const p=1+Math.floor(Math.random()*2); for(let i=0;i<p;i++) recs.push(mkVideo(d,"pamper")); }
+    for(let i=0;i<pamper;i++) recs.push(mkVideo(d,"pamper")); };
+  // 過去兩個月＋今天：完整排滿（歷史）
+  for(let n=-60;n<=0;n++) genDay(dOff(n), dailyTotal);
+  // 未來兩個月：刻意做出缺口（不好的狀態）— 約 45% 排滿、25% 不足、30% 空著沒人補
+  for(let n=1;n<=60;n++){ const d=dOff(n); const r=Math.random();
+    if(r<0.45){ genDay(d, dailyTotal); }
+    else if(r<0.70){ const tr=1+Math.floor(Math.random()*2); for(let i=0;i<tr;i++) recs.push(mkVideo(d,"traffic"));
+      if(Math.random()<0.5) recs.push(mkVideo(d,"sales")); }
+    // else 留空：沒人補
   }
   // 工作台池：待處理 + 剪輯中
   for(let k=0;k<6;k++){ seq++; recs.push({rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
