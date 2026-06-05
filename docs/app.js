@@ -649,22 +649,16 @@ function openDay(ds){
   const target = STATE.settings?.dailyPublishTarget||4;
   const lang = curLang(); const isZh=(lang==="zh");
   const list = dayLangList(ds, lang);
-  const rows = list.map((it,i)=>{
-    const v = vid(it.videoId); const s=it.slot;
+  const rows = list.map((it)=>{
+    const v = vid(it.videoId);
     const ed = isZh ? (v?.editor||"") : (v?.languages?.[lang]?.editor||"");
-    const statusCell = it.fromVideo
-      ? `<span class="pill ok">已完成上片</span>`
-      : (s&&s.locked?`<span class="pill ok">已上架 ${esc(s.account||"")}</span>`:`<button class="btn sm" onclick="publishSlot('${ds}',${i})">上架</button>`);
-    const removeCell = it.fromVideo
-      ? (isZh?`<button class="btn sm danger" onclick="unscheduleVid('${it.videoId}','${ds}')">移出此日</button>`
-             :`<button class="btn sm danger" onclick="unscheduleLang('${it.videoId}','${lang}','${ds}')">移出此日</button>`)
-      : (s&&s.locked?"":`<button class="btn sm danger" onclick="delSlot('${ds}',${i})">移除</button>`);
+    const link = isZh ? (v?.publishedLink||v?.driveFolder||"") : (v?.languages?.[lang]?.publishedLink||v?.languages?.[lang]?.driveFolder||"");
     return `<tr>
-      <td data-label="#">${i+1}</td>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}</td>
       <td data-label="剪輯">${esc(ed)}</td>
-      <td data-label="狀態">${statusCell}</td>
-      <td data-label="">${removeCell}</td>
+      <td data-label="連結">${link?`<a href="${esc(link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
+      <td data-label="">${isZh?`<button class="btn sm danger" onclick="unscheduleVid('${it.videoId}','${ds}')">移出此日</button>`
+                              :`<button class="btn sm danger" onclick="unscheduleLang('${it.videoId}','${lang}','${ds}')">移出此日</button>`}</td>
     </tr>`;
   }).join("");
   const cnt = list.length;
@@ -679,21 +673,16 @@ function openDay(ds){
   showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>狀態</th><th></th></tr></thead>
+      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>連結</th><th></th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-    </div>
-    ${isZh?`<div class="card"><b>手動排入（重播舊片）</b>
-      <button class="btn" onclick="pickVideo('${ds}')">＋ 選片排入</button></div>`:`<p class="muted">${LANG_LABEL[lang]||lang}影片由該語言剪輯「完成」時選定上片日期，會自動出現在這裡。</p>`}`, null);
+      <p class="muted" style="font-size:12px;margin-top:8px">影片由剪輯在「我的工作台」完成（貼連結＋選上片日期）後自動排到此日。如要改日期，可在影片編輯框調整，或按「移出此日」清除。</p>
+    </div>`, null);
 }
 function unscheduleLang(id,lang,ds){ if(!confirm("把這支影片移出"+(LANG_LABEL[lang]||lang)+"此日？")) return;
   const v=vid(id); const L=Object.assign({}, v?.languages?.[lang]||{}); L.scheduledDate=null;
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:L},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
-function delSlot(ds,i){ write("DELETE",`/api/schedule/${ds}/slot/${i}`,{},"已移除").then(()=>openDay(ds)); }
 function unscheduleVid(id,ds){ if(!confirm("把這支影片移出此日（清除上片日期）？")) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
-async function publishSlot(ds,i){
-  if(await write("POST",`/api/schedule/${ds}/publish`,{slotIndex:i},"已上架，已產生發片帳號")) openDay(ds);
-}
 function pickVideo(ds){
   const cap = STATE.settings?.reuseCap||3;
   let list = (STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)).slice();
