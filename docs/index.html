@@ -103,7 +103,7 @@
   .day{position:relative;border:1px solid var(--line);border-radius:7px;padding:8px;min-height:96px;cursor:pointer;
        background:var(--panel2);display:flex;flex-direction:column;transition:.12s;overflow:hidden}
   .day:hover{transform:translateY(-1px);box-shadow:var(--shadow2)}
-  .day .dnum{font-size:12px;font-weight:700;color:var(--muted)}
+  .day .dnum{font-size:17px;font-weight:800;color:var(--txt)}
   .day .big{font-size:26px;font-weight:800;line-height:1.1;margin-top:2px}
   .day .tbar{display:flex;gap:3px;margin-top:auto}
   .day .seg{height:7px;border-radius:4px}
@@ -152,10 +152,10 @@
     /* 月曆：手機壓縮成小色塊 */
     .cal{gap:4px}
     .day{min-height:58px;padding:4px;border-radius:6px}
-    .day .dnum{font-size:10px}
+    .day .dnum{font-size:14px}
     .day .big{font-size:16px}
     .day .big span{font-size:10px !important}
-    .day .pmk{display:none}
+    .day .pmk{font-size:9px;margin-top:1px}
     .day .tbar .seg{height:5px}
   }
   @media (max-width:380px){
@@ -176,6 +176,11 @@
   .ucard.bad{border-left-color:var(--red)}
   .ucard .uh{display:flex;justify-content:space-between;align-items:center}
   .ucard .nm{font-weight:800}
+  table.wk{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;table-layout:fixed}
+  table.wk th{font-size:11px;color:var(--muted);text-align:left;padding:3px 4px;border-bottom:1px solid var(--line)}
+  table.wk td{padding:3px 4px;border-bottom:1px solid #eef1f4;vertical-align:top;word-break:break-word}
+  table.wk th:nth-child(1),table.wk td:nth-child(1){width:34%}
+  table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
   .vrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer}
   .vrow:hover{background:var(--panel2)}

@@ -427,22 +427,24 @@ function viewDash(){
     const good = r.diff>=0;
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
-    const rep=(STATE.reports||[]).find(x=>x.user===r.name && x.date===today);
-    const repHtml = `<div style="margin-top:8px;padding:8px;background:var(--panel2);border-radius:6px;font-size:12px">
-        <b>📝 今日特別工作</b>　${reportContentHtml(rep)}
-      </div>`;
+    const week = last7Detail(r.name, r.lang, r.todayQuota);
+    const weekRows = week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
+        <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span>${w.ds===today?'·今':''}</td>
+        <td style="text-align:center"><span class="${w.met?'pos':'neg'}">${w.n}</span><span class="muted">/${r.todayQuota}</span></td>
+        <td style="font-size:11px;line-height:1.35">${w.other?esc(w.other):'<span class="muted">—</span>'}</td>
+      </tr>`).join("");
     return `<div class="ucard ${good?'good':'bad'}">
       <div class="uh">
         <span class="nm"><span class="statusdot" style="background:${dotCol}"></span>${esc(r.name)} <span class="muted" style="font-size:11px;font-weight:500">${LMAP[r.lang]||""}</span></span>
         <span style="font-weight:800;color:${r.todayMet?'var(--green)':'var(--muted)'}">今日 ${r.todayDone}/${r.todayQuota}</span>
       </div>
-      ${sparkBars(r.last7, r.todayQuota)}
       <div class="progbar"><i style="width:${pct}%;background:${dotCol}"></i></div>
-      <div style="font-size:13px;margin-top:5px;display:flex;justify-content:space-between">
+      <div style="font-size:13px;margin:5px 0;display:flex;justify-content:space-between">
         <span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span>
         <span class="muted">本月 ${r.totalDone}/${r.expected}・均 ${r.avgMin!=null?minToText(r.avgMin):"-"}</span>
       </div>
-      ${repHtml}
+      <table class="wk"><thead><tr><th>近7天</th><th style="text-align:center">剪片</th><th>其他工作內容</th></tr></thead>
+        <tbody>${weekRows}</tbody></table>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
@@ -504,7 +506,7 @@ function viewDash(){
     </div>
   </div>
 
-  <div class="card"><b>👥 每日匯報（每人完成片數＋特別工作，綠＝達標/超前、紅＝落後）</b>
+  <div class="card"><b>👥 每日匯報・近 7 天（每人每天剪幾片＋當天其他工作，綠＝達標、紅＝未達）</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div>
     <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。剪片數由「影片完成」自動計入；下方為本人補充的特別工作。績效以「月」累積、每月 1 號重置。</p>
   </div>
@@ -515,6 +517,20 @@ function viewDash(){
     <div class="stat"><div class="n">${p.剪輯中}</div><div class="l">剪輯中</div></div>
   </div>
   ${viewCal()}`;
+}
+// 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
+function last7Detail(name, lang, q){
+  const langs=(lang==="all")?SCHED_LANGS:[lang||"zh"];
+  const out=[];
+  for(let i=6;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+    const n=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
+    const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
+    let other="";
+    if(rep){ if(rep.special&&rep.special.length){ other=rep.special.filter(s=>s&&s.t).map(s=>s.t+(s.m?`（${s.m}分）`:"")).join("、"); }
+      if(!other) other=(rep.content||"").trim(); }
+    out.push({ds, n, other, met: q>0? n>=q : true});
+  }
+  return out;
 }
 // 近 7 天迷你長條圖
 function sparkBars(last7, q){ if(!last7||!last7.length) return "";
@@ -672,9 +688,12 @@ function viewCal(){
     const b=dayBreakdown(ds);
     const filled = b.total>=Math.max(1,b.target);
     const cls = filled ? "filled" : (within15 ? "bad" : "blank");
+    const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
+    const defTxt=Object.keys(b.deficits||{}).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${b.total||"·"}<span style="font-size:13px;color:var(--muted);font-weight:600">${b.total?("/"+b.target):""}</span></div>
+      <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.total?("/"+b.target):""}</span></div>
+      ${(!filled && defTxt.length)?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(filled?`<div class="pmk" style="color:#888">已排滿</div>`:"")}
     </div>`;
   }
   const switcher = canAllLang()
