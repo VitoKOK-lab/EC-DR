@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱","寵粉"], "寵粉": ["寵粉日","回饋","社群限定","開箱"] },
   typeTargets: { "流量型": 3, "帶貨型": 1 },        // 平日每日各類型最低
-  fridayTargets: { "流量型": 2, "寵粉": 3 },         // 週五特別配置
+  fridayTargets: { "寵粉": 5 },                      // 週五固定寵粉日
   sources: ["老闆自拍", "外部公司"],
   languages: ["zh", "en", "th", "ms"],
   dailyPublishTarget: 4,
@@ -71,6 +71,11 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
         const subTags = cur.subTags || {};
         if (!subTags["寵粉"]) subTags["寵粉"] = DEFAULT_SETTINGS.subTags["寵粉"];
         await setDoc(sref, { mainTypes: [...mt, "寵粉"], subTags }, { merge: true });
+      }
+      // 週五固定 5 寵粉：把舊版週五配置（流量2/寵粉3）或未設定者，一次性改為寵粉5
+      const ft = cur.fridayTargets;
+      if (!ft || (ft["流量型"] === 2 && ft["寵粉"] === 3)) {
+        await setDoc(sref, { fridayTargets: { "寵粉": 5 } }, { merge: true });
       }
     }
 

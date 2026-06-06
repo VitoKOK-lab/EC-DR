@@ -72,7 +72,7 @@ function isPamperedDay(date){ return new Date(date+"T00:00:00").getDay()===5; } 
 // 當日各類型最低數量：平日 流量3/帶貨1；週五 流量2/寵粉3
 function dayTargets(date){
   const s=STATE.settings||{};
-  if(isPamperedDay(date)) return s.fridayTargets || {"流量型":2,"寵粉":3};
+  if(isPamperedDay(date)) return s.fridayTargets || {"寵粉":5};
   return s.typeTargets || {"流量型":3,"帶貨型":1};
 }
 function daySum(date){ const t=dayTargets(date); return Object.values(t).reduce((a,b)=>a+(b||0),0); }
@@ -701,19 +701,19 @@ function viewCal(){
     const tmk = isToday?`<span class="todaymk">今天</span>`:"";
     const within15 = ds>=today && ds<=d15s;
     if(!isZh){ const cnt=dayLangCount(ds,lang);
-      const cls = cnt>0?"filled":(within15?"bad":"blank");
+      const cls = cnt>0?"filled":"blank";
       cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
         <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
     const filled = b.total>=Math.max(1,b.target);
-    const cls = filled ? "filled" : (within15 ? "bad" : "blank");
+    const cls = filled ? "filled" : "blank";
     const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
     const defTxt=Object.keys(b.deficits||{}).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.total?("/"+b.target):""}</span></div>
-      ${(!filled && defTxt.length)?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(filled?`<div class="pmk" style="color:#888">已排滿</div>`:"")}
+      ${(!filled && defTxt.length)?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:"")}
     </div>`;
   }
   const switcher = canAllLang()
@@ -732,7 +732,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:#888">灰</b>=已排滿、<b style="color:var(--red)">紅</b>=近 15 天內尚未排滿、空白=尚未排。點任一天可<b>改上片日期</b>（不可刪除）。</p>
+    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排（近 15 天內會標<b style="color:var(--red)">紅色缺口</b>提醒）。點任一天可<b>改上片日期</b>（不可刪除）。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -1181,7 +1181,7 @@ function viewSettings(){
   const s=STATE.settings||{};
   const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
   const tt=s.typeTargets||{"流量型":3,"帶貨型":1};
-  const ft=s.fridayTargets||{"流量型":2,"寵粉":3};
+  const ft=s.fridayTargets||{"寵粉":5};
   return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
   <div class="card"><div class="grid cols4">
     <div><label>每日應上片數</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
@@ -1191,10 +1191,9 @@ function viewSettings(){
   </div>
   <label>平日 每日各類型最低數量（一～四、六、日）</label>
   <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型","寵粉"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div>
-  <label style="margin-top:10px">週五 特別配置</label>
+  <label style="margin-top:10px">週五 特別配置（固定寵粉日）</label>
   <div class="grid cols3">
-    <div><label style="margin-top:0">流量型</label><input type="number" min="0" id="set_ft_流量型" value="${ft["流量型"]||0}"></div>
-    <div><label style="margin-top:0">寵粉</label><input type="number" min="0" id="set_ft_寵粉" value="${ft["寵粉"]||0}"></div>
+    <div><label style="margin-top:0">寵粉</label><input type="number" min="0" id="set_ft_寵粉" value="${ft["寵粉"]||5}"></div>
   </div></div>
   <label>KPI 起算日（超前/落後從這天開始算，建議設成正式上線那天）</label>
   <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
@@ -1225,7 +1224,7 @@ async function saveSettings(){
   });
   const mainTypes=val("set_main").split(",").map(x=>x.trim()).filter(Boolean);
   const typeTargets={}; mainTypes.forEach(mt=>{ const e=document.getElementById("set_tt_"+mt); if(e) typeTargets[mt]=parseInt(e.value)||0; });
-  const fridayTargets={"流量型":parseInt(val("set_ft_流量型"))||0,"寵粉":parseInt(val("set_ft_寵粉"))||0};
+  const fridayTargets={"寵粉":parseInt(val("set_ft_寵粉"))||0};
   const settings={
     fridayTargets,
     dailyPublishTarget:parseInt(val("set_pub"))||4,
@@ -1363,7 +1362,7 @@ async function loadDemoData(){
   const T=new Date(today+"T00:00:00");
   // 把 KPI 起算日設為本月初，模擬才看得到累積落後（否則被設成今天會全是 0/0）
   try{ await window.DB.setSettings({kpiStartDate: new Date(T.getFullYear(),T.getMonth(),1).toISOString().slice(0,10),
-    typeTargets:{"流量型":3,"帶貨型":1}, fridayTargets:{"流量型":2,"寵粉":3}}); }catch(e){}
+    typeTargets:{"流量型":3,"帶貨型":1}, fridayTargets:{"寵粉":5}}); }catch(e){}
   const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
   const ds=x=>x.toISOString().slice(0,10);
   const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
