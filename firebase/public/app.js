@@ -342,26 +342,21 @@ function buildNav(){
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  // Regina：與 Vito 共用管理員，顯示在登入頁但不標職稱
-  const rb=document.createElement("button"); rb.className="userBtn lead"; rb.textContent="Regina"; rb.onclick=reginaLogin; g.appendChild(rb);
-  // 管理員（boss/owner）走密碼登入，不出現在成員名單
-  const users=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName() && u.name!=="Regina");
-  if(!users.length){ const n=document.createElement("p"); n.className="muted"; n.style.width="100%"; n.style.textAlign="center"; n.textContent="其他成員尚未建立，請按「🔒 管理員登入」進入後新增"; g.appendChild(n); return; }
-  // 排序：剪輯群 → HR 最後
-  const rank=u=> ((u.role==="hr")?2:1);
-  users.sort((a,b)=> rank(a)-rank(b) || String(a.name).localeCompare(String(b.name)));
+  const all=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName() && u.name!=="Regina");
+  const editors=all.filter(u=>(u.role||"editor")==="editor").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const hrs=all.filter(u=>u.role==="hr").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   const mkBtn=(u)=>{ const b=document.createElement("button");
     b.className="userBtn"+((u.role==="hr")?" mgr":"");
     b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+'</span>';
     b.onclick=()=>loginAs(u);
     return b; };
-  users.forEach((u,i)=>{
-    const prev=users[i-1];
-    if(prev && (u.role==="hr" && prev.role!=="hr")){
-      const sep=document.createElement("div"); sep.className="userSep"; g.appendChild(sep);
-    }
-    g.appendChild(mkBtn(u));
-  });
+  // 員工（剪輯）放上面
+  editors.forEach(u=>g.appendChild(mkBtn(u)));
+  if(!editors.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無剪輯成員，請按「🔒 管理員登入」進入後新增"; g.appendChild(n); }
+  // 分隔線；管理層（Regina、人資 Benny）放下面
+  const sep=document.createElement("div"); sep.className="userSep"; g.appendChild(sep);
+  const rb=document.createElement("button"); rb.className="userBtn lead"; rb.textContent="Regina"; rb.onclick=reginaLogin; g.appendChild(rb);
+  hrs.forEach(u=>g.appendChild(mkBtn(u)));
 }
 // 成員登入：人資（檢核者）免密碼；剪輯以自己的密碼登入（預設 0000，本人可自改、管理員可查/重設）
 function loginAs(u){
@@ -411,7 +406,7 @@ function ownerLogin(){
   if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
-function logout(){ localStorage.removeItem("ecdr_user"); location.reload(); }
+function logout(){ localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role"); location.reload(); }
 
 // ---------- 狀態套用（Firestore snapshot 進來時呼叫） ----------
 function decorate(raw){
