@@ -521,6 +521,11 @@ const EN_DICT = {
   "標示已讀":"Mark as read", "已讀":"Read", "未讀":"Unread",
   "✅ 收到":"✅ Got it", "已收到，移到今日特別工作":"Received — moved to today's extra work",
   "今天最多只能接 3 個剪輯以外的工作":"Up to 3 non-editing tasks per day", "來自交辦":"From assignment",
+  "回覆處理狀況（至少 12 字）":"Reply with handling status (at least 12 characters)",
+  "（內容不可修改，請填處理狀況與時長）":" (content locked — add status & time)",
+  "「交辦」工作請按 ⏱ 加上處理時長":"Tap ⏱ to add handling time for the assigned task",
+  "「交辦」工作需回覆處理狀況至少 12 字（目前 ":"Assigned task needs a status reply of at least 12 chars (now ",
+  "交辦":"Task",
   "今日匯報已送出，無法再接工作":"Today's report is submitted; can't accept more work",
   "完成交辦：回覆處理狀況＋填工時":"Complete Task: Reply Status + Time",
   "處理狀況／回覆（至少 10 個字）":"Handling status / reply (at least 10 characters)",
@@ -1274,11 +1279,25 @@ function specialTasksBlock(rep){
   }
   let sp=rep&&rep.special; if(!sp||!sp.length){ sp=[{t:(rep&&rep.content)||"",m:0},{t:"",m:0},{t:"",m:0}]; }
   sp=sp.slice(0,3); while(sp.length<3) sp.push({t:"",m:0});
-  const rows=sp.map((s,i)=>`<div class="row" style="gap:8px;margin-top:6px;align-items:center">
+  const rows=sp.map((s,i)=>{
+    const timeBtn=`<button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" ${s.task?`data-task="1" data-from="${esc(s.from||"")}"`:""} onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>`;
+    if(s.task){
+      return `<div style="margin-top:8px;padding:9px;background:var(--panel2);border-radius:8px;border-left:3px solid #6d28d9">
+        <div class="row" style="gap:8px;align-items:center">
+          <span class="tag" style="background:#ede9fe;color:#6d28d9;flex:none">交辦</span>
+          <input id="rp_t${i}" style="flex:1" value="${esc(s.t||"")}" readonly title="交辦內容不可修改">
+          ${timeBtn}
+        </div>
+        <div class="muted" style="font-size:11px;margin:3px 0 5px">↳ 來自交辦${s.from?("・"+esc(s.from)):""}（內容不可修改，請填處理狀況與時長）</div>
+        <input id="rp_r${i}" value="${esc(s.reply||"")}" placeholder="回覆處理狀況（至少 12 字）">
+      </div>`;
+    }
+    return `<div class="row" style="gap:8px;margin-top:6px;align-items:center">
       <span class="muted" style="width:16px;font-weight:700">${i+1}</span>
       <input id="rp_t${i}" style="flex:1" placeholder="特別／額外工作（沒有可留空）" value="${esc(s.t||"")}">
-      <button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" ${s.task?`data-task="1" data-from="${esc(s.from||"")}"`:""} onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>
-    </div>${s.task?`<div class="muted" style="font-size:11px;margin:2px 0 0 24px">↳ 來自交辦${s.from?("・"+esc(s.from)):""}</div>`:""}`).join("");
+      ${timeBtn}
+    </div>`;
+  }).join("");
   return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
     <b>📝 今日特別工作</b><span class="muted" style="font-size:12px">　最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）</span>
     ${rows}
@@ -1293,11 +1312,12 @@ function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.data
 function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_t"+i)||"").trim();
     const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0;
     const isTask=b&&b.dataset.task==="1"; const from=b?(b.dataset.from||""):"";
-    arr.push(isTask?{t,m,task:true,from}:{t,m}); } return arr; }
+    const reply=(val("rp_r"+i)||"").trim();
+    arr.push(isTask?{t,m,task:true,from,reply}:{t,m}); } return arr; }
 function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
 // 某份日報的「其他工作」項目：手寫特別工作(special) + 已完成的老闆交辦(tasks)
 function otherItems(r){ if(!r) return [];
-  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:!!s.task, reply:""}));
+  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:!!s.task, reply:s.reply||""}));
   const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true, reply:s.reply||""}));
   return sp.concat(tk); }
 async function writeReport(arr, clockOut, lock){
@@ -1323,6 +1343,13 @@ function submitDayReport(){
   const cur=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
   if(cur.locked){ toast("今日匯報已送出，無法再修改",true); return; }
   const arr=collectSpecial();
+  // 「交辦」工作：必須回覆處理狀況（至少 12 字）並加上處理時長
+  for(const s of arr){ if(s.task && s.t){
+    const rp=(s.reply||"").trim();
+    if(rp.length<12){ toast("「交辦」工作需回覆處理狀況至少 12 字（目前 "+rp.length+" 字）",true); return; }
+    if(new Set(rp.replace(/\s/g,"")).size<4){ toast("處理狀況請認真填寫，不要用重複字元充數",true); return; }
+    if(!(s.m>0)){ toast("「交辦」工作請按 ⏱ 加上處理時長",true); return; }
+  }}
   showModal("送出今日匯報", `
     <p style="font-size:15px">確定今天的匯報內容<b>沒有需要再修改</b>了嗎？</p>
     <p class="muted">送出後今天的工時與內容就<b style="color:var(--red)">不能再更改</b>，並會直接下班、登出回到登入畫面。</p>
