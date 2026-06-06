@@ -320,8 +320,7 @@ async function write(method, path, body, okMsg){
        if(CUR_TAB==="dash"||CUR_TAB==="workload") loadDash(); return true; }
   catch(e){ toast(e.message, true); return false; }
 }
-async function withAdmin(fn){ const pw=prompt("請輸入管理者密碼："); if(pw===null) return;
-  if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("管理者密碼錯誤",true); return; } return fn(pw); }
+async function withAdmin(fn){ return fn(String(STATE.settings?.adminPassword||"")); }  // 已取消密碼，直接執行
 async function writeAdmin(method,path,body,okMsg){ return withAdmin(async()=>{ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }); }
 async function writeAdminPw(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
 
@@ -1746,7 +1745,7 @@ function viewSettings(){
   const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
   const tt=s.typeTargets||{"流量型":3,"帶貨型":1};
   const ft=s.fridayTargets||{"寵粉":5};
-  return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
+  return `<h2>⚙️ 設定</h2>
   <div class="card"><div class="grid cols4">
     <div><label>每日應上片數</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
     <div><label>每位剪輯每日配額</label><input type="number" id="set_quota" value="${s.editorDailyQuota||3}"></div>
@@ -1779,9 +1778,7 @@ function viewSettings(){
         <input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
     </div>
   </details>
-  <div class="card"><b>🔑 變更管理者密碼</b>
-    <input id="set_pw" type="text" placeholder="留空則不變更"></div>
-  <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定（需密碼）</button></div>`;
+  <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>`;
 }
 async function saveSettings(){
   const subTags={};
