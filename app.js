@@ -359,10 +359,6 @@ function loginAs(u){
 }
 // Regina：與 Vito 共用管理員（登入頁顯示、不標職稱），預設密碼 0000
 function reginaLogin(){
-  const reg=(STATE.users||[]).find(u=>u.name==="Regina");
-  const expect = (reg&&reg.pin)? String(reg.pin) : "0000";
-  const pw=prompt("Regina 登入密碼（預設 0000）："); if(pw===null) return;
-  if(String(pw)!==expect && String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
   setUser("Regina"); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
 // 管理員：設定/重設某成員密碼
@@ -380,11 +376,9 @@ async function setAllPin(){
     for(const u of (STATE.users||[]).filter(x=>(x.role||"editor")==="editor")){ try{ await window.DB.update("users",u.name,{pin:String(p).trim()}); c++; }catch(e){} }
     toast("已設定 "+c+" 位剪輯的密碼"); });
 }
-// 管理員（owner）以密碼進入；成員管理／稽核只有這條路徑能看到
+// 管理員（owner）進入；成員管理／稽核只有這條路徑能看到（已取消密碼）
 function ownerLogin(){
   if(!STATE){ toast("連線中，請稍候再試",true); return; }
-  const pw=prompt("管理員密碼："); if(pw===null) return;
-  if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
 // 登出：清掉身分 → 顯示「象素小人敬禮・辛苦了」畫面（右下角可重新登入）
@@ -1398,20 +1392,26 @@ function submitDayReport(){
 }
 // ---- 管理員留言／交辦（輕量版）----
 function sendTask(name){
+  const active=(STATE.messages||[]).filter(m=>m.to===name && !m.done).length;
+  const room=Math.max(0,3-active);
   showModal("✉ 交辦／留言給 "+name, `
-    <p class="muted" style="font-size:12px;margin-bottom:4px">一次最多三項，一項一行；對方一進「今日工作」就會看到。</p>
-    <label>一、</label><input id="tk_1" placeholder="第一項交辦／留言">
-    <label>二、</label><input id="tk_2" placeholder="第二項（可留空）">
-    <label>三、</label><input id="tk_3" placeholder="第三項（可留空）">
+    <p class="muted" style="font-size:12px;margin-bottom:4px">每一行＝一項獨立交辦，對方<b>分別收到、分別回覆</b>。${esc(name)} 目前未完成 <b>${active}</b> 項（每人最多 3 項，這次最多可再加 <b>${room}</b> 項）。</p>
+    <label>一、</label><input id="tk_1" placeholder="第一項交辦／留言" ${room<1?"disabled":""}>
+    <label>二、</label><input id="tk_2" placeholder="第二項（可留空）" ${room<2?"disabled":""}>
+    <label>三、</label><input id="tk_3" placeholder="第三項（可留空）" ${room<3?"disabled":""}>
   `, async ()=>{
-    const labs=["一","二","三"];
-    const lines=[val("tk_1"),val("tk_2"),val("tk_3")].map(s=>String(s||"").trim());
-    const text=lines.map((s,i)=>s?(labs[i]+"、"+s):"").filter(Boolean).join("\n");
-    if(!text){ toast("請至少輸入一項",true); return false; }
-    const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    const rec={id, to:name, from:currentUser(), text, at:nowIso(), read:false, readAt:"", done:false, doneAt:""};
-    try{ await window.DB.set("messages", id, rec); toast("已送出給 "+name); return true; }
-    catch(e){ toast("送出失敗，請稍後再試",true); return false; }
+    const lines=[val("tk_1"),val("tk_2"),val("tk_3")].map(s=>String(s||"").trim()).filter(Boolean);
+    if(!lines.length){ toast("請至少輸入一項",true); return false; }
+    const now=(STATE.messages||[]).filter(m=>m.to===name && !m.done).length;
+    if(now+lines.length>3){ toast(name+" 目前未完成 "+now+" 項，最多 3 項；這次最多再加 "+Math.max(0,3-now)+" 項",true); return false; }
+    try{
+      let i=0;
+      for(const text of lines){ i++;
+        const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)+i;
+        await window.DB.set("messages", id, {id, to:name, from:currentUser(), text, at:nowIso(), read:false, readAt:"", accepted:false, done:false, doneAt:""});
+      }
+      toast("已送出 "+lines.length+" 項交辦給 "+name); return true;
+    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
   });
 }
 // 剪輯收件匣：尚未「收到」的交辦／留言（紅色提醒）
