@@ -21,6 +21,7 @@ function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerNam
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   if(currentUser()===ownerName()){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
 function nowIso(){ return new Date().toISOString().slice(0,19); }
+function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
 function deviceId(){ let id=localStorage.getItem("ecdr_device");
   if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
   return id; }
@@ -439,9 +440,26 @@ function viewDash(){
   const newSrc=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
   const lowTh=STATE.settings?.materialLowThreshold||5;
   const srcLow=newSrc<lowTh; const srcCol=srcLow?'var(--red)':'var(--green)';
+  const editorsAll=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const liveRows = editorsAll.map(u=>{ const s=editorStatus(u);
+    const dot = s.startAt? (s.met?'var(--green)':'var(--amber)') : '#cbd5e1';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
+      <div style="min-width:0">
+        <div style="font-weight:700">${esc(s.name)} <span class="muted" style="font-size:11px;font-weight:500">${s.startAt?('🟢 '+hhmm(s.startAt)+' 開工'):'⚪ 未開工'}</span></div>
+        <div class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.current)}</div>
+      </div>
+      <div style="text-align:right;flex:none">
+        <div style="font-weight:800;color:${s.met?'var(--green)':'var(--red)'}">${s.doneToday}/${s.q}</div>
+        <div class="muted" style="font-size:11px">今日完成</div>
+      </div>
+    </div>`; }).join("") || `<p class="muted">尚無剪輯成員</p>`;
+  const liveCard = `<div class="card"><b>🟢 今日團隊即時</b>
+    <span class="muted" style="font-size:12px">　每人幾點開工・現在在做什麼・完成幾支</span>
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${liveRows}</div></div>`;
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
   ${demoBanner}
+  ${liveCard}
 
   <div class="grid cols2">
     <div class="card" style="text-align:center;border-color:${safeCol}">
@@ -723,9 +741,14 @@ function viewWork(){
   const switcher = canAllLang()
     ? `<div class="row" style="gap:6px;margin-bottom:10px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
     : `<p class="muted" style="margin-bottom:8px">你的語言：<b>${LANG_LABEL[lang]||lang}</b>（只處理此語言）</p>`;
+  const myRep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  const clockBar = myRep.startAt
+    ? `<div class="card" style="padding:10px 14px"><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
+    : `<div class="card" style="text-align:center;border-color:var(--green)"><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
   return `
   <h2>✂️ 我的工作台（${esc(me)}）</h2>
   ${switcher}
+  ${clockBar}
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <b>今日 KPI（${LANG_LABEL[lang]||lang}）</b>
@@ -758,8 +781,34 @@ function taskCard(me){
   </div>`;
 }
 async function finishReport(){ const me=currentUser(); const content=val("rp_content").trim();
-  const rec={id:me+"__"+today, user:me, date:today, content, done:!!content};
+  const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  const rec={id:me+"__"+today, user:me, date:today, content, done:!!content, startAt:old.startAt||""};
   try{ await window.DB.set("reports", rec.id, rec); toast("已儲存"); }catch(e){ toast("失敗，請稍後再試",true); } }
+// 上班開工打卡（記 reports.startAt，老闆即時狀態列才看得到「幾點開工」）
+async function clockIn(){ const me=currentUser(); const id=me+"__"+today;
+  const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today) || {id,user:me,date:today,content:""};
+  if(rep.startAt){ toast("今天已經開工囉 "+hhmm(rep.startAt)); return; }
+  const rec=Object.assign({}, rep, {id, user:me, date:today, startAt:nowIso()});
+  try{ await window.DB.set("reports", id, rec); toast("開工！今天加油 💪"); }catch(e){ toast("打卡失敗，請稍後再試",true); } }
+// 推導某剪輯今日即時狀態：開工時間、正在做什麼、完成數
+function editorStatus(u){
+  const name=u.name; const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"];
+  const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===today)||{};
+  const q=userQuota(name);
+  const doneToday=(STATE.videos||[]).reduce((n,v)=>n+(langs.some(lg=>langFinishedOn(v,lg,name,today))?1:0),0);
+  const inProg=[];
+  (STATE.videos||[]).forEach(v=>{
+    if(v.stage==="剪輯中" && (v.claimedBy===name||v.editor===name)) inProg.push(v.name||v.rawName||"(未命名)");
+    langs.forEach(lg=>{ if(lg!=="zh" && v.languages?.[lg]?.status==="二創中" && v.languages?.[lg]?.claimedBy===name)
+      inProg.push((v.name||v.rawName||"")+"·"+(LANG_LABEL[lg]||lg)); });
+  });
+  let current;
+  if(inProg.length) current="正在剪「"+inProg[0]+"」"+(inProg.length>1?(" 等 "+inProg.length+" 支"):"");
+  else if(q>0 && doneToday>=q) current="今日已達標 🎉";
+  else if(!rep.startAt) current="尚未開工";
+  else current="待命中";
+  return {name, lang:u.lang||"zh", startAt:rep.startAt||"", q, doneToday, met:q>0?doneToday>=q:true, current};
+}
 // 特別工作備註顯示
 function reportContentHtml(rep){ if(!rep) return ""; const c=rep.content||((rep.items||[]).filter(Boolean).join("、"));
   return c? `<div style="white-space:pre-wrap">${esc(c)}</div>` : `<span class="muted">無</span>`; }
