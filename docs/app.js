@@ -519,6 +519,9 @@ const EN_DICT = {
   "老闆交辦／留言":"Tasks / Messages from Boss",
   "系統已記錄你看到這些交辦的時間；完成時要填「處理狀況」（至少 10 字）。":"The system has logged when you saw these tasks; you must reply with a status (min 10 chars) to complete.",
   "標示已讀":"Mark as read", "已讀":"Read", "未讀":"Unread",
+  "✅ 收到":"✅ Got it", "已收到，移到今日特別工作":"Received — moved to today's extra work",
+  "今天最多只能接 3 個剪輯以外的工作":"Up to 3 non-editing tasks per day", "來自交辦":"From assignment",
+  "今日匯報已送出，無法再接工作":"Today's report is submitted; can't accept more work",
   "完成交辦：回覆處理狀況＋填工時":"Complete Task: Reply Status + Time",
   "處理狀況／回覆（至少 10 個字）":"Handling status / reply (at least 10 characters)",
   "說明你怎麼處理、結果如何、有沒有遇到問題或需要協助…（至少 10 個字）":"Explain how you handled it, the result, and any problems or help needed… (at least 10 characters)",
@@ -636,7 +639,7 @@ function missStreakPast(name, langs, q){ if(!(q>0)) return 0;
   return streak; }
 // 未完成交辦清單
 function pendingTaskRows(){
-  const msgs=(STATE.messages||[]).filter(m=>!m.done).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
+  const msgs=(STATE.messages||[]).filter(m=>!m.done && !m.accepted).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
   if(!msgs.length) return '<p class="muted">目前沒有未完成的交辦 ✅</p>';
   return msgs.map(m=>{
     const status = m.read ? '已讀未完成' : (m.seenAt ? '已顯示未讀' : '尚未顯示給對方');
@@ -671,7 +674,7 @@ function viewHrDash(){
     const todayDone=row.todayDone||0;
     const streak=missStreakPast(u.name, langs, q);
     const todayMiss=isWorkday(today) && q>0 && todayDone<q;
-    const pend=(STATE.messages||[]).filter(m=>m.to===u.name && !m.done).length;
+    const pend=(STATE.messages||[]).filter(m=>m.to===u.name && !m.done && !m.accepted).length;
     return {name:u.name, q, todayDone, streak, todayMiss, pend, inprog:inProgressCount(u.name)};
   });
   const serious=track.filter(t=>t.streak>=3).sort((a,b)=>b.streak-a.streak);
@@ -721,7 +724,7 @@ function viewDash(){
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
     const msgs=(STATE.messages||[]).filter(m=>m.to===r.name);
-    const pendN=msgs.filter(m=>!m.done).length, unreadN=msgs.filter(m=>!m.read && !m.done).length;
+    const pendN=msgs.filter(m=>!m.done && !m.accepted).length, unreadN=msgs.filter(m=>!m.read && !m.done && !m.accepted).length;
     const week = last7Detail(r.name, r.lang, r.todayQuota);
     const weekRows = week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
         <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span>${w.ds===today?'·今':''}</td>
@@ -824,10 +827,10 @@ function viewDash(){
 
   // ===== ③ 交辦事項（快速指派＋狀態）=====
   const allMsgs=STATE.messages||[];
-  const pendTotal=allMsgs.filter(m=>!m.done).length;
+  const pendTotal=allMsgs.filter(m=>!m.done && !m.accepted).length;
   const taskRows=yRows.map(r=>{
     const msgs=allMsgs.filter(m=>m.to===r.name);
-    const pend=msgs.filter(m=>!m.done).length, unread=msgs.filter(m=>!m.read&&!m.done).length;
+    const pend=msgs.filter(m=>!m.done && !m.accepted).length, unread=msgs.filter(m=>!m.read&&!m.done&&!m.accepted).length;
     const doneToday=msgs.filter(m=>m.done && String(m.doneAt||"").slice(0,10)===today).length;
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border-radius:10px">
       <span style="font-weight:700;min-width:0">${esc(r.name)}
@@ -1274,8 +1277,8 @@ function specialTasksBlock(rep){
   const rows=sp.map((s,i)=>`<div class="row" style="gap:8px;margin-top:6px;align-items:center">
       <span class="muted" style="width:16px;font-weight:700">${i+1}</span>
       <input id="rp_t${i}" style="flex:1" placeholder="特別／額外工作（沒有可留空）" value="${esc(s.t||"")}">
-      <button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>
-    </div>`).join("");
+      <button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" ${s.task?`data-task="1" data-from="${esc(s.from||"")}"`:""} onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>
+    </div>${s.task?`<div class="muted" style="font-size:11px;margin:2px 0 0 24px">↳ 來自交辦${s.from?("・"+esc(s.from)):""}</div>`:""}`).join("");
   return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
     <b>📝 今日特別工作</b><span class="muted" style="font-size:12px">　最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）</span>
     ${rows}
@@ -1288,11 +1291,13 @@ function specialTasksBlock(rep){
 }
 function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.dataset.min=m; btn.textContent="⏱ "+(m?(m+" 分"):"0 分"); }
 function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_t"+i)||"").trim();
-    const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0; arr.push({t,m}); } return arr; }
+    const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0;
+    const isTask=b&&b.dataset.task==="1"; const from=b?(b.dataset.from||""):"";
+    arr.push(isTask?{t,m,task:true,from}:{t,m}); } return arr; }
 function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
 // 某份日報的「其他工作」項目：手寫特別工作(special) + 已完成的老闆交辦(tasks)
 function otherItems(r){ if(!r) return [];
-  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:false, reply:""}));
+  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:!!s.task, reply:""}));
   const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true, reply:s.reply||""}));
   return sp.concat(tk); }
 async function writeReport(arr, clockOut, lock){
@@ -1377,23 +1382,37 @@ function doneTask(id){
     }catch(e){ toast("更新失敗，請稍後再試",true); return false; }
   }, "送出回覆並完成");
 }
-// 剪輯收件匣：未完成的交辦／留言（紅色提醒）
+// 剪輯收件匣：尚未「收到」的交辦／留言（紅色提醒）
 function inboxCard(me){
-  const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done && !m.accepted).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
   if(!msgs.length) return "";
-  // 自動記錄「已送達／已顯示」時間：系統證據，無法假裝沒看到（一次即止，不會重覆寫）
-  const unseen=msgs.filter(m=>!m.seenAt);
-  if(unseen.length){ setTimeout(()=>{ unseen.forEach(m=>{ if(window.DB&&window.DB.update) window.DB.update("messages", m.id, {seenAt:nowIso()}).catch(()=>{}); }); }, 60); }
   return `<div class="card" style="border-color:var(--red);background:var(--redbg)">
     <b>✉ 老闆交辦／留言（${msgs.length}）</b>
-    <p class="muted" style="font-size:11px;margin:2px 0 0">系統已記錄你看到這些交辦的時間；完成時要填「處理狀況」（至少 10 字）。</p>
     ${msgs.map(m=>`<div style="margin-top:8px;padding:10px;background:var(--panel);border-radius:8px">
        <div style="white-space:pre-wrap">${esc(m.text)}</div>
-       <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}${m.read?'・已讀':'・<b style="color:var(--red)">未讀</b>'}</div>
+       <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}</div>
        <div class="row" style="gap:6px;margin-top:6px">
-         ${!m.read?`<button class="btn sm sec" onclick="markMsg('${m.id}','read')">標示已讀</button>`:''}
-         <button class="btn sm" onclick="doneTask('${m.id}')">完成✔（回覆＋填工時）</button></div>
+         <button class="btn sm" onclick="acceptTask('${m.id}')">✅ 收到</button></div>
      </div>`).join("")}</div>`;
+}
+// 收到交辦 → 移進「今日特別工作」（一天最多 3 個剪輯以外的工作）
+async function acceptTask(id){
+  const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
+  const me=currentUser();
+  const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  if(old.locked){ toast("今日匯報已送出，無法再接工作",true); return; }
+  let sp; try{ sp=collectSpecial(); }catch(e){ sp=Array.isArray(old.special)?old.special:[]; }
+  const items=sp.filter(s=>s.t&&String(s.t).trim());
+  if(items.length>=3){ toast("今天最多只能接 3 個剪輯以外的工作",true); return; }
+  items.push({t:m.text, m:0, task:true, from:m.from||"管理員"});
+  while(items.length<3) items.push({t:"",m:0});
+  const rec=Object.assign({}, old, {id:me+"__"+today, user:me, date:today, special:items.slice(0,3),
+    tasks:old.tasks||[], content:specialToContent(items), done:true, startAt:old.startAt||"", endAt:old.endAt||""});
+  try{
+    await window.DB.set("reports", rec.id, rec);
+    await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), accepted:true, acceptedAt:nowIso()});
+    toast("已收到，移到今日特別工作");
+  }catch(e){ toast("更新失敗，請稍後再試",true); }
 }
 // 工時分配：剪輯工時（領取→完成）vs 其他工時（特別工作分鐘），以每日 8 小時計
 function workHoursCard(me, langs){
