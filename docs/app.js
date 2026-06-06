@@ -668,59 +668,18 @@ function doneTaskRows(todayOnly){
     ${currentRole()==='boss'?`<div style="margin-top:6px"><button class="btn sm sec" onclick="respondTask('${m.id}')">↩ ${m.bossResponse?'再回應':'回應／下一步'}</button></div>`:''}
   </div>`).join("");
 }
-// ---- 人資（檢核者）儀表板：直接追蹤效率有問題＋交辦未完成的人 ----
+// ---- 人資（觀察者 Benny）儀表板：與老闆相同的檢核順序，但唯讀、不可指派 ----
 function viewHrDash(){
-  const wl=DASH.workload||{rows:[]};
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const track=editors.map(u=>{
-    const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"]; const q=userQuota(u.name);
-    const row=(wl.rows||[]).find(r=>r.name===u.name)||{};
-    const todayDone=row.todayDone||0;
-    const streak=missStreakPast(u.name, langs, q);
-    const todayMiss=isWorkday(today) && q>0 && todayDone<q;
-    const pend=(STATE.messages||[]).filter(m=>m.to===u.name && !m.done && !m.accepted).length;
-    return {name:u.name, q, todayDone, streak, todayMiss, pend, inprog:inProgressCount(u.name)};
-  });
-  const serious=track.filter(t=>t.streak>=3).sort((a,b)=>b.streak-a.streak);
-  const watch=track.filter(t=>t.todayMiss && t.streak<3).sort((a,b)=>(a.todayDone-a.q)-(b.todayDone-b.q));
-  const row=(t,col)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;background:var(--panel2);border-radius:10px;margin-top:6px;border-left:4px solid ${col}">
-    <div style="min-width:0"><b>${esc(t.name)}</b>
-      ${t.pend?`<span class="pill wa" style="margin-left:6px">交辦未完成 ${t.pend}</span>`:''}
-      <div class="muted" style="font-size:12px;margin-top:2px">今日 ${t.todayDone}/${t.q}　進行中 ${t.inprog} 片${t.streak>=1?`　・連續落後 ${t.streak} 個工作日`:''}</div></div>
-  </div>`;
-  const seriousCard=`<div class="card" style="border-color:var(--red)">
-    <b style="color:var(--red)">🚨 連續落後（≥3 個工作日未達標）— 優先追蹤是否卡關／需要協助</b>
-    ${serious.length? serious.map(t=>row(t,'var(--red)')).join("") : '<p class="muted" style="margin-top:6px">沒有人連續落後 ✅</p>'}
-  </div>`;
-  const watchCard=`<div class="card">
-    <b>⚠ 今日尚未達標 — 留意進度</b>
-    ${watch.length? watch.map(t=>row(t,'var(--amber)')).join("") : '<p class="muted" style="margin-top:6px">今日大家進度正常 ✅</p>'}
-  </div>`;
-  const pendCard=`<div class="card"><b>✉ 老闆交辦・未完成（追蹤執行狀況）</b>
-    <div style="margin-top:6px">${pendingTaskRows()}</div></div>`;
-  const doneCard=`<div class="card"><b>✅ 交辦處理狀況（已完成回報）</b>
-    <span class="muted" style="font-size:12px">　看處理狀況判斷是否還需要協助</span>
-    <div style="margin-top:6px">${doneTaskRows(false)}</div></div>`;
   return `
   <h2>📋 部門檢核 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）・觀察</span></h2>
   <p class="muted" style="font-size:12px;margin:-8px 0 14px">觀察員工工作狀況、關心進度；如需提醒請以<b>口頭</b>方式進行（此頁不發送交辦）。</p>
-  ${seriousCard}
-  ${watchCard}
-  ${inProgressBoard()}
-  ${pendCard}
-  ${doneCard}
-  <details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 完整團隊數據（近 7 天・效率・月排程）</summary>
-    ${teamOtherWorkToday()}
-  </details>`;
+  ${reviewBoards()}
+  ${inProgressBoard()}`;
 }
 // ---- 總覽 ----
-// 工作追蹤：早上(過中午前)看「昨日」、過中午後看「今日」。不影響交辦(交辦看交辦日)
-function trackDay(){ const beforeNoon=new Date(Date.now()+288e5).getUTCHours()<12;
-  if(!beforeNoon) return today;
-  const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); return yd.toISOString().slice(0,10); }
-function workTrackBoard(){
-  const ds=trackDay(); const isToday=(ds===today);
-  const title=isToday? "📋 今日工作追蹤" : "📋 昨日工作追蹤";
+// 某一天的每人工作追蹤卡（今天/昨天共用）
+function dayTrackCard(ds, title){
+  const isToday=(ds===today);
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const rows=editors.map(u=>{
     const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"]; const q=userQuota(u.name);
@@ -730,8 +689,8 @@ function workTrackBoard(){
     const items=otherItems(rep);
     const dot=met?'var(--green)':(rep.startAt?'var(--amber)':'#cbd5e1');
     const timeInfo = rep.startAt
-      ? ('🟢 '+hhmm(rep.startAt)+' 開工'+(rep.endAt?('・'+hhmm(rep.endAt)+' 下班'):(isToday?'・上班中':'')))
-      : (isToday?'⚪ 未開工':'⚪ 當天未開工');
+      ? ('🟢 '+hhmm(rep.startAt)+(rep.endAt?('–'+hhmm(rep.endAt)):(isToday?' 上班中':'')))
+      : '⚪ 未開工';
     const otherHtml=items.length?('<div style="margin-top:4px">'+items.map(s=>`<div class="muted" style="font-size:11px">・${s.task?'<b style="color:#6d28d9">交辦</b>：':''}${esc(s.t)}${s.m?'（'+s.m+'分）':''}${(s.task)?(s.reply?(' ↳回覆：'+esc(s.reply)):' <span style="color:var(--red)">↳未回覆</span>'):''}</div>`).join('')+'</div>'):'';
     return `<div style="padding:9px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
       <div class="row" style="justify-content:space-between"><span style="font-weight:700;min-width:0">${esc(u.name)} <span class="muted" style="font-size:11px;font-weight:500">${timeInfo}</span></span>
@@ -739,9 +698,75 @@ function workTrackBoard(){
       ${otherHtml}
     </div>`;
   }).join("")||'<p class="muted">尚無剪輯成員</p>';
-  return `<div class="card" style="border-color:var(--accent)"><b>${title}</b>
-    <span class="muted" style="font-size:12px">　${ds}（${weekdayZh(ds)}）${isToday?'':'・早上看昨日成果，過中午後自動切今日'}</span>
+  return `<div class="card" style="${isToday?'border-color:var(--accent)':''}"><b>${title}</b>
+    <span class="muted" style="font-size:12px">　${ds}（${weekdayZh(ds)}）</span>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows}</div></div>`;
+}
+// 近 N 個「上班日」平均完成片數（不含六日）
+function avgWorkdayCard(N){ N=N||7;
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const rows=editors.map(u=>{
+    const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"]; const q=userQuota(u.name);
+    let sum=0,dN=0;
+    for(let i=1;i<=30 && dN<N;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
+      const ds=d.toISOString().slice(0,10); sum+=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))?1:0),0); }
+    const avg=dN?(sum/dN):0; const met=avg>=q;
+    return `<div class="row" style="justify-content:space-between;padding:7px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${met?'var(--green)':'var(--red)'}">
+      <span style="font-weight:700">${esc(u.name)}</span>
+      <span><b style="color:${met?'var(--green)':'var(--red)'}">${avg.toFixed(1)}</b> <span class="muted">/ ${q} 片/日</span></span></div>`;
+  }).join("")||'<p class="muted">尚無剪輯成員</p>';
+  return `<div class="card"><b>📈 近 ${N} 個上班日平均</b> <span class="muted" style="font-size:12px">（不含六日，每日完成片數）</span>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${rows}</div></div>`;
+}
+// 某一天「交辦」的清單（含狀態與回覆；老闆可回應）
+function taskRowsByDay(ds){
+  const msgs=(STATE.messages||[]).filter(m=>String(m.at||"").slice(0,10)===ds).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
+  if(!msgs.length) return '<p class="muted">當天沒有交辦</p>';
+  return msgs.map(m=>{
+    const st=m.done?'已回覆':(m.accepted?'已收到・處理中':'未收到');
+    const col=m.done?'ok':(m.accepted?'wa':'em');
+    return `<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
+      <div class="row" style="justify-content:space-between;gap:8px"><b>給 ${esc(m.to)}</b><span class="pill ${col}">${st}</span></div>
+      <div style="margin-top:3px">📌 ${esc(m.text)}</div>
+      ${m.reply?`<div style="font-size:13px;margin-top:3px;color:var(--green)">↳ 回覆：${esc(m.reply)}${m.minutes?'（'+m.minutes+'分）':''}</div>`:''}
+      ${m.bossResponse?`<div style="font-size:12px;margin-top:2px;color:var(--accent)">↩ 你的回應：${esc(m.bossResponse)}</div>`:''}
+      ${(currentRole()==='boss'&&m.done)?`<div style="margin-top:5px"><button class="btn sm sec" onclick="respondTask('${m.id}')">↩ ${m.bossResponse?'再回應':'回應／下一步'}</button></div>`:''}
+    </div>`; }).join("");
+}
+function ydayStr(){ const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); return yd.toISOString().slice(0,10); }
+// 交辦卡：昨天結果(唯讀) / 今天(老闆可指派)
+function taskDayCard(ds, title, canAssign){
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const assignRow = (canAssign && currentRole()==='boss')
+    ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${editors.map(u=>`<button class="btn sm sec" onclick="sendTask('${esc(u.name)}')">✉ 交辦給 ${esc(u.name)}</button>`).join("")}</div>` : '';
+  return `<div class="card"><b>${title}</b>${assignRow}<div style="margin-top:6px">${taskRowsByDay(ds)}</div></div>`;
+}
+// 整組「檢核」卡片，依重要性排序（Regina／Benny 共用；Benny 無指派/回應按鈕）
+function reviewBoards(){
+  const yds=ydayStr();
+  return `
+  ${dayTrackCard(today, "📋 今天工作追蹤")}
+  ${dayTrackCard(yds, "📋 昨天工作追蹤")}
+  ${avgWorkdayCard(7)}
+  ${taskDayCard(yds, "✉ 交辦・昨天的結果", false)}
+  ${taskDayCard(today, "✉ 今天的交辦", true)}
+  ${comprehensiveCard(14)}`;
+}
+// 前 N 天綜合：每人每天完成數＋其他工作（收合）
+function comprehensiveCard(days){ days=days||14;
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const cards=editors.map(u=>{
+    const q=userQuota(u.name); const week=lastNDetail(u.name,u.lang||"zh",q,days).slice().reverse();
+    const rows=week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
+      <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span></td>
+      <td style="text-align:center"><span class="${w.met?'pos':'neg'}">${w.n}</span><span class="muted">/${q}</span></td>
+      <td style="font-size:11px">${(w.items&&w.items.length)?w.items.map(s=>`${s.task?'交辦：':''}${esc(s.t)}${s.m?'（'+s.m+'分）':''}${(s.task&&s.reply)?' ↳'+esc(s.reply):''}`).join('；'):'<span class="muted">—</span>'}</td>
+    </tr>`).join("");
+    return `<div class="ucard"><div class="uh"><span class="nm">${esc(u.name)}</span></div>
+      <table class="wk"><thead><tr><th>日期</th><th style="text-align:center">剪片</th><th>其他工作</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join("")||'<p class="muted">尚無剪輯成員</p>';
+  return `<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 前 ${days} 天綜合（每人每天明細）</summary>
+    <div class="grid cols3" style="margin-top:10px">${cards}</div></details>`;
 }
 // 主管回應交辦的處理狀況（給對方下一步）→ 以新訊息送回該員收件匣
 function respondTask(msgId){
@@ -911,13 +936,10 @@ function viewDash(){
     <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:2px">已完成回報（內容・處理狀況・花費時間）</div>${doneTaskRows(false)}</div>
   </div>`;
 
-  // ===== 詳細數據（預設收合，畫面保持精簡）=====
-  const peopleCard=`<div class="card"><b>👥 每日匯報・近 7 天</b>
-    <div class="grid cols3" style="margin-top:10px">${userCards}</div></div>`;
-  const detail=`<details style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 詳細數據（待剪新片・近 7 天・效率・月排程）</summary>
-    ${inProgressBoard()}
-    ${peopleCard}
+  // 排程庫存・效率・月排程（收合，輔助參考）
+  const extra=`<details style="margin-top:6px">
+    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 排程庫存・效率・月排程</summary>
+    ${progCard}
     ${perfCard}
     ${viewCal()}
   </details>`;
@@ -925,23 +947,22 @@ function viewDash(){
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
   ${demoBanner}
-  ${workTrackBoard()}
-  ${taskCard}
-  ${assignStatusCard}
-  ${progCard}
-  ${detail}`;
+  ${reviewBoards()}
+  ${extra}
+  ${inProgressBoard()}`;
 }
 // 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
-function last7Detail(name, lang, q){
+function last7Detail(name, lang, q){ return lastNDetail(name, lang, q, 7); }
+function lastNDetail(name, lang, q, n){ n=n||7;
   const langs=(lang==="all")?SCHED_LANGS:[lang||"zh"];
   const out=[];
-  for(let i=6;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-    const n=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
+  for(let i=n-1;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+    const nn=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
     const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
     let other=""; const items=otherItems(rep);
     if(items.length){ other=items.map(s=>(s.task?"【交辦】":"")+s.t+(s.m?`（${s.m}分）`:"")).join("、"); }
     else if(rep){ other=(rep.content||"").trim(); }
-    out.push({ds, n, other, items, met: q>0? n>=q : true});
+    out.push({ds, n:nn, other, items, met: q>0? nn>=q : true});
   }
   return out;
 }
