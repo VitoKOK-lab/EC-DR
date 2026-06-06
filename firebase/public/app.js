@@ -9,7 +9,7 @@ const ROLE_TABS = {
   editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["workload","👥 人員KPI"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
-const today = new Date().toISOString().slice(0,10);
+const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
 
 function currentUser(){ return localStorage.getItem("ecdr_user") || ""; }
 function setUser(n){ localStorage.setItem("ecdr_user", n); }
@@ -20,8 +20,10 @@ function currentRole(){
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   if(currentUser()===ownerName()){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
-function nowIso(){ return new Date().toISOString().slice(0,19); }
+function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
+function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
+function todayLabel(){ return today.slice(5).replace("-","/")+"（週"+weekdayZh(today)+"）"; }
 function deviceId(){ let id=localStorage.getItem("ecdr_device");
   if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
   return id; }
@@ -743,8 +745,8 @@ function viewWork(){
     : `<p class="muted" style="margin-bottom:8px">你的語言：<b>${LANG_LABEL[lang]||lang}</b>（只處理此語言）</p>`;
   const myRep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
   const clockBar = myRep.startAt
-    ? `<div class="card" style="padding:10px 14px"><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
-    : `<div class="card" style="text-align:center;border-color:var(--green)"><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
+    ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
+    : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
   return `
   <h2>✂️ 我的工作台（${esc(me)}）</h2>
   ${switcher}
