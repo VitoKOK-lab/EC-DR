@@ -6,7 +6,7 @@ const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
   boss:   [["dash","📊 總覽"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
   hr:     [["dash","📊 部門總覽"]],
-  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  editor: [["work","✂️ 剪輯儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
@@ -655,31 +655,26 @@ function viewCal(){
   const w = STATE._warnings||{emergency:[],warning:[]};
   const target = STATE.settings?.dailyPublishTarget||4;
   const lang = curLang(); const isZh=(lang==="zh");
-  const tCol={"流量型":"var(--traffic)","帶貨型":"var(--sales)"};
+  // 顯示規則：排滿→灰、近 15 天內未排滿→紅、其餘(原始)→空白
+  const d15=new Date(today+"T00:00:00"); d15.setDate(d15.getDate()+15); const d15s=d15.toISOString().slice(0,10);
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const isToday = ds===today;
     const tmk = isToday?`<span class="todaymk">今天</span>`:"";
+    const within15 = ds>=today && ds<=d15s;
     if(!isZh){ const cnt=dayLangCount(ds,lang);
-      cells += `<div class="day ${cnt>0?'full':'none'} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
+      const cls = cnt>0?"filled":(within15?"bad":"blank");
+      cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
         <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
-    const cls = b.total===0 ? "bad" : (b.full ? "full" : (b.total>=b.target ? "warn" : "bad"));
-    // 類型色條：流量(藍)/帶貨(橙)/寵粉(紫)
-    const segs=[]; const tcnt=b.byType;
-    if(tcnt["流量型"]) segs.push(`<div class="seg" style="flex:${tcnt["流量型"]};background:var(--traffic)" title="流量 ${tcnt['流量型']}"></div>`);
-    if(tcnt["帶貨型"]) segs.push(`<div class="seg" style="flex:${tcnt["帶貨型"]};background:var(--sales)" title="帶貨 ${tcnt['帶貨型']}"></div>`);
-    if(tcnt["寵粉"]) segs.push(`<div class="seg" style="flex:${tcnt["寵粉"]};background:var(--pamper)" title="寵粉 ${tcnt['寵粉']}"></div>`);
-    const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
-    const defTxt=Object.keys(b.deficits).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
+    const filled = b.total>=Math.max(1,b.target);
+    const cls = filled ? "filled" : (within15 ? "bad" : "blank");
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${b.total}<span style="font-size:13px;color:var(--muted);font-weight:600">/${b.target}</span></div>
-      ${defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(isPamperedDay(ds)&&!b.needPampered?`<div class="pmk" style="color:var(--pamper)">寵粉✓</div>`:"")}
-      <div class="tbar">${segs.join("")||'<div class="seg" style="flex:1;background:var(--line)"></div>'}</div>
+      <div class="big">${b.total||"·"}<span style="font-size:13px;color:var(--muted);font-weight:600">${b.total?("/"+b.target):""}</span></div>
     </div>`;
   }
   const switcher = canAllLang()
@@ -698,7 +693,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px">${isZh?`大數字＝當日上片數／目標 ${target}。<b style="color:var(--green)">綠</b>=完整、<b style="color:var(--amber)">橙</b>=量夠但類型或寵粉缺、<b style="color:var(--red)">紅</b>=量不足。底部色條：<span style="color:var(--traffic)">■</span>流量 <span style="color:var(--sales)">■</span>帶貨 <span style="color:var(--pamper)">■</span>寵粉。`:`綠＝當日有${LANG_LABEL[lang]||lang}影片`}　點任一天查看明細</p>
+    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:#888">灰</b>=已排滿、<b style="color:var(--red)">紅</b>=近 15 天內尚未排滿、空白=尚未排。點任一天可<b>改上片日期</b>（不可刪除）。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -715,8 +710,8 @@ function openDay(ds){
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}</td>
       <td data-label="剪輯">${esc(ed)}</td>
       <td data-label="連結">${link?`<a href="${esc(link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
-      <td data-label="">${isZh?`<button class="btn sm danger" onclick="unscheduleVid('${it.videoId}','${ds}')">移出此日</button>`
-                              :`<button class="btn sm danger" onclick="unscheduleLang('${it.videoId}','${lang}','${ds}')">移出此日</button>`}</td>
+      <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px"
+            onchange="${isZh?`rescheduleVid('${it.videoId}',this.value,'${ds}')`:`rescheduleLang('${it.videoId}','${lang}',this.value,'${ds}')`}"></td>
     </tr>`;
   }).join("");
   const cnt = list.length;
@@ -730,16 +725,17 @@ function openDay(ds){
   showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>連結</th><th></th></tr></thead>
+      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>連結</th><th>改上片日</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-      <p class="muted" style="font-size:12px;margin-top:8px">影片由剪輯在「我的工作台」完成（貼連結＋選上片日期）後自動排到此日。如要改日期，可在影片編輯框調整，或按「移出此日」清除。</p>
+      <p class="muted" style="font-size:12px;margin-top:8px">月排程唯讀：影片由剪輯完成後自動排入。只能改上片日期（移動時間），不能刪除或取消。</p>
     </div>`, null);
 }
-function unscheduleLang(id,lang,ds){ if(!confirm("把這支影片移出"+(LANG_LABEL[lang]||lang)+"此日？")) return;
-  const v=vid(id); const L=Object.assign({}, v?.languages?.[lang]||{}); L.scheduledDate=null;
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:L},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
-function unscheduleVid(id,ds){ if(!confirm("把這支影片移出此日（清除上片日期）？")) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出此日").then(ok=>{ if(ok) openDay(ds); }); }
+// 改上片日期（移動時間，不刪除）
+function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:newDate}},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
+function rescheduleLang(id,lang,newDate,ds){ if(!newDate||newDate===ds) return;
+  const v=vid(id); const L=Object.assign({}, v?.languages?.[lang]||{}); L.scheduledDate=newDate;
+  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:L},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
 
 // ---- 我的工作台（依語言別） ----
 function viewWork(){
@@ -777,22 +773,24 @@ function viewWork(){
     : myRep.startAt
     ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
     : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
+  const meU=myUser()||{}; const meLangs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||lang];
   return `
-  <h2>✂️ 我的工作台（${esc(me)}）</h2>
+  <h2>✂️ 剪輯個人儀表板（${esc(me)}）</h2>
   ${switcher}
   ${clockBar}
   <div class="card">
     <div class="row" style="justify-content:space-between">
-      <b>今日 KPI（${LANG_LABEL[lang]||lang}）</b>
+      <b>📌 每日主要工作（${LANG_LABEL[lang]||lang}）</b>
       <span class="pill ${myDoneToday>=quota?'ok':'wa'}">今日完成 ${myDoneToday}/${quota}</span>
     </div>
     <div class="progbar"><i style="width:${quota?Math.min(100,myDoneToday/quota*100):100}%"></i></div>
   </div>
   <div class="card">
-    <div class="row" style="justify-content:space-between"><b>我進行中的影片（${myInProgressCount()}/3）</b>
+    <div class="row" style="justify-content:space-between"><b>🎬 我進行中的影片（${myInProgressCount()}/3）</b>
       ${atLimit?`<span class="pill wa">已達 3 片上限，先完成再認領</span>`:""}</div>
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，可從下方認領</td></tr>`}</tbody></table>
+    ${specialTasksBlock(myRep)}
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between"><b>${isZh?"未處理片源":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
@@ -800,27 +798,60 @@ function viewWork(){
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${pool.map(v=>matRow(v,true)).join("")||`<tr><td class="muted">${isZh?"目前沒有未處理片源":"目前沒有待二創的影片（要中文母版先完成）"}</td></tr>`}</tbody></table>
   </div>
-  ${taskCard(me)}`;
+  ${workHoursCard(me, meLangs)}
+  ${myDailyReport(me)}`;
 }
-// 今日特別工作備註（選填）；剪片數由「影片完成」自動計入
-function taskCard(me){
-  const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const doneT=(STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && (v.finishedAt||"").slice(0,10)===today).length;
-  return `<div class="card"><b>📝 今日特別工作備註（選填）</b>
-    <p class="muted" style="font-size:12px;margin-top:4px">今天已完成剪輯 <b>${doneT}</b> 支（系統自動計入工作量，不用手動填）。下面只在有「特別／額外工作」時補充，沒有可留空。</p>
-    <textarea id="rp_content" style="min-height:110px" placeholder="例：製作 7 張粉專圖片、協助拍攝、開會討論…（沒有可留空）">${esc(rep.content||"")}</textarea>
-    <div class="modalFoot"><button class="btn" onclick="finishReport()">🔴 送出今日匯報下班</button></div>
-    <p class="muted" style="font-size:11px;margin-top:4px">按下＝送出今日匯報並下班打卡（停止今日計時）。</p>
+// 今日特別工作：最多 3 項，每項一個時間鈕（每按 +30 分，上限 2 小時，再按歸 0）
+function specialTasksBlock(rep){
+  let sp=rep&&rep.special; if(!sp||!sp.length){ sp=[{t:(rep&&rep.content)||"",m:0},{t:"",m:0},{t:"",m:0}]; }
+  sp=sp.slice(0,3); while(sp.length<3) sp.push({t:"",m:0});
+  const rows=sp.map((s,i)=>`<div class="row" style="gap:8px;margin-top:6px;align-items:center">
+      <span class="muted" style="width:16px;font-weight:700">${i+1}</span>
+      <input id="rp_t${i}" style="flex:1" placeholder="特別／額外工作（沒有可留空）" value="${esc(s.t||"")}">
+      <button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>
+    </div>`).join("");
+  return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+    <b>📝 今日特別工作</b><span class="muted" style="font-size:12px">　最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）</span>
+    ${rows}
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn sm sec" onclick="saveSpecial(false)">💾 儲存特別工作</button>
+      <button class="btn" onclick="saveSpecial(true)">🔴 送出今日匯報下班</button>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:4px">剪片數系統自動計入；特別工作時間會算進「其他工時」。「送出下班」＝停止今日計時。</p>
   </div>`;
 }
-async function finishReport(){ const me=currentUser(); const content=val("rp_content").trim();
+function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.dataset.min=m; btn.textContent="⏱ "+(m?(m+" 分"):"0 分"); }
+function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_t"+i)||"").trim();
+    const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0; arr.push({t,m}); } return arr; }
+function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
+async function saveSpecial(clockOut){ const me=currentUser(); const arr=collectSpecial(); const content=specialToContent(arr);
   const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const end=nowIso();
-  const rec={id:me+"__"+today, user:me, date:today, content, done:!!content, startAt:old.startAt||"", endAt:end};
+  const end=clockOut?nowIso():(old.endAt||"");
+  const rec={id:me+"__"+today, user:me, date:today, special:arr, content, done:!!content, startAt:old.startAt||"", endAt:end};
   try{ await window.DB.set("reports", rec.id, rec);
-    const worked=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):"";
-    toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+worked);
+    if(clockOut){ const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):""; toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+w); }
+    else toast("已儲存特別工作");
   }catch(e){ toast("失敗，請稍後再試",true); } }
+// 工時分配：剪輯工時（領取→完成）vs 其他工時（特別工作分鐘），以每日 8 小時計
+function workHoursCard(me, langs){
+  const BASE=480;
+  const editMin=(ds)=>(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,me,ds))?videoDur(v,langs):0),0);
+  const otherMin=(ds)=>{ const r=(STATE.reports||[]).find(x=>x.user===me && x.date===ds); return (r&&r.special||[]).reduce((a,s)=>a+(s.m||0),0); };
+  const eToday=editMin(today), oToday=otherMin(today);
+  let eSum=0,oSum=0,dN=0;
+  for(let i=0;i<28 && dN<14;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
+    const ds=d.toISOString().slice(0,10); eSum+=editMin(ds); oSum+=otherMin(ds); }
+  const eAvg=dN?Math.round(eSum/dN):0, oAvg=dN?Math.round(oSum/dN):0;
+  const pct=x=>Math.round(x/BASE*100);
+  const bar=(e,o)=>{ const ep=Math.min(100,e/BASE*100), op=Math.min(100-ep,o/BASE*100), idle=Math.max(0,100-ep-op);
+    return `<div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--panel2);margin-top:4px">
+      <div style="width:${ep}%;background:#2563eb"></div><div style="width:${op}%;background:#d97706"></div><div style="width:${idle}%"></div></div>`; };
+  const legend=(e,o)=>`<span class="muted" style="font-size:12px"><span style="color:#2563eb">■</span> 剪輯 ${minToText(e)}（${pct(e)}%）　<span style="color:#d97706">■</span> 其他 ${minToText(o)}（${pct(o)}%）</span>`;
+  return `<div class="card"><b>⏱ 我的工時分配</b><span class="muted" style="font-size:12px">　以每日 8 小時計</span>
+    <div style="margin-top:10px"><div class="row" style="justify-content:space-between"><span style="font-size:13px"><b>今天</b></span>${legend(eToday,oToday)}</div>${bar(eToday,oToday)}</div>
+    <div style="margin-top:12px"><div class="row" style="justify-content:space-between"><span style="font-size:13px"><b>近 ${dN} 個工作日平均</b> <span class="muted">（不含六日）</span></span>${legend(eAvg,oAvg)}</div>${bar(eAvg,oAvg)}</div>
+  </div>`;
+}
 // 上班開工打卡（記 reports.startAt，老闆即時狀態列才看得到「幾點開工」）
 async function clockIn(){ const me=currentUser(); const id=me+"__"+today;
   const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today) || {id,user:me,date:today,content:""};
@@ -1138,7 +1169,8 @@ function viewMembers(){
         ${ROLE_TOKENS.map(([tk,lb])=>`<option value="${tk}" ${userToken(u)===tk?"selected":""}>${lb}</option>`).join("")}
       </select></td>
     <td data-label="每日KPI"><input type="number" min="0" style="width:70px" value="${u.dailyQuota||defQ}" onchange="changeQuota('${esc(u.name)}',this.value)"> 片</td>
-    <td data-label=""><button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
+      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
   <div class="card"><b>現有成員（${users.length}）</b>
@@ -1283,6 +1315,35 @@ function setAllQuota(n){ if(!confirm("將『所有剪輯』的每日KPI都設為
     await delay(300); toast("已將 "+c+" 位剪輯的每日KPI設為 "+n); }); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
+// 成員改名：同步更新名下影片／匯報／工作的參照（限管理員）
+function renameMember(oldName){
+  const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
+  const nn=input.trim(); if(!nn || nn===oldName) return;
+  if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }
+  withAdmin(async ()=>{
+    BULK_BUSY=true; let vc=0,rc=0,tc=0;
+    try{
+      const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
+      await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
+      for(const v of (STATE.videos||[])){
+        const patch={}; let touched=false;
+        if(v.editor===oldName){ patch.editor=nn; touched=true; }
+        if(v.claimedBy===oldName){ patch.claimedBy=nn; touched=true; }
+        if(v.languages){ const L=JSON.parse(JSON.stringify(v.languages)); let lt=false;
+          for(const lg of Object.keys(L)){ if(L[lg]&&L[lg].editor===oldName){ L[lg].editor=nn; lt=true; }
+            if(L[lg]&&L[lg].claimedBy===oldName){ L[lg].claimedBy=nn; lt=true; } }
+          if(lt){ patch.languages=L; touched=true; } }
+        if(touched){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} }
+      }
+      for(const r of (STATE.reports||[])){ if(r.user===oldName){ const nid=nn+"__"+r.date;
+        try{ await window.DB.set("reports", nid, Object.assign({}, r, {id:nid, user:nn})); await window.DB.del("reports", r.id); rc++; }catch(e){} } }
+      for(const t of (STATE.tasks||[])){ if(t.user===oldName && t.id){ try{ await window.DB.update("tasks", t.id, {user:nn}); tc++; }catch(e){} } }
+      await window.DB.del("users", oldName);
+      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"成員改名 "+oldName+"→"+nn+"（影片"+vc+"・匯報"+rc+"）"}); }catch(e){}
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+"、匯報 "+rc+" 筆同步）");
+  });
+}
 
 // ===================================================================
 // 稽核紀錄（只有 owner 看得到）：誰、哪台裝置、做了什麼
