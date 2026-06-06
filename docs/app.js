@@ -936,10 +936,9 @@ function viewDash(){
     <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:2px">已完成回報（內容・處理狀況・花費時間）</div>${doneTaskRows(false)}</div>
   </div>`;
 
-  // 排程庫存・效率・月排程（收合，輔助參考）
+  // 效率・月排程（收合，輔助參考）
   const extra=`<details style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 排程庫存・效率・月排程</summary>
-    ${progCard}
+    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 效率・月排程</summary>
     ${perfCard}
     ${viewCal()}
   </details>`;
@@ -947,6 +946,7 @@ function viewDash(){
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
   ${demoBanner}
+  ${progCard}
   ${reviewBoards()}
   ${extra}
   ${inProgressBoard()}`;
@@ -1104,7 +1104,7 @@ function viewCal(){
   const first = new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
   const w = STATE._warnings||{emergency:[],warning:[]};
   const target = STATE.settings?.dailyPublishTarget||4;
-  const lang = curLang(); const isZh=(lang==="zh");
+  const lang = canAllLang() ? "zh" : curLang(); const isZh=(lang==="zh");  // 月排程只看中文（英/泰已移除）
   // 顯示規則：排滿→綠、10 天內未排→大紅色、其餘未排→灰
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells = "";
@@ -1130,9 +1130,7 @@ function viewCal(){
       ${(!filled && defTxt.length)?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:"")}
     </div>`;
   }
-  const switcher = canAllLang()
-    ? `<div class="row" style="gap:6px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
-    : `<span class="muted">語言：<b>${LANG_LABEL[lang]||lang}</b></span>`;
+  const switcher = `<span class="muted">語言：<b>${LANG_LABEL[lang]||lang}</b></span>`;
   return `
   <h2>📅 月排程（${LANG_LABEL[lang]||lang}）</h2>
   ${switcher}
@@ -1153,7 +1151,7 @@ function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++
 
 function openDay(ds){
   const target = STATE.settings?.dailyPublishTarget||4;
-  const lang = curLang(); const isZh=(lang==="zh");
+  const lang = canAllLang() ? "zh" : curLang(); const isZh=(lang==="zh");  // 月排程只看中文（英/泰已移除）
   const list = dayLangList(ds, lang);
   const rows = list.map((it)=>{
     const v = vid(it.videoId);
