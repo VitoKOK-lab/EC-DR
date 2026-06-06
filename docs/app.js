@@ -105,7 +105,7 @@ function langFinishedInRange(v,lg,name,s,e){
 
 function toast(msg, isErr){
   const t = document.getElementById("toast");
-  t.textContent = msg; t.className = "toast show" + (isErr?" err":"");
+  t.textContent = uiEN()? enify(msg) : msg; t.className = "toast show" + (isErr?" err":"");
   setTimeout(()=>{ t.className = "toast"; }, 2600);
 }
 
@@ -427,7 +427,7 @@ function applyState(raw){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
-    document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
+    document.getElementById("whoRole").textContent="・"+(uiEN()?({"管理員":"Admin","人資":"HR","剪輯":"Editor"}[ROLE_LABEL[currentRole()]]||"Editor"):(ROLE_LABEL[currentRole()]||""));
     if(!CUR_TAB) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
   } else {
@@ -461,6 +461,125 @@ function renderCharts(){
   Object.values(CHARTS).forEach(c=>{ try{c.destroy();}catch(e){} }); CHARTS={};
   PENDING_CHARTS.forEach(s=>{ const el=document.getElementById(s.id); if(el){ try{ s.config.options=Object.assign({responsive:true,maintainAspectRatio:false},s.config.options||{}); CHARTS[s.id]=new window.Chart(el,s.config); }catch(e){} } });
 }
+// ===================================================================
+// 介面語言（i18n）：英語／泰語剪輯看到英文介面，中文同仁不受影響
+// 作法：渲染後對中文使用者保留原樣；對英文使用者做字典替換（整頁、彈窗、提示）
+// ===================================================================
+function uiEN(){ try{ const l=myLang(); return l==="en"||l==="th"; }catch(e){ return false; } }
+const EN_DICT = {
+  // 標頭 / 導覽 / 角色
+  "✂️ 剪輯儀表板":"✂️ Editor", "📅 月排程":"📅 Schedule", "🎞 影片庫":"🎞 Videos",
+  "剪輯個人儀表板":"My Editor Dashboard", "登出":"Logout", "離線":"Offline",
+  "目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。":"Offline — showing last synced data (read-only); will auto-update when reconnected.",
+  // 打卡 / 工時
+  "開工打卡":"Clock In", "已開工":"Clocked in", "已下班":"Clocked out", "今日工時":"today's hours",
+  "上班先打卡，老闆才看得到你今天幾點開始":"Clock in first so your manager can see your start time",
+  "今天加油！":"Have a great day!", "辛苦了！":"Well done!", "辛苦了 👋":"Well done 👋",
+  // 每日主要工作 / 進行中 / 片源
+  "每日主要工作":"Daily Main Work", "今日完成":"Done today", "我進行中的影片":"My In-Progress Videos",
+  "今日已領":"Picked today", "還有進行中的影片，剪完並填上傳連結後才能再拉新片":"Finish your current video (with upload link) before picking a new one",
+  "今天已拉滿 3 片，明天再領":"You've picked 3 today — come back tomorrow",
+  "目前沒有進行中的影片，可從下方認領":"No in-progress videos — pick one below",
+  "未處理片源":"Unclaimed Videos", "待二創":"Pending derivative",
+  "＋ 新增片源":"+ Add Video", "＋ 新增":"+ Add", "新增片源":"Add Video",
+  "目前沒有未處理片源":"No unclaimed videos",
+  "目前沒有待二創的影片（要中文母版先完成）":"No videos pending derivative (Chinese master must finish first)",
+  "我來做":"Take it", "完成✔（回覆＋填工時）":"Done ✔ (reply + time)", "完成✔":"Done ✔",
+  "求支援":"Need help", "取消支援":"Cancel help",
+  "♻ 舊片重播（重複使用）":"♻ Re-run Old Video", "＋ 排舊片進月歷":"+ Schedule old video",
+  "把已完成的舊片再排到未來某天上片。系統會記錄這支片用過幾次、每次的日期與連結（在影片詳情可查）。":"Schedule a finished old video for a future date. The system records how many times it's been used, with each date and link (see video details).",
+  "影片":"Video", "片源":"Source", "負責":"Owner",
+  // 收件匣 / 交辦
+  "老闆交辦／留言":"Tasks / Messages from Boss",
+  "系統已記錄你看到這些交辦的時間；完成時要填「處理狀況」（至少 10 字）。":"The system has logged when you saw these tasks; you must reply with a status (min 10 chars) to complete.",
+  "標示已讀":"Mark as read", "已讀":"Read", "未讀":"Unread",
+  "完成交辦：回覆處理狀況＋填工時":"Complete Task: Reply Status + Time",
+  "處理狀況／回覆（至少 10 個字）":"Handling status / reply (at least 10 characters)",
+  "說明你怎麼處理、結果如何、有沒有遇到問題或需要協助…（至少 10 個字）":"Explain how you handled it, the result, and any problems or help needed… (at least 10 characters)",
+  "這項工作花了多少時間（分鐘）":"How long did this take (minutes)",
+  "送出後，交辦內容、你的處理狀況與花費時間，主管與同事都會在儀表板看到。":"After submitting, the task, your status reply and time will be visible to managers and teammates on the dashboard.",
+  "送出回覆並完成":"Submit & Complete",
+  "處理狀況請至少 10 個字（目前":"Status needs at least 10 characters (now",
+  "字）":" chars)", "處理狀況請認真填寫，不要用重複字元充數":"Please write a real status — no repeated filler characters",
+  "已完成交辦並回覆，記入其他工作":"Task completed and replied; logged to other work",
+  // 特別工作 / 匯報
+  "今日特別工作":"Today's Extra Work", "最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）":"Up to 3 items; each tap +30 min (max 2h, then resets to 0)",
+  "特別／額外工作（沒有可留空）":"Extra / other work (leave blank if none)",
+  "💾 儲存特別工作":"💾 Save Extra Work", "🔴 送出今日匯報下班":"🔴 Submit Daily Report & Clock Out",
+  "剪片數系統自動計入；特別工作時間會算進「其他工時」。":"Edited videos are counted automatically; extra-work time is added to “other hours”. ",
+  "送出後內容與工時會鎖定、不能再改":"After submitting, content and hours are locked and cannot be changed",
+  "，並直接下班登出。":", and you'll clock out and log out.",
+  "已送出・鎖定":"Submitted · Locked",
+  "今日匯報已送出，內容與工時已鎖定，無法再修改。":"Today's report is submitted; content and hours are locked and cannot be changed.",
+  "今日匯報已送出，無法再修改":"Today's report is submitted and cannot be changed",
+  "無特別工作":"No extra work",
+  "送出今日匯報":"Submit Daily Report",
+  "確定今天的匯報內容":"Are you sure today's report",
+  "沒有需要再修改":"needs no more changes",
+  "了嗎？":"?",
+  "送出後今天的工時與內容就":"After submitting, today's hours and content are",
+  "不能再更改":"locked and cannot be changed",
+  "並會直接下班、登出回到登入畫面。":", and you'll clock out and return to the login screen.",
+  "確定，下班登出":"Confirm — Clock Out & Logout",
+  "已送出今日匯報，下班！":"Daily report submitted. Clocking out!",
+  "已儲存特別工作":"Extra work saved",
+  // 工時分配
+  "我的工時分配":"My Time Allocation", "以每日 8 小時計":"based on 8h/day",
+  "今天":"Today", "剪輯":"Editing", "其他":"Other", "個工作日平均":" workday avg", "不含六日":"excl. weekends",
+  "近 ":"Last ",
+  // 大家的其他工作
+  "今天大家的其他工作":"Everyone's Other Work Today", "所有人都看得到":"Visible to everyone",
+  "成員":"Member", "工作內容":"Work", "時間":"Time", "交辦":"Task", "處理狀況":"Status",
+  // 完成影片（finish）
+  "完成":"Complete", "上片日期":"Publish date", "雲端備份連結":"Cloud backup link",
+  "社群平台預排連結":"Social schedule link", "需確認：已上架、已上傳雲端備份、社群平台已預排":"Confirm: published, cloud backup uploaded, social post scheduled",
+  "請選擇上片日期":"Please choose a publish date", "日期與兩個連結都填好，才能按「確認送出」。":"Fill the date and both links to enable Submit.",
+  // 月排程
+  "月排程":"Monthly Schedule", "上月":"Prev", "下月":"Next",
+  "月排程為":"Schedule is ", "唯讀":"read-only", "剪輯按「完成」時自動排入。":"Videos are auto-added when an editor marks Done. ",
+  "已排滿":"Full", "尚未排":"Not scheduled", "大紅色":"big red",
+  "10 天內還沒排好（要趕快補）。點任一天可":"not scheduled within 10 days (fill soon). Tap a day to ",
+  "改上片日期":"change publish date", "不可刪除":"cannot delete", "不可刪除）":"cannot delete)",
+  "語言：":"Language: ",
+  // 影片庫
+  "影片庫":"Video Library", "點標題看細節／改連結":"tap title for details / edit links",
+  "搜尋影片名稱／剪輯":"Search video / editor", "全部狀態":"All status",
+  "待處理":"To-do", "剪輯中":"Editing", "已完成":"Completed", "已上片":"Published",
+  "沒有符合的影片":"No matching videos", "共":"Total", "筆":"", "顯示前":"Showing first",
+  "用上方搜尋縮小範圍。":"use search above to narrow down.",
+  // 舊片重播
+  "排舊片重播（重複使用）":"Schedule Old Video (reuse)", "搜尋舊片（片名關鍵字）":"Search old videos (title keyword)",
+  "輸入片名找舊片…":"Type a title to find old videos…", "選擇舊片":"Choose old video",
+  "這次上片日期（可排未來）":"Publish date (future allowed)", "這次的社群連結":"Social link for this run",
+  "每次重播都會分別記錄日期與連結，並計入使用次數。":"Each re-run records its own date and link and counts toward usage.",
+  "找不到符合的舊片":"No matching old videos", "已用":"used", "次":"times", "尚無使用紀錄":"No usage yet",
+  // 認領 / 規則 toasts
+  "已認領，加入我的工作":"Claimed — added to your work",
+  "請先把進行中的影片剪完（含上傳連結），才能再拉新片":"Finish your current video (with upload link) before picking a new one",
+  "你今天已經拉滿 3 片囉，明天再領":"You've picked 3 videos today — come back tomorrow",
+  "請先把進行中的影片做完，才能再拉新的":"Finish your current video before picking a new one",
+  // 改密碼
+  "🔑 改密碼":"🔑 Change Password", "輸入目前的密碼：":"Enter current password:", "目前密碼錯誤":"Current password is wrong",
+  "輸入新密碼：":"Enter new password:", "再輸入一次新密碼確認：":"Re-enter new password:", "兩次密碼不一致":"Passwords don't match",
+  "密碼不可空白":"Password cannot be empty", "密碼已更新":"Password updated", "密碼錯誤":"Wrong password",
+  "的登入密碼（預設 0000）：":" login password (default 0000):",
+  // 通用
+  "取消":"Cancel", "確認送出":"Submit", "連線中，請稍候再試":"Connecting, please try again",
+  "更新失敗，請稍後再試":"Update failed, please try again", "失敗，請稍後再試":"Failed, please try again",
+  "送出失敗，請稍後再試":"Submit failed, please try again",
+  "記入其他工作":"logged to other work", "分":"min",
+  "（重播）":" (re-run)", "♻ 重播":"♻ re-run",
+  "今天":"Today", "昨天":"Yesterday", "天前":" days ago",
+  // 每日工作日報
+  "我的每日工作日報（近 14 天）":"My Daily Work Log (last 14 days)",
+  "每天最少":"At least", "片；完成片數系統自動計入，特別工作為選填。":" videos/day; completed videos are counted automatically, extra work optional.",
+  "完成片數":"Done", "剪片工時":"Edit hours", "特別工作":"Extra work", "達標":"Met", "日期":"Date",
+  " (今天)":" (Today)", " 天":" days",
+};
+let EN_KEYS=null;
+function enify(html){ if(html==null) return html;
+  if(!EN_KEYS) EN_KEYS=Object.keys(EN_DICT).sort((a,b)=>b.length-a.length);
+  let s=String(html); for(const k of EN_KEYS){ if(s.indexOf(k)>=0) s=s.split(k).join(EN_DICT[k]); } return s; }
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
@@ -471,7 +590,7 @@ function render(){
     dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
     videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit, mine:viewMine
   }[CUR_TAB] || (()=>"");
-  v.innerHTML = banner + fn();
+  v.innerHTML = uiEN()? enify(banner + fn()) : (banner + fn());
   renderCharts();
 }
 
@@ -1578,12 +1697,13 @@ async function saveSettings(){
 // ===================================================================
 function showModal(title, inner, onConfirm, confirmLabel){
   const root=document.getElementById("modalRoot");
-  root.innerHTML=`<div class="modal"><div class="box">
+  const html=`<div class="modal"><div class="box">
     <h3>${esc(title)}</h3>${inner}
     <div class="modalFoot">
       <button class="btn sec" onclick="closeModal()">取消</button>
       ${onConfirm?`<button class="btn" id="modalConfirm">${esc(confirmLabel||"確認送出")}</button>`:""}
     </div></div></div>`;
+  root.innerHTML = uiEN()? enify(html) : html;
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
 function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
