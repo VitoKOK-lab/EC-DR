@@ -122,10 +122,13 @@ function newVideoRecord(over){
 // ---------- 衍生計算（對應後端 server.py） ----------
 function parseDate(s){ s=String(s||"").slice(0,10); const d=new Date(s+"T00:00:00"); return isNaN(d)?null:d; }
 function usedInWindow(v, days){
-  const cut=new Date(); cut.setDate(cut.getDate()-days); let c=0;
-  (v.usageHistory||[]).forEach(d=>{ const dd=parseDate(d); if(dd && dd>=new Date(cut.toISOString().slice(0,10)+"T00:00:00")) c++; });
+  const cut=new Date(); cut.setDate(cut.getDate()-days); const cutD=new Date(cut.toISOString().slice(0,10)+"T00:00:00"); let c=0;
+  (v.usageHistory||[]).forEach(d=>{ const ds=(d&&typeof d==="object")?d.date:d; const dd=parseDate(ds); if(dd && dd>=cutD) c++; });
   return c;
 }
+// 使用紀錄正規化：每次重播的 {日期, 連結, 排片人}，新舊格式相容
+function usageList(v){ return ((v&&v.usageHistory)||[]).map(d=> (d&&typeof d==="object")?{date:d.date,link:d.link||"",by:d.by||""}:{date:d,link:"",by:""})
+  .filter(x=>x.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
 // 某日的影片 = 手動排片(slots) ∪ 已完成且上片日=該日的影片（去重）
 function dayVideoList(date){
   const seen=new Set(); const out=[];
@@ -272,6 +275,17 @@ async function _route(method, path, body){
       await window.DB.update("videos",id,patch); return;
     }
     if(action==="performance"){ await window.DB.update("videos",id,{ctr:body.ctr??v.ctr, completionRate:body.completionRate??v.completionRate}); return; }
+    if(action==="reuse" && method==="POST"){
+      const date=body.date; const link=(body.link||"").trim();
+      if(!date) throw new Error("請選擇重播上片日期");
+      if(!link) throw new Error("請貼上這次的社群連結");
+      const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
+      slots.push({videoId:id, publishedLink:link, reused:true, by:user, at:nowIso()});
+      await window.DB.scheduleSet(date,{slots});
+      const uh=(v.usageHistory||[]).concat([{date, link, by:user, at:nowIso()}]);
+      await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1, usageHistory:uh});
+      return;
+    }
     if(action==="lang" && method==="PUT"){ const lg=seg[3]; const langs=Object.assign({},v.languages); langs[lg]=Object.assign({},langs[lg],body.lang||{}); await window.DB.update("videos",id,{languages:langs}); return; }
     if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; await window.DB.update("videos",id,patch); return; }
     if(method==="DELETE"){ await window.DB.del("videos",id); return; }
@@ -281,7 +295,7 @@ async function _route(method, path, body){
     if(sub==="slot" && method==="POST"){
       const slot=body.slot||{}; const tv=vidLocal(slot.videoId);
       slots.push(slot); await window.DB.scheduleSet(date,{slots});
-      if(tv) await window.DB.update("videos", slot.videoId, {scheduledDate:date}); return;
+      if(tv && !slot.reused) await window.DB.update("videos", slot.videoId, {scheduledDate:date}); return;
     }
     if(sub==="slot" && method==="DELETE"){ const idx=parseInt(seg[3]); if(idx<0||idx>=slots.length) throw new Error("索引超出範圍");
       if(slots[idx].locked) throw new Error("此排片已上架鎖定"); slots.splice(idx,1); await window.DB.scheduleSet(date,{slots}); return; }
@@ -723,14 +737,16 @@ function openDay(ds){
   const list = dayLangList(ds, lang);
   const rows = list.map((it)=>{
     const v = vid(it.videoId);
+    const reused = isZh && it.slot && it.slot.reused;
     const ed = isZh ? (v?.editor||"") : (v?.languages?.[lang]?.editor||"");
-    const link = isZh ? (v?.publishedLink||v?.driveFolder||"") : (v?.languages?.[lang]?.publishedLink||v?.languages?.[lang]?.driveFolder||"");
+    const link = reused ? (it.slot.publishedLink||"") : (isZh ? (v?.publishedLink||v?.driveFolder||"") : (v?.languages?.[lang]?.publishedLink||v?.languages?.[lang]?.driveFolder||""));
+    const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)`
+                         : (isZh?`rescheduleVid('${it.videoId}',this.value,'${ds}')`:`rescheduleLang('${it.videoId}','${lang}',this.value,'${ds}')`);
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}</td>
-      <td data-label="剪輯">${esc(ed)}</td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
+      <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
       <td data-label="連結">${link?`<a href="${esc(link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
-      <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px"
-            onchange="${isZh?`rescheduleVid('${it.videoId}',this.value,'${ds}')`:`rescheduleLang('${it.videoId}','${lang}',this.value,'${ds}')`}"></td>
+      <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
     </tr>`;
   }).join("");
   const cnt = list.length;
@@ -748,6 +764,41 @@ function openDay(ds){
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
       <p class="muted" style="font-size:12px;margin-top:8px">月排程唯讀：影片由剪輯完成後自動排入。只能改上片日期（移動時間），不能刪除或取消。</p>
     </div>`, null);
+}
+// 排舊片重播：選一支已完成的舊片，排到未來某天，記錄日期＋連結
+function reuseModal(){
+  const done=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage))
+    .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
+  if(!done.length){ toast("目前沒有已完成的舊片可重播",true); return; }
+  const opts=done.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("");
+  const tmr=new Date(today+"T00:00:00"); tmr.setDate(tmr.getDate()+1); const def=tmr.toISOString().slice(0,10);
+  showModal("♻ 排舊片重播（重複使用）", `
+    <label>選擇舊片</label><select id="ru_vid" onchange="window._ruInfo(this.value)">${opts}</select>
+    <div id="ru_info" class="muted" style="font-size:12px;margin:6px 0"></div>
+    <label>這次上片日期（可排未來）</label><input id="ru_date" type="date" value="${def}" oninput="ruGate()">
+    <label>這次的社群連結</label><input id="ru_link" placeholder="這次貼文／預約連結" oninput="ruGate()">
+    <p class="muted">每次重播都會分別記錄日期與連結，並計入使用次數。</p>
+  `, async ()=>{
+    const id=val("ru_vid"); const date=val("ru_date"); const link=val("ru_link").trim();
+    if(!id){ toast("請選擇舊片",true); return false; }
+    return await write("POST",`/api/videos/${id}/reuse`,{date,link},"已排入重播並記錄使用");
+  });
+  window._ruInfo=(id)=>{ const v=vid(id); const box=document.getElementById("ru_info"); if(!box) return;
+    const us=usageList(v); box.innerHTML = us.length? ("已用 <b>"+us.length+"</b> 次："+us.map(u=>esc(u.date)+(u.link?`（<a href="${esc(u.link)}" target="_blank">連結</a>）`:"")).join("、")) : "尚無使用紀錄"; };
+  window._ruInfo(done[0].id); ruGate();
+}
+function ruGate(){ const ok=val("ru_date")&&val("ru_link").trim(); const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
+// 移動「重播」排片到別天（同步更新使用紀錄的日期）
+async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return;
+  const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
+  const link=(idx>=0?(day.slots[idx].publishedLink||""):"");
+  try{
+    if(idx>=0) await route("DELETE",`/api/schedule/${oldDate}/slot/${idx}`,{});
+    await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
+    const v=vid(id); const uh=(v.usageHistory||[]).map(u=> (u&&typeof u==="object" && u.date===oldDate)?Object.assign({},u,{date:newDate}):u);
+    await window.DB.update("videos", id, {usageHistory:uh});
+    await delay(140); toast("已改重播日至 "+newDate); openDay(newDate);
+  }catch(e){ toast(e.message||"改期失敗",true); }
 }
 // 改上片日期（移動時間，不刪除）
 function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
@@ -817,6 +868,11 @@ function viewWork(){
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${pool.map(v=>matRow(v,true)).join("")||`<tr><td class="muted">${isZh?"目前沒有未處理片源":"目前沒有待二創的影片（要中文母版先完成）"}</td></tr>`}</tbody></table>
   </div>
+  ${isZh?`<div class="card">
+    <div class="row" style="justify-content:space-between"><b>♻ 舊片重播（重複使用）</b>
+      <button class="btn sm" onclick="reuseModal()">＋ 排舊片進月歷</button></div>
+    <p class="muted" style="font-size:12px;margin-top:4px">把已完成的舊片再排到未來某天上片。系統會記錄這支片用過幾次、每次的日期與連結（在影片詳情可查）。</p>
+  </div>`:""}
   ${workHoursCard(me, meLangs)}
   ${myDailyReport(me)}`;
 }
@@ -1031,6 +1087,10 @@ function editVideo(id){
     ${id?`<div class="card" style="background:var(--panel2)"><b>⏱ 工時</b>
       <p class="muted" style="margin:6px 0">領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?minToText(v.durationMin):"-")}</b></p>
     </div>`:""}
+    ${id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>♻ 使用紀錄（共 ${usageList(v).length} 次）</b>
+      <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
+      ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
+      </tbody></table></div>`:""}
   `, async ()=>{
     const video={rawName:val("e_raw"),name:val("e_name"),mainType:val("e_main"),subTag:val("e_sub").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
