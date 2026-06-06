@@ -4,9 +4,9 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["workload","👥 人員KPI"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
-  hr:     [["workload","👥 人員KPI"],["dash","📊 部門總覽"]],
-  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["workload","👥 人員KPI"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  boss:   [["dash","📊 總覽"],["work","✂️ 我的工作台"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
+  hr:     [["dash","📊 部門總覽"]],
+  editor: [["work","✂️ 我的工作台"],["mine","📊 我的儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
@@ -320,12 +320,24 @@ function buildNav(){
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const users=(STATE?.users)||[];
-  if(!users.length){ g.innerHTML = '<p class="muted">尚無成員，請按下方「🔒 管理員登入」進入後新增</p>'; }
-  users.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
+  // 管理員（owner/boss）走密碼登入，不出現在名單
+  const users=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName());
+  if(!users.length){ g.innerHTML = '<p class="muted">尚無成員，請按下方「🔒 管理員登入」進入後新增</p>'; return; }
+  // 排序：Regina（負責人）第一 → 剪輯群 → HR 最後
+  const rank=u=> (u.name==="Regina"?0 : ((u.role==="hr")?2:1));
+  users.sort((a,b)=> rank(a)-rank(b) || String(a.name).localeCompare(String(b.name)));
+  const mkBtn=(u)=>{ const b=document.createElement("button");
+    b.className="userBtn"+(u.name==="Regina"?" lead":"")+((u.role==="hr")?" mgr":"");
     b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+'</span>';
     b.onclick=()=>{ setUser(u.name); localStorage.setItem("ecdr_role",u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW); };
-    g.appendChild(b); });
+    return b; };
+  users.forEach((u,i)=>{
+    const prev=users[i-1];
+    if(prev && ((prev.name==="Regina" && u.name!=="Regina") || (u.role==="hr" && prev.role!=="hr"))){
+      const sep=document.createElement("div"); sep.className="userSep"; g.appendChild(sep);
+    }
+    g.appendChild(mkBtn(u));
+  });
 }
 // 管理員（owner）以密碼進入；成員管理／稽核只有這條路徑能看到
 function ownerLogin(){
@@ -458,10 +470,26 @@ function viewDash(){
   const liveCard = `<div class="card"><b>🟢 今日團隊即時</b>
     <span class="muted" style="font-size:12px">　每人幾點開工・現在在做什麼・完成幾支</span>
     <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${liveRows}</div></div>`;
+  // 全體剪輯效率（近 30 天平均每日完成 ＋ 平均每支剪輯耗時）
+  const PDAYS=30;
+  const perf=editorsAll.map(u=>{ const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"];
+    let total=0; const durs=[];
+    for(let i=0;i<PDAYS;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
+      (STATE.videos||[]).forEach(v=>{ if(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))){ total++; const dm=videoDur(v,langs); if(dm>0) durs.push(dm); } });
+    }
+    return {name:u.name, avgPerDay:+(total/PDAYS).toFixed(2), avgDur:durs.length?Math.round(durs.reduce((a,b)=>a+b,0)/durs.length):0};
+  });
+  const perfChart=chartCanvas("dash_perf",{type:"bar",data:{labels:perf.map(p=>p.name),datasets:[{label:"平均每日完成",data:perf.map(p=>p.avgPerDay),backgroundColor:"#2563eb"}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}},180);
+  const perfPills=perf.map(p=>`<span class="pill" style="margin:2px 4px 2px 0;display:inline-block">${esc(p.name)}　均 ${p.avgDur?minToText(p.avgDur):"-"}/支</span>`).join("");
+  const perfCard=`<div class="card"><b>📈 全體剪輯效率（近 ${PDAYS} 天）</b>
+    <p class="muted" style="font-size:12px">平均每日完成片數（長條）＋平均每支剪輯耗時（領取→完成）</p>
+    ${perf.length?perfChart:'<p class="muted">尚無資料</p>'}
+    <div style="margin-top:8px">${perfPills}</div></div>`;
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
   ${demoBanner}
   ${liveCard}
+  ${perfCard}
 
   <div class="grid cols2">
     <div class="card" style="text-align:center;border-color:${safeCol}">
@@ -744,7 +772,9 @@ function viewWork(){
     ? `<div class="row" style="gap:6px;margin-bottom:10px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
     : `<p class="muted" style="margin-bottom:8px">你的語言：<b>${LANG_LABEL[lang]||lang}</b>（只處理此語言）</p>`;
   const myRep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const clockBar = myRep.startAt
+  const clockBar = myRep.endAt
+    ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="font-weight:700">🔴 已下班 ${hhmm(myRep.endAt)}</span><span class="muted">　開工 ${hhmm(myRep.startAt)}・今日工時 ${myRep.startAt?minToText(durationMin(myRep.startAt,myRep.endAt)):"-"}　辛苦了！</span></div>`
+    : myRep.startAt
     ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
     : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
   return `
@@ -779,13 +809,18 @@ function taskCard(me){
   return `<div class="card"><b>📝 今日特別工作備註（選填）</b>
     <p class="muted" style="font-size:12px;margin-top:4px">今天已完成剪輯 <b>${doneT}</b> 支（系統自動計入工作量，不用手動填）。下面只在有「特別／額外工作」時補充，沒有可留空。</p>
     <textarea id="rp_content" style="min-height:110px" placeholder="例：製作 7 張粉專圖片、協助拍攝、開會討論…（沒有可留空）">${esc(rep.content||"")}</textarea>
-    <div class="modalFoot"><button class="btn" onclick="finishReport()">儲存</button></div>
+    <div class="modalFoot"><button class="btn" onclick="finishReport()">🔴 送出今日匯報下班</button></div>
+    <p class="muted" style="font-size:11px;margin-top:4px">按下＝送出今日匯報並下班打卡（停止今日計時）。</p>
   </div>`;
 }
 async function finishReport(){ const me=currentUser(); const content=val("rp_content").trim();
   const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const rec={id:me+"__"+today, user:me, date:today, content, done:!!content, startAt:old.startAt||""};
-  try{ await window.DB.set("reports", rec.id, rec); toast("已儲存"); }catch(e){ toast("失敗，請稍後再試",true); } }
+  const end=nowIso();
+  const rec={id:me+"__"+today, user:me, date:today, content, done:!!content, startAt:old.startAt||"", endAt:end};
+  try{ await window.DB.set("reports", rec.id, rec);
+    const worked=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):"";
+    toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+worked);
+  }catch(e){ toast("失敗，請稍後再試",true); } }
 // 上班開工打卡（記 reports.startAt，老闆即時狀態列才看得到「幾點開工」）
 async function clockIn(){ const me=currentUser(); const id=me+"__"+today;
   const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===today) || {id,user:me,date:today,content:""};
