@@ -501,29 +501,34 @@ function viewHrDash(){
 }
 // ---- 總覽 ----
 // 某一天的每人工作追蹤卡（今天/昨天共用）
-function dayTrackCard(ds, title){
+function editCount(name, ds){ return (STATE.videos||[]).reduce((a,v)=>a+(langFinishedOn(v,"zh",name,ds)?1:0),0); }
+// 某天每位剪輯的「固定剪片工作」列（完成／配額）
+function editRowsFor(ds){
   const isToday=(ds===today);
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const rows=editors.map(u=>{
-    const langs=["zh"]; const q=userQuota(u.name);
-    const done=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))?1:0),0);
-    const met=q>0?done>=q:true;
+  return editors.map(u=>{
+    const q=userQuota(u.name); const done=editCount(u.name,ds); const met=q>0?done>=q:true;
     const rep=(STATE.reports||[]).find(x=>x.user===u.name && x.date===ds)||{};
-    const items=otherItems(rep);
     const dot=met?'var(--green)':(rep.startAt?'var(--amber)':'#cbd5e1');
-    const timeInfo = rep.startAt
-      ? ('🟢 '+hhmm(rep.startAt)+(rep.endAt?('–'+hhmm(rep.endAt)):(isToday?' 上班中':'')))
-      : '⚪ 未開工';
-    const otherHtml=items.length?('<div style="margin-top:4px">'+items.map(s=>`<div class="muted" style="font-size:11px">・${s.task?'<b style="color:#6d28d9">交辦</b>：':''}${esc(s.t)}${s.m?'（'+s.m+'分）':''}${(s.task)?(s.reply?(' ↳回覆：'+esc(s.reply)):' <span style="color:var(--red)">↳未回覆</span>'):''}</div>`).join('')+'</div>'):'';
-    return `<div style="padding:9px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
-      <div class="row" style="justify-content:space-between"><span style="font-weight:700;min-width:0">${esc(u.name)} <span class="muted" style="font-size:11px;font-weight:500">${timeInfo}</span></span>
-        <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'};flex:none">${done}/${q}</span></div>
-      ${otherHtml}
-    </div>`;
+    const timeInfo = rep.startAt ? ('🟢 '+hhmm(rep.startAt)+(rep.endAt?('–'+hhmm(rep.endAt)):(isToday?' 上班中':''))) : '⚪ 未開工';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
+      <span style="font-weight:700;min-width:0">${esc(u.name)} <span class="muted" style="font-size:11px;font-weight:500">${timeInfo}</span></span>
+      <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'};flex:none">${done}/${q}</span></div>`;
   }).join("")||'<p class="muted">尚無剪輯成員</p>';
-  return `<div class="card" style="${isToday?'border-color:var(--accent)':''}"><b>${title}</b>
+}
+// 某天綜合卡：清楚分成「固定剪片工作」與「老闆交辦」兩區
+function periodCard(ds, title, canAssign, accent){
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const assignRow = (canAssign && currentRole()==='boss')
+    ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0 2px">${editors.map(u=>`<button class="btn sm sec" onclick="sendTask('${esc(u.name)}')">✉ 交辦給 ${esc(u.name)}</button>`).join("")}</div>` : '';
+  const sub=(t)=>`<div style="font-weight:700;font-size:12.5px;margin:12px 0 5px">${t}</div>`;
+  return `<div class="card" style="${accent?'border-color:var(--accent)':''}"><b>${title}</b>
     <span class="muted" style="font-size:12px">　${ds}（${weekdayZh(ds)}）</span>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows}</div></div>`;
+    ${sub('📹 固定剪片工作 <span class="muted" style="font-weight:400">（每人完成／配額）</span>')}
+    <div style="display:flex;flex-direction:column;gap:6px">${editRowsFor(ds)}</div>
+    ${sub('✉ 老闆交辦 <span class="muted" style="font-weight:400">（接收／回覆狀況）</span>')}${assignRow}
+    <div>${taskRowsByDay(ds)}</div>
+  </div>`;
 }
 // 近 N 個「上班日」平均完成片數（不含六日）
 function avgWorkdayCard(N){ N=N||7;
@@ -557,22 +562,40 @@ function taskRowsByDay(ds){
     </div>`; }).join("");
 }
 function ydayStr(){ const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); return yd.toISOString().slice(0,10); }
-// 交辦卡：昨天結果(唯讀) / 今天(老闆可指派)
-function taskDayCard(ds, title, canAssign){
+// Regina 一打開的速覽：排程安全、昨天有沒有做好、今天交辦收到沒、近七天平均
+function glanceCard(){
+  const yds=ydayStr();
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const assignRow = (canAssign && currentRole()==='boss')
-    ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${editors.map(u=>`<button class="btn sm sec" onclick="sendTask('${esc(u.name)}')">✉ 交辦給 ${esc(u.name)}</button>`).join("")}</div>` : '';
-  return `<div class="card"><b>${title}</b>${assignRow}<div style="margin-top:6px">${taskRowsByDay(ds)}</div></div>`;
+  const runway=(DASH&&DASH.progress&&DASH.progress.安全天數)||0;
+  const PRETARGET=15; const runCol=runway>=PRETARGET?'var(--green)':(runway>=7?'var(--amber)':'var(--red)');
+  const ydWork=(()=>{ const d=new Date(yds+"T00:00:00").getDay(); return d!==0&&d!==6; })();
+  const yMiss=editors.filter(u=>{ const q=userQuota(u.name); return q>0 && editCount(u.name,yds)<q; });
+  const yOK=editors.length-yMiss.length;
+  const tMsgs=(STATE.messages||[]).filter(m=>String(m.at||"").slice(0,10)===today);
+  const tRecv=tMsgs.filter(m=>m.accepted||m.done).length;
+  const tNot=tMsgs.filter(m=>!m.accepted&&!m.done);
+  let sum=0,dN=0;
+  for(let i=1;i<=30 && dN<7;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
+    const ds=d.toISOString().slice(0,10); editors.forEach(u=>{ sum+=editCount(u.name,ds); }); }
+  const avgPerDay=dN?(sum/dN):0; const qSum=editors.reduce((a,u)=>a+userQuota(u.name),0);
+  const stat=(n,l,col,sub)=>`<div style="flex:1;min-width:130px;text-align:center;padding:11px 8px;background:var(--panel2);border-radius:10px">
+    <div style="font-size:24px;font-weight:900;color:${col||'var(--txt)'}">${n}</div><div class="muted" style="font-size:12px;font-weight:600">${l}</div>${sub?`<div class="muted" style="font-size:11px;margin-top:3px">${sub}</div>`:''}</div>`;
+  return `<div class="card" style="border-color:var(--accent)"><b>📌 開工速覽</b> <span class="muted" style="font-size:12px">　${today}（${weekdayZh(today)}）</span>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:stretch">
+      ${stat(runway+' 天','排程安全（排滿到幾天後）',runCol, runway<PRETARGET?'⚠ 不足 15 天，需補排':'充足 ✅')}
+      ${stat(ydWork?(yOK+'/'+editors.length):'—','昨天工作做好沒',yMiss.length?'var(--red)':'var(--green)', ydWork?(yMiss.length?('未達：'+yMiss.map(u=>esc(u.name)).join('、')):'全員達標 ✅'):'（昨天假日）')}
+      ${stat(tMsgs.length?(tRecv+'/'+tMsgs.length):'—','今天交辦已接收',tNot.length?'var(--amber)':'var(--green)', tMsgs.length?(tNot.length?('未收：'+tNot.map(m=>esc(m.to)).join('、')):'全部已收到 ✅'):'今天尚無交辦')}
+      ${stat(avgPerDay.toFixed(1)+' / '+qSum,'近7上班日 全體平均/日',avgPerDay>=qSum?'var(--green)':'var(--amber)','每日完成 vs 目標')}
+    </div></div>`;
 }
 // 整組「檢核」卡片，依重要性排序（Regina／Benny 共用；Benny 無指派/回應按鈕）
 function reviewBoards(){
   const yds=ydayStr();
   return `
-  ${dayTrackCard(today, "📋 今天工作追蹤")}
-  ${dayTrackCard(yds, "📋 昨天工作追蹤")}
+  ${glanceCard()}
+  ${periodCard(today, "📅 今日", true, true)}
+  ${periodCard(yds, "📅 昨天", false, false)}
   ${avgWorkdayCard(7)}
-  ${taskDayCard(yds, "✉ 交辦・昨天的結果", false)}
-  ${taskDayCard(today, "✉ 今天的交辦", true)}
   ${comprehensiveCard(14)}`;
 }
 // 前 N 天綜合：每人每天完成數＋其他工作（收合）
@@ -759,9 +782,10 @@ function viewDash(){
     <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:2px">已完成回報（內容・處理狀況・花費時間）</div>${doneTaskRows(false)}</div>
   </div>`;
 
-  // 效率・月排程（收合，輔助參考）
+  // 其他（收合，輔助參考）：排程庫存明細・效率・月排程
   const extra=`<details style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 效率・月排程</summary>
+    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 其他（排程庫存・效率・月排程）</summary>
+    ${progCard}
     ${perfCard}
     ${viewCal()}
   </details>`;
@@ -769,7 +793,6 @@ function viewDash(){
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
   ${demoBanner}
-  ${progCard}
   ${reviewBoards()}
   ${extra}
   ${inProgressBoard()}`;
