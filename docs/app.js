@@ -56,10 +56,16 @@ function roleInfo(label){ const s=String(label||"").trim().toLowerCase();
 function memberLabel(u){ if(u.role==="boss") return "管理員"; if(u.role==="hr") return "人資";
   return ({zh:"中文剪輯",en:"英語剪輯",th:"泰語剪輯",all:"全語言剪輯"})[u.lang||"zh"]; }
 // 我目前進行中的影片數（跨語言）
-function myInProgressCount(){ const me=currentUser();
-  let n=(STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===me||v.editor===me)).length;
-  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ n+=(STATE.videos||[]).filter(v=>v.languages?.[l]?.status==="二創中"&&v.languages?.[l]?.claimedBy===me).length; });
+function inProgressCount(name){
+  let n=(STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length;
+  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ n+=(STATE.videos||[]).filter(v=>v.languages?.[l]?.status==="二創中"&&v.languages?.[l]?.claimedBy===name).length; });
   return n; }
+// 某人「今天拉了幾片」（依領取日，含二創）— 用來限制每人每天最多 3 片
+function pulledTodayCount(name){
+  let n=(STATE.videos||[]).filter(v=>v.claimedBy===name && String(v.claimedAt||"").slice(0,10)===today).length;
+  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ n+=(STATE.videos||[]).filter(v=>v.languages?.[l]?.claimedBy===name && String(v.languages?.[l]?.claimedAt||"").slice(0,10)===today).length; });
+  return n; }
+function myInProgressCount(){ return inProgressCount(currentUser()); }
 // 某語言「在某日上片」的影片
 function dayLangList(date,lang){
   if(lang==="zh") return dayVideoList(date);
@@ -255,12 +261,12 @@ async function _route(method, path, body){
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
-      const inprog=(STATE.videos||[]).filter(x=>x.stage==="剪輯中" && (x.claimedBy===user||x.editor===user)).length;
-      if(inprog>=3) throw new Error("你進行中的影片已達 3 片上限，請先完成其中一片再認領");
+      if(inProgressCount(user)>=1) throw new Error("請先把進行中的影片剪完（含上傳連結），才能再拉新片");
+      if(pulledTodayCount(user)>=3) throw new Error("你今天已經拉滿 3 片囉，明天再領");
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),assignedBy:"",editor:v.editor||user,stage:"剪輯中"}); return; }
     if(action==="assign"){ const a=body.assignee;
-      const inprog=(STATE.videos||[]).filter(x=>x.stage==="剪輯中" && (x.claimedBy===a||x.editor===a)).length;
-      if(inprog>=3) throw new Error(a+" 進行中的影片已達 3 片上限");
+      if(inProgressCount(a)>=1) throw new Error(a+" 還有進行中的影片，請對方先剪完再指派");
+      if(pulledTodayCount(a)>=3) throw new Error(a+" 今天已達 3 片上限");
       await window.DB.update("videos",id,{claimedBy:a,editor:a,claimedAt:nowIso(),assignedBy:user,stage:"剪輯中"}); return; }
     if(action==="help"){ await window.DB.update("videos",id,{needHelp:!!body.needHelp, helpNote:body.helpNote||""}); return; }
     if(action==="finish"){
@@ -545,9 +551,9 @@ function last7Detail(name, lang, q){
   for(let i=6;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
     const n=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
     const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
-    let other="";
-    if(rep){ if(rep.special&&rep.special.length){ other=rep.special.filter(s=>s&&s.t).map(s=>s.t+(s.m?`（${s.m}分）`:"")).join("、"); }
-      if(!other) other=(rep.content||"").trim(); }
+    let other=""; const items=otherItems(rep);
+    if(items.length){ other=items.map(s=>(s.task?"【交辦】":"")+s.t+(s.m?`（${s.m}分）`:"")).join("、"); }
+    else if(rep){ other=(rep.content||"").trim(); }
     out.push({ds, n, other, met: q>0? n>=q : true});
   }
   return out;
@@ -816,7 +822,7 @@ function rescheduleLang(id,lang,newDate,ds){ if(!newDate||newDate===ds) return;
 // ---- 我的工作台（依語言別） ----
 function viewWork(){
   const me = currentUser(); const lang = curLang(); const isZh = (lang==="zh");
-  const quota = userQuota(me); const atLimit = myInProgressCount()>=3;
+  const quota = userQuota(me); const busy = myInProgressCount()>=1; const pulledToday = pulledTodayCount(me); const dayFull = pulledToday>=3; const atLimit = busy||dayFull;
   // 今日完成（依語言）
   const myDoneToday = (STATE.videos||[]).filter(v=>langFinishedOn(v,lang,me,today)).length;
   // 進行中 / 待處理（依語言）
@@ -863,8 +869,9 @@ function viewWork(){
     <div class="progbar"><i style="width:${quota?Math.min(100,myDoneToday/quota*100):100}%"></i></div>
   </div>
   <div class="card">
-    <div class="row" style="justify-content:space-between"><b>🎬 我進行中的影片（${myInProgressCount()}/3）</b>
-      ${atLimit?`<span class="pill wa">已達 3 片上限，先完成再認領</span>`:""}</div>
+    <div class="row" style="justify-content:space-between"><b>🎬 我進行中的影片</b>
+      <span class="pill ${dayFull?'wa':'ok'}">今日已領 ${pulledToday}/3</span></div>
+    ${busy?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 還有進行中的影片，剪完並填上傳連結後才能再拉新片</p>`:(dayFull?`<p class="muted" style="margin:4px 0 0">今天已拉滿 3 片，明天再領</p>`:"")}
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，可從下方認領</td></tr>`}</tbody></table>
     ${specialTasksBlock(myRep)}
@@ -881,7 +888,24 @@ function viewWork(){
     <p class="muted" style="font-size:12px;margin-top:4px">把已完成的舊片再排到未來某天上片。系統會記錄這支片用過幾次、每次的日期與連結（在影片詳情可查）。</p>
   </div>`:""}
   ${workHoursCard(me, meLangs)}
+  ${teamOtherWorkToday()}
   ${myDailyReport(me)}`;
+}
+// 今天大家的「其他工作」（含已完成的老闆交辦）— 所有人都看得到
+function teamOtherWorkToday(){
+  const rows=[];
+  (STATE.reports||[]).filter(r=>r.date===today).forEach(r=>{
+    otherItems(r).forEach(s=>rows.push({user:r.user, t:s.t, m:s.m, task:s.task})); });
+  if(!rows.length) return "";
+  rows.sort((a,b)=>String(a.user).localeCompare(String(b.user)));
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between"><b>🧩 今天大家的其他工作</b><span class="muted" style="font-size:12px">所有人都看得到</span></div>
+    <table class="responsive"><thead><tr><th>成員</th><th>工作內容</th><th>時間</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td data-label="成員">${esc(r.user)}</td>
+      <td data-label="內容">${r.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(r.t)}</td>
+      <td data-label="時間">${r.m?r.m+" 分":'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table>
+  </div>`;
 }
 // 今日特別工作：最多 3 項，每項一個時間鈕（每按 +30 分，上限 2 小時，再按歸 0）
 function specialTasksBlock(rep){
@@ -906,10 +930,15 @@ function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.data
 function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_t"+i)||"").trim();
     const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0; arr.push({t,m}); } return arr; }
 function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
+// 某份日報的「其他工作」項目：手寫特別工作(special) + 已完成的老闆交辦(tasks)
+function otherItems(r){ if(!r) return [];
+  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:false}));
+  const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true}));
+  return sp.concat(tk); }
 async function saveSpecial(clockOut){ const me=currentUser(); const arr=collectSpecial(); const content=specialToContent(arr);
   const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
   const end=clockOut?nowIso():(old.endAt||"");
-  const rec={id:me+"__"+today, user:me, date:today, special:arr, content, done:!!content, startAt:old.startAt||"", endAt:end};
+  const rec={id:me+"__"+today, user:me, date:today, special:arr, tasks:old.tasks||[], content, done:!!content, startAt:old.startAt||"", endAt:end};
   try{ await window.DB.set("reports", rec.id, rec);
     if(clockOut){ const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):""; toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+w); }
     else toast("已儲存特別工作");
@@ -929,6 +958,27 @@ function sendTask(name){
 async function markMsg(id, kind){ const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
   const patch = (kind==="done")?{done:true, doneAt:nowIso(), read:true, readAt:m.readAt||nowIso()}:{read:true, readAt:nowIso()};
   try{ await window.DB.update("messages", id, patch); }catch(e){ toast("更新失敗，請稍後再試",true); } }
+// 完成老闆交辦：自己填工時 → 記入今日「其他工作」(大家都看得到、也上儀表板)
+function doneTask(id){
+  const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
+  showModal("完成交辦：填上花費時間", `
+    <div style="white-space:pre-wrap;padding:10px;background:var(--panel2);border-radius:8px">${esc(m.text)}</div>
+    <label style="margin-top:10px">這項工作花了多少時間（分鐘）</label>
+    <input id="tk_min" type="number" min="0" step="5" value="30" placeholder="分鐘">
+    <p class="muted" style="font-size:12px">完成後會記入今天的「其他工作」，工時會算進你的工時分配，主管與同事都看得到。</p>
+  `, async ()=>{
+    const me=currentUser(); const min=Math.max(0,parseInt(val("tk_min"))||0);
+    try{
+      await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), done:true, doneAt:nowIso(), doneBy:me, minutes:min});
+      const rid=me+"__"+today; const old=(STATE.reports||[]).find(x=>x.id===rid)||{};
+      const tasks=Array.isArray(old.tasks)?old.tasks.slice():[];
+      tasks.push({t:m.text, m:min, from:m.from||"管理員", at:nowIso()});
+      const rec=Object.assign({}, old, {id:rid, user:me, date:today, tasks, startAt:old.startAt||"", endAt:old.endAt||""});
+      await window.DB.set("reports", rid, rec);
+      toast("已完成交辦，記入其他工作 "+min+" 分"); return true;
+    }catch(e){ toast("更新失敗，請稍後再試",true); return false; }
+  });
+}
 // 剪輯收件匣：未完成的交辦／留言（紅色提醒）
 function inboxCard(me){
   const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
@@ -940,14 +990,14 @@ function inboxCard(me){
        <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}${m.read?'・已讀':'・<b style="color:var(--red)">未讀</b>'}</div>
        <div class="row" style="gap:6px;margin-top:6px">
          ${!m.read?`<button class="btn sm sec" onclick="markMsg('${m.id}','read')">標示已讀</button>`:''}
-         <button class="btn sm" onclick="markMsg('${m.id}','done')">完成✔</button></div>
+         <button class="btn sm" onclick="doneTask('${m.id}')">完成✔（填工時）</button></div>
      </div>`).join("")}</div>`;
 }
 // 工時分配：剪輯工時（領取→完成）vs 其他工時（特別工作分鐘），以每日 8 小時計
 function workHoursCard(me, langs){
   const BASE=480;
   const editMin=(ds)=>(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,me,ds))?videoDur(v,langs):0),0);
-  const otherMin=(ds)=>{ const r=(STATE.reports||[]).find(x=>x.user===me && x.date===ds); return (r&&r.special||[]).reduce((a,s)=>a+(s.m||0),0); };
+  const otherMin=(ds)=>{ const r=(STATE.reports||[]).find(x=>x.user===me && x.date===ds); return otherItems(r).reduce((a,s)=>a+(s.m||0),0); };
   const eToday=editMin(today), oToday=otherMin(today);
   let eSum=0,oSum=0,dN=0;
   for(let i=0;i<28 && dN<14;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
@@ -993,8 +1043,10 @@ function reportContentHtml(rep){ if(!rep) return ""; const c=rep.content||((rep.
   return c? `<div style="white-space:pre-wrap">${esc(c)}</div>` : `<span class="muted">無</span>`; }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimLang(id,lang){
-  if(myInProgressCount()>=3){ toast("你進行中的影片已達 3 片上限",true); return; }
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser(),claimedBy:currentUser(),claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
+  const me=currentUser();
+  if(inProgressCount(me)>=1){ toast("請先把進行中的影片做完，才能再拉新的",true); return; }
+  if(pulledTodayCount(me)>=3){ toast("你今天已經拉滿 3 片囉，明天再領",true); return; }
+  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:me,claimedBy:me,claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
 }
 function finishGate(p){ const ok=val(p+"date")&&val(p+"backup").trim()&&val(p+"social").trim();
   const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
