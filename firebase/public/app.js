@@ -358,13 +358,9 @@ function bootLogin(){
   const rb=document.createElement("button"); rb.className="userBtn lead"; rb.textContent="Regina"; rb.onclick=reginaLogin; g.appendChild(rb);
   hrs.forEach(u=>g.appendChild(mkBtn(u)));
 }
-// 成員登入：人資（檢核者）免密碼；剪輯以自己的密碼登入（預設 0000，本人可自改、管理員可查/重設）
+// 成員登入：一律免密碼，點名字直接進（剪輯／人資皆同；管理員與 Regina 另有密碼入口）
 function loginAs(u){
-  if((u.role||"editor")==="hr"){ setUser(u.name); localStorage.setItem("ecdr_role","hr"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW); return; }
-  const expect = u.pin ? String(u.pin) : "0000";
-  const pw=prompt(u.name+" 的登入密碼（預設 0000）："); if(pw===null) return;
-  if(String(pw)!==expect){ toast("密碼錯誤",true); return; }
-  setUser(u.name); localStorage.setItem("ecdr_role",u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
+  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
 // Regina：與 Vito 共用管理員（登入頁顯示、不標職稱），預設密碼 0000
 function reginaLogin(){
@@ -408,10 +404,15 @@ function ownerLogin(){
 }
 // 登出：清掉身分 → 顯示「象素小人敬禮・辛苦了」畫面（右下角可重新登入）
 function logout(){ showGoodbye(); }
+const GOODBYE_SCENES=[
+  {e:"🐱",a:"gbounce"}, {e:"🐶",a:"gwag"}, {e:"🤖",a:"gfloat"},
+  {e:"🐰",a:"ghop"}, {e:"🐻",a:"gsway"}, {e:"🐧",a:"gwaddle"} ];
 function showGoodbye(){
   localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
   CUR_TAB=null; CUR_LANG=null;
   try{ closeModal(); }catch(e){}
+  const s=GOODBYE_SCENES[Math.floor(Math.random()*GOODBYE_SCENES.length)];
+  const st=document.getElementById("gstage"); if(st) st.innerHTML=`<span class="gemoji ${s.a}">${s.e}</span><span class="gwave">👋</span>`;
   document.getElementById("app")?.classList.add("hidden");
   document.getElementById("login")?.classList.add("hidden");
   document.getElementById("goodbye")?.classList.add("show");
@@ -490,6 +491,11 @@ const EN_DICT = {
   "⚠ 手上已有 3 支進行中，先完成幾支再拉":"⚠ You have 3 in progress — finish some first",
   "手上已有 3 支進行中，先完成幾支再拉":"You have 3 in progress — finish some first",
   "目前沒有未處理片源":"No unclaimed videos", "目前沒有待二創的影片":"No videos pending derivative", "位剪輯":" editors",
+  "待剪新片":"New videos to edit", "＋ 新增片名／內容":"+ Add title/content", "新增待剪新片":"Add a new video",
+  "片名":"Title", "內容（素材／主題說明）":"Content (material / topic)", "這支片的素材、主題、重點…":"Material, topic, key points…",
+  "目前沒有進行中的影片，從下方「待剪新片」拉一支來剪":"No videos in progress — pull one from “New videos to edit” below",
+  "目前沒有待剪新片，可按「＋ 新增片名／內容」建立":"No new videos — tap “+ Add title/content” to create one",
+  "每日主要工作 今日完成":"Daily main work · done today",
   "目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。":"Offline — showing last synced data (read-only); will auto-update when reconnected.",
   // 打卡 / 工時
   "開工打卡":"Clock In", "已開工":"Clocked in", "已下班":"Clocked out", "今日工時":"today's hours",
@@ -1205,36 +1211,32 @@ function viewWork(){
   const meU=myUser()||{}; const meLangs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||lang];
   const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
   return `
-  <h2>📋 今日工作（${esc(me)}）　<button class="btn sm sec" onclick="changeMyPin()" style="font-size:12px;vertical-align:middle">🔑 改密碼</button></h2>
+  <h2>📋 今日工作（${esc(me)}）</h2>
   ${switcher}
   ${clockBar}
   ${inboxCard(me)}
   <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <b>📌 每日主要工作（${LANG_LABEL[lang]||lang}）</b>
-      <span class="pill ${myDoneToday>=quota?'ok':'wa'}">今日完成 ${myDoneToday}/${quota}</span>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b>🎬 我進行中的影片</b>
+      <span style="display:flex;gap:6px">
+        <span class="pill ${myDoneToday>=quota?'ok':'wa'}" title="每日主要工作 今日完成">📌 ${myDoneToday}/${quota}</span>
+        <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span>
+      </span>
     </div>
-    <div class="progbar"><i style="width:${quota?Math.min(100,myDoneToday/quota*100):100}%"></i></div>
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><b>🎬 我進行中的影片</b>
-      <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></div>
     ${atLimit?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
-    <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，可從下方認領</td></tr>`}</tbody></table>
+    <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，從下方「待剪新片」拉一支來剪</td></tr>`}</tbody></table>
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+      <div class="row" style="justify-content:space-between"><b>🆕 ${isZh?"待剪新片":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
+        <button class="btn sm sec" onclick="newSimpleVideo()">＋ 新增片名／內容</button></div>
+      ${pool.length
+        ? `<div class="row" style="gap:8px;margin-top:8px">
+             <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
+             <button class="btn" onclick="claimPicked('${lang}')" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
+           </div>`
+        : `<p class="muted" style="margin-top:8px">${isZh?"目前沒有待剪新片，可按「＋ 新增片名／內容」建立":"目前沒有待二創的影片（要中文母版先完成）"}</p>`}
+    </div>
     ${specialTasksBlock(myRep)}
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><b>${isZh?"未處理片源":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
-      ${isZh?`<button class="btn sm sec" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
-    ${pool.length
-      ? `<p class="muted" style="font-size:12px;margin:8px 0 4px">從清單選一支新片，按「拉下來」開始剪：</p>
-         <div class="row" style="gap:8px">
-           <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
-           <button class="btn" onclick="claimPicked('${lang}')" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
-         </div>
-         ${atLimit?`<p class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉</p>`:""}`
-      : `<p class="muted" style="margin-top:8px">${isZh?"目前沒有未處理片源，可按「＋ 新增片源」建立":"目前沒有待二創的影片（要中文母版先完成）"}</p>`}
   </div>
   ${teamOtherWorkToday()}
   ${myDailyReport(me)}`;
@@ -1528,6 +1530,18 @@ function finishVid(id){
 }
 function langTask(id,lang){
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser()}},"已認領二創任務");
+}
+// 剪輯端輕量新增：只填片名＋內容，建立一支待剪新片
+function newSimpleVideo(){
+  showModal("新增待剪新片", `
+    <label>片名</label><input id="sv_name" placeholder="影片標題">
+    <label>內容（素材／主題說明）</label><textarea id="sv_content" placeholder="這支片的素材、主題、重點…"></textarea>
+  `, async ()=>{
+    const name=val("sv_name").trim(); const content=val("sv_content").trim();
+    if(!name && !content){ toast("請至少填片名或內容",true); return false; }
+    const video={name:name||content.slice(0,24), rawName:content||name};
+    return await write("POST","/api/videos",{video},"已新增待剪新片");
+  });
 }
 function newVideo(){
   const s=STATE.settings||{};
