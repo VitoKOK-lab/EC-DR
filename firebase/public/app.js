@@ -1150,17 +1150,22 @@ function openDay(ds){
       <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
     </tr>`;
   }).join("");
-  // 排舊片到這天（下拉選舊片＋上片時間）
-  const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage))
+  // 排舊片到這天：當天已排過的不再出現；時段自動帶 10/12/16，超過 3 個可自選時間
+  const usedIds = new Set(list.map(it=>it.videoId));
+  const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage) && !usedIds.has(v.id))
     .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
+  const dayCount = list.length; const autoTime = PUB_TIMES[dayCount];
+  const timeField = (dayCount<3)
+    ? `<div style="min-width:118px"><input id="od_time" value="${autoTime}" readonly style="background:var(--panel2);text-align:center"><div class="muted" style="font-size:10px;text-align:center">自動・第 ${dayCount+1} 段</div></div>`
+    : `<div style="min-width:118px"><input id="od_time" type="time" value="18:00"><div class="muted" style="font-size:10px;text-align:center">已滿3段・自選</div></div>`;
   const reusePicker = isZh ? `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片到這天</b>
-    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px">
+    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-start">
         <select id="od_vid" style="flex:1;min-width:150px">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select>
-        <div style="width:90px">${pubTimeSelect("od_time","10:00")}</div>
+        ${timeField}
         <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
       </div>
       <input id="od_link" placeholder="社群連結（可後補）" style="margin-top:6px">`
-      : `<p class="muted" style="margin-top:6px">目前沒有已完成的舊片可重播。</p>`}
+      : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。</p>`}
   </div>` : "";
   const cnt = list.length;
   let summary="";
