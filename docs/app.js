@@ -1874,12 +1874,33 @@ function viewMembers(){
     <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
   </div>
   <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
-    <p class="muted">載入模擬資料供展示（前後各約兩個月、每日≥4片、各人表現不均、週五六含寵粉，約 500+ 筆，可能要 1 分鐘）；或清空所有影片與排程。皆不影響成員與設定。</p>
+    <p class="muted">載入模擬資料供展示（前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘）；或清空資料。皆<b>不影響成員與設定</b>。</p>
     <div class="row">
       <button class="btn sec" onclick="loadDemoData()">🧪 載入模擬資料</button>
       <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
+      <button class="btn danger" onclick="clearAllData()">🧹 清空全部營運資料</button>
     </div>
+    <p class="muted" style="font-size:12px;margin-top:6px">「清空全部營運資料」會刪除：影片、排程、每日匯報、交辦訊息、商品（保留成員與設定），正式上線前用來清掉測試資料。</p>
   </div>`;
+}
+// 清空全部營運資料：影片/排程/匯報/交辦/商品（保留成員與設定）
+async function clearAllData(){
+  if(!confirm("確定清空『全部營運資料』？\n包含：影片、排程、每日匯報、交辦訊息、商品。\n保留：成員與設定。\n此動作無法復原！")) return;
+  if(!confirm("再次確認：真的要清空所有測試資料嗎？")) return;
+  await withAdmin(async ()=>{
+    BULK_BUSY=true; let n=0;
+    const wipe=async (coll, ids)=>{ for(const id of ids){ try{ await window.DB.del(coll, id); n++; }catch(e){} } };
+    try{
+      await wipe("videos", (STATE.videos||[]).map(v=>v.id));
+      await wipe("schedule", Object.keys(STATE.schedule||{}));
+      await wipe("reports", (STATE.reports||[]).map(r=>r.id).filter(Boolean));
+      await wipe("messages", (STATE.messages||[]).map(m=>m.id).filter(Boolean));
+      await wipe("tasks", (STATE.tasks||[]).map(t=>t.id).filter(Boolean));
+      await wipe("products", (STATE.products||[]).map(p=>p.id||p.name).filter(Boolean));
+      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空全部營運資料("+n+"筆)"}); }catch(e){}
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(400); toast("已清空全部營運資料，共 "+n+" 筆（成員與設定已保留）");
+  });
 }
 async function clearAllVideos(){
   if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
