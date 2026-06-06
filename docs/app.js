@@ -265,12 +265,10 @@ async function _route(method, path, body){
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
-      if(inProgressCount(user)>=1) throw new Error("請先把進行中的影片剪完（含上傳連結），才能再拉新片");
-      if(pulledTodayCount(user)>=3) throw new Error("你今天已經拉滿 3 片囉，明天再領");
+      if(inProgressCount(user)>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),assignedBy:"",editor:v.editor||user,stage:"剪輯中"}); return; }
     if(action==="assign"){ const a=body.assignee;
-      if(inProgressCount(a)>=1) throw new Error(a+" 還有進行中的影片，請對方先剪完再指派");
-      if(pulledTodayCount(a)>=3) throw new Error(a+" 今天已達 3 片上限");
+      if(inProgressCount(a)>=3) throw new Error(a+" 手上已有 3 支進行中，請對方先完成幾支");
       await window.DB.update("videos",id,{claimedBy:a,editor:a,claimedAt:nowIso(),assignedBy:user,stage:"剪輯中"}); return; }
     if(action==="help"){ await window.DB.update("videos",id,{needHelp:!!body.needHelp, helpNote:body.helpNote||""}); return; }
     if(action==="finish"){
@@ -485,6 +483,13 @@ const EN_DICT = {
   "⬇ 拉下來開始剪":"⬇ Pull & start", "從清單選一支新片，按「拉下來」開始剪（一次一支）：":"Pick a new video from the list and tap “Pull” to start (one at a time):",
   "目前沒有未處理片源，可按「＋ 新增片源」建立":"No unclaimed videos — tap “+ Add Video” to create one",
   "上片時間":"Publish time", "排舊片到這天":"Schedule old video here", "排入":"Add", "社群連結（可後補）":"Social link (optional)",
+  "🆕 新片源（拉進我的進行中）":"🆕 New source (pull into my in-progress)", "依剪輯人名分組・點標題看細節":"grouped by editor · tap title for details",
+  "（未指派／未認領）":"(Unassigned)", "上班先打卡才能開始今天的工作":"Clock in to start today's work",
+  "從清單選一支新片，按「拉下來」開始剪：":"Pick a new video and tap “Pull” to start:", "進行中":"In progress",
+  "⚠ 手上已有 3 支進行中，先完成幾支再拉新片":"⚠ You have 3 in progress — finish some before pulling more",
+  "⚠ 手上已有 3 支進行中，先完成幾支再拉":"⚠ You have 3 in progress — finish some first",
+  "手上已有 3 支進行中，先完成幾支再拉":"You have 3 in progress — finish some first",
+  "目前沒有未處理片源":"No unclaimed videos", "目前沒有待二創的影片":"No videos pending derivative", "位剪輯":" editors",
   "目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。":"Offline — showing last synced data (read-only); will auto-update when reconnected.",
   // 打卡 / 工時
   "開工打卡":"Clock In", "已開工":"Clocked in", "已下班":"Clocked out", "今日工時":"today's hours",
@@ -1166,7 +1171,7 @@ function rescheduleLang(id,lang,newDate,ds){ if(!newDate||newDate===ds) return;
 // ---- 我的工作台（依語言別） ----
 function viewWork(){
   const me = currentUser(); const lang = curLang(); const isZh = (lang==="zh");
-  const quota = userQuota(me); const busy = myInProgressCount()>=1; const pulledToday = pulledTodayCount(me); const dayFull = pulledToday>=3; const atLimit = busy||dayFull;
+  const quota = userQuota(me); const inProg = myInProgressCount(); const atLimit = inProg>=3;  // 最多同時 3 支進行中
   // 今日完成（依語言）
   const myDoneToday = (STATE.videos||[]).filter(v=>langFinishedOn(v,lang,me,today)).length;
   // 進行中 / 待處理（依語言）
@@ -1191,13 +1196,12 @@ function viewWork(){
       </td></tr>`;
   const switcher = canAllLang()
     ? `<div class="row" style="gap:6px;margin-bottom:10px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
-    : `<p class="muted" style="margin-bottom:8px">你的語言：<b>${LANG_LABEL[lang]||lang}</b>（只處理此語言）</p>`;
+    : "";
   const myRep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const clockBar = myRep.endAt
-    ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="font-weight:700">🔴 已下班 ${hhmm(myRep.endAt)}</span><span class="muted">　開工 ${hhmm(myRep.startAt)}・今日工時 ${myRep.startAt?minToText(durationMin(myRep.startAt,myRep.endAt)):"-"}　辛苦了！</span></div>`
-    : myRep.startAt
-    ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
-    : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
+  const clockBar = myRep.startAt
+    ? (myRep.endAt ? ""
+       : `<div class="card" style="padding:10px 14px"><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`)
+    : `<div class="card" style="text-align:center;border-color:var(--green)"><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡才能開始今天的工作</p></div>`;
   const meU=myUser()||{}; const meLangs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||lang];
   const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
   return `
@@ -1214,8 +1218,8 @@ function viewWork(){
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between"><b>🎬 我進行中的影片</b>
-      <span class="pill ${dayFull?'wa':'ok'}">今日已領 ${pulledToday}/3</span></div>
-    ${busy?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 還有進行中的影片，剪完並填上傳連結後才能再拉新片</p>`:(dayFull?`<p class="muted" style="margin:4px 0 0">今天已拉滿 3 片，明天再領</p>`:"")}
+      <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></div>
+    ${atLimit?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
     <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
     <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，可從下方認領</td></tr>`}</tbody></table>
     ${specialTasksBlock(myRep)}
@@ -1224,20 +1228,14 @@ function viewWork(){
     <div class="row" style="justify-content:space-between"><b>${isZh?"未處理片源":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
       ${isZh?`<button class="btn sm sec" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
     ${pool.length
-      ? `<p class="muted" style="font-size:12px;margin:8px 0 4px">從清單選一支新片，按「拉下來」開始剪（一次一支）：</p>
+      ? `<p class="muted" style="font-size:12px;margin:8px 0 4px">從清單選一支新片，按「拉下來」開始剪：</p>
          <div class="row" style="gap:8px">
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
            <button class="btn" onclick="claimPicked('${lang}')" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
          </div>
-         ${atLimit?`<p class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">${busy?"⚠ 先把進行中的影片剪完（含上傳連結）才能再拉":"今天已拉滿 3 片，明天再領"}</p>`:""}`
+         ${atLimit?`<p class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉</p>`:""}`
       : `<p class="muted" style="margin-top:8px">${isZh?"目前沒有未處理片源，可按「＋ 新增片源」建立":"目前沒有待二創的影片（要中文母版先完成）"}</p>`}
   </div>
-  ${isZh?`<div class="card">
-    <div class="row" style="justify-content:space-between"><b>♻ 舊片重播（重複使用）</b>
-      <button class="btn sm" onclick="reuseModal()">＋ 排舊片進月歷</button></div>
-    <p class="muted" style="font-size:12px;margin-top:4px">把已完成的舊片再排到未來某天上片。系統會記錄這支片用過幾次、每次的日期與連結（在影片詳情可查）。</p>
-  </div>`:""}
-  ${workHoursCard(me, meLangs)}
   ${teamOtherWorkToday()}
   ${myDailyReport(me)}`;
 }
@@ -1483,8 +1481,7 @@ function inProgressBoard(){
 }
 function claimLang(id,lang){
   const me=currentUser();
-  if(inProgressCount(me)>=1){ toast("請先把進行中的影片做完，才能再拉新的",true); return; }
-  if(pulledTodayCount(me)>=3){ toast("你今天已經拉滿 3 片囉，明天再領",true); return; }
+  if(inProgressCount(me)>=3){ toast("手上已有 3 支進行中，先完成幾支再拉",true); return; }
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:me,claimedBy:me,claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
 }
 function finishGate(p){ const ok=val(p+"date")&&val(p+"backup").trim()&&val(p+"social").trim();
@@ -1580,24 +1577,61 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
   </div>`; }
-// 依搜尋字／狀態篩選後的清單 HTML（限量顯示，避免大量資料卡頓）
+// 依搜尋字／狀態篩選後的清單 HTML（用「剪輯人名」分組，每人一個可收合的選單）
 function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
   const stage=document.getElementById('vid_stage')?.value||'all';
   let list=all.filter(v=> stage==='all'?true:(v.stage===stage));
   if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
-  const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  list.sort((a,b)=>(rank[a.stage]??9)-(rank[b.stage]??9) || String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
-  const total=list.length, CAP=80, shown=list.slice(0,CAP);
+  const total=list.length;
   if(!total) return '<p class="muted">沒有符合的影片</p>';
-  return shown.map(videoItemRich).join('') + (total>CAP?`<p class="muted" style="margin-top:8px">顯示前 ${CAP} 筆（共 ${total} 筆）；用上方搜尋縮小範圍。</p>`:`<p class="muted" style="margin-top:8px">共 ${total} 筆</p>`);
+  const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
+  // 依剪輯人名分組
+  const groups={};
+  list.forEach(v=>{ const k=(v.editor||v.claimedBy||"（未指派／未認領）"); (groups[k]=groups[k]||[]).push(v); });
+  // 排序：有指派的依姓名，未指派放最後
+  const names=Object.keys(groups).sort((a,b)=>{
+    const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
+    return String(a).localeCompare(String(b)); });
+  return names.map(n=>{
+    const vs=groups[n].sort((a,b)=>(rank[a.stage]??9)-(rank[b.stage]??9) || String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
+    return `<details class="vgrp" ${q?'open':''} style="border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:4px 10px">
+      <summary style="cursor:pointer;font-weight:700;padding:8px 0">👤 ${esc(n)} <span class="muted" style="font-weight:500;font-size:12px">（${vs.length}）</span></summary>
+      <div style="padding-bottom:4px">${vs.map(videoItemRich).join('')}</div>
+    </details>`;
+  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${total} 筆・${names.length} 位剪輯</p>`;
 }
+// 影片庫「新片源」：讓剪輯從這裡把待處理新片拉進進行中
+function myPoolList(){ const lang=curLang();
+  if(lang==="zh") return (STATE.videos||[]).filter(v=>v.stage==="待處理");
+  return (STATE.videos||[]).filter(v=>v.languages?.zh?.status==="完成" && (!v.languages?.[lang]?.status || v.languages?.[lang]?.status==="未開始")); }
+function claimLib(){ const id=val("libPool"); if(!id){ toast("請先從清單選一支影片",true); return; }
+  const lang=curLang(); if(lang==="zh") claimVid(id); else claimLang(id,lang); }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function viewVideos(){
   const all=STATE.videos||[];
   const c=st=>all.filter(v=>v.stage===st).length;
-  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點標題看細節／改連結</span></h2>
+  const isEditor=currentRole()==="editor";
+  // 新片源：剪輯可在影片庫把待處理新片拉進進行中
+  let sourceCard="";
+  if(isEditor){
+    const pool=myPoolList(); const lang=curLang();
+    const opts=pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
+    const atLimit=myInProgressCount()>=3;
+    sourceCard=`<div class="card" style="border-color:var(--accent)">
+      <div class="row" style="justify-content:space-between"><b>🆕 新片源（拉進我的進行中）</b>
+        ${lang==="zh"?`<button class="btn sm sec" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
+      ${pool.length
+        ? `<div class="row" style="gap:8px;margin-top:8px">
+             <select id="libPool" style="flex:1;min-width:160px">${opts}</select>
+             <button class="btn" onclick="claimLib()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
+           </div>${atLimit?`<p class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉</p>`:""}`
+        : `<p class="muted" style="margin-top:8px">${lang==="zh"?"目前沒有未處理片源":"目前沒有待二創的影片"}</p>`}
+    </div>`;
+  }
+  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依剪輯人名分組・點標題看細節</span></h2>
+  ${sourceCard}
   <div class="card">
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <input id="vid_q" placeholder="🔍 搜尋影片名稱／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
@@ -1608,7 +1642,7 @@ function viewVideos(){
         <option value="已完成">已完成（${c("已完成")}）</option>
         <option value="已上片">已上片（${c("已上片")}）</option>
       </select>
-      <button class="btn sm" onclick="newVideo()">＋ 新增片源</button>
+      ${!isEditor?`<button class="btn sm" onclick="newVideo()">＋ 新增片源</button>`:""}
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
   </div>`;
