@@ -18,8 +18,9 @@ function currentRole(){
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
+const ADMIN_NAME = "管理員"; // Vito 與 Regina 共用的管理員身分（不需各自具名）
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  if(currentUser()===ownerName()){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
+  if(currentRole()==="boss"){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -364,7 +365,7 @@ function ownerLogin(){
   if(!STATE){ toast("連線中，請稍候再試",true); return; }
   const pw=prompt("管理員密碼："); if(pw===null) return;
   if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
-  setUser(ownerName()); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
+  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
 function logout(){ localStorage.removeItem("ecdr_user"); location.reload(); }
 
@@ -382,7 +383,8 @@ function applyState(raw){
   if(BULK_BUSY){ LAST_RAW=raw; return; }   // 批次寫入期間暫停重繪，避免卡頓
   LAST_RAW=raw; decorate(raw); DASH=computeDashboard(today);
   const has=(STATE.users||[]).some(u=>u.name===currentUser());
-  if(currentUser() && has){
+  const isBoss=localStorage.getItem("ecdr_role")==="boss"; // 共用管理員不在成員名單內，靠角色放行
+  if(currentUser() && (has||isBoss)){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
@@ -513,36 +515,80 @@ function viewDash(){
     <p class="muted" style="font-size:12px">平均每日完成片數（長條）＋平均每支剪輯耗時（領取→完成）</p>
     ${perf.length?perfChart:'<p class="muted">尚無資料</p>'}
     <div style="margin-top:8px">${perfPills}</div></div>`;
+  // ===== ① 昨日工作總覽 =====
+  const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); const yds=yd.toISOString().slice(0,10);
+  const yRows=computeWorkload(yds).rows;
+  const yTotal=yRows.reduce((a,r)=>a+r.todayDone,0);
+  const yQuotaSum=yRows.reduce((a,r)=>a+r.todayQuota,0);
+  const ydDow=yd.getDay(); const ydWork=ydDow!==0&&ydDow!==6;
+  const yMissN=ydWork? yRows.filter(r=>r.todayDone<r.todayQuota).length : 0;
+  const yChips=yRows.map(r=>{ const ok=r.todayDone>=r.todayQuota; const col=(!ydWork)?'var(--muted)':(ok?'var(--green)':'var(--red)');
+    return `<span class="pill" style="margin:2px 4px 2px 0;display:inline-block;border-color:${col};color:${col}">${esc(r.name)} ${r.todayDone}/${r.todayQuota}${(ydWork&&!ok)?' ⚠':''}</span>`; }).join("")||'<span class="muted">尚無剪輯成員</span>';
+  // 昨日大家的其他工作（含交辦）
+  const yOther=[]; (STATE.reports||[]).filter(r=>r.date===yds).forEach(r=>otherItems(r).forEach(s=>yOther.push((s.task?"【交辦】":"")+r.user+"："+s.t+(s.m?`（${s.m}分）`:""))));
+  const yCard=`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline">
+      <b>📅 昨日工作總覽</b><span class="muted" style="font-size:12px">${yds}（${weekdayZh(yds)}）</span></div>
+    <div style="display:flex;gap:16px;align-items:baseline;margin:8px 0">
+      <div><span style="font-size:34px;font-weight:900">${yTotal}</span><span class="muted"> / ${yQuotaSum} 支完成</span></div>
+      ${ydWork?`<span class="pill ${yMissN?'em':'ok'}">${yMissN?('未達標 '+yMissN+' 人'):'全員達標 ✅'}</span>`:`<span class="muted">（假日）</span>`}
+    </div>
+    <div>${yChips}</div>
+    ${yOther.length?`<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">🧩 其他工作：${esc(yOther.join("、"))}</div>`:""}
+  </div>`;
+
+  // ===== ② 今日進度（精簡一覽）=====
+  const stat=(n,l,col)=>`<div style="flex:1;min-width:88px;text-align:center;padding:10px 6px;background:var(--panel2);border-radius:10px">
+    <div style="font-size:25px;font-weight:900;color:${col||'var(--txt)'}">${n}</div><div class="muted" style="font-size:12px">${l}</div></div>`;
+  const progCard=`<div class="card"><b>📊 今日進度</b>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      ${stat(runway+' 天','預排天數',safeCol)}
+      ${stat(newSrc+' 支','新片庫存',srcCol)}
+      ${stat(p.今日已排+'/'+p.每日目標,'今日已上片')}
+      ${stat(p.落後人數,'落後人數',p.落後人數?'var(--red)':'var(--green)')}
+      ${stat(p.剪輯中,'剪輯中')}
+    </div>
+    ${(runway<PRETARGET||srcLow)?`<p style="font-size:12px;margin-top:8px;color:var(--red)">⚠ ${runway<PRETARGET?'預排不足 15 天，請往後補排；':''}${srcLow?'片源低於 '+lowTh+' 支，需加拍補片源。':''}</p>`:""}
+  </div>`;
+
+  // ===== ③ 交辦事項（快速指派＋狀態）=====
+  const allMsgs=STATE.messages||[];
+  const pendTotal=allMsgs.filter(m=>!m.done).length;
+  const taskRows=yRows.map(r=>{
+    const msgs=allMsgs.filter(m=>m.to===r.name);
+    const pend=msgs.filter(m=>!m.done).length, unread=msgs.filter(m=>!m.read&&!m.done).length;
+    const doneToday=msgs.filter(m=>m.done && String(m.doneAt||"").slice(0,10)===today).length;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border-radius:10px">
+      <span style="font-weight:700;min-width:0">${esc(r.name)}
+        ${pend?`<span class="pill wa" style="margin-left:6px">交辦中 ${pend}${unread?'・未讀 '+unread:''}</span>`:''}
+        ${doneToday?`<span class="pill ok" style="margin-left:4px">今日完成 ${doneToday}</span>`:''}</span>
+      <button class="btn sm" onclick="sendTask('${esc(r.name)}')">✉ 交辦</button>
+    </div>`; }).join("")||'<p class="muted">尚無成員</p>';
+  const taskCard=`<div class="card">
+    <div class="row" style="justify-content:space-between"><b>✉ 交辦事項</b>
+      <span class="pill ${pendTotal?'wa':'ok'}">未完成 ${pendTotal}</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${taskRows}</div>
+    <p class="muted" style="font-size:11px;margin-top:6px">點「✉ 交辦」指派工作；剪輯按已讀→完成並填工時後，會回報到「今日完成」與下方詳細。</p>
+  </div>`;
+
+  // ===== 詳細數據（預設收合，畫面保持精簡）=====
+  const peopleCard=`<div class="card"><b>👥 每日匯報・近 7 天（每人每天剪幾片＋當天其他工作，綠＝達標、紅＝未達）</b>
+    <div class="grid cols3" style="margin-top:10px">${userCards}</div></div>`;
+  const detail=`<details style="margin-top:6px">
+    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 詳細數據（即時團隊・近 7 天・效率・月排程）</summary>
+    ${liveCard}
+    ${peopleCard}
+    ${perfCard}
+    ${viewCal()}
+  </details>`;
+
   return `
-  <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}</span></h2>
+  <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
   ${demoBanner}
-  ${liveCard}
-  ${perfCard}
-
-  <div class="grid cols2">
-    <div class="card" style="text-align:center;border-color:${safeCol}">
-      <div style="font-size:60px;font-weight:900;line-height:1;color:${safeCol}">${runway}<span style="font-size:22px;font-weight:700"> 天</span></div>
-      <div class="l" style="font-size:15px;margin-top:4px">預排天數　<span class="muted">（從今天起連續排滿）</span></div>
-      ${runway<PRETARGET?`<p class="pill ${runway<7?'em':'wa'}" style="display:inline-block;margin-top:8px">⚠ 未達 15 天，請往後補排到 15 天以上</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 已預排 15 天以上</p>`}
-    </div>
-    <div class="card" style="text-align:center;border-color:${srcLow?srcCol:'var(--line)'};${srcLow?'background:var(--redbg)':''}">
-      <div style="font-size:60px;font-weight:900;line-height:1;color:${srcCol}">${newSrc}<span style="font-size:22px;font-weight:700"> 支</span></div>
-      <div class="l" style="font-size:15px;margin-top:4px">新片片源庫存　<span class="muted">（待剪）</span></div>
-      ${srcLow?`<p class="pill em" style="display:inline-block;margin-top:8px">⚠ 低於 ${lowTh} 支，需趕快加拍補片源！</p>`:`<p class="pill ok" style="display:inline-block;margin-top:8px">✅ 片源充足（門檻 ${lowTh}）</p>`}
-    </div>
-  </div>
-
-  <div class="card"><b>👥 每日匯報・近 7 天（每人每天剪幾片＋當天其他工作，綠＝達標、紅＝未達）</b>
-    <div class="grid cols3" style="margin-top:10px">${userCards}</div>
-    <p class="muted" style="font-size:11px;margin-top:8px">長條＝近 7 天每日完成支數，達當日 KPI 為綠色。剪片數由「影片完成」自動計入；下方為本人補充的特別工作。績效以「月」累積、每月 1 號重置。</p>
-  </div>
-
-  <div class="grid cols3">
-    <div class="stat"><div class="n">${p.今日已排}/${p.每日目標}</div><div class="l">今日已上片</div></div>
-    <div class="stat"><div class="n" style="color:${p.落後人數?'var(--red)':'var(--green)'}">${p.落後人數}</div><div class="l">落後人數</div></div>
-    <div class="stat"><div class="n">${p.剪輯中}</div><div class="l">剪輯中</div></div>
-  </div>
-  ${viewCal()}`;
+  ${yCard}
+  ${progCard}
+  ${taskCard}
+  ${detail}`;
 }
 // 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
 function last7Detail(name, lang, q){
