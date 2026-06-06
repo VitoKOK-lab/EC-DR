@@ -691,23 +691,23 @@ function viewCal(){
   const w = STATE._warnings||{emergency:[],warning:[]};
   const target = STATE.settings?.dailyPublishTarget||4;
   const lang = curLang(); const isZh=(lang==="zh");
-  // 顯示規則：排滿→灰、近 15 天內未排滿→紅、其餘(原始)→空白
-  const d15=new Date(today+"T00:00:00"); d15.setDate(d15.getDate()+15); const d15s=d15.toISOString().slice(0,10);
+  // 顯示規則：排滿→綠、10 天內未排→大紅色、其餘未排→灰
+  const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const isToday = ds===today;
     const tmk = isToday?`<span class="todaymk">今天</span>`:"";
-    const within15 = ds>=today && ds<=d15s;
+    const within10 = ds>=today && ds<=d10s;
     if(!isZh){ const cnt=dayLangCount(ds,lang);
-      const cls = cnt>0?"filled":"blank";
+      const cls = cnt>0?"filled":(within10?"bad urgent":"blank");
       cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
         <div class="big">${cnt||"·"}</div></div>`;
       continue; }
     const b=dayBreakdown(ds);
     const filled = b.total>=Math.max(1,b.target);
-    const cls = filled ? "filled" : "blank";
+    const cls = filled ? "filled" : (within10 ? "bad urgent" : "blank");
     const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
     const defTxt=Object.keys(b.deficits||{}).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
@@ -732,7 +732,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排（近 15 天內會標<b style="color:var(--red)">紅色缺口</b>提醒）。點任一天可<b>改上片日期</b>（不可刪除）。</p>
+    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">大紅色</b>=10 天內還沒排好（要趕快補）。點任一天可<b>改上片日期</b>（不可刪除）。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
