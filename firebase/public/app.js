@@ -1658,19 +1658,36 @@ function viewAudit(){
         <span class="neg">⚠ 同一台裝置出現多個身分</span>
         <span>${[...s].map(esc).join("、")} <span class="muted">(${esc((d||"").slice(0,12))}…)</span></span></div>`).join("")
     : `<p class="pill ok">✅ 沒有發現同一裝置跨身分操作</p>`;
-  const rows=AUDIT.slice(0,250).map(a=>`<tr>
-    <td data-label="時間">${esc((a.ts||"").replace("T"," "))}</td>
-    <td data-label="操作者"><b>${esc(a.user)}</b></td>
-    <td data-label="裝置"><span class="muted">${esc((a.deviceId||"").slice(0,12))}</span></td>
-    <td data-label="動作">${esc(humanAction(a))}</td>
-  </tr>`).join("");
-  return `<h2>🛡 稽核紀錄 <span class="muted" style="font-size:13px">最近 ${AUDIT.length} 筆　<a href="javascript:void(0)" onclick="loadAudit()">🔄重新整理</a></span></h2>
+  const users=[...new Set(AUDIT.map(a=>a.user).filter(Boolean))].sort();
+  const initRows=AUDIT.slice(0,250).map(auditRow).join("");
+  return `<h2>🛡 檢核紀錄 <span class="muted" style="font-size:13px">最近 ${AUDIT.length} 筆　<a href="javascript:void(0)" onclick="loadAudit()">🔄重新整理</a></span></h2>
   <div class="card"><b>裝置／身分檢查</b>
     <p class="muted">每台裝置（瀏覽器）第一次使用會有固定代碼。若同一台裝置用了不同人的名字去操作，就會在這裡標紅——代表可能有人登了別人的帳號。</p>
     ${sharedHtml}
   </div>
   <div class="card"><b>操作明細</b>
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center">
+      <select id="aud_user" onchange="auditFilter()"><option value="all">全部操作者</option>${users.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("")}</select>
+      <input type="date" id="aud_date" onchange="auditFilter()" style="max-width:170px">
+      <button class="btn sm sec" onclick="clearAuditFilter()">清除</button>
+      <span id="aud_count" class="muted" style="font-size:12px">共 ${AUDIT.length} 筆</span>
+    </div>
     <table class="responsive"><thead><tr><th>時間</th><th>操作者</th><th>裝置</th><th>動作</th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table>
+    <tbody id="aud_body">${initRows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table>
   </div>`;
 }
+function auditRow(a){ return `<tr>
+    <td data-label="時間">${esc((a.ts||"").replace("T"," "))}</td>
+    <td data-label="操作者"><b>${esc(a.user)}</b></td>
+    <td data-label="裝置"><span class="muted">${esc((a.deviceId||"").slice(0,12))}</span></td>
+    <td data-label="動作">${esc(humanAction(a))}</td>
+  </tr>`; }
+function auditFilter(){
+  const u=document.getElementById('aud_user')?.value||'all';
+  const d=document.getElementById('aud_date')?.value||'';
+  const list=(AUDIT||[]).filter(a=>(u==='all'||a.user===u) && (!d||String(a.ts||'').slice(0,10)===d));
+  const body=document.getElementById('aud_body');
+  if(body) body.innerHTML = list.length? list.slice(0,250).map(auditRow).join('') : '<tr><td class="muted">沒有符合的紀錄</td></tr>';
+  const c=document.getElementById('aud_count'); if(c) c.textContent='符合 '+list.length+' 筆'+(list.length>250?'（顯示前 250）':'');
+}
+function clearAuditFilter(){ const u=document.getElementById('aud_user'); if(u)u.value='all'; const d=document.getElementById('aud_date'); if(d)d.value=''; auditFilter(); }
