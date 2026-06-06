@@ -245,6 +245,7 @@ async function _route(method, path, body){
       await window.DB.set("users", name, doc); return; }
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.lang!=null) patch.lang=body.lang;
       if(body.dailyQuota!=null) patch.dailyQuota=Number(body.dailyQuota)||0;
+      if(body.pin!=null) patch.pin=String(body.pin);
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
@@ -341,24 +342,56 @@ function buildNav(){
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  // 管理員（owner/boss）走密碼登入，不出現在名單
-  const users=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName());
+  // 管理員（boss）走密碼登入；Regina 併入共用管理員，皆不出現在名單
+  const users=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName() && u.name!=="Regina");
   if(!users.length){ g.innerHTML = '<p class="muted">尚無成員，請按下方「🔒 管理員登入」進入後新增</p>'; return; }
-  // 排序：Regina（負責人）第一 → 剪輯群 → HR 最後
-  const rank=u=> (u.name==="Regina"?0 : ((u.role==="hr")?2:1));
+  // 排序：剪輯群 → HR 最後
+  const rank=u=> ((u.role==="hr")?2:1);
   users.sort((a,b)=> rank(a)-rank(b) || String(a.name).localeCompare(String(b.name)));
   const mkBtn=(u)=>{ const b=document.createElement("button");
-    b.className="userBtn"+(u.name==="Regina"?" lead":"")+((u.role==="hr")?" mgr":"");
-    b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+'</span>';
-    b.onclick=()=>{ setUser(u.name); localStorage.setItem("ecdr_role",u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW); };
+    b.className="userBtn"+((u.role==="hr")?" mgr":"");
+    b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+(u.pin?"":" ·未設密碼")+'</span>';
+    b.onclick=()=>loginAs(u);
     return b; };
   users.forEach((u,i)=>{
     const prev=users[i-1];
-    if(prev && ((prev.name==="Regina" && u.name!=="Regina") || (u.role==="hr" && prev.role!=="hr"))){
+    if(prev && (u.role==="hr" && prev.role!=="hr")){
       const sep=document.createElement("div"); sep.className="userSep"; g.appendChild(sep);
     }
     g.appendChild(mkBtn(u));
   });
+}
+// 成員以自己的密碼登入（管理員先在成員管理設定，之後本人可自行修改）
+function loginAs(u){
+  if(!u.pin){ toast("「"+u.name+"」尚未設定密碼，請管理員到『成員管理』設定後再登入",true); return; }
+  const pw=prompt(u.name+" 的登入密碼："); if(pw===null) return;
+  if(String(pw)!==String(u.pin)){ toast("密碼錯誤",true); return; }
+  setUser(u.name); localStorage.setItem("ecdr_role",u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
+}
+// 成員修改自己的密碼
+function changeMyPin(){
+  const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
+  if(!u){ toast("此帳號不需密碼",true); return; }
+  if(u.pin){ const cur=prompt("輸入目前的密碼："); if(cur===null) return; if(String(cur)!==String(u.pin)){ toast("目前密碼錯誤",true); return; } }
+  const p1=prompt("輸入新密碼："); if(p1===null) return; if(!String(p1).trim()){ toast("密碼不可空白",true); return; }
+  const p2=prompt("再輸入一次新密碼確認："); if(p2===null) return;
+  if(String(p1)!==String(p2)){ toast("兩次密碼不一致",true); return; }
+  window.DB.update("users", me, {pin:String(p1).trim()}).then(()=>toast("密碼已更新")).catch(()=>toast("更新失敗，請稍後再試",true));
+}
+// 管理員：設定/重設某成員密碼
+function setMemberPin(name){
+  const u=(STATE.users||[]).find(x=>x.name===name)||{};
+  const p=prompt("設定「"+name+"」的登入密碼（交給本人，之後他可自行修改）：", u.pin||""); if(p===null) return;
+  if(!String(p).trim()){ toast("密碼不可空白",true); return; }
+  writeAdmin("PUT","/api/users/"+name,{pin:String(p).trim()},"已設定 "+name+" 的密碼");
+}
+// 管理員：把所有成員密碼一次設成同一組（上線時方便發放）
+async function setAllPin(){
+  const p=prompt("把『所有剪輯／人資成員』的登入密碼統一設為（之後各自可改）："); if(p===null) return;
+  if(!String(p).trim()){ toast("密碼不可空白",true); return; }
+  await withAdmin(async ()=>{ let c=0;
+    for(const u of (STATE.users||[]).filter(x=>(x.role||"editor")!=="boss")){ try{ await window.DB.update("users",u.name,{pin:String(p).trim()}); c++; }catch(e){} }
+    toast("已設定 "+c+" 位成員的密碼"); });
 }
 // 管理員（owner）以密碼進入；成員管理／稽核只有這條路徑能看到
 function ownerLogin(){
@@ -562,7 +595,7 @@ function viewDash(){
       <span style="font-weight:700;min-width:0">${esc(r.name)}
         ${pend?`<span class="pill wa" style="margin-left:6px">交辦中 ${pend}${unread?'・未讀 '+unread:''}</span>`:''}
         ${doneToday?`<span class="pill ok" style="margin-left:4px">今日完成 ${doneToday}</span>`:''}</span>
-      <button class="btn sm" onclick="sendTask('${esc(r.name)}')">✉ 交辦</button>
+      ${currentRole()==='boss'?`<button class="btn sm" onclick="sendTask('${esc(r.name)}')">✉ 交辦</button>`:''}
     </div>`; }).join("")||'<p class="muted">尚無成員</p>';
   const taskCard=`<div class="card">
     <div class="row" style="justify-content:space-between"><b>✉ 交辦事項</b>
@@ -903,7 +936,7 @@ function viewWork(){
     : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
   const meU=myUser()||{}; const meLangs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||lang];
   return `
-  <h2>✂️ 剪輯個人儀表板（${esc(me)}）</h2>
+  <h2>✂️ 剪輯個人儀表板（${esc(me)}）　<button class="btn sm sec" onclick="changeMyPin()" style="font-size:12px;vertical-align:middle">🔑 改密碼</button></h2>
   ${switcher}
   ${clockBar}
   ${inboxCard(me)}
@@ -1381,15 +1414,17 @@ function viewMembers(){
         ${ROLE_TOKENS.map(([tk,lb])=>`<option value="${tk}" ${userToken(u)===tk?"selected":""}>${lb}</option>`).join("")}
       </select></td>
     <td data-label="每日KPI"><input type="number" min="0" style="width:70px" value="${u.dailyQuota||defQ}" onchange="changeQuota('${esc(u.name)}',this.value)"> 片</td>
+    <td data-label="密碼"><button class="btn sm ${u.pin?'sec':''}" onclick="setMemberPin('${esc(u.name)}')">${u.pin?'重設密碼':'設定密碼'}</button></td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
       <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
   <div class="card"><b>現有成員（${users.length}）</b>
-    <table class="responsive"><thead><tr><th>名字</th><th>角色／語言</th><th>每日KPI</th><th></th></tr></thead>
+    <table class="responsive"><thead><tr><th>名字</th><th>角色／語言</th><th>每日KPI</th><th>密碼</th><th></th></tr></thead>
     <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <div class="row" style="justify-content:space-between"><p class="muted" style="margin:0">語言剪輯只看自己語言的行事曆；「每日KPI」每人可不同。改角色／KPI／刪除需管理密碼。</p>
-      <button class="btn sec sm" onclick="setAllQuota(3)">全部剪輯 KPI 設為 3</button></div>
+    <div class="row" style="justify-content:space-between"><p class="muted" style="margin:0">成員以「自己的密碼」登入：先在這裡幫每人「設定密碼」發給本人，之後他可在自己儀表板按「🔑 改密碼」修改。改角色／KPI／密碼／刪除需管理密碼。</p>
+      <div class="row" style="gap:6px"><button class="btn sec sm" onclick="setAllPin()">🔑 全部成員設統一密碼</button>
+        <button class="btn sec sm" onclick="setAllQuota(3)">全部剪輯 KPI 設為 3</button></div></div>
   </div>
   <div class="card"><b>新增單一成員</b>
     <div class="grid cols4">
