@@ -441,6 +441,8 @@ function viewDash(){
     const good = r.diff>=0;
     const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
     const dotCol = good?"var(--green)":"var(--red)";
+    const msgs=(STATE.messages||[]).filter(m=>m.to===r.name);
+    const pendN=msgs.filter(m=>!m.done).length, unreadN=msgs.filter(m=>!m.read && !m.done).length;
     const week = last7Detail(r.name, r.lang, r.todayQuota);
     const weekRows = week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
         <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span>${w.ds===today?'·今':''}</td>
@@ -459,6 +461,10 @@ function viewDash(){
       </div>
       <table class="wk"><thead><tr><th>近7天</th><th style="text-align:center">剪片</th><th>其他工作內容</th></tr></thead>
         <tbody>${weekRows}</tbody></table>
+      <div class="row" style="gap:6px;margin-top:8px;align-items:center">
+        ${currentRole()==='boss'?`<button class="btn sm sec" onclick="sendTask('${esc(r.name)}')">✉ 交辦／留言</button>`:''}
+        ${pendN?`<span class="pill wa">交辦中 ${pendN}${unreadN?'・未讀 '+unreadN:'・已讀'}</span>`:''}
+      </div>
     </div>`;
   }).join("") || `<p class="muted">尚無剪輯成員</p>`;
   const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
@@ -848,6 +854,7 @@ function viewWork(){
   <h2>✂️ 剪輯個人儀表板（${esc(me)}）</h2>
   ${switcher}
   ${clockBar}
+  ${inboxCard(me)}
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <b>📌 每日主要工作（${LANG_LABEL[lang]||lang}）</b>
@@ -907,6 +914,35 @@ async function saveSpecial(clockOut){ const me=currentUser(); const arr=collectS
     if(clockOut){ const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):""; toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+w); }
     else toast("已儲存特別工作");
   }catch(e){ toast("失敗，請稍後再試",true); } }
+// ---- 管理員留言／交辦（輕量版）----
+function sendTask(name){
+  showModal("✉ 交辦／留言給 "+name, `
+    <textarea id="tk_text" style="min-height:110px" placeholder="輸入交辦事項或留言…（對方一進儀表板就會看到）"></textarea>
+  `, async ()=>{
+    const text=val("tk_text").trim(); if(!text){ toast("請輸入內容",true); return false; }
+    const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const rec={id, to:name, from:currentUser(), text, at:nowIso(), read:false, readAt:"", done:false, doneAt:""};
+    try{ await window.DB.set("messages", id, rec); toast("已送出給 "+name); return true; }
+    catch(e){ toast("送出失敗，請稍後再試",true); return false; }
+  });
+}
+async function markMsg(id, kind){ const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
+  const patch = (kind==="done")?{done:true, doneAt:nowIso(), read:true, readAt:m.readAt||nowIso()}:{read:true, readAt:nowIso()};
+  try{ await window.DB.update("messages", id, patch); }catch(e){ toast("更新失敗，請稍後再試",true); } }
+// 剪輯收件匣：未完成的交辦／留言（紅色提醒）
+function inboxCard(me){
+  const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  if(!msgs.length) return "";
+  return `<div class="card" style="border-color:var(--red);background:var(--redbg)">
+    <b>✉ 老闆交辦／留言（${msgs.length}）</b>
+    ${msgs.map(m=>`<div style="margin-top:8px;padding:10px;background:var(--panel);border-radius:8px">
+       <div style="white-space:pre-wrap">${esc(m.text)}</div>
+       <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}${m.read?'・已讀':'・<b style="color:var(--red)">未讀</b>'}</div>
+       <div class="row" style="gap:6px;margin-top:6px">
+         ${!m.read?`<button class="btn sm sec" onclick="markMsg('${m.id}','read')">標示已讀</button>`:''}
+         <button class="btn sm" onclick="markMsg('${m.id}','done')">完成✔</button></div>
+     </div>`).join("")}</div>`;
+}
 // 工時分配：剪輯工時（領取→完成）vs 其他工時（特別工作分鐘），以每日 8 小時計
 function workHoursCard(me, langs){
   const BASE=480;
