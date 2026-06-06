@@ -4,10 +4,11 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
-  hr:     [["dash","📊 部門總覽"],["videos","🎞 影片庫"],["audit","🛡 檢核紀錄"]],
-  editor: [["work","✂️ 剪輯儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  boss:   [["dash","📊 總覽"],["videos","🎞 影片庫"]],
+  hr:     [["dash","📊 部門總覽"]],                         // Benny：純觀察，不看影片庫／稽核
+  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
+const PUB_TIMES = ["10:00","12:00","16:00"];   // 所有影片固定三個上片時間
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
 
@@ -18,9 +19,10 @@ function currentRole(){
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
-const ADMIN_NAME = "管理員"; // Vito 與 Regina 共用的管理員身分（不需各自具名）
+const ADMIN_NAME = "管理員"; // Vito 專用的最高管理員（只有他有設定／成員管理／稽核紀錄）
+function isOwner(){ return currentUser()===ADMIN_NAME; }   // 只有以「管理員密碼」進入的 Vito 為 true（Regina 不是）
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  if(currentRole()==="boss"){ t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
+  if(isOwner()){ t.push(["settings","⚙️ 設定"]); t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -279,18 +281,18 @@ async function _route(method, path, body){
         scheduledDate:date, published:true, backupDone:true, socialScheduled:true};
       if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
+      if(body.publishTime) patch.publishTime=body.publishTime;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
     if(action==="performance"){ await window.DB.update("videos",id,{ctr:body.ctr??v.ctr, completionRate:body.completionRate??v.completionRate}); return; }
     if(action==="reuse" && method==="POST"){
-      const date=body.date; const link=(body.link||"").trim();
+      const date=body.date; const link=(body.link||"").trim(); const time=body.time||"";
       if(!date) throw new Error("請選擇重播上片日期");
-      if(!link) throw new Error("請貼上這次的社群連結");
       const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
-      slots.push({videoId:id, publishedLink:link, reused:true, by:user, at:nowIso()});
+      slots.push({videoId:id, publishedLink:link, reused:true, by:user, at:nowIso(), time});
       await window.DB.scheduleSet(date,{slots});
-      const uh=(v.usageHistory||[]).concat([{date, link, by:user, at:nowIso()}]);
+      const uh=(v.usageHistory||[]).concat([{date, link, time, by:user, at:nowIso()}]);
       await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1, usageHistory:uh});
       return;
     }
@@ -406,7 +408,17 @@ function ownerLogin(){
   if(String(pw)!==String(STATE.settings?.adminPassword||"1234")){ toast("密碼錯誤",true); return; }
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
 }
-function logout(){ localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role"); location.reload(); }
+// 登出：清掉身分 → 顯示「象素小人敬禮・辛苦了」畫面（右下角可重新登入）
+function logout(){ showGoodbye(); }
+function showGoodbye(){
+  localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
+  CUR_TAB=null; CUR_LANG=null;
+  try{ closeModal(); }catch(e){}
+  document.getElementById("app")?.classList.add("hidden");
+  document.getElementById("login")?.classList.add("hidden");
+  document.getElementById("goodbye")?.classList.add("show");
+}
+function reLogin(){ location.reload(); }
 
 // ---------- 狀態套用（Firestore snapshot 進來時呼叫） ----------
 function decorate(raw){
@@ -428,7 +440,7 @@ function applyState(raw){
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
     document.getElementById("whoRole").textContent="・"+(uiEN()?({"管理員":"Admin","人資":"HR","剪輯":"Editor"}[ROLE_LABEL[currentRole()]]||"Editor"):(ROLE_LABEL[currentRole()]||""));
-    if(!CUR_TAB) CUR_TAB=myTabs()[0][0];
+    if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
   } else {
     document.getElementById("app").classList.add("hidden");
@@ -469,7 +481,10 @@ function uiEN(){ try{ const l=myLang(); return l==="en"||l==="th"; }catch(e){ re
 const EN_DICT = {
   // 標頭 / 導覽 / 角色
   "✂️ 剪輯儀表板":"✂️ Editor", "📅 月排程":"📅 Schedule", "🎞 影片庫":"🎞 Videos",
-  "剪輯個人儀表板":"My Editor Dashboard", "登出":"Logout", "離線":"Offline",
+  "剪輯個人儀表板":"My Editor Dashboard", "📋 今日工作":"📋 Today's Work", "今日工作":"Today's Work", "登出":"Logout", "離線":"Offline",
+  "⬇ 拉下來開始剪":"⬇ Pull & start", "從清單選一支新片，按「拉下來」開始剪（一次一支）：":"Pick a new video from the list and tap “Pull” to start (one at a time):",
+  "目前沒有未處理片源，可按「＋ 新增片源」建立":"No unclaimed videos — tap “+ Add Video” to create one",
+  "上片時間":"Publish time", "排舊片到這天":"Schedule old video here", "排入":"Add", "社群連結（可後補）":"Social link (optional)",
   "目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。":"Offline — showing last synced data (read-only); will auto-update when reconnected.",
   // 打卡 / 工時
   "開工打卡":"Clock In", "已開工":"Clocked in", "已下班":"Clocked out", "今日工時":"today's hours",
@@ -654,7 +669,6 @@ function viewHrDash(){
     <div style="min-width:0"><b>${esc(t.name)}</b>
       ${t.pend?`<span class="pill wa" style="margin-left:6px">交辦未完成 ${t.pend}</span>`:''}
       <div class="muted" style="font-size:12px;margin-top:2px">今日 ${t.todayDone}/${t.q}　進行中 ${t.inprog} 片${t.streak>=1?`　・連續落後 ${t.streak} 個工作日`:''}</div></div>
-    <button class="btn sm" onclick="sendTask('${esc(t.name)}')">✉ 追蹤／交辦</button>
   </div>`;
   const seriousCard=`<div class="card" style="border-color:var(--red)">
     <b style="color:var(--red)">🚨 連續落後（≥3 個工作日未達標）— 優先追蹤是否卡關／需要協助</b>
@@ -670,9 +684,11 @@ function viewHrDash(){
     <span class="muted" style="font-size:12px">　看處理狀況判斷是否還需要協助</span>
     <div style="margin-top:6px">${doneTaskRows(false)}</div></div>`;
   return `
-  <h2>📋 部門檢核 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）・人資</span></h2>
+  <h2>📋 部門檢核 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）・觀察</span></h2>
+  <p class="muted" style="font-size:12px;margin:-8px 0 14px">觀察員工工作狀況、關心進度；如需提醒請以<b>口頭</b>方式進行（此頁不發送交辦）。</p>
   ${seriousCard}
   ${watchCard}
+  ${inProgressBoard()}
   ${pendCard}
   ${doneCard}
   <details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 完整團隊數據（近 7 天・效率・月排程）</summary>
@@ -826,6 +842,7 @@ function viewDash(){
   const detail=`<details style="margin-top:6px">
     <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 詳細數據（即時團隊・近 7 天・效率・月排程）</summary>
     ${liveCard}
+    ${inProgressBoard()}
     ${peopleCard}
     ${perfCard}
     ${viewCal()}
@@ -1050,13 +1067,27 @@ function openDay(ds){
     const link = reused ? (it.slot.publishedLink||"") : (isZh ? (v?.publishedLink||v?.driveFolder||"") : (v?.languages?.[lang]?.publishedLink||v?.languages?.[lang]?.driveFolder||""));
     const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)`
                          : (isZh?`rescheduleVid('${it.videoId}',this.value,'${ds}')`:`rescheduleLang('${it.videoId}','${lang}',this.value,'${ds}')`);
+    const tm = reused ? (it.slot.time||"") : (isZh ? (v?.publishTime||"") : (v?.languages?.[lang]?.publishTime||""));
     return `<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
       <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
+      <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
       <td data-label="連結">${link?`<a href="${esc(link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
       <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
     </tr>`;
   }).join("");
+  // 排舊片到這天（下拉選舊片＋上片時間）
+  const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage))
+    .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
+  const reusePicker = isZh ? `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片到這天</b>
+    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px">
+        <select id="od_vid" style="flex:1;min-width:150px">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select>
+        <div style="width:90px">${pubTimeSelect("od_time","10:00")}</div>
+        <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
+      </div>
+      <input id="od_link" placeholder="社群連結（可後補）" style="margin-top:6px">`
+      : `<p class="muted" style="margin-top:6px">目前沒有已完成的舊片可重播。</p>`}
+  </div>` : "";
   const cnt = list.length;
   let summary="";
   if(isZh){ const b=dayBreakdown(ds); const tg=b.targets;
@@ -1068,11 +1099,15 @@ function openDay(ds){
   showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>連結</th><th>改上片日</th></tr></thead>
+      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-      <p class="muted" style="font-size:12px;margin-top:8px">月排程唯讀：影片由剪輯完成後自動排入。只能改上片日期（移動時間），不能刪除或取消。</p>
-    </div>`, null);
+      <p class="muted" style="font-size:12px;margin-top:8px">月排程唯讀：新片由剪輯完成後自動排入。只能改上片日期（移動時間），不能刪除或取消。</p>
+    </div>
+    ${reusePicker}`, null);
 }
+// 從月曆某天直接排一支舊片重播
+function odReuse(ds){ const id=val("od_vid"); if(!id){ toast("請先選一支舊片",true); return; }
+  write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
 // 排舊片重播：選一支已完成的舊片，排到未來某天，記錄日期＋連結
 let RU_DONE=[];
 function reuseModal(){
@@ -1085,13 +1120,16 @@ function reuseModal(){
     <label>🔍 搜尋舊片（片名關鍵字）</label><input id="ru_q" placeholder="輸入片名找舊片…" oninput="ruSearch()">
     <label>選擇舊片（共 ${RU_DONE.length} 支）</label><select id="ru_vid" size="6" style="height:auto" onchange="window._ruInfo(this.value)">${opts}</select>
     <div id="ru_info" class="muted" style="font-size:12px;margin:6px 0"></div>
-    <label>這次上片日期（可排未來）</label><input id="ru_date" type="date" value="${def}" oninput="ruGate()">
+    <div class="grid cols2">
+      <div><label>這次上片日期（可排未來）</label><input id="ru_date" type="date" value="${def}" oninput="ruGate()"></div>
+      <div><label>上片時間</label>${pubTimeSelect("ru_time","10:00")}</div>
+    </div>
     <label>這次的社群連結</label><input id="ru_link" placeholder="這次貼文／預約連結" oninput="ruGate()">
-    <p class="muted">每次重播都會分別記錄日期與連結，並計入使用次數。</p>
+    <p class="muted">每次重播都會分別記錄日期、時間與連結，並計入使用次數。</p>
   `, async ()=>{
     const id=val("ru_vid"); const date=val("ru_date"); const link=val("ru_link").trim();
     if(!id){ toast("請選擇舊片",true); return false; }
-    return await write("POST",`/api/videos/${id}/reuse`,{date,link},"已排入重播並記錄使用");
+    return await write("POST",`/api/videos/${id}/reuse`,{date,time:val("ru_time"),link},"已排入重播並記錄使用");
   });
   window._ruInfo=(id)=>{ const v=vid(id); const box=document.getElementById("ru_info"); if(!box||!v) return;
     const us=usageList(v); box.innerHTML = us.length? ("已用 <b>"+us.length+"</b> 次："+us.map(u=>esc(u.date)+(u.link?`（<a href="${esc(u.link)}" target="_blank">連結</a>）`:"")).join("、")) : "尚無使用紀錄"; };
@@ -1161,8 +1199,9 @@ function viewWork(){
     ? `<div class="card" style="padding:10px 14px"><span class="muted">📅 ${todayLabel()}　</span><span style="color:var(--green);font-weight:700">🟢 已開工 ${hhmm(myRep.startAt)}</span><span class="muted">　今天加油！</span></div>`
     : `<div class="card" style="text-align:center;border-color:var(--green)"><p class="muted" style="font-size:13px;margin-bottom:8px">📅 ${todayLabel()}</p><button class="btn" onclick="clockIn()">🟢 開工打卡</button><p class="muted" style="font-size:12px;margin-top:6px">上班先打卡，老闆才看得到你今天幾點開始</p></div>`;
   const meU=myUser()||{}; const meLangs=(meU.lang==="all")?SCHED_LANGS:[meU.lang||lang];
+  const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
   return `
-  <h2>✂️ 剪輯個人儀表板（${esc(me)}）　<button class="btn sm sec" onclick="changeMyPin()" style="font-size:12px;vertical-align:middle">🔑 改密碼</button></h2>
+  <h2>📋 今日工作（${esc(me)}）　<button class="btn sm sec" onclick="changeMyPin()" style="font-size:12px;vertical-align:middle">🔑 改密碼</button></h2>
   ${switcher}
   ${clockBar}
   ${inboxCard(me)}
@@ -1183,9 +1222,15 @@ function viewWork(){
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between"><b>${isZh?"未處理片源":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
-      ${isZh?`<button class="btn sm" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
-    <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
-    <tbody>${pool.map(v=>matRow(v,true)).join("")||`<tr><td class="muted">${isZh?"目前沒有未處理片源":"目前沒有待二創的影片（要中文母版先完成）"}</td></tr>`}</tbody></table>
+      ${isZh?`<button class="btn sm sec" onclick="newVideo()">＋ 新增片源</button>`:""}</div>
+    ${pool.length
+      ? `<p class="muted" style="font-size:12px;margin:8px 0 4px">從清單選一支新片，按「拉下來」開始剪（一次一支）：</p>
+         <div class="row" style="gap:8px">
+           <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
+           <button class="btn" onclick="claimPicked('${lang}')" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
+         </div>
+         ${atLimit?`<p class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">${busy?"⚠ 先把進行中的影片剪完（含上傳連結）才能再拉":"今天已拉滿 3 片，明天再領"}</p>`:""}`
+      : `<p class="muted" style="margin-top:8px">${isZh?"目前沒有未處理片源，可按「＋ 新增片源」建立":"目前沒有待二創的影片（要中文母版先完成）"}</p>`}
   </div>
   ${isZh?`<div class="card">
     <div class="row" style="justify-content:space-between"><b>♻ 舊片重播（重複使用）</b>
@@ -1287,9 +1332,15 @@ function submitDayReport(){
 // ---- 管理員留言／交辦（輕量版）----
 function sendTask(name){
   showModal("✉ 交辦／留言給 "+name, `
-    <textarea id="tk_text" style="min-height:110px" placeholder="輸入交辦事項或留言…（對方一進儀表板就會看到）"></textarea>
+    <p class="muted" style="font-size:12px;margin-bottom:4px">一次最多三項，一項一行；對方一進「今日工作」就會看到。</p>
+    <label>一、</label><input id="tk_1" placeholder="第一項交辦／留言">
+    <label>二、</label><input id="tk_2" placeholder="第二項（可留空）">
+    <label>三、</label><input id="tk_3" placeholder="第三項（可留空）">
   `, async ()=>{
-    const text=val("tk_text").trim(); if(!text){ toast("請輸入內容",true); return false; }
+    const labs=["一","二","三"];
+    const lines=[val("tk_1"),val("tk_2"),val("tk_3")].map(s=>String(s||"").trim());
+    const text=lines.map((s,i)=>s?(labs[i]+"、"+s):"").filter(Boolean).join("\n");
+    if(!text){ toast("請至少輸入一項",true); return false; }
     const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
     const rec={id, to:name, from:currentUser(), text, at:nowIso(), read:false, readAt:"", done:false, doneAt:""};
     try{ await window.DB.set("messages", id, rec); toast("已送出給 "+name); return true; }
@@ -1393,6 +1444,43 @@ function editorStatus(u){
 function reportContentHtml(rep){ if(!rep) return ""; const c=rep.content||((rep.items||[]).filter(Boolean).join("、"));
   return c? `<div style="white-space:pre-wrap">${esc(c)}</div>` : `<span class="muted">無</span>`; }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
+// 從下拉選單把一支新片拉下來開始剪
+function claimPicked(lang){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; }
+  if(lang==="zh") claimVid(id); else claimLang(id,lang); }
+// 上片時間下拉（固定 10/12/16）
+function pubTimeSelect(id, cur){ const c=PUB_TIMES.includes(cur)?cur:"10:00";
+  return `<select id="${id}">`+PUB_TIMES.map(t=>`<option ${t===c?"selected":""}>${t}</option>`).join("")+`</select>`; }
+// 累積「實際處理工時」：從領取那刻起，只計上班打卡時段；跨日就從隔日上班續算，直到完成
+function workedBetween(name, fromIso){
+  if(!name||!fromIso) return null;
+  const startDay=String(fromIso).slice(0,10); let total=0;
+  let d=new Date(startDay+"T00:00:00"); const end=new Date(today+"T00:00:00");
+  while(d<=end){ const ds=d.toISOString().slice(0,10);
+    const r=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
+    if(r && r.startAt){ let ws=r.startAt, we=r.endAt || (ds===today? nowIso() : null);
+      if(we){ if(ds===startDay && ws<fromIso) ws=fromIso; const m=durationMin(ws,we); if(m>0) total+=m; } }
+    d.setDate(d.getDate()+1);
+  }
+  return total;
+}
+function processedText(v){ const who=v.claimedBy||v.editor, at=v.claimedAt;
+  if(!who||!at) return ""; const m=workedBetween(who, at); return m!=null? minToText(m) : ""; }
+// 目前進行中影片一覽（含負責人與已處理工時）— 給管理員／HR 觀察
+function inProgressBoard(){
+  const rows=[];
+  (STATE.videos||[]).filter(v=>v.stage==="剪輯中").forEach(v=>{
+    rows.push({name:v.name||v.rawName||"(未命名)", who:v.claimedBy||v.editor||"", lang:"中文", t:processedText(v), id:v.id}); });
+  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ (STATE.videos||[]).forEach(v=>{ const L=v.languages?.[l];
+    if(L&&L.status==="二創中"&&L.claimedBy){ rows.push({name:v.name||v.rawName||"(未命名)", who:L.claimedBy, lang:(LANG_LABEL[l]||l), t:(L.claimedAt?minToText(workedBetween(L.claimedBy,L.claimedAt)):""), id:v.id}); } }); });
+  if(!rows.length) return `<div class="card"><b>🎬 目前進行中的影片</b><p class="muted" style="margin-top:6px">目前沒有人在剪片。</p></div>`;
+  return `<div class="card"><b>🎬 目前進行中的影片（${rows.length}）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>負責</th><th>語言</th><th>已處理</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${r.id}')">${esc(r.name)}</a></td>
+      <td data-label="負責">${esc(r.who)}</td><td data-label="語言">${esc(r.lang)}</td>
+      <td data-label="已處理"><b>${esc(r.t||"—")}</b></td></tr>`).join("")}</tbody></table>
+    <p class="muted" style="font-size:11px;margin-top:6px">「已處理」只計上班打卡時段，跨日會從隔日上班續算，直到剪輯按「完成」。</p></div>`;
+}
 function claimLang(id,lang){
   const me=currentUser();
   if(inProgressCount(me)>=1){ toast("請先把進行中的影片做完，才能再拉新的",true); return; }
@@ -1404,14 +1492,17 @@ function finishGate(p){ const ok=val(p+"date")&&val(p+"backup").trim()&&val(p+"s
 function finishLang(id,lang){
   const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today; const lb=LANG_LABEL[lang]||lang;
   showModal("完成"+lb+"二創：填上片資訊", `
-    <label>上片日期（會顯示在${lb}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}" oninput="finishGate('fl_')">
+    <div class="grid cols2">
+      <div><label>上片日期（會顯示在${lb}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}" oninput="finishGate('fl_')"></div>
+      <div><label>上片時間</label>${pubTimeSelect("fl_time", L.publishTime)}</div>
+    </div>
     <label>雲端備份連結</label><input id="fl_backup" value="${esc(L.driveFolder||"")}" oninput="finishGate('fl_')" placeholder="Google Drive 備份">
     <label>社群平台預排連結</label><input id="fl_social" value="${esc(L.socialLink||L.publishedLink||"")}" oninput="finishGate('fl_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期與兩個連結都填好，才能按「確認送出」。</p>
+    <p class="muted">日期、時間與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
     const fin=nowIso(); const cAt=L.claimedAt||null;
     return await write("PUT",`/api/videos/${id}/lang/${lang}`,
-      {lang:{status:"完成", finishedAt:fin, scheduledDate:val("fl_date"), editor:currentUser(),
+      {lang:{status:"完成", finishedAt:fin, scheduledDate:val("fl_date"), publishTime:val("fl_time"), editor:currentUser(),
              claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null),
              publishedLink:val("fl_social"), driveFolder:val("fl_backup"), socialLink:val("fl_social")}},
       "已完成，已加入"+lb+"行事曆");
@@ -1423,13 +1514,16 @@ function finishVid(id){
   const def = v.scheduledDate || today;
   showModal("完成影片：填上片資訊", `
     <label>成品名稱</label><input id="f_name" value="${esc(v.name||v.rawName||"")}">
-    <label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')">
+    <div class="grid cols2">
+      <div><label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
+      <div><label>上片時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
+    </div>
     <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
     <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期與兩個連結都填好，才能按「確認送出」。</p>
+    <p class="muted">日期、時間與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:val("f_name")||undefined, scheduledDate:val("f_date"),
+      {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
