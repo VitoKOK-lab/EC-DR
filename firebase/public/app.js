@@ -525,6 +525,8 @@ const EN_DICT = {
   "「交辦」工作請按 ⏱ 加上處理時長":"Tap ⏱ to add handling time for the assigned task",
   "「交辦」工作需回覆處理狀況至少 12 字（目前 ":"Assigned task needs a status reply of at least 12 chars (now ",
   "交辦":"Task", "💾 儲存／回覆主管":"💾 Save / reply to manager", "💾 儲存特別工作":"💾 Save extra work",
+  "重新開工":"reopen", "今日匯報已送出，內容與工時已鎖定。若是誤按下班，可":"Today's report is submitted and locked. If you clocked out by mistake, you can ",
+  "繼續編輯。":" to keep editing.",
   "已儲存，交辦回覆已送給主管":"Saved — reply sent to your manager",
   "💡 交辦工作：填好「回覆處理狀況」並按 ⏱ 加時長後，按下方「儲存」，主管當天就能看到你的回覆。":"💡 Assigned tasks: fill in the status reply, tap ⏱ for time, then press Save — your manager sees it the same day.",
   "今日匯報已送出，無法再接工作":"Today's report is submitted; can't accept more work",
@@ -669,6 +671,8 @@ function doneTaskRows(todayOnly){
       <span class="muted" style="font-size:12px">${m.minutes?('花費 '+m.minutes+' 分・'):''}${whenLabel(m.doneAt)} 回覆</span></div>
     <div style="margin-top:4px">📌 ${esc(m.text)}</div>
     <div style="font-size:13px;margin-top:3px;color:var(--green)">↳ 回覆：${m.reply?esc(m.reply):'<span style="color:var(--red)">（未填）</span>'}</div>
+    ${m.bossResponse?`<div style="font-size:12px;margin-top:3px;color:var(--accent)">↩ 你的回應：${esc(m.bossResponse)}</div>`:''}
+    ${currentRole()==='boss'?`<div style="margin-top:6px"><button class="btn sm sec" onclick="respondTask('${m.id}')">↩ ${m.bossResponse?'再回應':'回應／下一步'}</button></div>`:''}
   </div>`).join("");
 }
 // ---- 人資（檢核者）儀表板：直接追蹤效率有問題＋交辦未完成的人 ----
@@ -717,6 +721,61 @@ function viewHrDash(){
   </details>`;
 }
 // ---- 總覽 ----
+// 工作追蹤：早上(過中午前)看「昨日」、過中午後看「今日」。不影響交辦(交辦看交辦日)
+function trackDay(){ const beforeNoon=new Date(Date.now()+288e5).getUTCHours()<12;
+  if(!beforeNoon) return today;
+  const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); return yd.toISOString().slice(0,10); }
+function workTrackBoard(){
+  const ds=trackDay(); const isToday=(ds===today);
+  const title=isToday? "📋 今日工作追蹤" : "📋 昨日工作追蹤";
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const rows=editors.map(u=>{
+    const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"]; const q=userQuota(u.name);
+    const done=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))?1:0),0);
+    const met=q>0?done>=q:true;
+    const rep=(STATE.reports||[]).find(x=>x.user===u.name && x.date===ds)||{};
+    const items=otherItems(rep);
+    const dot=met?'var(--green)':(rep.startAt?'var(--amber)':'#cbd5e1');
+    const timeInfo = rep.startAt
+      ? ('🟢 '+hhmm(rep.startAt)+' 開工'+(rep.endAt?('・'+hhmm(rep.endAt)+' 下班'):(isToday?'・上班中':'')))
+      : (isToday?'⚪ 未開工':'⚪ 當天未開工');
+    const otherHtml=items.length?('<div style="margin-top:4px">'+items.map(s=>`<div class="muted" style="font-size:11px">・${s.task?'<b style="color:#6d28d9">交辦</b>：':''}${esc(s.t)}${s.m?'（'+s.m+'分）':''}${(s.task)?(s.reply?(' ↳回覆：'+esc(s.reply)):' <span style="color:var(--red)">↳未回覆</span>'):''}</div>`).join('')+'</div>'):'';
+    return `<div style="padding:9px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
+      <div class="row" style="justify-content:space-between"><span style="font-weight:700;min-width:0">${esc(u.name)} <span class="muted" style="font-size:11px;font-weight:500">${timeInfo}</span></span>
+        <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'};flex:none">${done}/${q}</span></div>
+      ${otherHtml}
+    </div>`;
+  }).join("")||'<p class="muted">尚無剪輯成員</p>';
+  return `<div class="card" style="border-color:var(--accent)"><b>${title}</b>
+    <span class="muted" style="font-size:12px">　${ds}（${weekdayZh(ds)}）${isToday?'':'・早上看昨日成果，過中午後自動切今日'}</span>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${rows}</div></div>`;
+}
+// 主管回應交辦的處理狀況（給對方下一步）→ 以新訊息送回該員收件匣
+function respondTask(msgId){
+  const m=(STATE.messages||[]).find(x=>x.id===msgId); if(!m) return;
+  const to=m.doneBy||m.to;
+  showModal("↩ 回應給 "+to, `
+    <div style="padding:10px;background:var(--panel2);border-radius:8px;white-space:pre-wrap;font-size:13px">原交辦：${esc(m.text)}${m.reply?`\n↳ 對方回覆：${esc(m.reply)}`:""}</div>
+    <label style="margin-top:10px">你的回應／下一步</label>
+    <textarea id="rsp_text" placeholder="例：收到，這支再補字幕；或：OK 可以上架了"></textarea>
+  `, async ()=>{
+    const text=val("rsp_text").trim(); if(!text){ toast("請輸入回應內容",true); return false; }
+    const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const rec={id, to, from:currentUser(), text:"↩ 回應你回報的「"+String(m.text).slice(0,16)+"…」：\n"+text, at:nowIso(), read:false, accepted:false, done:false};
+    try{ await window.DB.set("messages", id, rec);
+      await window.DB.update("messages", msgId, {bossResponse:text, respondedAt:nowIso()});
+      toast("已回應給 "+to); return true;
+    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
+  });
+}
+// 誤按下班/測試用：重新開工（解除今日匯報鎖定，按鈕才會回來）
+async function reopenReport(){
+  const me=currentUser(); const rid=me+"__"+today;
+  const old=(STATE.reports||[]).find(x=>x.id===rid)||{};
+  if(!old.locked){ toast("今日匯報未鎖定"); return; }
+  try{ await window.DB.update("reports", rid, {locked:false, endAt:""}); toast("已重新開工，可繼續編輯今日匯報"); }
+  catch(e){ toast("操作失敗，請稍後再試",true); }
+}
 function viewDash(){
   if(!DASH){ loadDash(); return `<h2>📊 總覽</h2><p class="muted">載入中…</p>`; }
   if(currentRole()==="hr") return viewHrDash();
@@ -823,7 +882,7 @@ function viewDash(){
   // ===== ② 今日進度（精簡一覽）=====
   const stat=(n,l,col)=>`<div style="flex:1;min-width:88px;text-align:center;padding:10px 6px;background:var(--panel2);border-radius:10px">
     <div style="font-size:25px;font-weight:900;color:${col||'var(--txt)'}">${n}</div><div class="muted" style="font-size:12px">${l}</div></div>`;
-  const progCard=`<div class="card"><b>📊 今日進度</b>
+  const progCard=`<div class="card"><b>📊 排程與庫存</b>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
       ${stat(runway+' 天','預排天數',safeCol)}
       ${stat(newSrc+' 支','新片庫存',srcCol)}
@@ -863,8 +922,7 @@ function viewDash(){
   const peopleCard=`<div class="card"><b>👥 每日匯報・近 7 天</b>
     <div class="grid cols3" style="margin-top:10px">${userCards}</div></div>`;
   const detail=`<details style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 詳細數據（即時團隊・近 7 天・效率・月排程）</summary>
-    ${liveCard}
+    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 詳細數據（待剪新片・近 7 天・效率・月排程）</summary>
     ${inProgressBoard()}
     ${peopleCard}
     ${perfCard}
@@ -874,10 +932,10 @@ function viewDash(){
   return `
   <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
   ${demoBanner}
-  ${yCard}
-  ${progCard}
+  ${workTrackBoard()}
   ${taskCard}
   ${assignStatusCard}
+  ${progCard}
   ${detail}`;
 }
 // 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
@@ -1237,7 +1295,8 @@ function specialTasksBlock(rep){
     return `<div>
       <b>📝 今日特別工作</b> <span class="pill ok">已送出・鎖定</span>
       <div style="margin-top:6px">${list}</div>
-      <p class="muted" style="font-size:11px;margin-top:6px">今日匯報已送出，內容與工時已鎖定，無法再修改。</p>
+      <p class="muted" style="font-size:11px;margin-top:6px">今日匯報已送出，內容與工時已鎖定。若是誤按下班，可
+        <a href="javascript:void(0)" onclick="reopenReport()">重新開工</a> 繼續編輯。</p>
     </div>`;
   }
   let sp=rep&&rep.special; if(!sp||!sp.length){ sp=[{t:(rep&&rep.content)||"",m:0},{t:"",m:0},{t:"",m:0}]; }
