@@ -645,17 +645,14 @@ function viewHrDash(){
     const todayDone=row.todayDone||0;
     const streak=missStreakPast(u.name, langs, q);
     const todayMiss=isWorkday(today) && q>0 && todayDone<q;
-    const needHelp=(STATE.videos||[]).some(v=>v.needHelp && (v.claimedBy===u.name||v.editor===u.name));
     const pend=(STATE.messages||[]).filter(m=>m.to===u.name && !m.done).length;
-    return {name:u.name, q, todayDone, streak, todayMiss, needHelp, pend, inprog:inProgressCount(u.name)};
+    return {name:u.name, q, todayDone, streak, todayMiss, pend, inprog:inProgressCount(u.name)};
   });
   const serious=track.filter(t=>t.streak>=3).sort((a,b)=>b.streak-a.streak);
   const watch=track.filter(t=>t.todayMiss && t.streak<3).sort((a,b)=>(a.todayDone-a.q)-(b.todayDone-b.q));
-  const help=track.filter(t=>t.needHelp);
   const row=(t,col)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;background:var(--panel2);border-radius:10px;margin-top:6px;border-left:4px solid ${col}">
     <div style="min-width:0"><b>${esc(t.name)}</b>
-      ${t.needHelp?'<span class="pill em" style="margin-left:6px">🆘 求支援</span>':''}
-      ${t.pend?`<span class="pill wa" style="margin-left:4px">交辦未完成 ${t.pend}</span>`:''}
+      ${t.pend?`<span class="pill wa" style="margin-left:6px">交辦未完成 ${t.pend}</span>`:''}
       <div class="muted" style="font-size:12px;margin-top:2px">今日 ${t.todayDone}/${t.q}　進行中 ${t.inprog} 片${t.streak>=1?`　・連續落後 ${t.streak} 個工作日`:''}</div></div>
     <button class="btn sm" onclick="sendTask('${esc(t.name)}')">✉ 追蹤／交辦</button>
   </div>`;
@@ -1152,8 +1149,7 @@ function viewWork(){
       <td data-label="負責">${esc(owner(v))}${(!inPool&&claimAtOf(v))?` <span class="muted">·已 ${durationText(claimAtOf(v))}</span>`:""}</td>
       <td data-label="">${inPool
         ? `<button class="btn sm" onclick="${isZh?`claimVid('${v.id}')`:`claimLang('${v.id}','${lang}')`}" ${atLimit?"disabled style=\"opacity:.5\"":""}>我來做</button>`
-        : `<button class="btn sm" onclick="${isZh?`finishVid('${v.id}')`:`finishLang('${v.id}','${lang}')`}">完成✔</button>
-           ${isZh?`<button class="btn sm sec" onclick="helpVid('${v.id}',${!v.needHelp})">${v.needHelp?"取消支援":"求支援"}</button>`:""}`}
+        : `<button class="btn sm" onclick="${isZh?`finishVid('${v.id}')`:`finishLang('${v.id}','${lang}')`}">完成✔</button>`}
       </td></tr>`;
   const switcher = canAllLang()
     ? `<div class="row" style="gap:6px;margin-bottom:10px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
@@ -1438,11 +1434,6 @@ function finishVid(id){
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
   finishGate("f_");
-}
-function helpVid(id,need){
-  let note="";
-  if(need){ note = prompt("需要什麼支援？簡短說明："); if(note===null) return; }
-  write("POST",`/api/videos/${id}/help`,{needHelp:need,helpNote:note}, need?"已標記需要支援":"已取消");
 }
 function langTask(id,lang){
   write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser()}},"已認領二創任務");
