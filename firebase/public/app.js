@@ -26,7 +26,6 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
-function todayLabel(){ return today.slice(5).replace("-","/")+"（週"+weekdayZh(today)+"）"; }
 function deviceId(){ let id=localStorage.getItem("ecdr_device");
   if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
   return id; }
@@ -40,17 +39,10 @@ function minToText(m){ if(m==null) return "-";
 // ---------- 語言別（多語分軌排程） ----------
 const SCHED_LANGS = ["zh"];   // 已移除英/泰，全部中文、不做二創
 let CUR_LANG = null;
-function myUser(){ return (STATE&&STATE.users||[]).find(x=>x.name===currentUser()); }
-function myLang(){ return "zh"; }
 function canAllLang(){ return false; }
 function curLang(){ return "zh"; }
 function setLang(l){ /* 已停用語言切換 */ }
 // 角色標籤 ↔ {role, lang}（語言一律 zh）
-function roleInfo(label){ const s=String(label||"").trim().toLowerCase();
-  if(/管理員|老闆|boss|ceo|顧問|consultant/.test(s)) return {role:"boss",lang:"zh"};
-  if(/人資|hr/.test(s)) return {role:"hr",lang:"zh"};
-  return {role:"editor",lang:"zh"}; }
-function memberLabel(u){ if(u.role==="boss") return "管理員"; if(u.role==="hr") return "人資"; return "剪輯"; }
 // 我目前進行中的影片數（跨語言）
 function inProgressCount(name){
   let n=(STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length;
@@ -95,7 +87,7 @@ function langFinishedInRange(v,lg,name,s,e){
 
 function toast(msg, isErr){
   const t = document.getElementById("toast");
-  t.textContent = uiEN()? enify(msg) : msg; t.className = "toast show" + (isErr?" err":"");
+  t.textContent = msg; t.className = "toast show" + (isErr?" err":"");
   setTimeout(()=>{ t.className = "toast"; }, 2600);
 }
 
@@ -144,13 +136,10 @@ function computeWarnings(){
 }
 function workdaysBetween(start,end){ if(!start||!end||end<start) return 0; let n=0; const c=new Date(start);
   while(c<=end){ const w=c.getDay(); if(w>=1&&w<=5) n++; c.setDate(c.getDate()+1);} return n; }
-function editorNames(){ return (STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name); }
 // 每位成員可有自己的每日 KPI 支數；沒設就用全域預設
 function userQuota(name){ const u=(STATE.users||[]).find(x=>x.name===name);
   if(u && u.dailyQuota!=null && u.dailyQuota!=="") return Number(u.dailyQuota)||0;  // 0 視為有效（無 KPI）
   return STATE.settings?.editorDailyQuota||3; }
-function finishedOn(v,date){ return ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===date; }
-function finishedInRange(v,start,end){ if(!["已完成","已上片"].includes(v.stage)) return false; const fd=parseDate(v.finishedAt); return !!(fd && fd>=start && fd<=end); }
 // 績效以「月」為單位累積、每月自動重置（從當月 1 號到今天的工作日 × 配額為應達量）
 function computeWorkload(date){
   const s=STATE.settings||{}; const tod=parseDate(date)||new Date();
@@ -213,7 +202,6 @@ function loadDash(){ DASH=computeDashboard(today); render(); }
 
 // ---------- 寫入：路由（對應後端 _route），改用 window.DB 操作 Firestore ----------
 function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id); }
-function prodLocal(id){ return (STATE.products||[]).find(p=>p.id===id); }
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
 // 對外的 route：執行寫入後寫一筆稽核紀錄（誰／哪台裝置／做了什麼）
 async function route(method, path, body){
@@ -422,7 +410,7 @@ function applyState(raw){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
-    document.getElementById("whoRole").textContent="・"+(uiEN()?({"管理員":"Admin","人資":"HR","剪輯":"Editor"}[ROLE_LABEL[currentRole()]]||"Editor"):(ROLE_LABEL[currentRole()]||""));
+    document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     maybeAutoClockIn();
     buildNav(); render();
@@ -442,9 +430,7 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&l
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function prod(id){ return (STATE.products||[]).find(p=>p.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
-function lightDot(l){ return `<span class="light ${l||'green'}"></span>`; }
 function typeTag(t){ const c=t==="帶貨型"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
-function nonZh(){ return (STATE.settings?.languages||["zh"]).filter(l=>l!=="zh"); }
 const LANG_LABEL={zh:"中",en:"英",th:"泰",ms:"馬"};
 
 // ===================================================================
@@ -457,152 +443,6 @@ function renderCharts(){
   Object.values(CHARTS).forEach(c=>{ try{c.destroy();}catch(e){} }); CHARTS={};
   PENDING_CHARTS.forEach(s=>{ const el=document.getElementById(s.id); if(el){ try{ s.config.options=Object.assign({responsive:true,maintainAspectRatio:false},s.config.options||{}); CHARTS[s.id]=new window.Chart(el,s.config); }catch(e){} } });
 }
-// ===================================================================
-// 介面語言（i18n）：英語／泰語剪輯看到英文介面，中文同仁不受影響
-// 作法：渲染後對中文使用者保留原樣；對英文使用者做字典替換（整頁、彈窗、提示）
-// ===================================================================
-function uiEN(){ return false; }   // 已移除英文介面，全部中文
-const EN_DICT = {
-  // 標頭 / 導覽 / 角色
-  "✂️ 剪輯儀表板":"✂️ Editor", "📅 月排程":"📅 Schedule", "🎞 影片庫":"🎞 Videos",
-  "剪輯個人儀表板":"My Editor Dashboard", "📋 今日工作":"📋 Today's Work", "今日工作":"Today's Work", "登出":"Logout", "離線":"Offline",
-  "⬇ 拉下來開始剪":"⬇ Pull & start", "從清單選一支新片，按「拉下來」開始剪（一次一支）：":"Pick a new video from the list and tap “Pull” to start (one at a time):",
-  "目前沒有未處理片源，可按「＋ 新增片源」建立":"No unclaimed videos — tap “+ Add Video” to create one",
-  "上片時間":"Publish time", "排舊片到這天":"Schedule old video here", "排入":"Add", "社群連結（可後補）":"Social link (optional)",
-  "🆕 新片源（拉進我的進行中）":"🆕 New source (pull into my in-progress)", "依剪輯人名分組・點標題看細節":"grouped by editor · tap title for details",
-  "（未指派／未認領）":"(Unassigned)", "上班先打卡才能開始今天的工作":"Clock in to start today's work",
-  "從清單選一支新片，按「拉下來」開始剪：":"Pick a new video and tap “Pull” to start:", "進行中":"In progress",
-  "⚠ 手上已有 3 支進行中，先完成幾支再拉新片":"⚠ You have 3 in progress — finish some before pulling more",
-  "⚠ 手上已有 3 支進行中，先完成幾支再拉":"⚠ You have 3 in progress — finish some first",
-  "手上已有 3 支進行中，先完成幾支再拉":"You have 3 in progress — finish some first",
-  "目前沒有未處理片源":"No unclaimed videos", "目前沒有待二創的影片":"No videos pending derivative", "位剪輯":" editors",
-  "待剪新片":"New videos to edit", "＋ 新增片名／內容":"+ Add title/content", "新增待剪新片":"Add a new video",
-  "片名":"Title", "內容（素材／主題說明）":"Content (material / topic)", "這支片的素材、主題、重點…":"Material, topic, key points…",
-  "目前沒有進行中的影片，從下方「待剪新片」拉一支來剪":"No videos in progress — pull one from “New videos to edit” below",
-  "目前沒有待剪新片，可按「＋ 新增片名／內容」建立":"No new videos — tap “+ Add title/content” to create one",
-  "每日主要工作 今日完成":"Daily main work · done today",
-  "目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。":"Offline — showing last synced data (read-only); will auto-update when reconnected.",
-  // 打卡 / 工時
-  "開工打卡":"Clock In", "已開工":"Clocked in", "已下班":"Clocked out", "今日工時":"today's hours",
-  "上班先打卡，老闆才看得到你今天幾點開始":"Clock in first so your manager can see your start time",
-  "今天加油！":"Have a great day!", "辛苦了！":"Well done!", "辛苦了 👋":"Well done 👋",
-  // 每日主要工作 / 進行中 / 片源
-  "每日主要工作":"Daily Main Work", "今日完成":"Done today", "我進行中的影片":"My In-Progress Videos",
-  "今日已領":"Picked today", "還有進行中的影片，剪完並填上傳連結後才能再拉新片":"Finish your current video (with upload link) before picking a new one",
-  "今天已拉滿 3 片，明天再領":"You've picked 3 today — come back tomorrow",
-  "目前沒有進行中的影片，可從下方認領":"No in-progress videos — pick one below",
-  "未處理片源":"Unclaimed Videos", "待二創":"Pending derivative",
-  "＋ 新增片源":"+ Add Video", "＋ 新增":"+ Add", "新增片源":"Add Video",
-  "目前沒有未處理片源":"No unclaimed videos",
-  "目前沒有待二創的影片（要中文母版先完成）":"No videos pending derivative (Chinese master must finish first)",
-  "我來做":"Take it", "完成✔（回覆＋填工時）":"Done ✔ (reply + time)", "完成✔":"Done ✔",
-  "求支援":"Need help", "取消支援":"Cancel help",
-  "♻ 舊片重播（重複使用）":"♻ Re-run Old Video", "＋ 排舊片進月歷":"+ Schedule old video",
-  "把已完成的舊片再排到未來某天上片。系統會記錄這支片用過幾次、每次的日期與連結（在影片詳情可查）。":"Schedule a finished old video for a future date. The system records how many times it's been used, with each date and link (see video details).",
-  "影片":"Video", "片源":"Source", "負責":"Owner",
-  // 收件匣 / 交辦
-  "老闆交辦／留言":"Tasks / Messages from Boss",
-  "系統已記錄你看到這些交辦的時間；完成時要填「處理狀況」（至少 10 字）。":"The system has logged when you saw these tasks; you must reply with a status (min 10 chars) to complete.",
-  "標示已讀":"Mark as read", "已讀":"Read", "未讀":"Unread",
-  "✅ 收到":"✅ Got it", "已收到，移到今日特別工作":"Received — moved to today's extra work",
-  "今天最多只能接 3 個剪輯以外的工作":"Up to 3 non-editing tasks per day", "來自交辦":"From assignment",
-  "回覆處理狀況（至少 12 字）":"Reply with handling status (at least 12 characters)",
-  "（內容不可修改，請填處理狀況與時長）":" (content locked — add status & time)",
-  "「交辦」工作請按 ⏱ 加上處理時長":"Tap ⏱ to add handling time for the assigned task",
-  "「交辦」工作需回覆處理狀況至少 12 字（目前 ":"Assigned task needs a status reply of at least 12 chars (now ",
-  "交辦":"Task", "💾 儲存／回覆主管":"💾 Save / reply to manager", "💾 儲存特別工作":"💾 Save extra work",
-  "重新開工":"reopen", "今日匯報已送出，內容與工時已鎖定。若是誤按下班，可":"Today's report is submitted and locked. If you clocked out by mistake, you can ",
-  "繼續編輯。":" to keep editing.",
-  "已儲存，交辦回覆已送給主管":"Saved — reply sent to your manager",
-  "💡 交辦工作：填好「回覆處理狀況」並按 ⏱ 加時長後，按下方「儲存」，主管當天就能看到你的回覆。":"💡 Assigned tasks: fill in the status reply, tap ⏱ for time, then press Save — your manager sees it the same day.",
-  "今日匯報已送出，無法再接工作":"Today's report is submitted; can't accept more work",
-  "完成交辦：回覆處理狀況＋填工時":"Complete Task: Reply Status + Time",
-  "處理狀況／回覆（至少 10 個字）":"Handling status / reply (at least 10 characters)",
-  "說明你怎麼處理、結果如何、有沒有遇到問題或需要協助…（至少 10 個字）":"Explain how you handled it, the result, and any problems or help needed… (at least 10 characters)",
-  "這項工作花了多少時間（分鐘）":"How long did this take (minutes)",
-  "送出後，交辦內容、你的處理狀況與花費時間，主管與同事都會在儀表板看到。":"After submitting, the task, your status reply and time will be visible to managers and teammates on the dashboard.",
-  "送出回覆並完成":"Submit & Complete",
-  "處理狀況請至少 10 個字（目前":"Status needs at least 10 characters (now",
-  "字）":" chars)", "處理狀況請認真填寫，不要用重複字元充數":"Please write a real status — no repeated filler characters",
-  "已完成交辦並回覆，記入其他工作":"Task completed and replied; logged to other work",
-  // 特別工作 / 匯報
-  "今日特別工作":"Today's Extra Work", "最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）":"Up to 3 items; each tap +30 min (max 2h, then resets to 0)",
-  "特別／額外工作（沒有可留空）":"Extra / other work (leave blank if none)",
-  "💾 儲存特別工作":"💾 Save Extra Work", "🔴 送出今日匯報下班":"🔴 Submit Daily Report & Clock Out",
-  "剪片數系統自動計入；特別工作時間會算進「其他工時」。":"Edited videos are counted automatically; extra-work time is added to “other hours”. ",
-  "送出後內容與工時會鎖定、不能再改":"After submitting, content and hours are locked and cannot be changed",
-  "，並直接下班登出。":", and you'll clock out and log out.",
-  "已送出・鎖定":"Submitted · Locked",
-  "今日匯報已送出，內容與工時已鎖定，無法再修改。":"Today's report is submitted; content and hours are locked and cannot be changed.",
-  "今日匯報已送出，無法再修改":"Today's report is submitted and cannot be changed",
-  "無特別工作":"No extra work",
-  "送出今日匯報":"Submit Daily Report",
-  "確定今天的匯報內容":"Are you sure today's report",
-  "沒有需要再修改":"needs no more changes",
-  "了嗎？":"?",
-  "送出後今天的工時與內容就":"After submitting, today's hours and content are",
-  "不能再更改":"locked and cannot be changed",
-  "並會直接下班、登出回到登入畫面。":", and you'll clock out and return to the login screen.",
-  "確定，下班登出":"Confirm — Clock Out & Logout",
-  "已送出今日匯報，下班！":"Daily report submitted. Clocking out!",
-  "已儲存特別工作":"Extra work saved",
-  // 工時分配
-  "我的工時分配":"My Time Allocation", "以每日 8 小時計":"based on 8h/day",
-  "今天":"Today", "剪輯":"Editing", "其他":"Other", "個工作日平均":" workday avg", "不含六日":"excl. weekends",
-  "近 ":"Last ",
-  // 大家的其他工作
-  "今天大家的其他工作":"Everyone's Other Work Today", "所有人都看得到":"Visible to everyone",
-  "成員":"Member", "工作內容":"Work", "時間":"Time", "交辦":"Task", "處理狀況":"Status",
-  // 完成影片（finish）
-  "完成":"Complete", "上片日期":"Publish date", "雲端備份連結":"Cloud backup link",
-  "社群平台預排連結":"Social schedule link", "需確認：已上架、已上傳雲端備份、社群平台已預排":"Confirm: published, cloud backup uploaded, social post scheduled",
-  "請選擇上片日期":"Please choose a publish date", "日期與兩個連結都填好，才能按「確認送出」。":"Fill the date and both links to enable Submit.",
-  // 月排程
-  "月排程":"Monthly Schedule", "上月":"Prev", "下月":"Next",
-  "月排程為":"Schedule is ", "唯讀":"read-only", "剪輯按「完成」時自動排入。":"Videos are auto-added when an editor marks Done. ",
-  "已排滿":"Full", "尚未排":"Not scheduled", "大紅色":"big red",
-  "10 天內還沒排好（要趕快補）。點任一天可":"not scheduled within 10 days (fill soon). Tap a day to ",
-  "改上片日期":"change publish date", "不可刪除":"cannot delete", "不可刪除）":"cannot delete)",
-  "語言：":"Language: ",
-  // 影片庫
-  "影片庫":"Video Library", "點標題看細節／改連結":"tap title for details / edit links",
-  "搜尋影片名稱／剪輯":"Search video / editor", "全部狀態":"All status",
-  "待處理":"To-do", "剪輯中":"Editing", "已完成":"Completed", "已上片":"Published",
-  "沒有符合的影片":"No matching videos", "共":"Total", "筆":"", "顯示前":"Showing first",
-  "用上方搜尋縮小範圍。":"use search above to narrow down.",
-  // 舊片重播
-  "排舊片重播（重複使用）":"Schedule Old Video (reuse)", "搜尋舊片（片名關鍵字）":"Search old videos (title keyword)",
-  "輸入片名找舊片…":"Type a title to find old videos…", "選擇舊片":"Choose old video",
-  "這次上片日期（可排未來）":"Publish date (future allowed)", "這次的社群連結":"Social link for this run",
-  "每次重播都會分別記錄日期與連結，並計入使用次數。":"Each re-run records its own date and link and counts toward usage.",
-  "找不到符合的舊片":"No matching old videos", "已用":"used", "次":"times", "尚無使用紀錄":"No usage yet",
-  // 認領 / 規則 toasts
-  "已認領，加入我的工作":"Claimed — added to your work",
-  "請先把進行中的影片剪完（含上傳連結），才能再拉新片":"Finish your current video (with upload link) before picking a new one",
-  "你今天已經拉滿 3 片囉，明天再領":"You've picked 3 videos today — come back tomorrow",
-  "請先把進行中的影片做完，才能再拉新的":"Finish your current video before picking a new one",
-  // 改密碼
-  "🔑 改密碼":"🔑 Change Password", "輸入目前的密碼：":"Enter current password:", "目前密碼錯誤":"Current password is wrong",
-  "輸入新密碼：":"Enter new password:", "再輸入一次新密碼確認：":"Re-enter new password:", "兩次密碼不一致":"Passwords don't match",
-  "密碼不可空白":"Password cannot be empty", "密碼已更新":"Password updated", "密碼錯誤":"Wrong password",
-  "的登入密碼（預設 0000）：":" login password (default 0000):",
-  // 通用
-  "取消":"Cancel", "確認送出":"Submit", "連線中，請稍候再試":"Connecting, please try again",
-  "更新失敗，請稍後再試":"Update failed, please try again", "失敗，請稍後再試":"Failed, please try again",
-  "送出失敗，請稍後再試":"Submit failed, please try again",
-  "記入其他工作":"logged to other work", "分":"min",
-  "（重播）":" (re-run)", "♻ 重播":"♻ re-run",
-  "今天":"Today", "昨天":"Yesterday", "天前":" days ago",
-  // 每日工作日報
-  "我的每日工作日報（近 14 天）":"My Daily Work Log (last 14 days)",
-  "每天最少":"At least", "片；完成片數系統自動計入，特別工作為選填。":" videos/day; completed videos are counted automatically, extra work optional.",
-  "完成片數":"Done", "剪片工時":"Edit hours", "特別工作":"Extra work", "達標":"Met", "日期":"Date",
-  " (今天)":" (Today)", " 天":" days",
-};
-let EN_KEYS=null;
-function enify(html){ if(html==null) return html;
-  if(!EN_KEYS) EN_KEYS=Object.keys(EN_DICT).sort((a,b)=>b.length-a.length);
-  let s=String(html); for(const k of EN_KEYS){ if(s.indexOf(k)>=0) s=s.split(k).join(EN_DICT[k]); } return s; }
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
@@ -613,24 +453,14 @@ function render(){
     dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
     videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit, mine:viewMine
   }[CUR_TAB] || (()=>"");
-  v.innerHTML = uiEN()? enify(banner + fn()) : (banner + fn());
+  v.innerHTML = banner + fn();
   renderCharts();
 }
 
 // ---- 交辦狀況 / 檢核輔助 ----
-function isWorkday(ds){ const d=new Date((ds||today)+"T00:00:00").getDay(); return d!==0 && d!==6; }
 function daysAgoLabel(iso){ const ds=String(iso||"").slice(0,10); if(!ds) return ""; const diff=Math.round((new Date(today+"T00:00:00")-new Date(ds+"T00:00:00"))/86400000); return diff<=0?"今天":(diff===1?"昨天":diff+" 天前"); }
 function whenLabel(iso){ return esc(String(iso||"").slice(5,16).replace("T"," ")); }
 // 某人「最近連續幾個工作日未達標」（不含今天，避免上午誤判）
-function missStreakPast(name, langs, q){ if(!(q>0)) return 0;
-  let streak=0, guard=0, d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-1);
-  while(guard<25){ guard++;
-    if(isWorkday(d.toISOString().slice(0,10))){ const ds=d.toISOString().slice(0,10);
-      const n=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
-      if(n<q) streak++; else break; }
-    d.setDate(d.getDate()-1);
-  }
-  return streak; }
 // 未完成交辦清單
 // 未回覆的交辦：尚未收到 or 已收到處理中（含目前部分回覆）
 function pendingTaskRows(){
@@ -960,18 +790,6 @@ function lastNDetail(name, lang, q, n){ n=n||7;
   return out;
 }
 // 近 7 天迷你長條圖
-function sparkBars(last7, q){ if(!last7||!last7.length) return "";
-  const maxN=Math.max(q||1, ...last7.map(d=>d.n), 1);
-  return `<div style="display:flex;gap:3px;align-items:flex-end;height:46px;margin:8px 0">`+
-    last7.map(d=>{ const h=Math.round(d.n/maxN*36)+2;
-      // 達當日 KPI=綠；有做但未達=紅；完全沒做=淺灰
-      const col = (q>0 && d.n>=q)?"var(--green)":(d.n>0?"var(--red)":"#dfe3ea");
-      return `<div title="${d.date}：完成 ${d.n} 支${q?(d.n>=q?'（達標）':'（未達 '+q+'）'):''}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-        <div style="font-size:9px;color:var(--muted)">${d.n||""}</div>
-        <div style="width:100%;height:${h}px;background:${col};border-radius:3px"></div>
-        <div style="font-size:9px;color:var(--muted);margin-top:2px">${d.date.slice(8)}</div></div>`; }).join("")
-    +`</div>`; }
-
 // ---- 人員KPI（HR 每日檢核）----
 let WL_DATE=null;
 function wlMove(n){ const d=new Date((WL_DATE||today)+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
@@ -1569,9 +1387,6 @@ function finishVid(id){
   });
   finishGate("f_");
 }
-function langTask(id,lang){
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:currentUser()}},"已認領二創任務");
-}
 // 剪輯端輕量新增：只填片名＋內容，建立一支待剪新片
 function newSimpleVideo(){
   showModal("新增待剪新片", `
@@ -1842,7 +1657,7 @@ function showModal(title, inner, onConfirm, confirmLabel){
       <button class="btn sec" onclick="closeModal()">取消</button>
       ${onConfirm?`<button class="btn" id="modalConfirm">${esc(confirmLabel||"確認送出")}</button>`:""}
     </div></div></div>`;
-  root.innerHTML = uiEN()? enify(html) : html;
+  root.innerHTML = html;
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
 function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
@@ -1850,10 +1665,6 @@ function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
 // ===================================================================
 // 成員管理（只有 owner，預設 Vito 看得到此頁）
 // ===================================================================
-function roleCode(s){ s=String(s||"").trim().toLowerCase();
-  const m={"老闆":"boss","管理員":"boss","boss":"boss","ceo":"boss","顧問":"boss","consultant":"boss",
-           "人資":"hr","hr":"hr","剪輯":"editor","editor":"editor"};
-  return m[s]||m[String(s)]||"editor"; }
 const ROLE_TOKENS=[["boss","管理員"],["hr","人資"],["editor:zh","剪輯"]];
 function userToken(u){ return u.role==="boss"?"boss":(u.role==="hr"?"hr":"editor:zh"); }
 function viewMembers(){
