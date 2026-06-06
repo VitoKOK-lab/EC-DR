@@ -133,6 +133,40 @@
   .toast.show{opacity:1}
   .toast.err{background:var(--red)}
 
+  /* 登出畫面：象素小人敬禮 */
+  #goodbye{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(1100px 560px at 50% 28%,#2c3a5e,#10162a);color:#fff;text-align:center;padding:20px;
+    image-rendering:pixelated}
+  #goodbye.show{display:flex}
+  .pixwrap{transform:scale(1.7);margin-bottom:42px}
+  .pixman{position:relative;width:100px;height:124px;animation:pixbob 1.8s ease-in-out infinite}
+  @keyframes pixbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .pixman i{position:absolute;display:block}
+  .pm-cap{left:30px;top:0;width:40px;height:12px;background:#27406b}
+  .pm-brim{left:23px;top:12px;width:54px;height:6px;background:#1b2c4d}
+  .pm-badge{left:46px;top:2px;width:8px;height:8px;background:#ffd24a}
+  .pm-head{left:30px;top:18px;width:40px;height:32px;background:#f2c9a0}
+  .pm-eyeL{left:39px;top:32px;width:6px;height:7px;background:#2b2b2b}
+  .pm-eyeR{left:55px;top:32px;width:6px;height:7px;background:#2b2b2b}
+  .pm-mouth{left:43px;top:44px;width:14px;height:4px;background:#b3724b}
+  .pm-torso{left:26px;top:50px;width:48px;height:40px;background:#2e63a6}
+  .pm-belt{left:26px;top:84px;width:48px;height:7px;background:#1d2740}
+  .pm-legL{left:32px;top:91px;width:14px;height:21px;background:#26344f}
+  .pm-legR{left:54px;top:91px;width:14px;height:21px;background:#26344f}
+  .pm-bootL{left:30px;top:110px;width:18px;height:9px;background:#11151f}
+  .pm-bootR{left:52px;top:110px;width:18px;height:9px;background:#11151f}
+  .pm-armL{left:18px;top:52px;width:10px;height:30px;background:#2e63a6}
+  .pm-armR{left:40px;top:52px;width:30px;height:9px;background:#2e63a6;transform-origin:right center;
+    animation:pmsalute 2.4s ease-in-out infinite}
+  .pm-hand{left:38px;top:50px;width:11px;height:11px;background:#f2c9a0;transform-origin:right center;
+    animation:pmsalute 2.4s ease-in-out infinite}
+  @keyframes pmsalute{0%{transform:rotate(34deg)}16%{transform:rotate(-34deg)}82%{transform:rotate(-34deg)}100%{transform:rotate(34deg)}}
+  #goodbye .gtitle{font-size:30px;font-weight:900;letter-spacing:2px;margin:0}
+  #goodbye .gsub{color:#aab6d6;margin-top:8px;font-size:15px}
+  #goodbye .relogin{position:fixed;right:16px;bottom:14px;background:none;border:none;color:#9fb0d6;
+    font-size:13px;text-decoration:underline;cursor:pointer;padding:8px}
+  #goodbye .relogin:hover{color:#fff}
+
   @media (max-width:640px){
     main{padding:10px}
     h2{font-size:17px;margin-bottom:12px}
@@ -234,6 +268,20 @@
 
 <div id="modalRoot"></div>
 <div class="toast" id="toast"></div>
+
+<!-- 登出：象素小人敬禮「辛苦了」 -->
+<div id="goodbye">
+  <div class="pixwrap"><div class="pixman">
+    <i class="pm-cap"></i><i class="pm-brim"></i><i class="pm-badge"></i>
+    <i class="pm-head"></i><i class="pm-eyeL"></i><i class="pm-eyeR"></i><i class="pm-mouth"></i>
+    <i class="pm-torso"></i><i class="pm-belt"></i>
+    <i class="pm-legL"></i><i class="pm-legR"></i><i class="pm-bootL"></i><i class="pm-bootR"></i>
+    <i class="pm-armL"></i><i class="pm-armR"></i><i class="pm-hand"></i>
+  </div></div>
+  <p class="gtitle">辛苦了！</p>
+  <p class="gsub">今天的工作完成了，明天見 👋</p>
+  <button class="relogin" onclick="reLogin()">重新登入</button>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="legacy-data.js"></script>
