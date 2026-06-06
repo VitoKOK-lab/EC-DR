@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IP 短影音排程 × KPI 儀表板（雲端版）</title>
+<title>Media Team Work system</title>
 <style>
   :root{
     --bg:#f4f6f9; --panel:#ffffff; --panel2:#f3f5f9; --line:#e6e9f0;
@@ -31,6 +31,10 @@
            padding:16px 22px;border-radius:8px;font-size:16px;min-width:130px;text-align:center;font-weight:600;transition:.15s}
   .userBtn:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--shadow2)}
   .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:4px;font-weight:500}
+  .userBtn.lead{border-color:var(--accent);border-width:2px;box-shadow:var(--shadow2)}
+  .userBtn.lead .role{color:var(--accent);font-weight:700}
+  .userBtn.mgr{border-style:dashed}
+  .userSep{flex-basis:100%;height:1px;background:var(--line);margin:6px 0;opacity:.7}
   .addRow{margin-top:22px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .addRow input,.addRow select{padding:10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
@@ -192,7 +196,7 @@
 
 <!-- 登入 / 選擇使用者 -->
 <div id="login">
-  <h1>🎬 IP 短影音排程 × KPI 儀表板</h1>
+  <h1>🎬 Media Team Work system</h1>
   <p>請選擇你的名字（多人即時同步）</p>
   <div class="userGrid" id="userGrid"><p class="muted">連線中…</p></div>
   <div class="addRow"><button class="btn sec" onclick="ownerLogin()">🔒 管理員登入</button></div>
@@ -202,7 +206,7 @@
 <!-- 主畫面 -->
 <div id="app" class="hidden">
   <header>
-    <span class="brand">🎬 排程系統<span class="muted" style="font-size:11px">・雲端</span></span>
+    <span class="brand">🎬 Media Team Work system</span>
     <span class="spacer"></span>
     <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
     <button class="btn sm sec" onclick="logout()">切換</button>
