@@ -475,9 +475,93 @@ function render(){
   renderCharts();
 }
 
+// ---- 交辦狀況 / 檢核輔助 ----
+function isWorkday(ds){ const d=new Date((ds||today)+"T00:00:00").getDay(); return d!==0 && d!==6; }
+function daysAgoLabel(iso){ const ds=String(iso||"").slice(0,10); if(!ds) return ""; const diff=Math.round((new Date(today+"T00:00:00")-new Date(ds+"T00:00:00"))/86400000); return diff<=0?"今天":(diff===1?"昨天":diff+" 天前"); }
+function whenLabel(iso){ return esc(String(iso||"").slice(5,16).replace("T"," ")); }
+// 某人「最近連續幾個工作日未達標」（不含今天，避免上午誤判）
+function missStreakPast(name, langs, q){ if(!(q>0)) return 0;
+  let streak=0, guard=0, d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-1);
+  while(guard<25){ guard++;
+    if(isWorkday(d.toISOString().slice(0,10))){ const ds=d.toISOString().slice(0,10);
+      const n=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
+      if(n<q) streak++; else break; }
+    d.setDate(d.getDate()-1);
+  }
+  return streak; }
+// 未完成交辦清單
+function pendingTaskRows(){
+  const msgs=(STATE.messages||[]).filter(m=>!m.done).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
+  if(!msgs.length) return '<p class="muted">目前沒有未完成的交辦 ✅</p>';
+  return msgs.map(m=>`<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
+    <div class="row" style="justify-content:space-between;gap:8px"><b>${esc(m.to)}</b>
+      <span class="pill ${m.read?'wa':'em'}">${m.read?'已讀未完成':'未讀'}・交辦於 ${daysAgoLabel(m.at)}</span></div>
+    <div style="white-space:pre-wrap;margin-top:4px">${esc(m.text)}</div>
+  </div>`).join("");
+}
+// 已完成交辦（含處理狀況＋花費時間）
+function doneTaskRows(todayOnly){
+  let msgs=(STATE.messages||[]).filter(m=>m.done && (!todayOnly || String(m.doneAt||"").slice(0,10)===today));
+  msgs.sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||"")));
+  if(!msgs.length) return '<p class="muted">尚無已完成回報</p>';
+  return msgs.slice(0,60).map(m=>`<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
+    <div class="row" style="justify-content:space-between;gap:8px"><b>${esc(m.doneBy||m.to)}</b>
+      <span class="muted" style="font-size:12px">${m.minutes?('花費 '+m.minutes+' 分・'):''}${whenLabel(m.doneAt)} 完成</span></div>
+    <div style="margin-top:4px">📌 ${esc(m.text)}</div>
+    ${m.reply?`<div class="muted" style="font-size:12px;margin-top:3px">↳ 處理狀況：${esc(m.reply)}</div>`:'<div class="muted" style="font-size:12px;margin-top:3px;color:var(--red)">↳ （未填處理狀況）</div>'}
+  </div>`).join("");
+}
+// ---- 人資（檢核者）儀表板：直接追蹤效率有問題＋交辦未完成的人 ----
+function viewHrDash(){
+  const wl=DASH.workload||{rows:[]};
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const track=editors.map(u=>{
+    const langs=(u.lang==="all")?SCHED_LANGS:[u.lang||"zh"]; const q=userQuota(u.name);
+    const row=(wl.rows||[]).find(r=>r.name===u.name)||{};
+    const todayDone=row.todayDone||0;
+    const streak=missStreakPast(u.name, langs, q);
+    const todayMiss=isWorkday(today) && q>0 && todayDone<q;
+    const needHelp=(STATE.videos||[]).some(v=>v.needHelp && (v.claimedBy===u.name||v.editor===u.name));
+    const pend=(STATE.messages||[]).filter(m=>m.to===u.name && !m.done).length;
+    return {name:u.name, q, todayDone, streak, todayMiss, needHelp, pend, inprog:inProgressCount(u.name)};
+  });
+  const serious=track.filter(t=>t.streak>=3).sort((a,b)=>b.streak-a.streak);
+  const watch=track.filter(t=>t.todayMiss && t.streak<3).sort((a,b)=>(a.todayDone-a.q)-(b.todayDone-b.q));
+  const help=track.filter(t=>t.needHelp);
+  const row=(t,col)=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;background:var(--panel2);border-radius:10px;margin-top:6px;border-left:4px solid ${col}">
+    <div style="min-width:0"><b>${esc(t.name)}</b>
+      ${t.needHelp?'<span class="pill em" style="margin-left:6px">🆘 求支援</span>':''}
+      ${t.pend?`<span class="pill wa" style="margin-left:4px">交辦未完成 ${t.pend}</span>`:''}
+      <div class="muted" style="font-size:12px;margin-top:2px">今日 ${t.todayDone}/${t.q}　進行中 ${t.inprog} 片${t.streak>=1?`　・連續落後 ${t.streak} 個工作日`:''}</div></div>
+    <button class="btn sm" onclick="sendTask('${esc(t.name)}')">✉ 追蹤／交辦</button>
+  </div>`;
+  const seriousCard=`<div class="card" style="border-color:var(--red)">
+    <b style="color:var(--red)">🚨 連續落後（≥3 個工作日未達標）— 優先追蹤是否卡關／需要協助</b>
+    ${serious.length? serious.map(t=>row(t,'var(--red)')).join("") : '<p class="muted" style="margin-top:6px">沒有人連續落後 ✅</p>'}
+  </div>`;
+  const watchCard=`<div class="card">
+    <b>⚠ 今日尚未達標 — 留意進度</b>
+    ${watch.length? watch.map(t=>row(t,'var(--amber)')).join("") : '<p class="muted" style="margin-top:6px">今日大家進度正常 ✅</p>'}
+  </div>`;
+  const pendCard=`<div class="card"><b>✉ 老闆交辦・未完成（追蹤執行狀況）</b>
+    <div style="margin-top:6px">${pendingTaskRows()}</div></div>`;
+  const doneCard=`<div class="card"><b>✅ 交辦處理狀況（已完成回報）</b>
+    <span class="muted" style="font-size:12px">　看處理狀況判斷是否還需要協助</span>
+    <div style="margin-top:6px">${doneTaskRows(false)}</div></div>`;
+  return `
+  <h2>📋 部門檢核 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）・人資</span></h2>
+  ${seriousCard}
+  ${watchCard}
+  ${pendCard}
+  ${doneCard}
+  <details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 完整團隊數據（近 7 天・效率・月排程）</summary>
+    ${teamOtherWorkToday()}
+  </details>`;
+}
 // ---- 總覽 ----
 function viewDash(){
   if(!DASH){ loadDash(); return `<h2>📊 總覽</h2><p class="muted">載入中…</p>`; }
+  if(currentRole()==="hr") return viewHrDash();
   const p = DASH.progress, wl = DASH.workload||{rows:[]}, help = DASH.helpList||[];
   const runway = p.安全天數||0;
   const filled = (p.已排滿日期||[]);
@@ -607,7 +691,12 @@ function viewDash(){
     <div class="row" style="justify-content:space-between"><b>✉ 交辦事項</b>
       <span class="pill ${pendTotal?'wa':'ok'}">未完成 ${pendTotal}</span></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${taskRows}</div>
-    <p class="muted" style="font-size:11px;margin-top:6px">點「✉ 交辦」指派工作；剪輯按已讀→完成並填工時後，會回報到「今日完成」與下方詳細。</p>
+    <p class="muted" style="font-size:11px;margin-top:6px">點「✉ 交辦」指派工作；剪輯按已讀→完成並填處理狀況＋工時後，會回報到「今日完成」與下方處理狀況。</p>
+  </div>`;
+  // 交辦處理狀況（內容＋回覆＋花費時間，都看得到）
+  const assignStatusCard=`<div class="card"><b>📋 交辦處理狀況</b>
+    <div style="margin-top:8px"><div class="muted" style="font-size:12px;margin-bottom:2px">未完成</div>${pendingTaskRows()}</div>
+    <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:2px">已完成回報（內容・處理狀況・花費時間）</div>${doneTaskRows(false)}</div>
   </div>`;
 
   // ===== 詳細數據（預設收合，畫面保持精簡）=====
@@ -627,6 +716,7 @@ function viewDash(){
   ${yCard}
   ${progCard}
   ${taskCard}
+  ${assignStatusCard}
   ${detail}`;
 }
 // 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
@@ -980,7 +1070,7 @@ function viewWork(){
 function teamOtherWorkToday(){
   const rows=[];
   (STATE.reports||[]).filter(r=>r.date===today).forEach(r=>{
-    otherItems(r).forEach(s=>rows.push({user:r.user, t:s.t, m:s.m, task:s.task})); });
+    otherItems(r).forEach(s=>rows.push({user:r.user, t:s.t, m:s.m, task:s.task, reply:s.reply})); });
   if(!rows.length) return "";
   rows.sort((a,b)=>String(a.user).localeCompare(String(b.user)));
   return `<div class="card">
@@ -988,12 +1078,22 @@ function teamOtherWorkToday(){
     <table class="responsive"><thead><tr><th>成員</th><th>工作內容</th><th>時間</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td data-label="成員">${esc(r.user)}</td>
-      <td data-label="內容">${r.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(r.t)}</td>
+      <td data-label="內容">${r.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(r.t)}${(r.task&&r.reply)?`<div class="muted" style="font-size:11px;margin-top:2px">↳ 處理狀況：${esc(r.reply)}</div>`:''}</td>
       <td data-label="時間">${r.m?r.m+" 分":'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table>
   </div>`;
 }
 // 今日特別工作：最多 3 項，每項一個時間鈕（每按 +30 分，上限 2 小時，再按歸 0）
 function specialTasksBlock(rep){
+  // 已送出 → 唯讀鎖定（不可再改）
+  if(rep && rep.locked){
+    const items=otherItems(rep);
+    const list=items.length? items.map(s=>`<div style="padding:6px 0;border-top:1px solid var(--line)">${s.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(s.t)}${s.m?`<span class="muted">（${s.m} 分）</span>`:""}</div>`).join("") : '<span class="muted">無特別工作</span>';
+    return `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+      <b>📝 今日特別工作</b> <span class="pill ok">已送出・鎖定</span>
+      <div style="margin-top:6px">${list}</div>
+      <p class="muted" style="font-size:11px;margin-top:6px">今日匯報已送出，內容與工時已鎖定，無法再修改。</p>
+    </div>`;
+  }
   let sp=rep&&rep.special; if(!sp||!sp.length){ sp=[{t:(rep&&rep.content)||"",m:0},{t:"",m:0},{t:"",m:0}]; }
   sp=sp.slice(0,3); while(sp.length<3) sp.push({t:"",m:0});
   const rows=sp.map((s,i)=>`<div class="row" style="gap:8px;margin-top:6px;align-items:center">
@@ -1006,9 +1106,9 @@ function specialTasksBlock(rep){
     ${rows}
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn sm sec" onclick="saveSpecial(false)">💾 儲存特別工作</button>
-      <button class="btn" onclick="saveSpecial(true)">🔴 送出今日匯報下班</button>
+      <button class="btn" onclick="submitDayReport()">🔴 送出今日匯報下班</button>
     </div>
-    <p class="muted" style="font-size:11px;margin-top:4px">剪片數系統自動計入；特別工作時間會算進「其他工時」。「送出下班」＝停止今日計時。</p>
+    <p class="muted" style="font-size:11px;margin-top:4px">剪片數系統自動計入；特別工作時間會算進「其他工時」。<b>送出後內容與工時會鎖定、不能再改</b>，並直接下班登出。</p>
   </div>`;
 }
 function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.dataset.min=m; btn.textContent="⏱ "+(m?(m+" 分"):"0 分"); }
@@ -1017,17 +1117,43 @@ function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_
 function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
 // 某份日報的「其他工作」項目：手寫特別工作(special) + 已完成的老闆交辦(tasks)
 function otherItems(r){ if(!r) return [];
-  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:false}));
-  const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true}));
+  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:false, reply:""}));
+  const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true, reply:s.reply||""}));
   return sp.concat(tk); }
-async function saveSpecial(clockOut){ const me=currentUser(); const arr=collectSpecial(); const content=specialToContent(arr);
+async function writeReport(arr, clockOut, lock){
+  const me=currentUser(); const content=specialToContent(arr);
   const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
   const end=clockOut?nowIso():(old.endAt||"");
-  const rec={id:me+"__"+today, user:me, date:today, special:arr, tasks:old.tasks||[], content, done:!!content, startAt:old.startAt||"", endAt:end};
-  try{ await window.DB.set("reports", rec.id, rec);
+  const rec={id:me+"__"+today, user:me, date:today, special:arr, tasks:old.tasks||[], content, done:!!content,
+             startAt:old.startAt||"", endAt:end, locked: lock?true:(old.locked||false)};
+  await window.DB.set("reports", rec.id, rec);
+  return {old, end};
+}
+async function saveSpecial(clockOut){ const me=currentUser();
+  const cur=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  if(cur.locked){ toast("今日匯報已送出，無法再修改",true); return; }
+  const arr=collectSpecial();
+  try{ const {old,end}=await writeReport(arr, clockOut, false);
     if(clockOut){ const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):""; toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+w); }
     else toast("已儲存特別工作");
   }catch(e){ toast("失敗，請稍後再試",true); } }
+// 送出今日匯報：先確認沒有要再改 → 鎖定＋下班 → 回到登入畫面
+function submitDayReport(){
+  const me=currentUser();
+  const cur=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
+  if(cur.locked){ toast("今日匯報已送出，無法再修改",true); return; }
+  const arr=collectSpecial();
+  showModal("送出今日匯報", `
+    <p style="font-size:15px">確定今天的匯報內容<b>沒有需要再修改</b>了嗎？</p>
+    <p class="muted">送出後今天的工時與內容就<b style="color:var(--red)">不能再更改</b>，並會直接下班、登出回到登入畫面。</p>
+  `, async ()=>{
+    try{ const {old,end}=await writeReport(arr, true, true);
+      const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):"";
+      toast("已送出今日匯報，下班！辛苦了 👋"+w);
+      setTimeout(logout, 1100); return true;
+    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
+  }, "確定，下班登出");
+}
 // ---- 管理員留言／交辦（輕量版）----
 function sendTask(name){
   showModal("✉ 交辦／留言給 "+name, `
@@ -1046,23 +1172,28 @@ async function markMsg(id, kind){ const m=(STATE.messages||[]).find(x=>x.id===id
 // 完成老闆交辦：自己填工時 → 記入今日「其他工作」(大家都看得到、也上儀表板)
 function doneTask(id){
   const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
-  showModal("完成交辦：填上花費時間", `
+  showModal("完成交辦：回覆處理狀況＋填工時", `
     <div style="white-space:pre-wrap;padding:10px;background:var(--panel2);border-radius:8px">${esc(m.text)}</div>
-    <label style="margin-top:10px">這項工作花了多少時間（分鐘）</label>
+    <label style="margin-top:10px">處理狀況／回覆（至少 10 個字）</label>
+    <textarea id="tk_reply" style="min-height:84px" placeholder="說明你怎麼處理、結果如何、有沒有遇到問題或需要協助…（至少 10 個字）"></textarea>
+    <label style="margin-top:8px">這項工作花了多少時間（分鐘）</label>
     <input id="tk_min" type="number" min="0" step="5" value="30" placeholder="分鐘">
-    <p class="muted" style="font-size:12px">完成後會記入今天的「其他工作」，工時會算進你的工時分配，主管與同事都看得到。</p>
+    <p class="muted" style="font-size:12px">送出後，交辦內容、你的處理狀況與花費時間，主管與同事都會在儀表板看到。</p>
   `, async ()=>{
-    const me=currentUser(); const min=Math.max(0,parseInt(val("tk_min"))||0);
+    const me=currentUser(); const reply=(val("tk_reply")||"").trim(); const min=Math.max(0,parseInt(val("tk_min"))||0);
+    if(reply.length<10){ toast("處理狀況請至少 10 個字（目前 "+reply.length+" 字）",true); return false; }
     try{
-      await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), done:true, doneAt:nowIso(), doneBy:me, minutes:min});
+      await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), done:true, doneAt:nowIso(), doneBy:me, minutes:min, reply});
       const rid=me+"__"+today; const old=(STATE.reports||[]).find(x=>x.id===rid)||{};
-      const tasks=Array.isArray(old.tasks)?old.tasks.slice():[];
-      tasks.push({t:m.text, m:min, from:m.from||"管理員", at:nowIso()});
-      const rec=Object.assign({}, old, {id:rid, user:me, date:today, tasks, startAt:old.startAt||"", endAt:old.endAt||""});
-      await window.DB.set("reports", rid, rec);
-      toast("已完成交辦，記入其他工作 "+min+" 分"); return true;
+      if(!old.locked){ // 今日匯報尚未鎖定才寫進其他工作/工時；已下班則只記在訊息上
+        const tasks=Array.isArray(old.tasks)?old.tasks.slice():[];
+        tasks.push({t:m.text, m:min, from:m.from||"管理員", reply, at:nowIso()});
+        const rec=Object.assign({}, old, {id:rid, user:me, date:today, tasks, startAt:old.startAt||"", endAt:old.endAt||""});
+        await window.DB.set("reports", rid, rec);
+      }
+      toast("已完成交辦並回覆，記入其他工作 "+min+" 分"); return true;
     }catch(e){ toast("更新失敗，請稍後再試",true); return false; }
-  });
+  }, "送出回覆並完成");
 }
 // 剪輯收件匣：未完成的交辦／留言（紅色提醒）
 function inboxCard(me){
@@ -1425,13 +1556,13 @@ async function saveSettings(){
 // ===================================================================
 // 彈窗 / 小工具
 // ===================================================================
-function showModal(title, inner, onConfirm){
+function showModal(title, inner, onConfirm, confirmLabel){
   const root=document.getElementById("modalRoot");
   root.innerHTML=`<div class="modal"><div class="box">
     <h3>${esc(title)}</h3>${inner}
     <div class="modalFoot">
       <button class="btn sec" onclick="closeModal()">取消</button>
-      ${onConfirm?`<button class="btn" id="modalConfirm">確認送出</button>`:""}
+      ${onConfirm?`<button class="btn" id="modalConfirm">${esc(confirmLabel||"確認送出")}</button>`:""}
     </div></div></div>`;
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
