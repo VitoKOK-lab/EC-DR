@@ -493,11 +493,16 @@ function missStreakPast(name, langs, q){ if(!(q>0)) return 0;
 function pendingTaskRows(){
   const msgs=(STATE.messages||[]).filter(m=>!m.done).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
   if(!msgs.length) return '<p class="muted">目前沒有未完成的交辦 ✅</p>';
-  return msgs.map(m=>`<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
+  return msgs.map(m=>{
+    const status = m.read ? '已讀未完成' : (m.seenAt ? '已顯示未讀' : '尚未顯示給對方');
+    const col = m.read ? 'wa' : (m.seenAt ? 'wa' : 'em');
+    const seen = m.seenAt ? `・系統已顯示於 ${whenLabel(m.seenAt)}` : '・對方尚未開啟系統';
+    return `<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
     <div class="row" style="justify-content:space-between;gap:8px"><b>${esc(m.to)}</b>
-      <span class="pill ${m.read?'wa':'em'}">${m.read?'已讀未完成':'未讀'}・交辦於 ${daysAgoLabel(m.at)}</span></div>
+      <span class="pill ${col}">${status}・交辦於 ${daysAgoLabel(m.at)}</span></div>
     <div style="white-space:pre-wrap;margin-top:4px">${esc(m.text)}</div>
-  </div>`).join("");
+    <div class="muted" style="font-size:11px;margin-top:3px">${seen}</div>
+  </div>`; }).join("");
 }
 // 已完成交辦（含處理狀況＋花費時間）
 function doneTaskRows(todayOnly){
@@ -953,14 +958,16 @@ function openDay(ds){
     </div>`, null);
 }
 // 排舊片重播：選一支已完成的舊片，排到未來某天，記錄日期＋連結
+let RU_DONE=[];
 function reuseModal(){
-  const done=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage))
+  RU_DONE=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage))
     .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
-  if(!done.length){ toast("目前沒有已完成的舊片可重播",true); return; }
-  const opts=done.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("");
+  if(!RU_DONE.length){ toast("目前沒有已完成的舊片可重播",true); return; }
+  const opts=RU_DONE.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("");
   const tmr=new Date(today+"T00:00:00"); tmr.setDate(tmr.getDate()+1); const def=tmr.toISOString().slice(0,10);
   showModal("♻ 排舊片重播（重複使用）", `
-    <label>選擇舊片</label><select id="ru_vid" onchange="window._ruInfo(this.value)">${opts}</select>
+    <label>🔍 搜尋舊片（片名關鍵字）</label><input id="ru_q" placeholder="輸入片名找舊片…" oninput="ruSearch()">
+    <label>選擇舊片（共 ${RU_DONE.length} 支）</label><select id="ru_vid" size="6" style="height:auto" onchange="window._ruInfo(this.value)">${opts}</select>
     <div id="ru_info" class="muted" style="font-size:12px;margin:6px 0"></div>
     <label>這次上片日期（可排未來）</label><input id="ru_date" type="date" value="${def}" oninput="ruGate()">
     <label>這次的社群連結</label><input id="ru_link" placeholder="這次貼文／預約連結" oninput="ruGate()">
@@ -970,9 +977,17 @@ function reuseModal(){
     if(!id){ toast("請選擇舊片",true); return false; }
     return await write("POST",`/api/videos/${id}/reuse`,{date,link},"已排入重播並記錄使用");
   });
-  window._ruInfo=(id)=>{ const v=vid(id); const box=document.getElementById("ru_info"); if(!box) return;
+  window._ruInfo=(id)=>{ const v=vid(id); const box=document.getElementById("ru_info"); if(!box||!v) return;
     const us=usageList(v); box.innerHTML = us.length? ("已用 <b>"+us.length+"</b> 次："+us.map(u=>esc(u.date)+(u.link?`（<a href="${esc(u.link)}" target="_blank">連結</a>）`:"")).join("、")) : "尚無使用紀錄"; };
-  window._ruInfo(done[0].id); ruGate();
+  window._ruInfo(RU_DONE[0].id); ruGate();
+}
+// 舊片重播：依關鍵字即時過濾選單
+function ruSearch(){
+  const q=(val("ru_q")||"").toLowerCase().trim();
+  const list=q?RU_DONE.filter(v=>String(v.name||v.rawName||v.id).toLowerCase().includes(q)):RU_DONE;
+  const sel=document.getElementById("ru_vid"); if(!sel) return;
+  sel.innerHTML=list.length? list.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("") : '<option value="">（找不到符合的舊片）</option>';
+  if(list[0]) window._ruInfo(list[0].id);
 }
 function ruGate(){ const ok=val("ru_date")&&val("ru_link").trim(); const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
@@ -1182,6 +1197,7 @@ function doneTask(id){
   `, async ()=>{
     const me=currentUser(); const reply=(val("tk_reply")||"").trim(); const min=Math.max(0,parseInt(val("tk_min"))||0);
     if(reply.length<10){ toast("處理狀況請至少 10 個字（目前 "+reply.length+" 字）",true); return false; }
+    if(new Set(reply.replace(/\s/g,"")).size<4){ toast("處理狀況請認真填寫，不要用重複字元充數",true); return false; }
     try{
       await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), done:true, doneAt:nowIso(), doneBy:me, minutes:min, reply});
       const rid=me+"__"+today; const old=(STATE.reports||[]).find(x=>x.id===rid)||{};
@@ -1199,14 +1215,18 @@ function doneTask(id){
 function inboxCard(me){
   const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
   if(!msgs.length) return "";
+  // 自動記錄「已送達／已顯示」時間：系統證據，無法假裝沒看到（一次即止，不會重覆寫）
+  const unseen=msgs.filter(m=>!m.seenAt);
+  if(unseen.length){ setTimeout(()=>{ unseen.forEach(m=>{ if(window.DB&&window.DB.update) window.DB.update("messages", m.id, {seenAt:nowIso()}).catch(()=>{}); }); }, 60); }
   return `<div class="card" style="border-color:var(--red);background:var(--redbg)">
     <b>✉ 老闆交辦／留言（${msgs.length}）</b>
+    <p class="muted" style="font-size:11px;margin:2px 0 0">系統已記錄你看到這些交辦的時間；完成時要填「處理狀況」（至少 10 字）。</p>
     ${msgs.map(m=>`<div style="margin-top:8px;padding:10px;background:var(--panel);border-radius:8px">
        <div style="white-space:pre-wrap">${esc(m.text)}</div>
        <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}${m.read?'・已讀':'・<b style="color:var(--red)">未讀</b>'}</div>
        <div class="row" style="gap:6px;margin-top:6px">
          ${!m.read?`<button class="btn sm sec" onclick="markMsg('${m.id}','read')">標示已讀</button>`:''}
-         <button class="btn sm" onclick="doneTask('${m.id}')">完成✔（填工時）</button></div>
+         <button class="btn sm" onclick="doneTask('${m.id}')">完成✔（回覆＋填工時）</button></div>
      </div>`).join("")}</div>`;
 }
 // 工時分配：剪輯工時（領取→完成）vs 其他工時（特別工作分鐘），以每日 8 小時計
