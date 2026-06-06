@@ -5,7 +5,7 @@
 const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
 const ROLE_TABS = {
   boss:   [["dash","📊 總覽"],["cal","📅 月排程"],["videos","🎞 影片庫"],["settings","⚙️ 設定"]],
-  hr:     [["dash","📊 部門總覽"]],
+  hr:     [["dash","📊 部門總覽"],["videos","🎞 影片庫"],["audit","🛡 檢核紀錄"]],
   editor: [["work","✂️ 剪輯儀表板"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
@@ -350,7 +350,7 @@ function bootLogin(){
   users.sort((a,b)=> rank(a)-rank(b) || String(a.name).localeCompare(String(b.name)));
   const mkBtn=(u)=>{ const b=document.createElement("button");
     b.className="userBtn"+((u.role==="hr")?" mgr":"");
-    b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+(u.pin?"":" ·未設密碼")+'</span>';
+    b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+((u.role!=="hr"&&!u.pin)?" ·未設密碼":"")+'</span>';
     b.onclick=()=>loginAs(u);
     return b; };
   users.forEach((u,i)=>{
@@ -361,8 +361,9 @@ function bootLogin(){
     g.appendChild(mkBtn(u));
   });
 }
-// 成員以自己的密碼登入（管理員先在成員管理設定，之後本人可自行修改）
+// 成員登入：人資（檢核者）免密碼；剪輯以自己的密碼登入（管理員先設，本人可自改）
 function loginAs(u){
+  if((u.role||"editor")==="hr"){ setUser(u.name); localStorage.setItem("ecdr_role","hr"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW); return; }
   if(!u.pin){ toast("「"+u.name+"」尚未設定密碼，請管理員到『成員管理』設定後再登入",true); return; }
   const pw=prompt(u.name+" 的登入密碼："); if(pw===null) return;
   if(String(pw)!==String(u.pin)){ toast("密碼錯誤",true); return; }
@@ -390,8 +391,8 @@ async function setAllPin(){
   const p=prompt("把『所有剪輯／人資成員』的登入密碼統一設為（之後各自可改）："); if(p===null) return;
   if(!String(p).trim()){ toast("密碼不可空白",true); return; }
   await withAdmin(async ()=>{ let c=0;
-    for(const u of (STATE.users||[]).filter(x=>(x.role||"editor")!=="boss")){ try{ await window.DB.update("users",u.name,{pin:String(p).trim()}); c++; }catch(e){} }
-    toast("已設定 "+c+" 位成員的密碼"); });
+    for(const u of (STATE.users||[]).filter(x=>(x.role||"editor")==="editor")){ try{ await window.DB.update("users",u.name,{pin:String(p).trim()}); c++; }catch(e){} }
+    toast("已設定 "+c+" 位剪輯的密碼"); });
 }
 // 管理員（owner）以密碼進入；成員管理／稽核只有這條路徑能看到
 function ownerLogin(){
@@ -1208,17 +1209,48 @@ function videoItem(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(
     <span class="muted" style="font-size:12px;white-space:nowrap">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span>
   </div>`; }
 function videoList(list){ return list.length? list.map(videoItem).join("") : `<p class="muted">無</p>`; }
+// 影片庫一列（含狀態標籤）
+function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(--traffic)";
+  const stageCol={"待處理":"#94a3b8","剪輯中":"#d97706","已完成":"var(--green)","已上片":"#2563eb"}[v.stage]||"#94a3b8";
+  return `<div class="vrow" onclick="editVideo('${v.id}')">
+    <span style="display:flex;align-items:center;gap:8px;min-width:0">
+      <span class="light" style="background:${dot};flex:none"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||v.rawName||"(未命名)")}</span></span>
+    <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
+      <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
+      <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
+  </div>`; }
+// 依搜尋字／狀態篩選後的清單 HTML（限量顯示，避免大量資料卡頓）
+function vidRowsHTML(){
+  const all=STATE.videos||[];
+  const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
+  const stage=document.getElementById('vid_stage')?.value||'all';
+  let list=all.filter(v=> stage==='all'?true:(v.stage===stage));
+  if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
+  list.sort((a,b)=>String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
+  const total=list.length, CAP=80, shown=list.slice(0,CAP);
+  if(!total) return '<p class="muted">沒有符合的影片</p>';
+  return shown.map(videoItemRich).join('') + (total>CAP?`<p class="muted" style="margin-top:8px">顯示前 ${CAP} 筆（共 ${total} 筆）；用上方搜尋縮小範圍。</p>`:`<p class="muted" style="margin-top:8px">共 ${total} 筆</p>`);
+}
+function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function viewVideos(){
   const all=STATE.videos||[];
-  const fresh=all.filter(v=>["待處理","剪輯中"].includes(v.stage));
-  const old=all.filter(v=>["已完成","已上片"].includes(v.stage))
-    .sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")));
+  const c=st=>all.filter(v=>v.stage===st).length;
   return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點標題看細節／改連結</span></h2>
-  <div class="card"><div class="row" style="justify-content:space-between"><b>🆕 新片（未剪／製作中）${fresh.length}</b>
-    <button class="btn sm" onclick="newVideo()">＋ 新增片源</button></div>
-    <div style="margin-top:6px">${videoList(fresh)}</div></div>
-  <div class="card"><b>📁 舊片（已完成）${old.length}</b>
-    <div style="margin-top:6px">${videoList(old)}</div></div>`;
+  <div class="card">
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="vid_q" placeholder="🔍 搜尋影片名稱／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
+      <select id="vid_stage" onchange="vidFilter()">
+        <option value="all">全部狀態（${all.length}）</option>
+        <option value="待處理">待處理（${c("待處理")}）</option>
+        <option value="剪輯中">剪輯中（${c("剪輯中")}）</option>
+        <option value="已完成">已完成（${c("已完成")}）</option>
+        <option value="已上片">已上片（${c("已上片")}）</option>
+      </select>
+      <button class="btn sm" onclick="newVideo()">＋ 新增片源</button>
+    </div>
+    <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
+  </div>`;
 }
 function editVideo(id){
   const v = vid(id)||{};
@@ -1330,19 +1362,23 @@ function viewSettings(){
   <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
     <button class="btn sm sec" onclick="setKpiToday()">設為今天</button></div>
   <p class="muted">應完成只計算「已過完」的工作日（不含今天）。把起算日設成今天，所有人就會從 0/0 達標開始累積。</p></div>
-  <div class="card"><b>主類別</b>（逗號分隔）
-    <input id="set_main" value="${esc((s.mainTypes||[]).join(","))}"></div>
-  <div class="card"><b>子標籤</b>（每行一個主類別，格式 主類別:標籤1|標籤2）
-    <textarea id="set_sub">${esc(subStr)}</textarea></div>
-  <div class="card"><b>片源</b>（逗號分隔）
-    <input id="set_src" value="${esc((s.sources||[]).join(","))}"></div>
-  <div class="card"><b>語言（二創）</b>（逗號分隔，zh 為母版）
-    <input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
-  <div class="card"><b>平台清單</b>
-    <input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
-  <div class="card"><b>異地備份資料夾</b>（選填）
-    <input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
-  <div class="card"><b>變更管理者密碼</b>
+  <details class="card"><summary style="cursor:pointer;font-weight:700">🛠 進階設定（類別／標籤／片源／語言／平台，少用才需要動）</summary>
+    <div style="margin-top:10px">
+      <div style="margin-bottom:10px"><b>主類別</b>（逗號分隔）
+        <input id="set_main" value="${esc((s.mainTypes||[]).join(","))}"></div>
+      <div style="margin-bottom:10px"><b>子標籤</b>（每行一個主類別，格式 主類別:標籤1|標籤2）
+        <textarea id="set_sub">${esc(subStr)}</textarea></div>
+      <div style="margin-bottom:10px"><b>片源</b>（逗號分隔）
+        <input id="set_src" value="${esc((s.sources||[]).join(","))}"></div>
+      <div style="margin-bottom:10px"><b>語言（二創）</b>（逗號分隔，zh 為母版）
+        <input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
+      <div style="margin-bottom:10px"><b>平台清單</b>
+        <input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
+      <div><b>異地備份資料夾</b>（選填）
+        <input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
+    </div>
+  </details>
+  <div class="card"><b>🔑 變更管理者密碼</b>
     <input id="set_pw" type="text" placeholder="留空則不變更"></div>
   <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定（需密碼）</button></div>`;
 }
@@ -1414,7 +1450,7 @@ function viewMembers(){
         ${ROLE_TOKENS.map(([tk,lb])=>`<option value="${tk}" ${userToken(u)===tk?"selected":""}>${lb}</option>`).join("")}
       </select></td>
     <td data-label="每日KPI"><input type="number" min="0" style="width:70px" value="${u.dailyQuota||defQ}" onchange="changeQuota('${esc(u.name)}',this.value)"> 片</td>
-    <td data-label="密碼"><button class="btn sm ${u.pin?'sec':''}" onclick="setMemberPin('${esc(u.name)}')">${u.pin?'重設密碼':'設定密碼'}</button></td>
+    <td data-label="密碼">${u.role==="hr"?'<span class="muted">免密碼（檢核）</span>':`${u.pin?`<code style="background:var(--panel2);padding:2px 6px;border-radius:5px">${esc(u.pin)}</code>`:'<span class="muted">未設</span>'} <button class="btn sm ${u.pin?'sec':''}" onclick="setMemberPin('${esc(u.name)}')">${u.pin?'重設':'設定'}</button>`}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
       <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
