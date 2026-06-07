@@ -1006,7 +1006,7 @@ function openDay(ds){
   }).join("");
   // 排舊片到這天：當天已排過的不再出現；時段自動帶 10/12/16，超過 3 個可自選時間
   const usedIds = new Set(list.map(it=>it.videoId));
-  const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage) && !usedIds.has(v.id))
+  const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage) && !usedIds.has(v.id) && !isNewVideo(v))  // 新片(45天內)不可重播
     .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount];
   const timeField = (dayCount<3)
@@ -1472,12 +1472,20 @@ function newVideo(){
 }
 
 // ---- 影片庫一列（含狀態標籤）----
+// 「新片」為自動狀態：上片 45 天內算新片，超過自動移除（即成為可重播的舊片）
+const NEW_DAYS=45;
+function videoPubDate(v){ return String(v.finishedAt||v.scheduledDate||"").slice(0,10); }
+function isNewVideo(v){ if(!v||!["已完成","已上片"].includes(v.stage)) return false;
+  const d=videoPubDate(v); if(!d) return false;
+  const diff=(new Date(today+"T00:00:00")-new Date(d+"T00:00:00"))/86400000;
+  return diff>=0 && diff<=NEW_DAYS; }
 function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(--traffic)";
   const stageCol={"待處理":"#94a3b8","剪輯中":"#d97706","已完成":"var(--green)","已上片":"#2563eb"}[v.stage]||"#94a3b8";
   return `<div class="vrow" onclick="editVideo('${v.id}')">
     <span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="light" style="background:${dot};flex:none"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||v.rawName||"(未命名)")}</span></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||v.rawName||"(未命名)")}</span>
+      ${isNewVideo(v)?'<span class="tag" style="background:#fde68a;color:#92400e;flex:none">🆕新片</span>':''}</span>
     <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
@@ -1493,10 +1501,11 @@ function vidRowsHTML(){
   if(!total) return '<p class="muted">沒有符合的影片</p>';
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
   // 依「標籤」分組（一支可有多個標籤 → 各標籤下都會出現）
-  const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); return t.length?t:["（未分類）"]; };
+  const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); const arr=t.length?t.slice():["（未分類）"]; if(isNewVideo(v)) arr.unshift("🆕 新片（45天內）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
   const names=Object.keys(groups).sort((a,b)=>{
+    const an=a.startsWith("🆕"), bn=b.startsWith("🆕"); if(an!==bn) return an?-1:1;  // 新片群置頂
     const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
     return String(a).localeCompare(String(b)); });
   return names.map(n=>{
