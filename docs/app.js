@@ -256,6 +256,7 @@ async function _route(method, path, body){
       if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
       if(body.publishTime) patch.publishTime=body.publishTime;
+      if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
@@ -1332,6 +1333,24 @@ function claimPicked(lang){ const id=val("poolPick"); if(!id){ toast("請先從�
 // 上片時間下拉（固定 10/12/16）
 function pubTimeSelect(id, cur){ const c=PUB_TIMES.includes(cur)?cur:"10:00";
   return `<select id="${id}">`+PUB_TIMES.map(t=>`<option ${t===c?"selected":""}>${t}</option>`).join("")+`</select>`; }
+// 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
+const DEFAULT_TAGS=["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"];
+function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
+function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
+  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
+function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
+  const all=videoTags().slice(); (selected||[]).forEach(t=>{ if(!all.includes(t)) all.push(t); });
+  return `<label>標籤（可複選）</label>
+    <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
+    <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
+function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
+function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
+  const box=document.getElementById(id+'_box');
+  if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
+  inp.value=''; }
+// 把新標籤併進設定，之後可重複選用
+async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
+  if(add.length && window.DB&&window.DB.setSettings){ try{ await window.DB.setSettings({videoTags:cur.concat(add)}); }catch(e){} } }
 // 累積「實際處理工時」：從領取那刻起，只計上班打卡時段；跨日就從隔日上班續算，直到完成
 function workedBetween(name, fromIso){
   if(!name||!fromIso) return null;
@@ -1399,12 +1418,14 @@ function finishVid(id){
       <div><label>上片日期（會顯示在月行事曆）</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
       <div><label>上片時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
     </div>
+    ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
     <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
     <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
     <p class="muted">日期、時間與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
+    const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"),
+      {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
@@ -1471,9 +1492,10 @@ function vidRowsHTML(){
   const total=list.length;
   if(!total) return '<p class="muted">沒有符合的影片</p>';
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  // 依「子標籤」分組
+  // 依「標籤」分組（一支可有多個標籤 → 各標籤下都會出現）
+  const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); return t.length?t:["（未分類）"]; };
   const groups={};
-  list.forEach(v=>{ const k=(v.subTag&&String(v.subTag).trim())||"（未分類）"; (groups[k]=groups[k]||[]).push(v); });
+  list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
   const names=Object.keys(groups).sort((a,b)=>{
     const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
     return String(a).localeCompare(String(b)); });
@@ -1483,7 +1505,7 @@ function vidRowsHTML(){
       <summary style="cursor:pointer;font-weight:700;padding:8px 0">🏷 ${esc(n)} <span class="muted" style="font-weight:500;font-size:12px">（${vs.length}）</span></summary>
       <div style="padding-bottom:4px">${vs.map(videoItemRich).join('')}</div>
     </details>`;
-  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${total} 筆・${names.length} 個子標籤</p>`;
+  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${total} 筆・${names.length} 個標籤</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function viewVideos(){
@@ -1518,10 +1540,7 @@ function editVideo(id){
   showModal("編輯影片",`
     <label>原片</label><input id="e_raw" value="${esc(v.rawName||"")}">
     <label>成品名稱</label><input id="e_name" value="${esc(v.name||"")}">
-    <div class="grid cols2">
-      <div><label>主類別</label><select id="e_main" onchange="window._subOpts2(this.value)">${mains.map(c=>`<option ${v.mainType===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>子標籤</label><input id="e_sub" list="e_sub_list" value="${esc(v.subTag||"")}" placeholder="輸入或選擇"><datalist id="e_sub_list">${subOptions(v.mainType||mains[0])}</datalist></div>
-    </div>
+    ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -1541,20 +1560,17 @@ function editVideo(id){
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
       </tbody></table></div>`:""}
   `, async ()=>{
-    const sub=val("e_sub").trim(); const mt=val("e_main");
-    const video={rawName:val("e_raw"),name:val("e_name"),mainType:mt,subTag:sub,
+    const tags=collectTags("e"); await persistNewTags(tags);
+    const mainType = tags.includes("寵粉")?"寵粉":(tags.some(t=>["帶貨","代理"].includes(t))?"帶貨型":"流量型");
+    const video={rawName:val("e_raw"),name:val("e_name"),mainType,tags,subTag:tags[0]||"",
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
       productId:val("e_prod").trim()||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
-    if(ok){ // 新子標籤自動加入設定，之後可重複選用
-      if(sub){ const cur=(STATE.settings?.subTags)||{}; const arr=(cur[mt]||[]).slice();
-        if(!arr.includes(sub)){ arr.push(sub); try{ await window.DB.setSettings({subTags:Object.assign({},cur,{[mt]:arr})}); }catch(e){} } }
-      closeModal(); }
+    if(ok) closeModal();
     return ok;
   });
-  window._subOpts2 = (mt)=>{ const dl=document.getElementById("e_sub_list"); if(dl) dl.innerHTML=subOptions(mt); };
 }
 
 // ---- 帶貨商品庫 ----
