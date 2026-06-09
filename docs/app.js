@@ -5,8 +5,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"]],
-  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["perf","📊 成效"]],
+  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"],["perf","📊 成效"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -248,7 +248,7 @@ function render(){
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
+  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, perf:viewPerf, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
 
@@ -661,6 +661,8 @@ function viewSettings(){
   <div class="card">
     <label>預排天數視窗（要往後排幾天）</label>
     <input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}" style="max-width:160px">
+    <label style="margin-top:12px">Shopline 網址（成效追蹤用，系統會幫每支片加上專屬 UTM）</label>
+    <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="例：https://你的店.shoplineapp.com 或某個導購頁網址">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
@@ -672,7 +674,7 @@ async function saveSettings(){
     "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
     "帶貨型":parseInt(val("wt_"+d+"_帶貨型"))||0,
     "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0 }; }
-  const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30 };
+  const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
 
@@ -717,6 +719,94 @@ function renameMember(oldName){
     await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
   });
 }
+// ===================================================================
+// 📊 成效追蹤：上片滿 7 天回填 IG/FB 流量 + Shopline 轉換
+// ===================================================================
+const PERF_DAYS=7;
+let PERF_SORT="views";
+const METRIC_FIELDS=[["views","觀看數"],["reach","觸及"],["eng","互動(讚留分享)"],["clicks","連結點擊"],["orders","Shopline訂單"],["revenue","業績($)"]];
+function shoplineBase(){ return (STATE.settings&&STATE.settings.shoplineBase)||""; }
+// 每支片專屬的 Shopline 追蹤連結（utm_campaign=影片代號），看哪支片帶最多單
+function utmLink(videoId, date){ const base=shoplineBase(); if(!base) return "";
+  const sep=base.includes("?")?"&":"?";
+  return base+sep+"utm_source=igfb&utm_medium=short&utm_campaign="+encodeURIComponent(videoId)+(date?("&utm_content="+date):""); }
+function daysAgo(ds){ return Math.round((new Date(today+"T00:00:00")-new Date(ds+"T00:00:00"))/86400000); }
+function num(n){ n=+n||0; return n>=1000?n.toLocaleString():String(n); }
+// 所有「發佈事件」：新片上架(影片) + 每次舊片重播(排程 slot)，各自有網址與成效
+function publishEvents(){
+  const out=[];
+  (STATE.videos||[]).forEach(v=>{ if(["已完成","已上片"].includes(v.stage) && (v.scheduledDate||v.finishedAt)){
+    out.push({key:"v:"+v.id, videoId:v.id, name:v.name||v.rawName||v.id, date:String(v.scheduledDate||v.finishedAt).slice(0,10),
+      link:v.publishedLink||v.socialLink||"", kind:"new", metrics:v.metrics||null}); } });
+  Object.keys(STATE.schedule||{}).forEach(date=>{ const slots=((STATE.schedule||{})[date]||{}).slots||[];
+    slots.forEach((s,idx)=>{ if(s&&s.reused){ const v=vid(s.videoId);
+      out.push({key:"s:"+date+":"+idx, videoId:s.videoId, name:(v?(v.name||v.rawName):s.videoId), date:String(date).slice(0,10),
+        link:s.publishedLink||"", kind:"reuse", scheduleDate:date, slotIndex:idx, metrics:s.metrics||null}); } }); });
+  return out;
+}
+function perfCutoff(){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-PERF_DAYS); return d.toISOString().slice(0,10); }
+function dueEvents(){ const cut=perfCutoff(); return publishEvents().filter(e=>e.date<=cut && !(e.metrics&&e.metrics.filledAt)).sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
+function filledEvents(){ return publishEvents().filter(e=>e.metrics&&e.metrics.filledAt); }
+function viewPerf(){
+  const due=dueEvents(); const filled=filledEvents(); const sortBy=PERF_SORT;
+  const ranking=filled.slice().sort((a,b)=>(+(b.metrics[sortBy]||0))-(+(a.metrics[sortBy]||0))).slice(0,30);
+  const dueRows=due.map(e=>`<tr>
+    <td data-label="影片"><b>${esc(e.name)}</b> ${e.kind==="reuse"?'<span class="tag" style="background:#ede9fe;color:#6d28d9">重播</span>':'<span class="tag">新片</span>'}</td>
+    <td data-label="上片日">${esc(e.date)}<span class="muted">（${daysAgo(e.date)}天前）</span></td>
+    <td data-label="貼文">${e.link?`<a href="${esc(e.link)}" target="_blank">看貼文</a>`:'<span class="muted">無連結</span>'}</td>
+    <td data-label=""><button class="btn sm" onclick="fillMetrics('${e.key}')">填成效</button></td></tr>`).join("")
+    || '<tr><td class="muted">目前沒有滿 '+PERF_DAYS+' 天待回填的影片 ✅</td></tr>';
+  const rankRows=ranking.map((e,i)=>`<tr>
+    <td>${i+1}</td>
+    <td data-label="影片"><b>${esc(e.name)}</b> <span class="muted" style="font-size:11px">${esc(e.date)}</span></td>
+    <td data-label="觀看">${num(e.metrics.views)}</td>
+    <td data-label="互動">${num(e.metrics.eng)}</td>
+    <td data-label="點擊">${num(e.metrics.clicks)}</td>
+    <td data-label="訂單">${num(e.metrics.orders)}</td>
+    <td data-label="業績">${e.metrics.revenue?("$"+num(e.metrics.revenue)):"-"}</td>
+    <td data-label=""><button class="btn sm sec" onclick="fillMetrics('${e.key}')">編輯</button></td></tr>`).join("")
+    || '<tr><td class="muted">尚無已回填的成效</td></tr>';
+  const noBase=shoplineBase()?"":`<div class="card" style="border-color:var(--amber)"><b style="color:var(--amber)">尚未設定 Shopline 網址</b>
+    <span class="muted"> — 到「設定」填入 Shopline 網址，系統就會幫每支片產生專屬追蹤連結（看哪支帶最多單）。</span></div>`;
+  return `<h2>📊 成效追蹤 <span class="muted" style="font-size:13px">上片滿 ${PERF_DAYS} 天回填 IG/FB 流量＋Shopline 轉換</span></h2>
+  ${noBase}
+  <div class="card"><div class="row" style="justify-content:space-between"><b>📥 待回填（上片滿 ${PERF_DAYS} 天）</b>
+    <span class="pill ${due.length?'wa':'ok'}">${due.length} 支</span></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">滿 ${PERF_DAYS} 天就到 IG/FB 後台看數據，點「填成效」把數字填進來。</p>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>上片日</th><th>貼文</th><th></th></tr></thead>
+    <tbody>${dueRows}</tbody></table></div>
+  <div class="card"><div class="row" style="justify-content:space-between;align-items:center"><b>🏆 成效排行</b>
+    <select onchange="PERF_SORT=this.value;render()" style="max-width:140px">
+      ${[["views","依觀看數"],["clicks","依點擊"],["orders","依訂單"],["revenue","依業績"]].map(([v,l])=>`<option value="${v}" ${sortBy===v?"selected":""}>${l}</option>`).join("")}</select></div>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>#</th><th>影片</th><th>觀看</th><th>互動</th><th>點擊</th><th>訂單</th><th>業績</th><th></th></tr></thead>
+    <tbody>${rankRows}</tbody></table></div>`;
+}
+function fillMetrics(key){
+  const e=publishEvents().find(x=>x.key===key); if(!e){ toast("找不到該發佈紀錄",true); return; }
+  const m=e.metrics||{}; const utm=utmLink(e.videoId, e.date);
+  showModal("填成效："+e.name+"（"+e.date+"）", `
+    ${e.link?`<p class="muted" style="font-size:12px">貼文：<a href="${esc(e.link)}" target="_blank">開啟看數據</a></p>`:'<p class="muted" style="font-size:12px">這支沒有上傳連結，可先填數字。</p>'}
+    ${utm?`<p class="muted" style="font-size:12px">這支片的 Shopline 追蹤連結：<br><code style="word-break:break-all">${esc(utm)}</code></p>`:''}
+    <div class="grid cols2">
+      ${METRIC_FIELDS.map(([k,l])=>`<div><label>${l}</label><input id="mt_${k}" type="number" min="0" value="${m[k]!=null?esc(m[k]):''}"></div>`).join("")}
+    </div>
+    <label>備註</label><input id="mt_note" value="${esc(m.note||'')}" placeholder="例：這支導購最好／某平台特別高">
+  `, async ()=>{
+    const data={filledAt:nowIso(), by:currentUser(), note:val("mt_note")};
+    METRIC_FIELDS.forEach(([k])=>{ data[k]=parseInt(val("mt_"+k))||0; });
+    return await saveMetrics(e, data);
+  });
+}
+async function saveMetrics(e, data){
+  try{
+    if(e.kind==="new"){ await window.DB.update("videos", e.videoId, {metrics:data}); }
+    else { const day=(STATE.schedule||{})[e.scheduleDate]||{slots:[]}; const slots=(day.slots||[]).slice();
+      if(slots[e.slotIndex]) slots[e.slotIndex]=Object.assign({}, slots[e.slotIndex], {metrics:data});
+      await window.DB.scheduleSet(e.scheduleDate, {slots}); }
+    toast("已存成效"); return true;
+  }catch(err){ toast("儲存失敗，請稍後再試",true); return false; }
+}
+
 // ===================================================================
 // 彈窗
 // ===================================================================
