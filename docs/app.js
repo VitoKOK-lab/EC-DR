@@ -41,7 +41,7 @@ function nextId(arr, prefix){
 function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), scheduledDate:null, rawName:"", name:"",
-    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[],
+    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[], platforms:[],
     source:(s.sources&&s.sources[0])||"", editor:"", stage:"待處理", claimedBy:"", claimedAt:"",
     finishedAt:"", usageHistory:[], totalUsed:0, driveFolder:"", publishedLink:"", socialLink:"", locked:false };
   return Object.assign(rec, over||{});
@@ -132,6 +132,7 @@ async function route(method, path, body){
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
       if(body.publishTime) patch.publishTime=body.publishTime;
       if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
+      if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
@@ -290,7 +291,7 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px">每天目標依「星期幾」在<b>設定</b>調整（流量／帶貨／寵粉）。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">紅</b>=10 天內沒排好或某類型不足。點任一天可<b>改上片日期</b>或<b>排舊片重播</b>。</p>
+    <p class="muted" style="margin-top:10px;font-size:12px"><span style="color:var(--green)">●</span> 已排滿　<span style="color:#888">●</span> 未排　<span style="color:var(--red)">●</span> 待補</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
@@ -346,7 +347,6 @@ function openDay(ds){
       ${summary}
       <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-      <p class="muted" style="font-size:12px;margin-top:8px">新片由剪輯完成後自動排入；可改上片日期或排舊片重播。</p>
     </div>
     ${reusePicker}`, null);
 }
@@ -400,22 +400,15 @@ function viewWork(){
     </tr>`;
   const g=scheduleGlance(); const SAFE=15;
   const runCol=g.runway>=SAFE?'var(--green)':(g.runway>=7?'var(--amber)':'var(--red)');
-  const oldCount=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v)).length;
-  const defChips=g.defs.length
-    ? g.defs.slice(0,8).map(x=>`<span class="pill ${x.ds===today?'em':'wa'}" style="margin:2px 4px 2px 0;display:inline-block">${x.ds.slice(5)}(${weekdayZh(x.ds)}) 缺${x.short}</span>`).join("")+(g.defs.length>8?` <span class="muted">…還有 ${g.defs.length-8} 天未滿</span>`:'')
-    : '<span class="pos">未來 14 天都排滿了 ✅</span>';
+  const numBadge=(n,col)=>`<span style="flex:none;width:54px;height:54px;border-radius:50%;background:${col};color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">${n}</span>`;
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
-  <p class="muted" style="margin:-8px 0 14px;font-size:13px">每天上班照著 1 → 2 → 3 做完，短影音行銷就排滿了。</p>
 
   <div class="card" style="border-left:5px solid var(--accent)">
     <div class="row" style="gap:14px;align-items:center">
-      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">1</span>
-      <div style="flex:1;min-width:0">
-        <div class="row" style="justify-content:space-between"><b style="font-size:17px">建檔新毛片</b>
-          <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
-        <p class="muted" style="font-size:13px;margin:3px 0 0">把今天拍好的毛片片名先建檔，剪輯才能下拉來剪。</p>
-      </div>
+      ${numBadge(1,'var(--accent)')}
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">建檔新毛片</b>
+        <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div></div>
     </div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" onclick="batchNewFootage()">＋ 批次建檔今天的新毛片</button>
@@ -425,48 +418,39 @@ function viewWork(){
 
   <div class="card" style="border-left:5px solid var(--accent)">
     <div class="row" style="gap:14px;align-items:center">
-      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">2</span>
-      <div style="flex:1;min-width:0">
-        <div class="row" style="justify-content:space-between"><b style="font-size:17px">用舊片排滿時段</b>
-          <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
-        <p class="muted" style="font-size:13px;margin:3px 0 0">每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）。到月排程點下面缺口的日子，用舊片（可重播 ${oldCount} 支）補上，<b>選好上片時間、貼上連結</b>。</p>
-      </div>
+      ${numBadge(2,'var(--accent)')}
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">用舊片排滿時段</b>
+        <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div></div>
     </div>
-    <div style="margin:10px 0 8px">${defChips}</div>
-    <div class="row" style="gap:8px">
+    <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程排舊片</button>
     </div>
   </div>
 
   <div class="card" style="border-left:5px solid var(--green)">
     <div class="row" style="gap:14px;align-items:center">
-      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">3</span>
-      <div style="flex:1;min-width:0">
-        <div class="row" style="justify-content:space-between"><b style="font-size:17px">下拉新毛片開始剪</b>
-          <span style="display:flex;gap:6px">
-            <span class="pill ok" title="今日完成上架">✔ 今日 ${myDoneToday}</span>
-            <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></span>
-        </div>
-        <p class="muted" style="font-size:13px;margin:3px 0 0">下拉一支新毛片開始剪，剪完按「完成上架」自動排進月行事曆。</p>
-      </div>
+      ${numBadge(3,'var(--green)')}
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">下拉新毛片開始剪</b>
+        <span style="display:flex;gap:6px">
+          <span class="pill ok">✔ 今日 ${myDoneToday}</span>
+          <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></span></div></div>
     </div>
     ${pool.length
       ? `<div class="row" style="gap:8px;margin-top:10px">
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
            <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
          </div>`
-      : `<p class="muted" style="margin-top:10px">目前沒有待剪新片，先回到上面 <b>1</b> 建檔。</p>`}
-    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
+      : ``}
+    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支進行中</p>`:""}
     <table class="responsive" style="margin-top:12px"><thead><tr><th>我進行中的影片</th><th>片源</th><th></th></tr></thead>
-    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，從上面下拉一支新毛片開始剪</td></tr>`}</tbody></table>
+    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">—</td></tr>`}</tbody></table>
   </div>`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
   showModal("批次建檔新毛片", `
-    <label>把今天拍好的毛片片名貼進來，<b>一行一支</b></label>
+    <label>片名（一行一支）</label>
     <textarea id="bf_list" style="min-height:150px" placeholder="劉亦菲紅毯珠寶&#10;八大珠寶派系&#10;真假寶石30秒分辨"></textarea>
-    <p class="muted" style="font-size:12px">每一行會建一支「待剪新片」，剪輯就能在步驟③下拉來剪。</p>
   `, async ()=>{
     const lines=val("bf_list").split("\n").map(s=>s.trim()).filter(Boolean);
     if(!lines.length){ toast("請至少輸入一支片名",true); return false; }
@@ -497,13 +481,15 @@ function finishVid(id){
       <div><label>上片時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
     </div>
     ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
+    <label>投放平台（可複選）</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("f_plat", v.platforms)}</div>
     <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
     <label>社群平台預排連結</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" oninput="finishGate('f_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期、時間與兩個連結都填好，才能按「確認送出」。</p>
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
       {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
+       platforms:collectPlat("f_plat"),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
@@ -615,6 +601,7 @@ function editVideo(id){
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
+    <label>投放平台（可複選）</label><div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("e_plat", v.platforms)}</div>
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
@@ -628,6 +615,7 @@ function editVideo(id){
     const tags=collectTags("e"); await persistNewTags(tags);
     const mainType = tags.includes("寵粉")?"寵粉":(tags.some(t=>["帶貨","代理"].includes(t))?"帶貨型":"流量型");
     const video={rawName:val("e_raw"),name:val("e_name"),mainType,tags,subTag:tags[0]||"",
+      platforms:collectPlat("e_plat"),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
@@ -652,17 +640,19 @@ function viewSettings(){
       <td data-label="寵粉片">${cell("寵粉")}</td>
       <td data-label="小計"><b id="wt_sum_${d}">${sum}</b> 支</td></tr>`;
   }).join("");
+  const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
   return `<h2>⚙️ 設定</h2>
-  <div class="card"><b>每天上片數量（依星期幾，不分平假日）</b>
-    <p class="muted" style="font-size:12px;margin:6px 0 10px">設定每個星期幾要上幾支 流量片／帶貨片／寵粉片；月排程會依此判斷某天是否排滿。</p>
-    <table class="responsive"><thead><tr><th>星期</th><th>流量片</th><th>帶貨片</th><th>寵粉片</th><th>小計</th></tr></thead>
+  <div class="card"><b>每天上片數量（依星期幾）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>帶貨片</th><th>寵粉片</th><th>小計</th></tr></thead>
     <tbody>${rows}</tbody></table>
   </div>
   <div class="card">
-    <label>預排天數視窗（要往後排幾天）</label>
+    <label>預排天數視窗</label>
     <input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}" style="max-width:160px">
-    <label style="margin-top:12px">Shopline 網址（成效追蹤用，系統會幫每支片加上專屬 UTM）</label>
-    <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="例：https://你的店.shoplineapp.com 或某個導購頁網址">
+    <label style="margin-top:12px">投放平台（顯示名稱=utm代號，一行一個）</label>
+    <textarea id="set_plat" style="min-height:88px">${esc(platStr)}</textarea>
+    <label style="margin-top:12px">Shopline 網址</label>
+    <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
@@ -674,7 +664,10 @@ async function saveSettings(){
     "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
     "帶貨型":parseInt(val("wt_"+d+"_帶貨型"))||0,
     "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0 }; }
+  const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
+    const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  if(plats.length) settings.postPlatforms=plats;
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
 
@@ -724,26 +717,30 @@ function renameMember(oldName){
 // ===================================================================
 const META_DASH_URL="https://vitokok-lab.github.io/meta-dashboard/index.html";
 function shoplineBase(){ return (STATE.settings&&STATE.settings.shoplineBase)||""; }
-// 固定一條導購連結：所有短影音共用（utm_campaign=shorts），看短影音整體帶單
-function fixedUtm(){ const base=shoplineBase(); if(!base) return "";
-  const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source=igfb&utm_medium=short&utm_campaign=shorts"; }
+const DEFAULT_PLATFORMS=[{name:"ig666",utm:"ig666"},{name:"LINE社群",utm:"line"},{name:"fb粉專",utm:"fb"}];
+function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
+// 依平台一條導購連結：utm_campaign 相同(shorts)、用 utm_source 分平台
+function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||"")+"&utm_medium=short&utm_campaign=shorts"; }
 function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; e.focus(); e.select();
   const t=e.value; if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>toast("已選取，請手動複製",true)); }
   else { try{ document.execCommand("copy"); toast("已複製連結"); }catch(_){ toast("已選取，請手動複製",true); } } }
+// 投放平台複選（給完成上架／編輯影片用）
+function platChips(cls, selected){ const sel=new Set(selected||[]);
+  return postPlatforms().map(p=>`<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px"><input type="checkbox" class="${cls}" value="${esc(p.name)}" ${sel.has(p.name)?"checked":""} style="width:auto;margin:0"> ${esc(p.name)}</label>`).join(""); }
+function collectPlat(cls){ return Array.from(document.querySelectorAll('.'+cls)).filter(x=>x.checked).map(x=>x.value); }
 function viewPerf(){
-  const utm=fixedUtm();
+  const base=shoplineBase();
+  const links=postPlatforms().map((p,i)=>{ const link=platformUtm(base,p.utm);
+    return `<div style="margin-top:10px"><label style="margin:0 0 2px">${esc(p.name)}</label>
+      <div class="row" style="gap:8px"><input id="perf_utm_${i}" value="${esc(link)}" readonly style="flex:1;min-width:200px" onclick="this.select()"><button class="btn sm" onclick="copyFromInput('perf_utm_${i}')">複製</button></div></div>`; }).join("");
   return `<h2>📊 成效</h2>
   <div class="card">
-    <b>🎬 影音流量（IG / FB）</b>
-    <p class="muted" style="font-size:13px;margin:6px 0 12px">每支片的觀看、觸及、讚、留言、分享都在「短影音成效儀表板」自動更新（由 Meta 資料每天匯整），不用手動回填。</p>
-    <a class="btn" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a>
+    <b>🎬 影音流量</b>
+    <div style="margin-top:10px"><a class="btn" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a></div>
   </div>
   <div class="card">
-    <b>🛒 Shopline 導購連結（固定一條）</b>
-    <p class="muted" style="font-size:13px;margin:6px 0 12px">把這條連結放在 IG/FB 個人簡介，所有短影音共用。之後在 Shopline 報表用 <code>utm_campaign=shorts</code> 看短影音整體帶多少單。</p>
-    ${utm
-      ? `<div class="row" style="gap:8px;align-items:center"><input id="perf_utm" value="${esc(utm)}" readonly style="flex:1;min-width:200px" onclick="this.select()"><button class="btn sm" onclick="copyFromInput('perf_utm')">複製</button></div>`
-      : `<p class="muted">先到「⚙️ 設定」填入 Shopline 網址，這裡就會自動產生固定導購連結。</p>`}
+    <b>🛒 Shopline 導購連結（依平台）</b>
+    ${base ? links : `<p class="muted" style="margin-top:8px">先到「⚙️ 設定」填入 Shopline 網址。</p>`}
   </div>`;
 }
 
