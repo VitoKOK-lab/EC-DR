@@ -243,7 +243,7 @@
   <p>請選擇你的名字（多人即時同步）</p>
   <div class="userGrid" id="userGrid"><p class="muted">連線中…</p></div>
   <div class="addRow"><button class="btn sec" onclick="ownerLogin()">🔒 管理員登入</button></div>
-  <p class="muted" style="margin-top:14px;font-size:12px">點名字即可登入（免密碼）；「管理員登入」可管理成員與查看稽核紀錄</p>
+  <p class="muted" style="margin-top:14px;font-size:12px">點名字即可登入（免密碼）；「管理員登入」可管理成員與設定</p>
 </div>
 
 <!-- 主畫面 -->
@@ -261,16 +261,14 @@
 <div id="modalRoot"></div>
 <div class="toast" id="toast"></div>
 
-<!-- 登出：白底＋隨機可愛動畫，「辛苦了・明天見」 -->
+<!-- 登出：白底＋簡單再見，跳回登入頁 -->
 <div id="goodbye">
-  <div id="gstage"><span class="gemoji gbounce">🐱</span><span class="gwave">👋</span></div>
-  <p class="gtitle">辛苦了！</p>
+  <div id="gstage"><span style="font-size:64px">👋</span></div>
+  <p class="gtitle">再見！</p>
   <p class="gsub">明天見 👋</p>
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="legacy-data.js"></script>
 <script src="app.js"></script>
 <script type="module" src="fb.js"></script>
 </body>
