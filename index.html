@@ -9,16 +9,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700;900&display=swap" rel="stylesheet">
 <style>
   :root{
-    /* 珠寶品牌：玫瑰紫 × 金 × 奶油 */
-    --bg:#f4ede4; --panel:#ffffff; --panel2:#f7f0e7; --line:#eadfd0;
-    --txt:#2b2320; --muted:#9a8b7b;
+    /* 珠寶品牌：玫瑰紫主色 × 冷調乾淨淺底 */
+    --bg:#f5f4f8; --panel:#ffffff; --panel2:#f2f1f7; --line:#e8e6ef;
+    --txt:#272233; --muted:#8a8598;
     --accent:#9b2c7e; --accent2:#7d1a5e;
-    --green:#0f8a6f; --greenbg:#e3f3ee; --amber:#b5924e; --amberbg:#f7eed9; --red:#b8392f; --redbg:#fae9e6;
-    --chip:#f1e8db; --traffic:#2f6f9e; --trafficbg:#e7f0f7; --sales:#b5924e; --salesbg:#f7eed9; --pamper:#7c3aed; --pamperbg:#f1e9fe;
-    --gold:#b5924e; --gold-dk:#8c6f32; --espresso:#2b2320;
+    --green:#0f8a6f; --greenbg:#e4f3ef; --amber:#b5924e; --amberbg:#f6eede; --red:#c0392b; --redbg:#fae9e7;
+    --chip:#efedf6; --traffic:#2f6f9e; --trafficbg:#e7f0f7; --sales:#b07a9e; --salesbg:#f6ecf2; --pamper:#7c3aed; --pamperbg:#f1e9fe;
+    --gold:#c2a35a; --gold-dk:#a07f3a; --espresso:#2a1c28;
     --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
-    --shadow:0 1px 2px rgba(80,52,38,.05),0 2px 8px rgba(80,52,38,.05);
-    --shadow2:0 10px 34px rgba(80,52,38,.14);
+    --shadow:0 1px 2px rgba(40,30,55,.05),0 2px 10px rgba(40,30,55,.05);
+    --shadow2:0 12px 36px rgba(40,30,55,.14);
     --r:14px; --rs:10px;
   }
   *{box-sizing:border-box}
@@ -32,12 +32,12 @@
 
   /* 登入 */
   #login{position:fixed;inset:0;background:
-      radial-gradient(1200px 500px at 50% -10%, rgba(155,44,126,.10), transparent 60%),
-      radial-gradient(900px 500px at 90% 110%, rgba(181,146,78,.12), transparent 55%),
+      radial-gradient(1100px 480px at 50% -8%, rgba(155,44,126,.12), transparent 60%),
+      radial-gradient(800px 460px at 92% 112%, rgba(155,44,126,.07), transparent 55%),
       var(--bg);
     display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:50;padding:24px}
   #login h1{font-family:var(--serif);font-weight:900;font-size:30px;margin:0 0 4px;color:var(--accent);letter-spacing:2px}
-  #login .sub{color:var(--gold-dk);font-weight:600;letter-spacing:4px;font-size:12px;margin:0 0 4px}
+  #login .sub{color:var(--muted);font-weight:600;letter-spacing:4px;font-size:12px;margin:0 0 4px}
   #login p{color:var(--muted);margin:0 0 24px;text-align:center}
   .userGrid{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:620px}
   .userBtn{background:var(--panel);border:1px solid var(--line);color:var(--txt);box-shadow:var(--shadow);
@@ -52,16 +52,16 @@
   .addRow input,.addRow select{padding:10px;border-radius:var(--rs);border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
   /* 頂列：深咖啡 + 金線 */
-  header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,#33291f,#2b2320);
-         border-bottom:2px solid var(--gold);display:flex;align-items:center;gap:10px;padding:11px 18px;box-shadow:0 2px 14px rgba(43,35,32,.18)}
-  header .brand{font-family:var(--serif);font-weight:700;white-space:nowrap;letter-spacing:1.5px;color:#f3e9d8}
+  header{position:sticky;top:0;z-index:30;background:linear-gradient(120deg,#3a1f37,#2a1626);
+         border-bottom:2px solid var(--gold);display:flex;align-items:center;gap:10px;padding:11px 18px;box-shadow:0 2px 16px rgba(42,22,38,.22)}
+  header .brand{font-family:var(--serif);font-weight:700;white-space:nowrap;letter-spacing:1.5px;color:#f6ecf2}
   header .brand .mk{color:var(--gold)}
   header .spacer{flex:1}
   .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:7px 15px;border-radius:999px;font-weight:600;box-shadow:0 2px 10px rgba(125,26,94,.35)}
   .whoami .dot{width:7px;height:7px;border-radius:50%;background:#ffd9f0}
   .whoami .rb{font-size:11px;opacity:.9}
   .offline{background:var(--red)!important}
-  header .btn.sec{background:rgba(255,255,255,.10);color:#f3e9d8;border:1px solid rgba(243,233,216,.25)}
+  header .btn.sec{background:rgba(255,255,255,.10);color:#f6ecf2;border:1px solid rgba(246,236,242,.25)}
   header .btn.sec:hover{background:rgba(255,255,255,.18)}
 
   nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);padding:0 12px;position:sticky;top:55px;z-index:29;box-shadow:var(--shadow)}
@@ -81,8 +81,8 @@
   textarea{min-height:60px}
   .btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;padding:11px 18px;border-radius:var(--rs);font-weight:700;letter-spacing:.5px;transition:.16s;box-shadow:0 2px 10px rgba(125,26,94,.22)}
   .btn:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 5px 16px rgba(125,26,94,.30)}
-  .btn.sec{background:var(--chip);color:#6a4a2f;border:1px solid var(--line);box-shadow:none}
-  .btn.sec:hover{background:#e9ddc9;filter:none;transform:translateY(-1px)}
+  .btn.sec{background:var(--chip);color:#5b5566;border:1px solid var(--line);box-shadow:none}
+  .btn.sec:hover{background:#e6e3ef;filter:none;transform:translateY(-1px)}
   .btn.danger{background:linear-gradient(135deg,#c0473b,#a12f25);color:#fff;box-shadow:0 2px 10px rgba(161,47,37,.22)}
   .btn.danger:hover{filter:brightness(1.04)}
   .btn.sm{padding:7px 13px;font-size:13px;border-radius:8px}
@@ -91,7 +91,7 @@
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   th{color:var(--muted);font-weight:700;font-size:12px;letter-spacing:.5px;text-transform:none}
   tbody tr:hover{background:var(--panel2)}
-  .tag{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--chip);font-size:12px;font-weight:700;color:#7a5a3a}
+  .tag{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--chip);font-size:12px;font-weight:700;color:#6a6478}
   .tag.traffic{background:var(--trafficbg);color:var(--traffic)}
   .tag.sales{background:var(--salesbg);color:var(--sales)}
   .light{display:inline-block;width:10px;height:10px;border-radius:50%}
@@ -136,7 +136,7 @@
   .day.urgent .pmk{font-size:14px;color:var(--red);font-weight:800}
   .day.none{background:var(--panel2)}
   .day.none .big{color:var(--muted)}
-  .day.blank{background:#f0e7da;border-color:#e4d7c4}
+  .day.blank{background:#eceaf3;border-color:#e1dfeb}
   .day.blank .big{color:var(--muted)}
   .day.out{background:transparent;border:none;cursor:default}
   .day.today{box-shadow:0 0 0 2px var(--accent);border-color:var(--accent)}
@@ -153,7 +153,7 @@
   #goodbye.show{display:flex}
   #gstage{height:120px;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:18px}
   #goodbye .gtitle{font-family:var(--serif);font-size:34px;font-weight:900;letter-spacing:4px;margin:0;color:var(--accent)}
-  #goodbye .gsub{color:var(--gold-dk);margin-top:10px;font-size:16px;letter-spacing:2px}
+  #goodbye .gsub{color:var(--muted);margin-top:10px;font-size:16px;letter-spacing:2px}
   #goodbye .relogin{position:fixed;right:16px;bottom:14px;background:none;border:none;color:var(--muted);
     font-size:13px;text-decoration:underline;cursor:pointer;padding:8px}
   #goodbye .relogin:hover{color:var(--txt)}
@@ -209,7 +209,7 @@
   .ucard .nm{font-weight:800}
   table.wk{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;table-layout:fixed}
   table.wk th{font-size:11px;color:var(--muted);text-align:left;padding:3px 4px;border-bottom:1px solid var(--line)}
-  table.wk td{padding:3px 4px;border-bottom:1px solid #f0e7da;vertical-align:top;word-break:break-word}
+  table.wk td{padding:3px 4px;border-bottom:1px solid #eceaf3;vertical-align:top;word-break:break-word}
   table.wk th:nth-child(1),table.wk td:nth-child(1){width:34%}
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
