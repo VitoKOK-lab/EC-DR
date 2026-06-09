@@ -726,10 +726,18 @@ function renameMember(oldName){
 // ===================================================================
 const META_DASH_URL="https://vitokok-lab.github.io/meta-dashboard/index.html";
 function shoplineBase(){ return (STATE.settings&&STATE.settings.shoplineBase)||""; }
-const DEFAULT_PLATFORMS=[{name:"ig666",utm:"ig666"},{name:"LINE社群",utm:"line"},{name:"fb粉專",utm:"fb"}];
+const DEFAULT_PLATFORMS=[
+  {name:"溱姐主（@tzgems1111）", utm:"tzgems1111"},
+  {name:"泰熙爾汗（@tzgems5588）", utm:"tzgems5588"},
+  {name:"英文（@tzgrotwofficial）", utm:"tzgrotwofficial"},
+  {name:"代理（@tzgems666）", utm:"tzgems666"},
+  {name:"官方（@tzgrotw）", utm:"tzgrotw"},
+  {name:"粉專（Zanagems）", utm:"zanagems"},
+  {name:"LINE社群（珠寶社群）", utm:"line_group"}
+];
 function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
-// 依平台一條導購連結：utm_campaign 相同(shorts)、用 utm_source 分平台
-function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||"")+"&utm_medium=short&utm_campaign=shorts"; }
+// 依平台一條導購連結，最短：只用 utm_source（月底靠訂單時間對應商品）
+function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||""); }
 function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; e.focus(); e.select();
   const t=e.value; if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>toast("已選取，請手動複製",true)); }
   else { try{ document.execCommand("copy"); toast("已複製連結"); }catch(_){ toast("已選取，請手動複製",true); } } }
