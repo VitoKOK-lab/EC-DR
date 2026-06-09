@@ -136,13 +136,15 @@ async function route(method, path, body){
       await window.DB.update("videos",id,patch); return;
     }
     if(action==="reuse" && method==="POST"){
-      const date=body.date; const link=(body.link||"").trim(); const time=body.time||"";
+      const date=body.date; const link=(body.link||"").trim(); const time=body.time||""; const drive=(body.drive||"").trim();
       if(!date) throw new Error("請選擇重播上片日期");
       const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
-      slots.push({videoId:id, publishedLink:link, reused:true, by:user, at:nowIso(), time});
+      slots.push({videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time});
       await window.DB.scheduleSet(date,{slots});
-      const uh=(v.usageHistory||[]).concat([{date, link, time, by:user, at:nowIso()}]);
-      await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1, usageHistory:uh});
+      const uh=(v.usageHistory||[]).concat([{date, link, drive, time, by:user, at:nowIso()}]);
+      const patch={totalUsed:(v.totalUsed||0)+1, usageHistory:uh};
+      if(drive && drive!==v.driveFolder) patch.driveFolder=drive; // 同步存檔位置回影片（同一支都一樣）
+      await window.DB.update("videos", id, patch);
       return;
     }
     if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; await window.DB.update("videos",id,patch); return; }
@@ -299,14 +301,15 @@ function openDay(ds){
     const v = vid(it.videoId);
     const reused = it.slot && it.slot.reused;
     const ed = reused ? (it.slot.by||"") : (v?.editor||"");
-    const link = reused ? (it.slot.publishedLink||"") : (v?.publishedLink||v?.driveFolder||"");
+    const upLink = reused ? (it.slot.publishedLink||"") : (v?.publishedLink||v?.socialLink||"");
+    const drive = reused ? (it.slot.driveFolder||v?.driveFolder||"") : (v?.driveFolder||"");
     const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     return `<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
       <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
       <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
-      <td data-label="連結">${link?`<a href="${esc(link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
+      <td data-label="連結">${upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'<span class="muted">未填</span>'}${drive?` ・<a href="${esc(drive)}" target="_blank" class="muted">存檔</a>`:''}</td>
       <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
     </tr>`;
   }).join("");
@@ -317,15 +320,20 @@ function openDay(ds){
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
   const timeField = `<div style="min-width:120px"><label style="margin:0 0 2px">上片時間</label>
     <select id="od_time">${PUB_TIMES.map(t=>`<option ${t===autoTime?"selected":""}>${t}</option>`).join("")}</select></div>`;
+  // 存檔位置（雲端備份）＝這支影片本來的存檔，重播都一樣 → 自動帶入；切換影片時更新
+  OD_DRIVE={}; doneList.forEach(v=>{ OD_DRIVE[v.id]=v.driveFolder||""; });
+  const firstDrive = doneList.length ? (doneList[0].driveFolder||"") : "";
   const reusePicker = `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片重播到這天</b>
     ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
         <div style="flex:1;min-width:150px"><label style="margin:0 0 2px">選一支舊片</label>
-          <select id="od_vid">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select></div>
+          <select id="od_vid" onchange="odPickVid()">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select></div>
         ${timeField}
         <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
       </div>
-      <label style="margin:8px 0 2px">上片連結（社群貼文網址）</label>
-      <input id="od_link" placeholder="貼上這支重播要發佈的連結">`
+      <label style="margin:8px 0 2px">存檔位置（雲端備份・自動帶入，同一支都一樣）</label>
+      <input id="od_drive" value="${esc(firstDrive)}" placeholder="這支影片的雲端備份連結">
+      <label style="margin:8px 0 2px">上傳連結（這次發佈的社群網址・每次可能不同，手動貼上）</label>
+      <input id="od_link" placeholder="貼上這次重播要發佈的連結（可先排、之後再補）">`
       : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。新片需滿 45 天才能重播。</p>`}
   </div>`;
   const b = dayBreakdown(ds);
@@ -342,9 +350,12 @@ function openDay(ds){
     </div>
     ${reusePicker}`, null);
 }
-// 從月曆某天排一支舊片重播
+// 切換要重播的舊片時，自動帶入它的存檔位置（雲端備份）
+let OD_DRIVE={};
+function odPickVid(){ const e=document.getElementById("od_drive"); if(e) e.value=OD_DRIVE[val("od_vid")]||""; }
+// 從月曆某天排一支舊片重播（存檔位置自動帶入、上傳連結手動）
 function odReuse(ds){ const id=val("od_vid"); if(!id){ toast("請先選一支舊片",true); return; }
-  write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
+  write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
 async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return;
   const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
