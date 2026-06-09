@@ -344,6 +344,18 @@ function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
 // ===================================================================
 // 📋 今日工作（🆕 新片上架）
 // ===================================================================
+// 排程速覽：連續排滿天數（安全天數）＋未來 14 天缺口
+function scheduleGlance(){
+  const target=dayTarget();
+  let runway=0;
+  for(let off=0;off<=120;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    if(dayScheduledCount(ds)>=target) runway++; else break; }
+  const defs=[];
+  for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    const cnt=dayScheduledCount(ds); if(cnt<target) defs.push({ds,short:target-cnt}); }
+  return {target, runway, defs};
+}
+// 今日工作＝每天上班的三步驟例行作業
 function viewWork(){
   const me = currentUser();
   const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
@@ -354,33 +366,109 @@ function viewWork(){
   const matRow = (v)=>`<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a> ${typeTag(v.mainType)}</td>
       <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
-      <td data-label="負責">${esc(v.claimedBy||v.editor||"")}</td>
       <td data-label=""><button class="btn sm" onclick="finishVid('${v.id}')">完成上架✔</button></td>
     </tr>`;
+  const g=scheduleGlance(); const SAFE=15;
+  const runCol=g.runway>=SAFE?'var(--green)':(g.runway>=7?'var(--amber)':'var(--red)');
+  const oldCount=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v)).length;
+  const defChips=g.defs.length
+    ? g.defs.slice(0,8).map(x=>`<span class="pill ${x.ds===today?'em':'wa'}" style="margin:2px 4px 2px 0;display:inline-block">${x.ds.slice(5)}(${weekdayZh(x.ds)}) 缺${x.short}</span>`).join("")+(g.defs.length>8?` <span class="muted">…還有 ${g.defs.length-8} 天未滿</span>`:'')
+    : '<span class="pos">未來 14 天都排滿了 ✅</span>';
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
-  <div class="card">
+  <p class="muted" style="margin:-8px 0 14px;font-size:13px">每天上班三步驟：①建檔新毛片　→　②用舊片排滿時段　→　③下拉新毛片開始剪</p>
+
+  <div class="card" style="border-left:4px solid var(--accent)">
+    <div class="row" style="justify-content:space-between"><b>① 建檔新毛片</b>
+      <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
+    <p class="muted" style="font-size:13px;margin:6px 0 8px">把今天拍好的毛片片名先建檔，剪輯才能下拉來剪。</p>
+    <div class="row" style="gap:8px">
+      <button class="btn" onclick="batchNewFootage()">＋ 批次建檔今天的新毛片</button>
+      <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--accent)">
+    <div class="row" style="justify-content:space-between"><b>② 用舊片排滿時段</b>
+      <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
+    <p class="muted" style="font-size:13px;margin:6px 0 8px">短影音行銷每天要 ${g.target} 支；用滿 45 天的舊片（可重播庫存 ${oldCount} 支）把沒排滿的日子補上。</p>
+    <div style="margin-bottom:8px">${defChips}</div>
+    <div class="row" style="gap:8px">
+      <button class="btn" onclick="fillWithOldVideos(14)" ${(g.defs.length&&oldCount)?'':'disabled style="opacity:.5;cursor:not-allowed"'}>♻ 一鍵用舊片補滿未來 14 天</button>
+      <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程手動調整</button>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--green)">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b>🎬 我進行中的影片</b>
+      <b>③ 下拉新毛片開始剪</b>
       <span style="display:flex;gap:6px">
-        <span class="pill ok" title="今日完成上架">✔ 今日 ${myDoneToday}</span>
+        <span class="pill ok" title="今日完成上架">✔ 今日完成 ${myDoneToday}</span>
         <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span>
       </span>
     </div>
-    ${atLimit?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
-    <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
-    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，從下方「待剪新片」拉一支來剪</td></tr>`}</tbody></table>
-    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
-      <div class="row" style="justify-content:space-between"><b>🆕 待剪新片</b>
-        <button class="btn sm sec" onclick="newSimpleVideo()">＋ 新增片名／內容</button></div>
-      ${pool.length
-        ? `<div class="row" style="gap:8px;margin-top:8px">
-             <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
-             <button class="btn sm" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
-           </div>`
-        : `<p class="muted" style="margin-top:8px">目前沒有待剪新片，可按「＋ 新增片名／內容」建立</p>`}
-    </div>
+    ${pool.length
+      ? `<div class="row" style="gap:8px;margin-top:8px">
+           <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
+           <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
+         </div>`
+      : `<p class="muted" style="margin-top:8px">目前沒有待剪新片，先到上面「① 建檔新毛片」建立。</p>`}
+    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
+    <table class="responsive" style="margin-top:12px"><thead><tr><th>我進行中的影片</th><th>片源</th><th></th></tr></thead>
+    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，從上面下拉一支新毛片開始剪</td></tr>`}</tbody></table>
   </div>`;
+}
+// ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
+function batchNewFootage(){
+  showModal("批次建檔新毛片", `
+    <label>把今天拍好的毛片片名貼進來，<b>一行一支</b></label>
+    <textarea id="bf_list" style="min-height:150px" placeholder="劉亦菲紅毯珠寶&#10;八大珠寶派系&#10;真假寶石30秒分辨"></textarea>
+    <p class="muted" style="font-size:12px">每一行會建一支「待剪新片」，剪輯就能在步驟③下拉來剪。</p>
+  `, async ()=>{
+    const lines=val("bf_list").split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!lines.length){ toast("請至少輸入一支片名",true); return false; }
+    let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
+    let ok=0; BULK_BUSY=true;
+    try{
+      for(let i=0;i<lines.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
+        const rec=Object.assign(newVideoRecord({name:lines[i], rawName:lines[i]}), {id});
+        try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已建檔 "+ok+" 支新毛片，可到步驟③開始剪"); return true;
+  });
+}
+// ② 一鍵用舊片補滿：未來 N 天未達標的日子，用滿 45 天的舊片補到每日目標
+async function fillWithOldVideos(days){
+  days=days||14; const target=dayTarget();
+  const eligible=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v));
+  if(!eligible.length){ toast("目前沒有可重播的舊片（需已完成且滿 45 天）",true); return; }
+  if(!confirm(`將用舊片把未來 ${days} 天「沒排滿」的時段補到每天 ${target} 支。\n（同一天不重複、優先用較少重播過的舊片、時段自動帶 10/12/16）\n確定？`)) return;
+  const useCount={}; eligible.forEach(v=>useCount[v.id]=v.totalUsed||0);
+  const scheduleUpd={}; const usageAdd={}; let added=0, filledDays=0;
+  for(let off=0; off<days; off++){
+    const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    const baseList=dayVideoList(ds); let dayCount=baseList.length; let need=target-dayCount; if(need<=0) continue;
+    const usedIds=new Set(baseList.map(it=>it.videoId));
+    const day=(STATE.schedule||{})[ds]||{slots:[]}; const slots=(day.slots||[]).slice();
+    const cand=eligible.filter(v=>!usedIds.has(v.id)).sort((a,b)=>(useCount[a.id]-useCount[b.id]) || String(a.finishedAt||a.scheduledDate||"").localeCompare(String(b.finishedAt||b.scheduledDate||"")));
+    let addedThisDay=0;
+    for(const v of cand){ if(need<=0) break;
+      const time=PUB_TIMES[dayCount]||"18:00"; const at=nowIso();
+      slots.push({videoId:v.id, publishedLink:"", reused:true, by:currentUser(), at, time});
+      (usageAdd[v.id]=usageAdd[v.id]||[]).push({date:ds, link:"", time, by:currentUser(), at});
+      useCount[v.id]++; usedIds.add(v.id); dayCount++; need--; added++; addedThisDay++;
+    }
+    if(addedThisDay) scheduleUpd[ds]=slots; if(need<=0) filledDays++;
+  }
+  if(!added){ toast("未來 "+days+" 天都已排滿，無需補片 ✅"); return; }
+  BULK_BUSY=true;
+  try{
+    for(const ds of Object.keys(scheduleUpd)){ try{ await window.DB.scheduleSet(ds,{slots:scheduleUpd[ds]}); }catch(e){} }
+    for(const id of Object.keys(usageAdd)){ const v=vid(id); if(!v) continue;
+      const uh=(v.usageHistory||[]).concat(usageAdd[id]);
+      try{ await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+usageAdd[id].length, usageHistory:uh}); }catch(e){} }
+  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  await delay(400); toast(`已用舊片補滿：新增 ${added} 個重播、補滿 ${filledDays} 天`);
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimPicked(){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; } claimVid(id); }
