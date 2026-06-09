@@ -394,43 +394,57 @@ function viewWork(){
     : '<span class="pos">未來 14 天都排滿了 ✅</span>';
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
-  <p class="muted" style="margin:-8px 0 14px;font-size:13px">每天上班三步驟：①建檔新毛片　→　②用舊片排滿時段　→　③下拉新毛片開始剪</p>
+  <p class="muted" style="margin:-8px 0 14px;font-size:13px">每天上班照著 1 → 2 → 3 做完，短影音行銷就排滿了。</p>
 
-  <div class="card" style="border-left:4px solid var(--accent)">
-    <div class="row" style="justify-content:space-between"><b>① 建檔新毛片</b>
-      <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
-    <p class="muted" style="font-size:13px;margin:6px 0 8px">把今天拍好的毛片片名先建檔，剪輯才能下拉來剪。</p>
-    <div class="row" style="gap:8px">
+  <div class="card" style="border-left:5px solid var(--accent)">
+    <div class="row" style="gap:14px;align-items:center">
+      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">1</span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="justify-content:space-between"><b style="font-size:17px">建檔新毛片</b>
+          <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
+        <p class="muted" style="font-size:13px;margin:3px 0 0">把今天拍好的毛片片名先建檔，剪輯才能下拉來剪。</p>
+      </div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" onclick="batchNewFootage()">＋ 批次建檔今天的新毛片</button>
       <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
     </div>
   </div>
 
-  <div class="card" style="border-left:4px solid var(--accent)">
-    <div class="row" style="justify-content:space-between"><b>② 用舊片排滿時段</b>
-      <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
-    <p class="muted" style="font-size:13px;margin:6px 0 8px">短影音行銷每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）；用滿 45 天的舊片（可重播庫存 ${oldCount} 支）把沒排滿的日子補上。</p>
-    <div style="margin-bottom:8px">${defChips}</div>
+  <div class="card" style="border-left:5px solid var(--accent)">
+    <div class="row" style="gap:14px;align-items:center">
+      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">2</span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="justify-content:space-between"><b style="font-size:17px">用舊片排滿時段</b>
+          <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
+        <p class="muted" style="font-size:13px;margin:3px 0 0">每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）；用滿 45 天的舊片（可重播 ${oldCount} 支）補上沒排滿的日子。</p>
+      </div>
+    </div>
+    <div style="margin:10px 0 8px">${defChips}</div>
     <div class="row" style="gap:8px">
       <button class="btn" onclick="fillWithOldVideos(14)" ${(g.defs.length&&oldCount)?'':'disabled style="opacity:.5;cursor:not-allowed"'}>♻ 一鍵用舊片補滿未來 14 天</button>
       <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程手動調整</button>
     </div>
   </div>
 
-  <div class="card" style="border-left:4px solid var(--green)">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <b>③ 下拉新毛片開始剪</b>
-      <span style="display:flex;gap:6px">
-        <span class="pill ok" title="今日完成上架">✔ 今日完成 ${myDoneToday}</span>
-        <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span>
-      </span>
+  <div class="card" style="border-left:5px solid var(--green)">
+    <div class="row" style="gap:14px;align-items:center">
+      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">3</span>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="justify-content:space-between"><b style="font-size:17px">下拉新毛片開始剪</b>
+          <span style="display:flex;gap:6px">
+            <span class="pill ok" title="今日完成上架">✔ 今日 ${myDoneToday}</span>
+            <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></span>
+        </div>
+        <p class="muted" style="font-size:13px;margin:3px 0 0">下拉一支新毛片開始剪，剪完按「完成上架」自動排進月行事曆。</p>
+      </div>
     </div>
     ${pool.length
-      ? `<div class="row" style="gap:8px;margin-top:8px">
+      ? `<div class="row" style="gap:8px;margin-top:10px">
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
            <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
          </div>`
-      : `<p class="muted" style="margin-top:8px">目前沒有待剪新片，先到上面「① 建檔新毛片」建立。</p>`}
+      : `<p class="muted" style="margin-top:10px">目前沒有待剪新片，先回到上面 <b>1</b> 建檔。</p>`}
     ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
     <table class="responsive" style="margin-top:12px"><thead><tr><th>我進行中的影片</th><th>片源</th><th></th></tr></thead>
     <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，從上面下拉一支新毛片開始剪</td></tr>`}</tbody></table>
