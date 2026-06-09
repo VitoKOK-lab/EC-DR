@@ -1,15 +1,15 @@
 // ===================================================================
-// EC-DR Firebase 版 — 主程式（資料層改接 Firestore，畫面沿用）
-// 商業邏輯（排程預警 / KPI 超前落後 / 防疲乏）在前端計算。
+// EC-DR 精簡版 — 只保留三件事：📅 月排程、🆕 新片上架、♻ 舊片重覆上架
+// 角色：管理員（Vito）＋ 剪輯。已移除：交辦、KPI、日報、稽核、二創、商品庫。
+// 資料層走 Firestore（fb.js 提供 window.DB）；商業邏輯都在前端。
 // ===================================================================
-const ROLE_LABEL = {boss:"管理員", hr:"人資", editor:"剪輯"};
+const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dash","📊 總覽"],["videos","🎞 影片庫"]],
-  hr:     [["dash","📊 部門總覽"]],                         // Benny：純觀察，不看影片庫／稽核
+  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"]],
   editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
-const PUB_TIMES = ["10:00","12:00","16:00"];   // 所有影片固定三個上片時間
-let STATE = null, DASH = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null;
+const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
+let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
 
 function currentUser(){ return localStorage.getItem("ecdr_user") || ""; }
@@ -19,71 +19,13 @@ function currentRole(){
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
-const ADMIN_NAME = "管理員"; // Vito 專用的最高管理員（只有他有設定／成員管理／稽核紀錄）
-function isOwner(){ return currentUser()===ADMIN_NAME; }   // 只有以「管理員密碼」進入的 Vito 為 true（Regina 不是）
+const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
+function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  if(isOwner()){ t.push(["settings","⚙️ 設定"]); t.push(["members","👥 成員管理"]); t.push(["audit","🛡 稽核紀錄"]); } return t; }
+  if(isOwner()){ t.push(["settings","⚙️ 設定"]); t.push(["members","👥 成員管理"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
-function hhmm(iso){ return iso? String(iso).slice(11,16) : ""; }
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
-function deviceId(){ let id=localStorage.getItem("ecdr_device");
-  if(!id){ id="dev-"+Math.random().toString(36).slice(2,8)+Date.now().toString(36); localStorage.setItem("ecdr_device",id); }
-  return id; }
-// 領取→完成 耗時（含跨天）
 function durationMin(a,b){ const s=new Date(a), e=new Date(b||nowIso()); if(isNaN(s)||isNaN(e)||e<s) return null; return Math.round((e-s)/60000); }
-function durationText(a,b){ const m=durationMin(a,b); return minToText(m); }
-function minToText(m){ if(m==null) return "-";
-  const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mi=m%60;
-  return (d?d+"天":"")+(h?h+"時":"")+mi+"分"; }
-
-// ---------- 語言別（多語分軌排程） ----------
-const SCHED_LANGS = ["zh"];   // 已移除英/泰，全部中文、不做二創
-let CUR_LANG = null;
-function canAllLang(){ return false; }
-function curLang(){ return "zh"; }
-function setLang(l){ /* 已停用語言切換 */ }
-// 角色標籤 ↔ {role, lang}（語言一律 zh）
-// 我目前進行中的影片數（跨語言）
-function inProgressCount(name){
-  let n=(STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length;
-  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ n+=(STATE.videos||[]).filter(v=>v.languages?.[l]?.status==="二創中"&&v.languages?.[l]?.claimedBy===name).length; });
-  return n; }
-function myInProgressCount(){ return inProgressCount(currentUser()); }
-// 某語言「在某日上片」的影片
-function dayLangList(date,lang){
-  if(lang==="zh") return dayVideoList(date);
-  return (STATE.videos||[]).filter(v=>v.languages?.[lang]?.status==="完成" && v.languages?.[lang]?.scheduledDate===date)
-    .map(v=>({videoId:v.id, fromVideo:true, lang}));
-}
-function dayLangCount(date,lang){ return dayLangList(date,lang).length; }
-// 每日類型配額與寵粉(週五六)規則
-function isPamperedDay(date){ return new Date(date+"T00:00:00").getDay()===5; } // 週五
-// 當日各類型最低數量：平日 流量3/帶貨1；週五 流量2/寵粉3
-function dayTargets(date){
-  const s=STATE.settings||{};
-  if(isPamperedDay(date)) return s.fridayTargets || {"寵粉":5};
-  return s.typeTargets || {"流量型":3,"帶貨型":1};
-}
-function daySum(date){ const t=dayTargets(date); return Object.values(t).reduce((a,b)=>a+(b||0),0); }
-function dayBreakdown(date){
-  const list=dayLangList(date,"zh"); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
-  list.forEach(it=>{ const v=vid(it.videoId); if(!v) return;
-    const isP=v.mainType==="寵粉"||String(v.subTag||"").includes("寵粉")||v.pampered;
-    if(isP) cnt["寵粉"]++; else if(v.mainType==="流量型") cnt["流量型"]++; else cnt["帶貨型"]++; });
-  const tg=dayTargets(date); const deficits={};
-  Object.keys(tg).forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
-  const target=daySum(date); const total=list.length;
-  const needPampered=(tg["寵粉"]||0)>cnt["寵粉"];
-  const full = Object.keys(deficits).length===0 && total>=target;
-  return {total, target, byType:cnt, deficits, pampered:cnt["寵粉"], needPampered, full, targets:tg};
-}
-// 某語言、某人、某日是否完成一支
-function langFinishedOn(v,lg,name,date){
-  if(lg==="zh") return v.editor===name && ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===date;
-  const L=v.languages?.[lg]; return !!(L && L.editor===name && L.status==="完成" && String(L.finishedAt||"").slice(0,10)===date); }
-function langFinishedInRange(v,lg,name,s,e){
-  if(lg==="zh"){ if(!(v.editor===name && ["已完成","已上片"].includes(v.stage))) return false; const fd=parseDate(v.finishedAt); return !!(fd&&fd>=s&&fd<=e); }
-  const L=v.languages?.[lg]; if(!(L&&L.editor===name&&L.status==="完成")) return false; const fd=parseDate(L.finishedAt); return !!(fd&&fd>=s&&fd<=e); }
 
 function toast(msg, isErr){
   const t = document.getElementById("toast");
@@ -97,25 +39,21 @@ function nextId(arr, prefix){
   return prefix+String(mx+1).padStart(3,"0");
 }
 function newVideoRecord(over){
-  const s=STATE.settings||{}; const langs=s.languages||["zh"]; const languages={};
-  langs.forEach(lg=> languages[lg]= lg==="zh"?{status:"完成",editor:""}:{status:"未開始",editor:"",driveFolder:""});
+  const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), scheduledDate:null, rawName:"", name:"",
-    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", source:(s.sources&&s.sources[0])||"",
-    productId:null, editor:"", stage:"待處理", claimedBy:"",claimedAt:"",assignedBy:"",
-    needHelp:false, helpNote:"", scriptStatus:"未開始", languages,
-    finishedAt:"", usageHistory:[], totalUsed:0, ctr:0, completionRate:0,
-    driveFolder:"", voiceCopy:"", postCopy:"", locked:false };
+    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[],
+    source:(s.sources&&s.sources[0])||"", editor:"", stage:"待處理", claimedBy:"", claimedAt:"",
+    finishedAt:"", usageHistory:[], totalUsed:0, driveFolder:"", publishedLink:"", socialLink:"", locked:false };
   return Object.assign(rec, over||{});
 }
 
-// ---------- 衍生計算（對應後端 server.py） ----------
+// ---------- 衍生計算 ----------
 function parseDate(s){ s=String(s||"").slice(0,10); const d=new Date(s+"T00:00:00"); return isNaN(d)?null:d; }
 function usedInWindow(v, days){
   const cut=new Date(); cut.setDate(cut.getDate()-days); const cutD=new Date(cut.toISOString().slice(0,10)+"T00:00:00"); let c=0;
   (v.usageHistory||[]).forEach(d=>{ const ds=(d&&typeof d==="object")?d.date:d; const dd=parseDate(ds); if(dd && dd>=cutD) c++; });
   return c;
 }
-// 使用紀錄正規化：每次重播的 {日期, 連結, 排片人}，新舊格式相容
 function usageList(v){ return ((v&&v.usageHistory)||[]).map(d=> (d&&typeof d==="object")?{date:d.date,link:d.link||"",by:d.by||""}:{date:d,link:"",by:""})
   .filter(x=>x.date).sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
 // 某日的影片 = 手動排片(slots) ∪ 已完成且上片日=該日的影片（去重）
@@ -126,92 +64,22 @@ function dayVideoList(date){
   return out;
 }
 function dayScheduledCount(date){ return dayVideoList(date).length; }
-function dayIsComplete(date){ return dayScheduledCount(date) >= daySum(date); }
-function computeWarnings(){
-  const horizon=STATE.settings?.scheduleHorizonDays||30; const t=new Date(today+"T00:00:00");
-  const em=[], wa=[];
-  for(let o=0;o<=horizon;o++){ const d=new Date(t); d.setDate(d.getDate()+o); const ds=d.toISOString().slice(0,10);
-    if(dayIsComplete(ds)) continue; (o<=3?em:wa).push(ds); }
-  return {emergency:em, warning:wa, horizon};
-}
-function workdaysBetween(start,end){ if(!start||!end||end<start) return 0; let n=0; const c=new Date(start);
-  while(c<=end){ const w=c.getDay(); if(w>=1&&w<=5) n++; c.setDate(c.getDate()+1);} return n; }
-// 每位成員可有自己的每日 KPI 支數；沒設就用全域預設
-function userQuota(name){ const u=(STATE.users||[]).find(x=>x.name===name);
-  if(u && u.dailyQuota!=null && u.dailyQuota!=="") return Number(u.dailyQuota)||0;  // 0 視為有效（無 KPI）
-  return STATE.settings?.editorDailyQuota||3; }
-// 績效以「月」為單位累積、每月自動重置（從當月 1 號到今天的工作日 × 配額為應達量）
-function computeWorkload(date){
-  const s=STATE.settings||{}; const tod=parseDate(date)||new Date();
-  const wkStart=new Date(tod); wkStart.setDate(tod.getDate()-((tod.getDay()+6)%7));
-  const moStart=new Date(tod.getFullYear(),tod.getMonth(),1);
-  // 起算日：本月 1 號與「KPI 起算日」取較晚者（避免上線前的日子被算）
-  const ks=parseDate(s.kpiStartDate);
-  const periodStart=(ks && ks>moStart)?ks:moStart;
-  // 應完成只算「已過完」的工作日（不含今天），上線當天大家=0/0 達標
-  const yesterday=new Date(tod); yesterday.setDate(tod.getDate()-1);
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const rows=editors.map(u=>{
-    const name=u.name; const q=userQuota(name);
-    const langs=["zh"];
-    const cnt=(pred)=> (STATE.videos||[]).reduce((n,v)=> n + (langs.some(lg=>pred(v,lg,name))?1:0), 0);
-    const todayDone=cnt((v,lg,nm)=>langFinishedOn(v,lg,nm,date));
-    const weekDone =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,wkStart,tod));
-    const monthDone=cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,tod));      // 含今天(顯示用)
-    const doneYday =cnt((v,lg,nm)=>langFinishedInRange(v,lg,nm,periodStart,yesterday)); // 到前一日(達標判斷)
-    // 平均工時（本期已完成且有計時者）
-    const durs=[];
-    (STATE.videos||[]).forEach(v=>langs.forEach(lg=>{ if(langFinishedInRange(v,lg,name,periodStart,tod)){
-      const dm = lg==="zh"? v.durationMin : v.languages?.[lg]?.durationMin;
-      if(dm!=null && dm>=0) durs.push(dm); } }));
-    const avgMin = durs.length? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : null;
-    const maxMin = durs.length? Math.max(...durs) : null;
-    // 達標/超前/落後：算到「前一日」的累積 vs 應達（今天先不算）
-    const expected=workdaysBetween(periodStart,yesterday)*q; const diff=doneYday-expected;
-    // 近 7 天每日完成數（舊→新）
-    const last7=[]; for(let i=6;i>=0;i--){ const d=new Date(tod); d.setDate(tod.getDate()-i); const ds=d.toISOString().slice(0,10);
-      last7.push({date:ds, n:(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0)}); }
-    const last7Sum=last7.reduce((a,b)=>a+b.n,0);
-    return {name, lang:u.lang||"zh", todayDone, todayQuota:q, todayMet:todayDone>=q, weekDone, monthDone, doneYday,
-      totalDone:doneYday, expected, diff, status: diff>0?"超前":(diff<0?"落後":"達標"),
-      avgMin, maxMin, timedCount:durs.length, last7, last7Sum, inProgress: 0};
-  }).sort((a,b)=>b.diff-a.diff);
-  return {date, quota:(s.editorDailyQuota||3), periodStart:periodStart.toISOString().slice(0,10),
-          monthStart:periodStart.toISOString().slice(0,10), rows};
-}
-function computeDashboard(date){
-  const w=computeWarnings(); const s=STATE.settings||{}; const target=daySum(date);
-  const horizon=s.scheduleHorizonDays||30; const t=new Date(today+"T00:00:00");
-  let full=0, runway=0, broke=false; const filled=[];
-  for(let o=0;o<horizon;o++){ const d=new Date(t); d.setDate(d.getDate()+o); const ds=d.toISOString().slice(0,10);
-    if(dayIsComplete(ds)){ full++; filled.push(ds); if(!broke) runway++; } else { broke=true; } }
-  const fill=horizon?Math.round(full*100/horizon):0;
-  const todayPub=(STATE.videos||[]).filter(v=>v.stage==="已上片" && String(v.scheduledDate||"").slice(0,10)===date).length;
-  const help=(STATE.videos||[]).filter(v=>v.needHelp).map(v=>({videoId:v.id, name:v.name||v.rawName, by:v.claimedBy||v.editor, note:v.helpNote||""}));
-  const wl=computeWorkload(date); const lagging=wl.rows.filter(r=>r.diff<0).length;
-  const langs=(s.languages||[]).filter(l=>l!=="zh");
-  const deriv=(STATE.videos||[]).filter(v=>v.languages?.zh?.status==="完成").reduce((acc,v)=>acc+langs.filter(l=>["未開始","二創中"].includes(v.languages?.[l]?.status)).length,0);
-  return {date, progress:{
-    "排滿率":fill,"排滿天數":full,"安全天數":runway,"已排滿日期":filled,"視窗天數":horizon,
-    "今日已排":dayScheduledCount(date),"今日已上片":todayPub,"每日目標":target,
-    "待處理任務":(STATE.videos||[]).filter(v=>v.stage==="待處理").length,"剪輯中":(STATE.videos||[]).filter(v=>v.stage==="剪輯中").length,
-    "落後人數":lagging,"二創待辦":deriv,"本週緊急":w.emergency,"本週警告":w.warning},
-    helpList:help, workload:wl};
-}
-function loadDash(){ DASH=computeDashboard(today); render(); }
+function dayTarget(){ return STATE.settings?.dailyPublishTarget||4; }
+// 我目前進行中的影片數
+function inProgressCount(name){ return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length; }
+function myInProgressCount(){ return inProgressCount(currentUser()); }
+// 「新片」為自動狀態：上片 45 天內算新片，超過自動移除（即成為可重播的舊片）
+const NEW_DAYS=45;
+function videoPubDate(v){ return String(v.finishedAt||v.scheduledDate||"").slice(0,10); }
+function isNewVideo(v){ if(!v||!["已完成","已上片"].includes(v.stage)) return false;
+  const d=videoPubDate(v); if(!d) return false;
+  const diff=(new Date(today+"T00:00:00")-new Date(d+"T00:00:00"))/86400000;
+  return diff>=0 && diff<=NEW_DAYS; }
 
-// ---------- 寫入：路由（對應後端 _route），改用 window.DB 操作 Firestore ----------
+// ---------- 寫入路由（操作 Firestore） ----------
 function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
-// 對外的 route：執行寫入後寫一筆稽核紀錄（誰／哪台裝置／做了什麼）
 async function route(method, path, body){
-  const res = await _route(method, path, body);
-  try{ if(window.DB && window.DB.addAudit){
-    await window.DB.addAudit({ ts: nowIso(), user: currentUser()||"?", deviceId: deviceId(), action: method+" "+path });
-  } }catch(e){ /* 稽核失敗不影響主動作 */ }
-  return res;
-}
-async function _route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
   const seg=segOf(path), head=seg[0], user=currentUser();
   if(head==="settings" && method==="PUT"){ await window.DB.setSettings(body.settings||{}); return; }
@@ -219,39 +87,26 @@ async function _route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      const doc={name, role, lang:body.lang||"all", isDefault:false}; if(body.dailyQuota!=null) doc.dailyQuota=Number(body.dailyQuota)||0;
-      await window.DB.set("users", name, doc); return; }
-    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.lang!=null) patch.lang=body.lang;
-      if(body.dailyQuota!=null) patch.dailyQuota=Number(body.dailyQuota)||0;
-      if(body.pin!=null) patch.pin=String(body.pin);
+      await window.DB.set("users", name, {name, role, isDefault:false}); return; }
+    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role;
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
-  }
-  if(head==="products"){
-    if(method==="POST"){ const p=Object.assign({}, body.product); p.id=nextId(STATE.products,"P"); await window.DB.set("products",p.id,p); return; }
-    if(method==="PUT"){ await window.DB.update("products", seg[1], body.product||{}); return; }
-    if(method==="DELETE"){ await window.DB.del("products", seg[1]); return; }
   }
   if(head==="videos"){
     if(method==="POST" && seg.length===1){
       const inc=Object.assign({}, body.video); delete inc.id;
-      const v=newVideoRecord(inc); if(v.editor) v.languages.zh.editor=v.editor;
-      await window.DB.set("videos", v.id, v); return;
+      const v=newVideoRecord(inc); await window.DB.set("videos", v.id, v); return;
     }
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
       if(inProgressCount(user)>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
-      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),assignedBy:"",editor:v.editor||user,stage:"剪輯中"}); return; }
-    if(action==="assign"){ const a=body.assignee;
-      if(inProgressCount(a)>=3) throw new Error(a+" 手上已有 3 支進行中，請對方先完成幾支");
-      await window.DB.update("videos",id,{claimedBy:a,editor:a,claimedAt:nowIso(),assignedBy:user,stage:"剪輯中"}); return; }
-    if(action==="help"){ await window.DB.update("videos",id,{needHelp:!!body.needHelp, helpNote:body.helpNote||""}); return; }
+      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中"}); return; }
     if(action==="finish"){
       const date=body.scheduledDate; if(!date) throw new Error("請選擇上片日期");
       if(!(body.published && body.backupDone && body.socialScheduled)) throw new Error("需確認：已上架、已上傳雲端備份、社群平台已預排");
-      const ed=v.editor||v.claimedBy||user; const langs=Object.assign({},v.languages); langs.zh=Object.assign({},langs.zh,{status:"完成",editor:ed});
-      const patch={stage:"已完成",finishedAt:nowIso(),needHelp:false,editor:ed,languages:langs,locked:true,
+      const ed=v.editor||v.claimedBy||user;
+      const patch={stage:"已完成",finishedAt:nowIso(),editor:ed,locked:true,
         scheduledDate:date, published:true, backupDone:true, socialScheduled:true};
       if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
@@ -260,7 +115,6 @@ async function _route(method, path, body){
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
-    if(action==="performance"){ await window.DB.update("videos",id,{ctr:body.ctr??v.ctr, completionRate:body.completionRate??v.completionRate}); return; }
     if(action==="reuse" && method==="POST"){
       const date=body.date; const link=(body.link||"").trim(); const time=body.time||"";
       if(!date) throw new Error("請選擇重播上片日期");
@@ -271,7 +125,6 @@ async function _route(method, path, body){
       await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1, usageHistory:uh});
       return;
     }
-    if(action==="lang" && method==="PUT"){ const lg=seg[3]; const langs=Object.assign({},v.languages); langs[lg]=Object.assign({},langs[lg],body.lang||{}); await window.DB.update("videos",id,{languages:langs}); return; }
     if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; await window.DB.update("videos",id,patch); return; }
     if(method==="DELETE"){ await window.DB.del("videos",id); return; }
   }
@@ -284,27 +137,16 @@ async function _route(method, path, body){
     }
     if(sub==="slot" && method==="DELETE"){ const idx=parseInt(seg[3]); if(idx<0||idx>=slots.length) throw new Error("索引超出範圍");
       if(slots[idx].locked) throw new Error("此排片已上架鎖定"); slots.splice(idx,1); await window.DB.scheduleSet(date,{slots}); return; }
-    if(sub==="publish" && method==="POST"){ const idx=parseInt(body.slotIndex); if(idx<0||idx>=slots.length) throw new Error("索引超出範圍");
-      const slot=Object.assign({}, slots[idx]); const base=date.replace(/-/g,"")+"g"+String(idx+1).padStart(2,"0");
-      slot.account=base; slot.accounts={}; (slot.platforms||STATE.platforms||[]).forEach(p=>slot.accounts[p]=base+p);
-      slot.publishedLink="?utm_source=ecdr&utm_campaign="+base; slot.locked=true; slot.publishedAt=nowIso();
-      slots[idx]=slot; await window.DB.scheduleSet(date,{slots});
-      const tv=vidLocal(slot.videoId); if(tv){ const uh=(tv.usageHistory||[]).concat([date]);
-        await window.DB.update("videos", slot.videoId, {totalUsed:(tv.totalUsed||0)+1, usageHistory:uh, stage:"已上片", scheduledDate:date}); }
-      return;
-    }
   }
   throw new Error("不支援的操作");
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function write(method, path, body, okMsg){
-  try{ await route(method, path, body||{}); await delay(140); if(okMsg) toast(okMsg);
-       if(CUR_TAB==="dash"||CUR_TAB==="workload") loadDash(); return true; }
+  try{ await route(method, path, body||{}); await delay(140); if(okMsg) toast(okMsg); return true; }
   catch(e){ toast(e.message, true); return false; }
 }
-async function withAdmin(fn){ return fn(String(STATE.settings?.adminPassword||"")); }  // 已取消密碼，直接執行
-async function writeAdmin(method,path,body,okMsg){ return withAdmin(async()=>{ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }); }
-async function writeAdminPw(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
+async function withAdmin(fn){ return fn(); }  // 已取消密碼，直接執行
+async function writeAdmin(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
@@ -312,108 +154,56 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ CUR_TAB = id; buildNav(); render(); if(id==="dash"||id==="workload") loadDash(); if(id==="audit"){ AUDIT=null; loadAudit(); } };
+    b.onclick = ()=>{ CUR_TAB = id; buildNav(); render(); };
     nav.appendChild(b);
   });
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const all=((STATE?.users)||[]).filter(u=>(u.role||"editor")!=="boss" && u.name!==ownerName() && u.name!=="Regina");
-  const editors=all.filter(u=>(u.role||"editor")==="editor").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  const hrs=all.filter(u=>u.role==="hr").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  const mkBtn=(u)=>{ const b=document.createElement("button");
-    b.className="userBtn"+((u.role==="hr")?" mgr":"");
-    b.innerHTML = esc(u.name)+'<span class="role">'+(ROLE_LABEL[u.role]||"剪輯")+'</span>';
-    b.onclick=()=>loginAs(u);
-    return b; };
-  // 員工（剪輯）放上面
-  editors.forEach(u=>g.appendChild(mkBtn(u)));
-  if(!editors.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無剪輯成員，請按「🔒 管理員登入」進入後新增"; g.appendChild(n); }
-  // 分隔線；管理層（Regina、人資 Benny）放下面
-  const sep=document.createElement("div"); sep.className="userSep"; g.appendChild(sep);
-  const rb=document.createElement("button"); rb.className="userBtn lead"; rb.textContent="Regina"; rb.onclick=reginaLogin; g.appendChild(rb);
-  hrs.forEach(u=>g.appendChild(mkBtn(u)));
+  const editors=((STATE?.users)||[]).filter(u=>(u.role||"editor")==="editor").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  if(!editors.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無剪輯成員，請按「🔒 管理員登入」進入後新增"; g.appendChild(n); return; }
+  editors.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
+    b.innerHTML = esc(u.name)+'<span class="role">剪輯</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
-// 成員登入：一律免密碼，點名字直接進（剪輯／人資皆同；管理員與 Regina 另有密碼入口）
-function loginAs(u){
-  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
-}
-// Regina：與 Vito 共用管理員（登入頁顯示、不標職稱），預設密碼 0000
-function reginaLogin(){
-  setUser("Regina"); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
-}
-// 管理員：設定/重設某成員密碼
-function setMemberPin(name){
-  const u=(STATE.users||[]).find(x=>x.name===name)||{};
-  const p=prompt("設定「"+name+"」的登入密碼（交給本人，之後他可自行修改）：", u.pin||""); if(p===null) return;
-  if(!String(p).trim()){ toast("密碼不可空白",true); return; }
-  writeAdmin("PUT","/api/users/"+name,{pin:String(p).trim()},"已設定 "+name+" 的密碼");
-}
-// 管理員：把所有成員密碼一次設成同一組（上線時方便發放）
-async function setAllPin(){
-  const p=prompt("把『所有剪輯／人資成員』的登入密碼統一設為（之後各自可改）："); if(p===null) return;
-  if(!String(p).trim()){ toast("密碼不可空白",true); return; }
-  await withAdmin(async ()=>{ let c=0;
-    for(const u of (STATE.users||[]).filter(x=>(x.role||"editor")==="editor")){ try{ await window.DB.update("users",u.name,{pin:String(p).trim()}); c++; }catch(e){} }
-    toast("已設定 "+c+" 位剪輯的密碼"); });
-}
-// 管理員（owner）進入；成員管理／稽核只有這條路徑能看到（已取消密碼）
-function ownerLogin(){
-  if(!STATE){ toast("連線中，請稍候再試",true); return; }
-  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_LANG=null; CUR_TAB=null; applyState(LAST_RAW);
-}
-// 登出：清掉身分 → 顯示「象素小人敬禮・辛苦了」畫面（右下角可重新登入）
+function loginAs(u){ setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; applyState(LAST_RAW); }
+function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
+  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW); }
+// 登出：顯示隨機可愛動畫，三秒後回登入頁
 function logout(){ showGoodbye(); }
 const GOODBYE_SCENES=[
   {e:"🐱",a:"gbounce"}, {e:"🐶",a:"gwag"}, {e:"🤖",a:"gfloat"},
   {e:"🐰",a:"ghop"}, {e:"🐻",a:"gsway"}, {e:"🐧",a:"gwaddle"} ];
 function showGoodbye(){
   localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
-  CUR_TAB=null; CUR_LANG=null;
-  try{ closeModal(); }catch(e){}
+  CUR_TAB=null; try{ closeModal(); }catch(e){}
   const s=GOODBYE_SCENES[Math.floor(Math.random()*GOODBYE_SCENES.length)];
   const st=document.getElementById("gstage"); if(st) st.innerHTML=`<span class="gemoji ${s.a}">${s.e}</span><span class="gwave">👋</span>`;
   document.getElementById("app")?.classList.add("hidden");
   document.getElementById("login")?.classList.add("hidden");
   document.getElementById("goodbye")?.classList.add("show");
-  setTimeout(reLogin, 3000); // 三秒後自動跳回登入頁
+  setTimeout(reLogin, 3000);
 }
 function reLogin(){ location.reload(); }
-// 剪輯登入系統即自動開工（記錄上班時間）；當天已開工或已下班鎖定則不再寫
-let __autoClockTried="";
-function maybeAutoClockIn(){
-  if(currentRole()!=="editor") return;
-  const me=currentUser(); const rid=me+"__"+today;
-  const rep=(STATE.reports||[]).find(x=>x.id===rid)||{};
-  if(rep.startAt || rep.locked) return;
-  if(__autoClockTried===rid) return; __autoClockTried=rid;
-  const rec=Object.assign({}, rep, {id:rid, user:me, date:today, startAt:nowIso(),
-    special:rep.special||[], tasks:rep.tasks||[], endAt:rep.endAt||"", locked:false});
-  if(window.DB&&window.DB.set) window.DB.set("reports", rid, rec).catch(()=>{});
-}
 
 // ---------- 狀態套用（Firestore snapshot 進來時呼叫） ----------
 function decorate(raw){
   const st=JSON.parse(JSON.stringify(raw));
-  const s=st.settings||{}; const win=s.reuseWindowDays||30, cap=s.reuseCap||3;
-  (st.videos||[]).forEach(v=>{ const u=usedInWindow(v,win); v.last30dUsed=u; v.light=u>=cap?"red":(u===cap-1?"yellow":"green"); });
-  st.platforms = s.platforms || st.platforms || [];
-  STATE=st; STATE._warnings=computeWarnings(); return st;
+  const s=st.settings||{}; const win=s.reuseWindowDays||30;
+  (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
+  STATE=st; return st;
 }
-let BULK_BUSY=false;
 function applyState(raw){
   if(!raw) return;
-  if(BULK_BUSY){ LAST_RAW=raw; return; }   // 批次寫入期間暫停重繪，避免卡頓
-  LAST_RAW=raw; decorate(raw); DASH=computeDashboard(today);
+  if(BULK_BUSY){ LAST_RAW=raw; return; }
+  LAST_RAW=raw; decorate(raw);
   const has=(STATE.users||[]).some(u=>u.name===currentUser());
-  const isBoss=localStorage.getItem("ecdr_role")==="boss"; // 共用管理員不在成員名單內，靠角色放行
+  const isBoss=localStorage.getItem("ecdr_role")==="boss";
   if(currentUser() && (has||isBoss)){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
     document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
-    maybeAutoClockIn();
     buildNav(); render();
   } else {
     document.getElementById("app").classList.add("hidden");
@@ -425,522 +215,33 @@ window.__onState = applyState;
 window.__needSetup = function(){ document.getElementById("setup").classList.remove("hidden"); document.getElementById("login").classList.add("hidden"); };
 window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 
-
-// ===== 以下畫面函式沿用 Mac mini 版 =====
+// ===== 小工具 =====
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
-function prod(id){ return (STATE.products||[]).find(p=>p.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 function typeTag(t){ const c=t==="帶貨型"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
-const LANG_LABEL={zh:"中",en:"英",th:"泰",ms:"馬"};
 
 // ===================================================================
 // 畫面路由
 // ===================================================================
-let CHARTS={}, PENDING_CHARTS=[];
-function chartCanvas(id, config, height){ PENDING_CHARTS.push({id,config}); return `<div style="position:relative;height:${height||160}px"><canvas id="${id}"></canvas></div>`; }
-function renderCharts(){
-  if(!window.Chart) return;
-  Object.values(CHARTS).forEach(c=>{ try{c.destroy();}catch(e){} }); CHARTS={};
-  PENDING_CHARTS.forEach(s=>{ const el=document.getElementById(s.id); if(el){ try{ s.config.options=Object.assign({responsive:true,maintainAspectRatio:false},s.config.options||{}); CHARTS[s.id]=new window.Chart(el,s.config); }catch(e){} } });
-}
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  PENDING_CHARTS=[];
-  const fn = {
-    dash:viewDash, workload:viewWorkload, cal:viewCal, work:viewWork,
-    videos:viewVideos, prod:viewProd, settings:viewSettings, members:viewMembers, audit:viewAudit, mine:viewMine
-  }[CUR_TAB] || (()=>"");
+  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
-  renderCharts();
 }
 
-// ---- 交辦狀況 / 檢核輔助 ----
-function daysAgoLabel(iso){ const ds=String(iso||"").slice(0,10); if(!ds) return ""; const diff=Math.round((new Date(today+"T00:00:00")-new Date(ds+"T00:00:00"))/86400000); return diff<=0?"今天":(diff===1?"昨天":diff+" 天前"); }
-function whenLabel(iso){ return esc(String(iso||"").slice(5,16).replace("T"," ")); }
-// 某人「最近連續幾個工作日未達標」（不含今天，避免上午誤判）
-// 未完成交辦清單
-// 未回覆的交辦：尚未收到 or 已收到處理中（含目前部分回覆）
-function pendingTaskRows(){
-  const msgs=(STATE.messages||[]).filter(m=>!m.done).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
-  if(!msgs.length) return '<p class="muted">沒有待回覆的交辦 ✅</p>';
-  return msgs.map(m=>{
-    const accepted=m.accepted;
-    const status = accepted ? '已收到・處理中' : '等待對方收到';
-    const col = accepted ? 'wa' : 'em';
-    return `<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
-    <div class="row" style="justify-content:space-between;gap:8px"><b>給 ${esc(m.to)}</b>
-      <span class="pill ${col}">${status}・交辦於 ${daysAgoLabel(m.at)}</span></div>
-    <div style="white-space:pre-wrap;margin-top:4px">${esc(m.text)}</div>
-    ${m.reply?`<div class="muted" style="font-size:12px;margin-top:3px">↳ 目前回覆：${esc(m.reply)}</div>`:''}
-  </div>`; }).join("");
-}
-// 已回覆的交辦（交給誰・內容・處理狀況・花費時間）
-function doneTaskRows(todayOnly){
-  let msgs=(STATE.messages||[]).filter(m=>m.done && (!todayOnly || String(m.doneAt||"").slice(0,10)===today));
-  msgs.sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||"")));
-  if(!msgs.length) return '<p class="muted">尚無已回覆的交辦</p>';
-  return msgs.slice(0,60).map(m=>`<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
-    <div class="row" style="justify-content:space-between;gap:8px"><b>${esc(m.doneBy||m.to)}</b>
-      <span class="muted" style="font-size:12px">${m.minutes?('花費 '+m.minutes+' 分・'):''}${whenLabel(m.doneAt)} 回覆</span></div>
-    <div style="margin-top:4px">📌 ${esc(m.text)}</div>
-    <div style="font-size:13px;margin-top:3px;color:var(--green)">↳ 回覆：${m.reply?esc(m.reply):'<span style="color:var(--red)">（未填）</span>'}</div>
-    ${m.bossResponse?`<div style="font-size:12px;margin-top:3px;color:var(--accent)">↩ 你的回應：${esc(m.bossResponse)}</div>`:''}
-    ${currentRole()==='boss'?`<div style="margin-top:6px"><button class="btn sm sec" onclick="respondTask('${m.id}')">↩ ${m.bossResponse?'再回應':'回應／下一步'}</button></div>`:''}
-  </div>`).join("");
-}
-// ---- 人資（觀察者 Benny）儀表板：與老闆相同的檢核順序，但唯讀、不可指派 ----
-function viewHrDash(){
-  return `
-  <h2>📋 部門檢核 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）・觀察</span></h2>
-  <p class="muted" style="font-size:12px;margin:-8px 0 14px">觀察員工工作狀況、關心進度；如需提醒請以<b>口頭</b>方式進行（此頁不發送交辦）。</p>
-  ${reviewBoards()}
-  ${inProgressBoard()}`;
-}
-// ---- 總覽 ----
-// 某一天的每人工作追蹤卡（今天/昨天共用）
-function editCount(name, ds){ return (STATE.videos||[]).reduce((a,v)=>a+(langFinishedOn(v,"zh",name,ds)?1:0),0); }
-// 某天每位剪輯的「固定剪片工作」列（完成／配額）
-function editRowsFor(ds){
-  const isToday=(ds===today);
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  return editors.map(u=>{
-    const q=userQuota(u.name); const done=editCount(u.name,ds); const met=q>0?done>=q:true;
-    const rep=(STATE.reports||[]).find(x=>x.user===u.name && x.date===ds)||{};
-    const dot=met?'var(--green)':(rep.startAt?'var(--amber)':'#cbd5e1');
-    const timeInfo = rep.startAt ? ('🟢 '+hhmm(rep.startAt)+(rep.endAt?('–'+hhmm(rep.endAt)):(isToday?' 上班中':''))) : '⚪ 未開工';
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
-      <span style="font-weight:700;min-width:0">${esc(u.name)} <span class="muted" style="font-size:11px;font-weight:500">${timeInfo}</span></span>
-      <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'};flex:none">${done}/${q}</span></div>`;
-  }).join("")||'<p class="muted">尚無剪輯成員</p>';
-}
-// 某天綜合卡：清楚分成「固定剪片工作」與「老闆交辦」兩區
-function periodCard(ds, title, canAssign, accent){
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const assignRow = (canAssign && currentRole()==='boss')
-    ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0 2px">${editors.map(u=>`<button class="btn sm sec" onclick="sendTask('${esc(u.name)}')">✉ 交辦給 ${esc(u.name)}</button>`).join("")}</div>` : '';
-  const sub=(t)=>`<div style="font-weight:700;font-size:12.5px;margin:12px 0 5px">${t}</div>`;
-  return `<div class="card" style="${accent?'border-color:var(--accent)':''}"><b>${title}</b>
-    <span class="muted" style="font-size:12px">　${ds}（${weekdayZh(ds)}）</span>
-    ${sub('📹 固定剪片工作 <span class="muted" style="font-weight:400">（每人完成／配額）</span>')}
-    <div style="display:flex;flex-direction:column;gap:6px">${editRowsFor(ds)}</div>
-    ${sub('✉ 老闆交辦 <span class="muted" style="font-weight:400">（接收／回覆狀況）</span>')}${assignRow}
-    <div>${taskRowsByDay(ds)}</div>
-  </div>`;
-}
-// 近 N 個「上班日」平均完成片數（不含六日）
-function avgWorkdayCard(N){ N=N||7;
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const rows=editors.map(u=>{
-    const langs=["zh"]; const q=userQuota(u.name);
-    let sum=0,dN=0;
-    for(let i=1;i<=30 && dN<N;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
-      const ds=d.toISOString().slice(0,10); sum+=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))?1:0),0); }
-    const avg=dN?(sum/dN):0; const met=avg>=q;
-    return `<div class="row" style="justify-content:space-between;padding:7px 11px;background:var(--panel2);border-radius:10px;border-left:4px solid ${met?'var(--green)':'var(--red)'}">
-      <span style="font-weight:700">${esc(u.name)}</span>
-      <span><b style="color:${met?'var(--green)':'var(--red)'}">${avg.toFixed(1)}</b> <span class="muted">/ ${q} 片/日</span></span></div>`;
-  }).join("")||'<p class="muted">尚無剪輯成員</p>';
-  return `<div class="card"><b>📈 近 ${N} 個上班日平均</b> <span class="muted" style="font-size:12px">（不含六日，每日完成片數）</span>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${rows}</div></div>`;
-}
-// 某一天「交辦」的清單（含狀態與回覆；老闆可回應）
-function taskRowsByDay(ds){
-  const msgs=(STATE.messages||[]).filter(m=>String(m.at||"").slice(0,10)===ds).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")));
-  if(!msgs.length) return '<p class="muted">當天沒有交辦</p>';
-  return msgs.map(m=>{
-    const st=m.done?'已回覆':(m.accepted?'已收到・處理中':'未收到');
-    const col=m.done?'ok':(m.accepted?'wa':'em');
-    return `<div style="padding:8px 10px;background:var(--panel2);border-radius:8px;margin-top:6px">
-      <div class="row" style="justify-content:space-between;gap:8px"><b>給 ${esc(m.to)}</b><span class="pill ${col}">${st}</span></div>
-      <div style="margin-top:3px">📌 ${esc(m.text)}</div>
-      ${m.reply?`<div style="font-size:13px;margin-top:3px;color:var(--green)">↳ 回覆：${esc(m.reply)}${m.minutes?'（'+m.minutes+'分）':''}</div>`:''}
-      ${m.bossResponse?`<div style="font-size:12px;margin-top:2px;color:var(--accent)">↩ 你的回應：${esc(m.bossResponse)}</div>`:''}
-      ${(currentRole()==='boss'&&m.done)?`<div style="margin-top:5px"><button class="btn sm sec" onclick="respondTask('${m.id}')">↩ ${m.bossResponse?'再回應':'回應／下一步'}</button></div>`:''}
-    </div>`; }).join("");
-}
-function ydayStr(){ const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); return yd.toISOString().slice(0,10); }
-// Regina 一打開的速覽：排程安全、昨天有沒有做好、今天交辦收到沒、近七天平均
-function glanceCard(){
-  const yds=ydayStr();
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const runway=(DASH&&DASH.progress&&DASH.progress.安全天數)||0;
-  const PRETARGET=15; const runCol=runway>=PRETARGET?'var(--green)':(runway>=7?'var(--amber)':'var(--red)');
-  const ydWork=(()=>{ const d=new Date(yds+"T00:00:00").getDay(); return d!==0&&d!==6; })();
-  const yMiss=editors.filter(u=>{ const q=userQuota(u.name); return q>0 && editCount(u.name,yds)<q; });
-  const yOK=editors.length-yMiss.length;
-  const tMsgs=(STATE.messages||[]).filter(m=>String(m.at||"").slice(0,10)===today);
-  const tRecv=tMsgs.filter(m=>m.accepted||m.done).length;
-  const tNot=tMsgs.filter(m=>!m.accepted&&!m.done);
-  let sum=0,dN=0;
-  for(let i=1;i<=30 && dN<7;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dow=d.getDay(); if(dow===0||dow===6) continue; dN++;
-    const ds=d.toISOString().slice(0,10); editors.forEach(u=>{ sum+=editCount(u.name,ds); }); }
-  const avgPerDay=dN?(sum/dN):0; const qSum=editors.reduce((a,u)=>a+userQuota(u.name),0);
-  const stat=(n,l,col,sub)=>`<div style="flex:1;min-width:130px;text-align:center;padding:11px 8px;background:var(--panel2);border-radius:10px">
-    <div style="font-size:24px;font-weight:900;color:${col||'var(--txt)'}">${n}</div><div class="muted" style="font-size:12px;font-weight:600">${l}</div>${sub?`<div class="muted" style="font-size:11px;margin-top:3px">${sub}</div>`:''}</div>`;
-  return `<div class="card" style="border-color:var(--accent)"><b>📌 開工速覽</b> <span class="muted" style="font-size:12px">　${today}（${weekdayZh(today)}）</span>
-    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:stretch">
-      ${stat(runway+' 天','排程安全（排滿到幾天後）',runCol, runway<PRETARGET?'⚠ 不足 15 天，需補排':'充足 ✅')}
-      ${stat(ydWork?(yOK+'/'+editors.length):'—','昨天工作做好沒',yMiss.length?'var(--red)':'var(--green)', ydWork?(yMiss.length?('未達：'+yMiss.map(u=>esc(u.name)).join('、')):'全員達標 ✅'):'（昨天假日）')}
-      ${stat(tMsgs.length?(tRecv+'/'+tMsgs.length):'—','今天交辦已接收',tNot.length?'var(--amber)':'var(--green)', tMsgs.length?(tNot.length?('未收：'+tNot.map(m=>esc(m.to)).join('、')):'全部已收到 ✅'):'今天尚無交辦')}
-      ${stat(avgPerDay.toFixed(1)+' / '+qSum,'近7上班日 全體平均/日',avgPerDay>=qSum?'var(--green)':'var(--amber)','每日完成 vs 目標')}
-    </div></div>`;
-}
-// 整組「檢核」卡片，依重要性排序（Regina／Benny 共用；Benny 無指派/回應按鈕）
-function reviewBoards(){
-  const yds=ydayStr();
-  return `
-  ${glanceCard()}
-  ${periodCard(today, "📅 今日", true, true)}
-  ${periodCard(yds, "📅 昨天", false, false)}
-  ${avgWorkdayCard(7)}
-  ${comprehensiveCard(14)}`;
-}
-// 前 N 天綜合：每人每天完成數＋其他工作（收合）
-function comprehensiveCard(days){ days=days||14;
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const cards=editors.map(u=>{
-    const q=userQuota(u.name); const week=lastNDetail(u.name,u.lang||"zh",q,days).slice().reverse();
-    const rows=week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
-      <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span></td>
-      <td style="text-align:center"><span class="${w.met?'pos':'neg'}">${w.n}</span><span class="muted">/${q}</span></td>
-      <td style="font-size:11px">${(w.items&&w.items.length)?w.items.map(s=>`${s.task?'交辦：':''}${esc(s.t)}${s.m?'（'+s.m+'分）':''}${(s.task&&s.reply)?' ↳'+esc(s.reply):''}`).join('；'):'<span class="muted">—</span>'}</td>
-    </tr>`).join("");
-    return `<div class="ucard"><div class="uh"><span class="nm">${esc(u.name)}</span></div>
-      <table class="wk"><thead><tr><th>日期</th><th style="text-align:center">剪片</th><th>其他工作</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  }).join("")||'<p class="muted">尚無剪輯成員</p>';
-  return `<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 前 ${days} 天綜合（每人每天明細）</summary>
-    <div class="grid cols3" style="margin-top:10px">${cards}</div></details>`;
-}
-// 主管回應交辦的處理狀況（給對方下一步）→ 以新訊息送回該員收件匣
-function respondTask(msgId){
-  const m=(STATE.messages||[]).find(x=>x.id===msgId); if(!m) return;
-  const to=m.doneBy||m.to;
-  showModal("↩ 回應給 "+to, `
-    <div style="padding:10px;background:var(--panel2);border-radius:8px;white-space:pre-wrap;font-size:13px">原交辦：${esc(m.text)}${m.reply?`\n↳ 對方回覆：${esc(m.reply)}`:""}</div>
-    <label style="margin-top:10px">你的回應／下一步</label>
-    <textarea id="rsp_text" placeholder="例：收到，這支再補字幕；或：OK 可以上架了"></textarea>
-  `, async ()=>{
-    const text=val("rsp_text").trim(); if(!text){ toast("請輸入回應內容",true); return false; }
-    const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    const rec={id, to, from:currentUser(), text:"↩ 回應你回報的「"+String(m.text).slice(0,16)+"…」：\n"+text, at:nowIso(), read:false, accepted:false, done:false};
-    try{ await window.DB.set("messages", id, rec);
-      await window.DB.update("messages", msgId, {bossResponse:text, respondedAt:nowIso()});
-      toast("已回應給 "+to); return true;
-    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
-  });
-}
-// 誤按下班/測試用：重新開工（解除今日匯報鎖定，按鈕才會回來）
-async function reopenReport(){
-  const me=currentUser(); const rid=me+"__"+today;
-  const old=(STATE.reports||[]).find(x=>x.id===rid)||{};
-  if(!old.locked){ toast("今日匯報未鎖定"); return; }
-  try{ await window.DB.update("reports", rid, {locked:false, endAt:""}); toast("已重新開工，可繼續編輯今日匯報"); }
-  catch(e){ toast("操作失敗，請稍後再試",true); }
-}
-function viewDash(){
-  if(!DASH){ loadDash(); return `<h2>📊 總覽</h2><p class="muted">載入中…</p>`; }
-  if(currentRole()==="hr") return viewHrDash();
-  const p = DASH.progress, wl = DASH.workload||{rows:[]}, help = DASH.helpList||[];
-  const runway = p.安全天數||0;
-  const filled = (p.已排滿日期||[]);
-  const ahead = (wl.rows||[]).filter(r=>r.diff>0);
-  const behind = (wl.rows||[]).filter(r=>r.diff<0);
-  const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
-  const userCards = (wl.rows||[]).map(r=>{
-    const good = r.diff>=0;
-    const pct = r.expected>0? Math.min(100,Math.round(r.totalDone/r.expected*100)) : 100;
-    const dotCol = good?"var(--green)":"var(--red)";
-    const msgs=(STATE.messages||[]).filter(m=>m.to===r.name);
-    const pendN=msgs.filter(m=>!m.done && !m.accepted).length, unreadN=msgs.filter(m=>!m.read && !m.done && !m.accepted).length;
-    const week = last7Detail(r.name, r.lang, r.todayQuota).slice().reverse(); // 最近日期在最上面
-    const otherCell = (w)=>{ if(!(w.items&&w.items.length)) return '<span class="muted">—</span>';
-      return w.items.map(s=>`<div style="margin-bottom:3px">${s.task?'<b style="color:#6d28d9">交辦：</b>':''}${esc(s.t)}${s.m?`<span class="muted">（${s.m}分）</span>`:''}${s.task?`<div class="muted" style="padding-left:8px">↳ 回覆：${s.reply?esc(s.reply):'<span style="color:var(--red)">（未回覆）</span>'}</div>`:''}</div>`).join(""); };
-    const weekRows = week.map(w=>`<tr${w.ds===today?' style="font-weight:700"':''}>
-        <td style="white-space:nowrap">${w.ds.slice(5)}<span class="muted">(${weekdayZh(w.ds)})</span>${w.ds===today?'·今':''}</td>
-        <td style="text-align:center"><span class="${w.met?'pos':'neg'}">${w.n}</span><span class="muted">/${r.todayQuota}</span></td>
-        <td style="font-size:11px;line-height:1.35">${otherCell(w)}</td>
-      </tr>`).join("");
-    return `<div class="ucard ${good?'good':'bad'}">
-      <div class="uh">
-        <span class="nm"><span class="statusdot" style="background:${dotCol}"></span>${esc(r.name)}</span>
-        <span style="font-weight:800;color:${r.todayMet?'var(--green)':'var(--muted)'}">今日 ${r.todayDone}/${r.todayQuota}</span>
-      </div>
-      <div class="progbar"><i style="width:${pct}%;background:${dotCol}"></i></div>
-      <div style="font-size:13px;margin:5px 0;display:flex;justify-content:space-between">
-        <span class="${good?'pos':'neg'}">${r.diff>0?"超前 +"+r.diff:(r.diff<0?"落後 "+r.diff:"達標")}</span>
-        <span class="muted">本月 ${r.totalDone}/${r.expected}・均 ${r.avgMin!=null?minToText(r.avgMin):"-"}</span>
-      </div>
-      <table class="wk"><thead><tr><th>近7天</th><th style="text-align:center">剪片</th><th>其他工作內容</th></tr></thead>
-        <tbody>${weekRows}</tbody></table>
-      <div class="row" style="gap:6px;margin-top:8px;align-items:center">
-        ${currentRole()==='boss'?`<button class="btn sm sec" onclick="sendTask('${esc(r.name)}')">✉ 交辦／留言</button>`:''}
-        ${pendN?`<span class="pill wa">交辦中 ${pendN}${unreadN?'・未讀 '+unreadN:'・已讀'}</span>`:''}
-      </div>
-    </div>`;
-  }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  const demoCount=(STATE.videos||[]).filter(v=>v.demo).length;
-  const demoBanner = demoCount? `<div class="card" style="border-color:var(--amber);background:var(--amberbg)">
-    <b style="color:var(--amber)">🧪 目前含示範資料 ${demoCount} 筆</b>
-    <span class="muted"> — 報表上的落後／缺口是「示範資料」造成的，不是真實狀況。正式使用前到「成員管理 → 清空所有影片」即可移除。</span></div>`:"";
-  const PRETARGET=15; // 預排目標：連續排滿要達 15 天以上
-  const safeCol = runway>=PRETARGET?'var(--green)':(runway>=7?'var(--amber)':'var(--red)');
-  const newSrc=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
-  const lowTh=STATE.settings?.materialLowThreshold||5;
-  const srcLow=newSrc<lowTh; const srcCol=srcLow?'var(--red)':'var(--green)';
-  const editorsAll=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const liveRows = editorsAll.map(u=>{ const s=editorStatus(u);
-    const dot = s.startAt? (s.met?'var(--green)':'var(--amber)') : '#cbd5e1';
-    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--panel2);border-radius:10px;border-left:4px solid ${dot}">
-      <div style="min-width:0">
-        <div style="font-weight:700">${esc(s.name)} <span class="muted" style="font-size:11px;font-weight:500">${s.startAt?('🟢 '+hhmm(s.startAt)+' 開工'):'⚪ 未開工'}</span></div>
-        <div class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.current)}</div>
-      </div>
-      <div style="text-align:right;flex:none">
-        <div style="font-weight:800;color:${s.met?'var(--green)':'var(--red)'}">${s.doneToday}/${s.q}</div>
-        <div class="muted" style="font-size:11px">今日完成</div>
-      </div>
-    </div>`; }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  const liveCard = `<div class="card"><b>🟢 今日團隊即時</b>
-    <span class="muted" style="font-size:12px">　每人幾點開工・現在在做什麼・完成幾支</span>
-    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${liveRows}</div></div>`;
-  // 全體剪輯效率（近 30 天平均每日完成 ＋ 平均每支剪輯耗時）
-  const PDAYS=30;
-  const perf=editorsAll.map(u=>{ const langs=["zh"];
-    let total=0; const durs=[];
-    for(let i=0;i<PDAYS;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-      (STATE.videos||[]).forEach(v=>{ if(langs.some(lg=>langFinishedOn(v,lg,u.name,ds))){ total++; const dm=videoDur(v,langs); if(dm>0) durs.push(dm); } });
-    }
-    return {name:u.name, avgPerDay:+(total/PDAYS).toFixed(2), avgDur:durs.length?Math.round(durs.reduce((a,b)=>a+b,0)/durs.length):0};
-  });
-  const perfChart=chartCanvas("dash_perf",{type:"bar",data:{labels:perf.map(p=>p.name),datasets:[{label:"平均每日完成",data:perf.map(p=>p.avgPerDay),backgroundColor:"#2563eb"}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}},180);
-  const perfPills=perf.map(p=>`<span class="pill" style="margin:2px 4px 2px 0;display:inline-block">${esc(p.name)}　均 ${p.avgDur?minToText(p.avgDur):"-"}/支</span>`).join("");
-  const perfCard=`<div class="card"><b>📈 全體剪輯效率（近 ${PDAYS} 天）</b>
-    <p class="muted" style="font-size:12px">平均每日完成片數（長條）＋平均每支剪輯耗時（領取→完成）</p>
-    ${perf.length?perfChart:'<p class="muted">尚無資料</p>'}
-    <div style="margin-top:8px">${perfPills}</div></div>`;
-  // ===== ① 昨日工作總覽 =====
-  const yd=new Date(today+"T00:00:00"); yd.setDate(yd.getDate()-1); const yds=yd.toISOString().slice(0,10);
-  const yRows=computeWorkload(yds).rows;
-  const yTotal=yRows.reduce((a,r)=>a+r.todayDone,0);
-  const yQuotaSum=yRows.reduce((a,r)=>a+r.todayQuota,0);
-  const ydDow=yd.getDay(); const ydWork=ydDow!==0&&ydDow!==6;
-  const yMissN=ydWork? yRows.filter(r=>r.todayDone<r.todayQuota).length : 0;
-  const yChips=yRows.map(r=>{ const ok=r.todayDone>=r.todayQuota; const col=(!ydWork)?'var(--muted)':(ok?'var(--green)':'var(--red)');
-    return `<span class="pill" style="margin:2px 4px 2px 0;display:inline-block;border-color:${col};color:${col}">${esc(r.name)} ${r.todayDone}/${r.todayQuota}${(ydWork&&!ok)?' ⚠':''}</span>`; }).join("")||'<span class="muted">尚無剪輯成員</span>';
-  // 昨日大家的其他工作（含交辦）
-  const yOther=[]; (STATE.reports||[]).filter(r=>r.date===yds).forEach(r=>otherItems(r).forEach(s=>yOther.push((s.task?"【交辦】":"")+r.user+"："+s.t+(s.m?`（${s.m}分）`:""))));
-  const yCard=`<div class="card">
-    <div class="row" style="justify-content:space-between;align-items:baseline">
-      <b>📅 昨日工作總覽</b><span class="muted" style="font-size:12px">${yds}（${weekdayZh(yds)}）</span></div>
-    <div style="display:flex;gap:16px;align-items:baseline;margin:8px 0">
-      <div><span style="font-size:34px;font-weight:900">${yTotal}</span><span class="muted"> / ${yQuotaSum} 支完成</span></div>
-      ${ydWork?`<span class="pill ${yMissN?'em':'ok'}">${yMissN?('未達標 '+yMissN+' 人'):'全員達標 ✅'}</span>`:`<span class="muted">（假日）</span>`}
-    </div>
-    <div>${yChips}</div>
-    ${yOther.length?`<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">🧩 其他工作：${esc(yOther.join("、"))}</div>`:""}
-  </div>`;
-
-  // ===== ② 今日進度（精簡一覽）=====
-  const stat=(n,l,col)=>`<div style="flex:1;min-width:88px;text-align:center;padding:10px 6px;background:var(--panel2);border-radius:10px">
-    <div style="font-size:25px;font-weight:900;color:${col||'var(--txt)'}">${n}</div><div class="muted" style="font-size:12px">${l}</div></div>`;
-  const progCard=`<div class="card"><b>📊 排程與庫存</b>
-    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-      ${stat(runway+' 天','預排天數',safeCol)}
-      ${stat(newSrc+' 支','新片庫存',srcCol)}
-      ${stat(p.今日已排+'/'+p.每日目標,'今日已上片')}
-      ${stat(p.落後人數,'落後人數',p.落後人數?'var(--red)':'var(--green)')}
-      ${stat(p.剪輯中,'剪輯中')}
-    </div>
-    ${(runway<PRETARGET||srcLow)?`<p style="font-size:12px;margin-top:8px;color:var(--red)">⚠ ${runway<PRETARGET?'預排不足 15 天，請往後補排；':''}${srcLow?'片源低於 '+lowTh+' 支，需加拍補片源。':''}</p>`:""}
-  </div>`;
-
-  // ===== ③ 交辦事項（快速指派＋狀態）=====
-  const allMsgs=STATE.messages||[];
-  const pendTotal=allMsgs.filter(m=>!m.done && !m.accepted).length;
-  const taskRows=yRows.map(r=>{
-    const msgs=allMsgs.filter(m=>m.to===r.name);
-    const pend=msgs.filter(m=>!m.done && !m.accepted).length, unread=msgs.filter(m=>!m.read&&!m.done&&!m.accepted).length;
-    const doneToday=msgs.filter(m=>m.done && String(m.doneAt||"").slice(0,10)===today).length;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border-radius:10px">
-      <span style="font-weight:700;min-width:0">${esc(r.name)}
-        ${pend?`<span class="pill wa" style="margin-left:6px">交辦中 ${pend}${unread?'・未讀 '+unread:''}</span>`:''}
-        ${doneToday?`<span class="pill ok" style="margin-left:4px">今日完成 ${doneToday}</span>`:''}</span>
-      ${currentRole()==='boss'?`<button class="btn sm" onclick="sendTask('${esc(r.name)}')">✉ 交辦</button>`:''}
-    </div>`; }).join("")||'<p class="muted">尚無成員</p>';
-  const taskCard=`<div class="card">
-    <div class="row" style="justify-content:space-between"><b>✉ 交辦事項</b>
-      <span class="pill ${pendTotal?'wa':'ok'}">未完成 ${pendTotal}</span></div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${taskRows}</div>
-    <p class="muted" style="font-size:11px;margin-top:6px">點「✉ 交辦」指派工作；剪輯按已讀→完成並填處理狀況＋工時後，會回報到「今日完成」與下方處理狀況。</p>
-  </div>`;
-  // 交辦處理狀況（內容＋回覆＋花費時間，都看得到）
-  const assignStatusCard=`<div class="card"><b>📋 交辦處理狀況</b>
-    <div style="margin-top:8px"><div class="muted" style="font-size:12px;margin-bottom:2px">未完成</div>${pendingTaskRows()}</div>
-    <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:2px">已完成回報（內容・處理狀況・花費時間）</div>${doneTaskRows(false)}</div>
-  </div>`;
-
-  // 其他（收合，輔助參考）：排程庫存明細・效率・月排程
-  const extra=`<details style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:700;padding:10px 0">📂 其他（排程庫存・效率・月排程）</summary>
-    ${progCard}
-    ${perfCard}
-    ${viewCal()}
-  </details>`;
-
-  return `
-  <h2>📊 總覽 <span class="muted" style="font-size:13px">${today}（${weekdayZh(today)}）</span></h2>
-  ${demoBanner}
-  ${reviewBoards()}
-  ${extra}
-  ${inProgressBoard()}`;
-}
-// 某人近 7 天明細：每天剪片數＋當日其他（特別）工作內容
-function last7Detail(name, lang, q){ return lastNDetail(name, lang, q, 7); }
-function lastNDetail(name, lang, q, n){ n=n||7;
-  const langs=["zh"];
-  const out=[];
-  for(let i=n-1;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-    const nn=(STATE.videos||[]).reduce((a,v)=>a+(langs.some(lg=>langFinishedOn(v,lg,name,ds))?1:0),0);
-    const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
-    let other=""; const items=otherItems(rep);
-    if(items.length){ other=items.map(s=>(s.task?"【交辦】":"")+s.t+(s.m?`（${s.m}分）`:"")).join("、"); }
-    else if(rep){ other=(rep.content||"").trim(); }
-    out.push({ds, n:nn, other, items, met: q>0? nn>=q : true});
-  }
-  return out;
-}
-// 近 7 天迷你長條圖
-// ---- 人員KPI（HR 每日檢核）----
-let WL_DATE=null;
-function wlMove(n){ const d=new Date((WL_DATE||today)+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n); WL_DATE=d.toISOString().slice(0,10); render(); }
-function videoDur(v, langs){ if(v.durationMin!=null) return v.durationMin; for(const lg of langs){ const dm=v.languages?.[lg]?.durationMin; if(dm!=null) return dm; } return 0; }
-function viewWorkload(){
-  const date = WL_DATE||today; const isToday=(date===today);
-  const q0 = STATE.settings?.editorDailyQuota||3;
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const wl=computeWorkload(date); const byName={}; wl.rows.forEach(r=>byName[r.name]=r);
-  const LMAP={zh:"中文",en:"英語",th:"泰語",all:"全語言"};
-  // 先算好每人當日資料，未達標的排前面
-  const data=editors.map(u=>{
-    const name=u.name; const q=userQuota(name); const langs=["zh"];
-    const vids=(STATE.videos||[]).filter(v=> langs.some(lg=>langFinishedOn(v,lg,name,date)));
-    const vmin=vids.reduce((a,v)=>a+videoDur(v,langs),0);
-    const tasks=(STATE.tasks||[]).filter(t=>t.user===name && t.date===date);
-    const tmin=tasks.reduce((a,t)=>a+(t.minutes||0),0);
-    const met = q>0 ? vids.length>=q : true;
-    return {u,name,q,vids,vmin,tasks,tmin,met,r:byName[name]||{diff:0,totalDone:0,expected:0}};
-  }).sort((a,b)=> (a.met?1:0)-(b.met?1:0));
-  const kpiEds=data.filter(d=>d.q>0); const metCnt=kpiEds.filter(d=>d.met).length;
-  const cards = data.map(({u,name,q,vids,vmin,tasks,tmin,met,r})=>{
-    const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===date);
-    const repHtml = `<div style="margin-top:6px;padding:8px;background:var(--panel2);border-radius:6px;font-size:13px">
-        <b>📝 特別工作</b>　${reportContentHtml(rep)}</div>`;
-    return `<div class="ucard ${met?'good':'bad'}">
-      <div class="uh"><span class="nm"><span class="statusdot" style="background:${met?'var(--green)':'var(--red)'}"></span>${esc(name)}</span>
-        <span style="font-weight:800;color:${met?'var(--green)':'var(--red)'}">剪片 ${vids.length}/${q} ${met?'✓':'✗'}</span></div>
-      <div style="margin-top:6px;font-size:13px"><b>當日剪片清單</b>${vids.length?"："+vids.map(v=>esc(v.name||v.rawName)).join("、"):'<span class="muted"> 無</span>'}</div>
-      ${repHtml}
-      <div style="margin-top:6px;font-size:12px;display:flex;justify-content:space-between">
-        <span class="muted">剪片工時 <b>${minToText(vmin)}</b></span>
-        <span class="muted">到前一日累積 ${r.totalDone}/${r.expected}（<span class="${r.diff>=0?'pos':'neg'}">${r.diff>0?"超前+"+r.diff:(r.diff<0?"落後"+r.diff:"達標")}</span>）</span>
-      </div>
-    </div>`;
-  }).join("") || `<p class="muted">尚無剪輯成員</p>`;
-  return `<h2>👥 人員KPI <span class="muted" style="font-size:13px">全員每日成效一覽</span></h2>
-  <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <div class="row" style="gap:8px"><button class="btn sm sec" onclick="wlMove(-1)">← 前一天</button>
-        <b style="min-width:120px;text-align:center">${date}${isToday?"（今天）":""}</b>
-        <button class="btn sm sec" onclick="wlMove(1)">後一天 →</button></div>
-      ${isToday?"":`<button class="btn sm sec" onclick="WL_DATE=null;render()">回今天</button>`}
-    </div>
-    <div class="row" style="gap:10px;margin:8px 0"><span class="pill ${metCnt===kpiEds.length?'ok':'em'}" style="font-size:14px">當日達標 ${metCnt}/${kpiEds.length} 人</span>
-      <span class="muted" style="font-size:12px">每位剪輯每日最少 ${q0} 片（綠＝達標、紅＝未達，未達者排前面）。其他交辦工作由本人於工作台填寫；「到前一日累積」不含今天。</span></div>
-    <div class="grid cols2" style="margin-top:6px">${cards}</div>
-  </div>`;
-}
-
-// ---- 我的儀表板（個人，只看自己）----
-function viewMine(){
-  const me=currentUser();
-  const wl=computeWorkload(today); const r=wl.rows.find(x=>x.name===me)||{todayDone:0,todayQuota:userQuota(me),monthDone:0,expected:0,diff:0,avgMin:null};
-  const mineAll=(STATE.videos||[]).filter(v=>v.editor===me||SCHED_LANGS.some(l=>v.languages?.[l]?.editor===me));
-  const done=mineAll.filter(v=>["已完成","已上片"].includes(v.stage)||SCHED_LANGS.some(l=>v.languages?.[l]?.editor===me&&v.languages?.[l]?.status==="完成"));
-  const last30=[]; for(let i=29;i>=0;i--){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const ds=d.toISOString().slice(0,10);
-    last30.push({ds, n:(STATE.videos||[]).reduce((a,v)=>a+(SCHED_LANGS.some(l=>langFinishedOn(v,l,me,ds))?1:0),0)}); }
-  const typeCount={}; done.forEach(v=>{ typeCount[v.mainType]=(typeCount[v.mainType]||0)+1; });
-  const ctrs=done.map(v=>v.ctr).filter(x=>x>0), comps=done.map(v=>v.completionRate).filter(x=>x>0);
-  const avgCtr=ctrs.length?(ctrs.reduce((a,b)=>a+b,0)/ctrs.length).toFixed(1):"-";
-  const avgComp=comps.length?Math.round(comps.reduce((a,b)=>a+b,0)/comps.length):"-";
-  const c1=chartCanvas("m_daily",{type:"bar",data:{labels:last30.map(d=>d.ds.slice(5)),datasets:[{label:"完成",data:last30.map(d=>d.n),backgroundColor:"#2563eb"}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}},170);
-  const tk=Object.keys(typeCount);
-  const c2=chartCanvas("m_type",{type:"doughnut",data:{labels:tk,datasets:[{data:tk.map(k=>typeCount[k]),backgroundColor:["#0284c7","#d97706","#16a34a","#9333ea"]}]}},170);
-  const recent=done.slice().sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||""))).slice(0,20);
-  const rows=recent.map(v=>`<tr>
-     <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName)}</a></td>
-     <td data-label="類別">${typeTag(v.mainType)}</td>
-     <td data-label="上片日">${esc(v.scheduledDate||"-")}</td>
-     <td data-label="CTR">${v.ctr||0}%</td><td data-label="完播">${v.completionRate||0}%</td>
-     <td data-label="工時">${v.durationMin!=null?minToText(v.durationMin):"-"}</td></tr>`).join("");
-  const good=r.diff>=0;
-  return `
-  <h2>📊 我的儀表板（${esc(me)}）</h2>
-  <div class="grid cols4">
-    <div class="stat"><div class="n ${r.todayDone>=r.todayQuota?'pos':'neg'}">${r.todayDone}/${r.todayQuota}</div><div class="l">今日完成／KPI</div></div>
-    <div class="stat"><div class="n">${r.monthDone}<span class="muted" style="font-size:13px">/${r.expected}</span></div><div class="l">本月完成／應達</div></div>
-    <div class="stat"><div class="n ${good?'pos':'neg'}">${r.diff>0?'超前 +'+r.diff:(r.diff<0?'落後 '+r.diff:'達標')}</div><div class="l">進度</div></div>
-    <div class="stat"><div class="n">${r.avgMin!=null?minToText(r.avgMin):'-'}</div><div class="l">平均工時</div></div>
-  </div>
-  <div class="grid cols2">
-    <div class="card"><b>📈 我近 30 天每日完成</b>${c1}</div>
-    <div class="card"><b>🍩 我的影片類型分布</b>${tk.length?c2:'<p class="muted">尚無資料</p>'}</div>
-  </div>
-  <div class="grid cols3">
-    <div class="stat"><div class="n">${avgCtr}%</div><div class="l">平均 CTR</div></div>
-    <div class="stat"><div class="n">${avgComp}${avgComp==="-"?"":"%"}</div><div class="l">平均完播率</div></div>
-    <div class="stat"><div class="n">${done.length}</div><div class="l">累計完成影片</div></div>
-  </div>
-  ${myDailyReport(me)}
-  <div class="card"><b>🎬 我的影片（近 20 筆）</b>
-    <table class="responsive"><thead><tr><th>影片</th><th>類別</th><th>上片日</th><th>CTR</th><th>完播</th><th>工時</th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無完成的影片</td></tr>`}</tbody></table></div>`;
-}
-// 個人每日工作日報總表（近 14 天）
-function myDailyReport(me){
-  const meU=(STATE.users||[]).find(u=>u.name===me)||{}; const langs=["zh"]; const q=userQuota(me);
-  const rows=[];
-  for(let i=0;i<14;i++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-i); const dstr=d.toISOString().slice(0,10);
-    const vlist=(STATE.videos||[]).filter(v=>langs.some(lg=>langFinishedOn(v,lg,me,dstr)));
-    const vmin=vlist.reduce((a,v)=>a+videoDur(v,langs),0);
-    const rep=(STATE.reports||[]).find(x=>x.user===me && x.date===dstr);
-    const met=q>0?vlist.length>=q:true;
-    rows.push(`<tr>
-      <td data-label="日期">${dstr.slice(5)}${dstr===today?" (今天)":""}</td>
-      <td data-label="完成"><span class="${met?'pos':'neg'}">${vlist.length}/${q}</span></td>
-      <td data-label="剪片工時">${minToText(vmin)}</td>
-      <td data-label="特別工作">${(rep&&(rep.content||"").trim())?`<span style="white-space:pre-wrap">${esc(rep.content)}</span>`:'<span class="muted">—</span>'}</td>
-      <td data-label="達標">${met?'<span class="pos">✓</span>':'<span class="neg">✗</span>'}</td></tr>`);
-  }
-  return `<div class="card"><b>📋 我的每日工作日報（近 14 天）</b>
-    <p class="muted" style="font-size:12px">每天最少 ${q} 片；完成片數系統自動計入，特別工作為選填。</p>
-    <table class="responsive"><thead><tr><th>日期</th><th>完成片數</th><th>剪片工時</th><th>特別工作</th><th>達標</th></tr></thead>
-    <tbody>${rows.join("")}</tbody></table></div>`;
-}
-
-// ---- 月排程 ----
+// ===================================================================
+// 📅 月排程（＋ 舊片重覆上架）
+// ===================================================================
 let CAL_YM = null;
 function viewCal(){
   if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
   const [y,m] = CAL_YM;
   const first = new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
-  const w = STATE._warnings||{emergency:[],warning:[]};
-  const target = STATE.settings?.dailyPublishTarget||4;
-  const lang = canAllLang() ? "zh" : curLang(); const isZh=(lang==="zh");  // 月排程只看中文（英/泰已移除）
-  // 顯示規則：排滿→綠、10 天內未排→大紅色、其餘未排→灰
+  const target = dayTarget();
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
@@ -949,26 +250,17 @@ function viewCal(){
     const isToday = ds===today;
     const tmk = isToday?`<span class="todaymk">今天</span>`:"";
     const within10 = ds>=today && ds<=d10s;
-    if(!isZh){ const cnt=dayLangCount(ds,lang);
-      const cls = cnt>0?"filled":(within10?"bad urgent":"blank");
-      cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">${tmk}<div class="dnum">${d}</div>
-        <div class="big">${cnt||"·"}</div></div>`;
-      continue; }
-    const b=dayBreakdown(ds);
-    const filled = b.total>=Math.max(1,b.target);
+    const cnt = dayScheduledCount(ds);
+    const filled = cnt>=Math.max(1,target);
     const cls = filled ? "filled" : (within10 ? "bad urgent" : "blank");
-    const km={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
-    const defTxt=Object.keys(b.deficits||{}).map(k=>(km[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.total?("/"+b.target):""}</span></div>
-      ${(!filled && defTxt.length)?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:"")}
+      <div class="big">${cnt||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${cnt?("/"+target):""}</span></div>
+      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:"")}
     </div>`;
   }
-  const switcher = `<span class="muted">語言：<b>${LANG_LABEL[lang]||lang}</b></span>`;
   return `
-  <h2>📅 月排程（${LANG_LABEL[lang]||lang}）</h2>
-  ${switcher}
+  <h2>📅 月排程</h2>
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <button class="btn sm sec" onclick="calMove(-1)">← 上月</button>
@@ -979,23 +271,21 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px">月排程為<b>唯讀</b>：剪輯按「完成」時自動排入。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">大紅色</b>=10 天內還沒排好（要趕快補）。點任一天可<b>改上片日期</b>（不可刪除）。</p>
+    <p class="muted" style="margin-top:12px;font-size:13px"><b style="color:var(--green)">綠</b>=已排滿（${target} 片）、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">紅</b>=10 天內還沒排好。點任一天可<b>改上片日期</b>或<b>排舊片重播</b>。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
 
 function openDay(ds){
-  const target = STATE.settings?.dailyPublishTarget||4;
-  const lang = canAllLang() ? "zh" : curLang(); const isZh=(lang==="zh");  // 月排程只看中文（英/泰已移除）
-  const list = dayLangList(ds, lang);
+  const target = dayTarget();
+  const list = dayVideoList(ds);
   const rows = list.map((it)=>{
     const v = vid(it.videoId);
-    const reused = isZh && it.slot && it.slot.reused;
-    const ed = isZh ? (v?.editor||"") : (v?.languages?.[lang]?.editor||"");
-    const link = reused ? (it.slot.publishedLink||"") : (isZh ? (v?.publishedLink||v?.driveFolder||"") : (v?.languages?.[lang]?.publishedLink||v?.languages?.[lang]?.driveFolder||""));
-    const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)`
-                         : (isZh?`rescheduleVid('${it.videoId}',this.value,'${ds}')`:`rescheduleLang('${it.videoId}','${lang}',this.value,'${ds}')`);
-    const tm = reused ? (it.slot.time||"") : (isZh ? (v?.publishTime||"") : (v?.languages?.[lang]?.publishTime||""));
+    const reused = it.slot && it.slot.reused;
+    const ed = reused ? (it.slot.by||"") : (v?.editor||"");
+    const link = reused ? (it.slot.publishedLink||"") : (v?.publishedLink||v?.driveFolder||"");
+    const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
+    const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     return `<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
       <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
@@ -1012,36 +302,29 @@ function openDay(ds){
   const timeField = (dayCount<3)
     ? `<div style="min-width:118px"><input id="od_time" value="${autoTime}" readonly style="background:var(--panel2);text-align:center"><div class="muted" style="font-size:10px;text-align:center">自動・第 ${dayCount+1} 段</div></div>`
     : `<div style="min-width:118px"><input id="od_time" type="time" value="18:00"><div class="muted" style="font-size:10px;text-align:center">已滿3段・自選</div></div>`;
-  const reusePicker = isZh ? `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片到這天</b>
+  const reusePicker = `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片重播到這天</b>
     ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-start">
         <select id="od_vid" style="flex:1;min-width:150px">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select>
         ${timeField}
         <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
       </div>
       <input id="od_link" placeholder="社群連結（可後補）" style="margin-top:6px">`
-      : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。</p>`}
-  </div>` : "";
+      : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。新片需滿 45 天才能重播。</p>`}
+  </div>`;
   const cnt = list.length;
-  let summary="";
-  if(isZh){ const b=dayBreakdown(ds); const tg=b.targets;
-    summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
-      Object.keys(tg).map(k=>{ const have=b.byType[k]||0; const ok=have>=tg[k];
-        return `<span class="pill ${ok?'ok':'em'}">${k} ${have}/${tg[k]}</span>`; }).join("")+
-      `<span class="pill ${cnt>=b.target?'ok':'em'}">總量 ${cnt}/${b.target}</span></div>`;
-  }
-  showModal(`📅 ${ds}（${LANG_LABEL[lang]||lang}）`, `
+  const summary = `<div class="row" style="gap:8px;margin-bottom:8px"><span class="pill ${cnt>=target?'ok':'em'}">總量 ${cnt}/${target}</span></div>`;
+  showModal(`📅 ${ds}（${weekdayZh(ds)}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
       <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
-      <p class="muted" style="font-size:12px;margin-top:8px">月排程唯讀：新片由剪輯完成後自動排入。只能改上片日期（移動時間），不能刪除或取消。</p>
+      <p class="muted" style="font-size:12px;margin-top:8px">新片由剪輯完成後自動排入；可改上片日期或排舊片重播。</p>
     </div>
     ${reusePicker}`, null);
 }
-// 從月曆某天直接排一支舊片重播
+// 從月曆某天排一支舊片重播
 function odReuse(ds){ const id=val("od_vid"); if(!id){ toast("請先選一支舊片",true); return; }
   write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
-// 排舊片重播：選一支已完成的舊片，排到未來某天，記錄日期＋連結
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
 async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return;
   const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
@@ -1057,358 +340,143 @@ async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) 
 // 改上片日期（移動時間，不刪除）
 function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:newDate}},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
-function rescheduleLang(id,lang,newDate,ds){ if(!newDate||newDate===ds) return;
-  const v=vid(id); const L=Object.assign({}, v?.languages?.[lang]||{}); L.scheduledDate=newDate;
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:L},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
 
-// ---- 我的工作台（依語言別） ----
+// ===================================================================
+// 📋 今日工作（🆕 新片上架）
+// ===================================================================
+// 排程速覽：連續排滿天數（安全天數）＋未來 14 天缺口
+function scheduleGlance(){
+  const target=dayTarget();
+  let runway=0;
+  for(let off=0;off<=120;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    if(dayScheduledCount(ds)>=target) runway++; else break; }
+  const defs=[];
+  for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    const cnt=dayScheduledCount(ds); if(cnt<target) defs.push({ds,short:target-cnt}); }
+  return {target, runway, defs};
+}
+// 今日工作＝每天上班的三步驟例行作業
 function viewWork(){
-  const me = currentUser(); const lang = curLang(); const isZh = (lang==="zh");
-  const quota = userQuota(me); const inProg = myInProgressCount(); const atLimit = inProg>=3;  // 最多同時 3 支進行中
-  // 今日完成（依語言）
-  const myDoneToday = (STATE.videos||[]).filter(v=>langFinishedOn(v,lang,me,today)).length;
-  // 進行中 / 待處理（依語言）
-  let mine, pool;
-  if(isZh){
-    mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
-    pool = (STATE.videos||[]).filter(v=>v.stage==="待處理");
-  }else{
-    mine = (STATE.videos||[]).filter(v=>v.languages?.[lang]?.status==="二創中" && v.languages?.[lang]?.claimedBy===me);
-    pool = (STATE.videos||[]).filter(v=>v.languages?.zh?.status==="完成" &&
-            (!v.languages?.[lang] || !v.languages?.[lang]?.status || v.languages?.[lang]?.status==="未開始"));
-  }
-  const owner = v => isZh ? (v.claimedBy||"") : (v.languages?.[lang]?.claimedBy||"");
-  const claimAtOf = v => isZh ? v.claimedAt : (v.languages?.[lang]?.claimedAt);
-  const matRow = (v,inPool)=>`<tr>
+  const me = currentUser();
+  const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
+  const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
+  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理");
+  const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
+  const myDoneToday = (STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===today).length;
+  const matRow = (v)=>`<tr>
       <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a> ${typeTag(v.mainType)}</td>
       <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
-      <td data-label="負責">${esc(owner(v))}${(!inPool&&claimAtOf(v))?` <span class="muted">·已 ${durationText(claimAtOf(v))}</span>`:""}</td>
-      <td data-label="">${inPool
-        ? `<button class="btn sm" onclick="${isZh?`claimVid('${v.id}')`:`claimLang('${v.id}','${lang}')`}" ${atLimit?"disabled style=\"opacity:.5\"":""}>我來做</button>`
-        : `<button class="btn sm" onclick="${isZh?`finishVid('${v.id}')`:`finishLang('${v.id}','${lang}')`}">完成✔</button>`}
-      </td></tr>`;
-  const switcher = canAllLang()
-    ? `<div class="row" style="gap:6px;margin-bottom:10px"><span class="muted">語言：</span>${SCHED_LANGS.map(l=>`<button class="btn sm ${l===lang?'':'sec'}" onclick="setLang('${l}')">${LANG_LABEL[l]||l}</button>`).join("")}</div>`
-    : "";
-  const myRep=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
+      <td data-label=""><button class="btn sm" onclick="finishVid('${v.id}')">完成上架✔</button></td>
+    </tr>`;
+  const g=scheduleGlance(); const SAFE=15;
+  const runCol=g.runway>=SAFE?'var(--green)':(g.runway>=7?'var(--amber)':'var(--red)');
+  const oldCount=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v)).length;
+  const defChips=g.defs.length
+    ? g.defs.slice(0,8).map(x=>`<span class="pill ${x.ds===today?'em':'wa'}" style="margin:2px 4px 2px 0;display:inline-block">${x.ds.slice(5)}(${weekdayZh(x.ds)}) 缺${x.short}</span>`).join("")+(g.defs.length>8?` <span class="muted">…還有 ${g.defs.length-8} 天未滿</span>`:'')
+    : '<span class="pos">未來 14 天都排滿了 ✅</span>';
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
-  ${switcher}
-  ${inboxCard(me)}
-  <div class="card">
+  <p class="muted" style="margin:-8px 0 14px;font-size:13px">每天上班三步驟：①建檔新毛片　→　②用舊片排滿時段　→　③下拉新毛片開始剪</p>
+
+  <div class="card" style="border-left:4px solid var(--accent)">
+    <div class="row" style="justify-content:space-between"><b>① 建檔新毛片</b>
+      <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
+    <p class="muted" style="font-size:13px;margin:6px 0 8px">把今天拍好的毛片片名先建檔，剪輯才能下拉來剪。</p>
+    <div class="row" style="gap:8px">
+      <button class="btn" onclick="batchNewFootage()">＋ 批次建檔今天的新毛片</button>
+      <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--accent)">
+    <div class="row" style="justify-content:space-between"><b>② 用舊片排滿時段</b>
+      <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
+    <p class="muted" style="font-size:13px;margin:6px 0 8px">短影音行銷每天要 ${g.target} 支；用滿 45 天的舊片（可重播庫存 ${oldCount} 支）把沒排滿的日子補上。</p>
+    <div style="margin-bottom:8px">${defChips}</div>
+    <div class="row" style="gap:8px">
+      <button class="btn" onclick="fillWithOldVideos(14)" ${(g.defs.length&&oldCount)?'':'disabled style="opacity:.5;cursor:not-allowed"'}>♻ 一鍵用舊片補滿未來 14 天</button>
+      <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程手動調整</button>
+    </div>
+  </div>
+
+  <div class="card" style="border-left:4px solid var(--green)">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b>🎬 我進行中的影片</b>
+      <b>③ 下拉新毛片開始剪</b>
       <span style="display:flex;gap:6px">
-        <span class="pill ${myDoneToday>=quota?'ok':'wa'}" title="每日主要工作 今日完成">📌 ${myDoneToday}/${quota}</span>
+        <span class="pill ok" title="今日完成上架">✔ 今日完成 ${myDoneToday}</span>
         <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span>
       </span>
     </div>
-    ${atLimit?`<p class="muted" style="margin:4px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
-    <table class="responsive"><thead><tr><th>影片</th><th>片源</th><th>負責</th><th></th></tr></thead>
-    <tbody>${mine.map(v=>matRow(v,false)).join("")||`<tr><td class="muted">目前沒有進行中的影片，從下方「待剪新片」拉一支來剪</td></tr>`}</tbody></table>
-    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
-      <div class="row" style="justify-content:space-between"><b>🆕 ${isZh?"待剪新片":"待二創（"+(LANG_LABEL[lang]||lang)+"）"}</b>
-        <button class="btn sm sec" onclick="newSimpleVideo()">＋ 新增片名／內容</button></div>
-      ${pool.length
-        ? `<div class="row" style="gap:8px;margin-top:8px">
-             <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
-             <button class="btn sm" onclick="claimPicked('${lang}')" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
-           </div>`
-        : `<p class="muted" style="margin-top:8px">${isZh?"目前沒有待剪新片，可按「＋ 新增片名／內容」建立":"目前沒有待二創的影片（要中文母版先完成）"}</p>`}
-    </div>
-  </div>
-  <div class="card">${specialTasksBlock(myRep)}</div>
-  ${teamOtherWorkToday()}
-  ${myDailyReport(me)}`;
-}
-// 今天大家的「其他工作」（含已完成的老闆交辦）— 所有人都看得到
-function teamOtherWorkToday(){
-  const rows=[];
-  (STATE.reports||[]).filter(r=>r.date===today).forEach(r=>{
-    otherItems(r).forEach(s=>rows.push({user:r.user, t:s.t, m:s.m, task:s.task, reply:s.reply})); });
-  if(!rows.length) return "";
-  rows.sort((a,b)=>String(a.user).localeCompare(String(b.user)));
-  return `<div class="card">
-    <div class="row" style="justify-content:space-between"><b>🧩 今天大家的其他工作</b><span class="muted" style="font-size:12px">所有人都看得到</span></div>
-    <table class="responsive"><thead><tr><th>成員</th><th>工作內容</th><th>時間</th></tr></thead>
-    <tbody>${rows.map(r=>`<tr>
-      <td data-label="成員">${esc(r.user)}</td>
-      <td data-label="內容">${r.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(r.t)}${(r.task&&r.reply)?`<div class="muted" style="font-size:11px;margin-top:2px">↳ 處理狀況：${esc(r.reply)}</div>`:''}</td>
-      <td data-label="時間">${r.m?r.m+" 分":'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table>
+    ${pool.length
+      ? `<div class="row" style="gap:8px;margin-top:8px">
+           <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
+           <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
+         </div>`
+      : `<p class="muted" style="margin-top:8px">目前沒有待剪新片，先到上面「① 建檔新毛片」建立。</p>`}
+    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 手上已有 3 支進行中，先完成幾支再拉新片</p>`:""}
+    <table class="responsive" style="margin-top:12px"><thead><tr><th>我進行中的影片</th><th>片源</th><th></th></tr></thead>
+    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，從上面下拉一支新毛片開始剪</td></tr>`}</tbody></table>
   </div>`;
 }
-// 今日特別工作：最多 3 項，每項一個時間鈕（每按 +30 分，上限 2 小時，再按歸 0）
-function specialTasksBlock(rep){
-  // 已送出 → 唯讀鎖定（不可再改）
-  if(rep && rep.locked){
-    const items=otherItems(rep);
-    const list=items.length? items.map(s=>`<div style="padding:6px 0;border-top:1px solid var(--line)">${s.task?'<span class="tag" style="background:#ede9fe;color:#6d28d9">交辦</span> ':''}${esc(s.t)}${s.m?`<span class="muted">（${s.m} 分）</span>`:""}</div>`).join("") : '<span class="muted">無特別工作</span>';
-    return `<div>
-      <b>📝 今日特別工作</b> <span class="pill ok">已送出・鎖定</span>
-      <div style="margin-top:6px">${list}</div>
-      <p class="muted" style="font-size:11px;margin-top:6px">今日匯報已送出，內容與工時已鎖定。若是誤按下班，可
-        <a href="javascript:void(0)" onclick="reopenReport()">重新開工</a> 繼續編輯。</p>
-    </div>`;
-  }
-  let sp=rep&&rep.special; if(!sp||!sp.length){ sp=[{t:(rep&&rep.content)||"",m:0},{t:"",m:0},{t:"",m:0}]; }
-  sp=sp.slice(0,3); while(sp.length<3) sp.push({t:"",m:0});
-  const rows=sp.map((s,i)=>{
-    const timeBtn=`<button class="btn sm sec" id="rp_m${i}" data-min="${s.m||0}" ${s.task?`data-task="1" data-from="${esc(s.from||"")}" data-msgid="${esc(s.msgId||"")}"`:""} onclick="cycleMin(this)" style="white-space:nowrap;min-width:78px">⏱ ${(s.m||0)?((s.m)+" 分"):"0 分"}</button>`;
-    if(s.task){
-      return `<div style="margin-top:8px;padding:9px;background:var(--panel2);border-radius:8px;border-left:3px solid #6d28d9">
-        <div class="row" style="gap:8px;align-items:center">
-          <span class="tag" style="background:#ede9fe;color:#6d28d9;flex:none">交辦</span>
-          <input id="rp_t${i}" style="flex:1" value="${esc(s.t||"")}" readonly title="交辦內容不可修改">
-          ${timeBtn}
-        </div>
-        <div class="muted" style="font-size:11px;margin:3px 0 5px">↳ 來自交辦${s.from?("・"+esc(s.from)):""}（內容不可修改，請填處理狀況與時長）</div>
-        <input id="rp_r${i}" value="${esc(s.reply||"")}" placeholder="回覆處理狀況（至少 12 字）">
-      </div>`;
-    }
-    return `<div class="row" style="gap:8px;margin-top:6px;align-items:center">
-      <span class="muted" style="width:16px;font-weight:700">${i+1}</span>
-      <input id="rp_t${i}" style="flex:1" placeholder="特別／額外工作（沒有可留空）" value="${esc(s.t||"")}">
-      ${timeBtn}
-    </div>`;
-  }).join("");
-  const hasTask=sp.some(s=>s.task);
-  return `<div>
-    <b>📝 今日特別工作</b><span class="muted" style="font-size:12px">　最多 3 項；時間鈕每按 +30 分（上限 2 小時，再按歸 0）</span>
-    ${rows}
-    ${hasTask?`<p class="muted" style="font-size:12px;margin-top:8px;color:#6d28d9">💡 交辦工作：填好「回覆處理狀況」並按 ⏱ 加時長後，按下方「儲存」，主管當天就能看到你的回覆。</p>`:""}
-    <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn sm sec" onclick="saveSpecial(false)">💾 儲存${hasTask?"／回覆主管":"特別工作"}</button>
-      <button class="btn sm" onclick="submitDayReport()">🔴 送出今日匯報下班</button>
-    </div>
-    <p class="muted" style="font-size:11px;margin-top:4px">剪片數系統自動計入；特別工作時間會算進「其他工時」。<b>送出後內容與工時會鎖定、不能再改</b>，並直接下班登出。</p>
-  </div>`;
-}
-function cycleMin(btn){ let m=(+btn.dataset.min||0); m=(m>=120)?0:m+30; btn.dataset.min=m; btn.textContent="⏱ "+(m?(m+" 分"):"0 分"); }
-function collectSpecial(){ const arr=[]; for(let i=0;i<3;i++){ const t=(val("rp_t"+i)||"").trim();
-    const b=document.getElementById("rp_m"+i); const m=b?(+b.dataset.min||0):0;
-    const isTask=b&&b.dataset.task==="1"; const from=b?(b.dataset.from||""):""; const msgId=b?(b.dataset.msgid||""):"";
-    const reply=(val("rp_r"+i)||"").trim();
-    arr.push(isTask?{t,m,task:true,from,msgId,reply}:{t,m}); } return arr; }
-// 把交辦的處理狀況/時長即時回寫到訊息 → Regina/管理員當天就看得到回覆
-async function syncTaskReplies(arr){
-  const me=currentUser();
-  for(const s of (arr||[])){ if(!(s.task && s.msgId)) continue;
-    const msg=(STATE.messages||[]).find(x=>x.id===s.msgId); if(!msg) continue;
-    const reply=(s.reply||"").trim(); const complete=reply.length>=12 && (s.m>0);
-    const patch={accepted:true, acceptedAt:msg.acceptedAt||nowIso(), read:true, reply, minutes:s.m||0,
-      done:complete, doneBy:me, doneAt:complete?(msg.doneAt||nowIso()):""};
-    try{ await window.DB.update("messages", s.msgId, patch); }catch(e){}
-  }
-}
-function specialToContent(arr){ return arr.filter(s=>s.t).map((s,i)=>`${i+1}. ${s.t}${s.m?`（${s.m}分）`:""}`).join("\n"); }
-// 某份日報的「其他工作」項目：手寫特別工作(special) + 已完成的老闆交辦(tasks)
-function otherItems(r){ if(!r) return [];
-  const sp=(Array.isArray(r.special)?r.special:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:!!s.task, reply:s.reply||""}));
-  const tk=(Array.isArray(r.tasks)?r.tasks:[]).filter(s=>s&&s.t).map(s=>({t:s.t, m:s.m||0, task:true, reply:s.reply||""}));
-  return sp.concat(tk); }
-async function writeReport(arr, clockOut, lock){
-  const me=currentUser(); const content=specialToContent(arr);
-  const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  const end=clockOut?nowIso():(old.endAt||"");
-  const rec={id:me+"__"+today, user:me, date:today, special:arr, tasks:old.tasks||[], content, done:!!content,
-             startAt:old.startAt||"", endAt:end, locked: lock?true:(old.locked||false)};
-  await window.DB.set("reports", rec.id, rec);
-  return {old, end};
-}
-async function saveSpecial(clockOut){ const me=currentUser();
-  const cur=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  if(cur.locked){ toast("今日匯報已送出，無法再修改",true); return; }
-  const arr=collectSpecial();
-  try{ const {old,end}=await writeReport(arr, clockOut, false); await syncTaskReplies(arr);
-    if(clockOut){ const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):""; toast("已送出今日匯報，下班打卡 "+hhmm(end)+"，辛苦了！"+w); }
-    else toast("已儲存，交辦回覆已送給主管");
-  }catch(e){ toast("失敗，請稍後再試",true); } }
-// 送出今日匯報：先確認沒有要再改 → 鎖定＋下班 → 回到登入畫面
-function submitDayReport(){
-  const me=currentUser();
-  const cur=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  if(cur.locked){ toast("今日匯報已送出，無法再修改",true); return; }
-  const arr=collectSpecial();
-  // 「交辦」工作：必須回覆處理狀況（至少 12 字）並加上處理時長
-  for(const s of arr){ if(s.task && s.t){
-    const rp=(s.reply||"").trim();
-    if(rp.length<12){ toast("「交辦」工作需回覆處理狀況至少 12 字（目前 "+rp.length+" 字）",true); return; }
-    if(new Set(rp.replace(/\s/g,"")).size<4){ toast("處理狀況請認真填寫，不要用重複字元充數",true); return; }
-    if(!(s.m>0)){ toast("「交辦」工作請按 ⏱ 加上處理時長",true); return; }
-  }}
-  showModal("送出今日匯報", `
-    <p style="font-size:15px">確定今天的匯報內容<b>沒有需要再修改</b>了嗎？</p>
-    <p class="muted">送出後今天的工時與內容就<b style="color:var(--red)">不能再更改</b>，並會直接下班、登出回到登入畫面。</p>
+// ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
+function batchNewFootage(){
+  showModal("批次建檔新毛片", `
+    <label>把今天拍好的毛片片名貼進來，<b>一行一支</b></label>
+    <textarea id="bf_list" style="min-height:150px" placeholder="劉亦菲紅毯珠寶&#10;八大珠寶派系&#10;真假寶石30秒分辨"></textarea>
+    <p class="muted" style="font-size:12px">每一行會建一支「待剪新片」，剪輯就能在步驟③下拉來剪。</p>
   `, async ()=>{
-    try{ const {old,end}=await writeReport(arr, true, true); await syncTaskReplies(arr);
-      const w=old.startAt?("　今日工時 "+minToText(durationMin(old.startAt,end))):"";
-      toast("已送出今日匯報，下班！辛苦了 👋"+w);
-      setTimeout(logout, 1100); return true;
-    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
-  }, "確定，下班登出");
-}
-// ---- 管理員留言／交辦（輕量版）----
-function sendTask(name){
-  const active=(STATE.messages||[]).filter(m=>m.to===name && !m.done).length;
-  const room=Math.max(0,3-active);
-  showModal("✉ 交辦／留言給 "+name, `
-    <p class="muted" style="font-size:12px;margin-bottom:4px">每一行＝一項獨立交辦，對方<b>分別收到、分別回覆</b>。${esc(name)} 目前未完成 <b>${active}</b> 項（每人最多 3 項，這次最多可再加 <b>${room}</b> 項）。</p>
-    <label>一、</label><input id="tk_1" placeholder="第一項交辦／留言" ${room<1?"disabled":""}>
-    <label>二、</label><input id="tk_2" placeholder="第二項（可留空）" ${room<2?"disabled":""}>
-    <label>三、</label><input id="tk_3" placeholder="第三項（可留空）" ${room<3?"disabled":""}>
-  `, async ()=>{
-    const lines=[val("tk_1"),val("tk_2"),val("tk_3")].map(s=>String(s||"").trim()).filter(Boolean);
-    if(!lines.length){ toast("請至少輸入一項",true); return false; }
-    const now=(STATE.messages||[]).filter(m=>m.to===name && !m.done).length;
-    if(now+lines.length>3){ toast(name+" 目前未完成 "+now+" 項，最多 3 項；這次最多再加 "+Math.max(0,3-now)+" 項",true); return false; }
+    const lines=val("bf_list").split("\n").map(s=>s.trim()).filter(Boolean);
+    if(!lines.length){ toast("請至少輸入一支片名",true); return false; }
+    let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
+    let ok=0; BULK_BUSY=true;
     try{
-      let i=0;
-      for(const text of lines){ i++;
-        const id="msg-"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)+i;
-        await window.DB.set("messages", id, {id, to:name, from:currentUser(), text, at:nowIso(), read:false, readAt:"", accepted:false, done:false, doneAt:""});
-      }
-      toast("已送出 "+lines.length+" 項交辦給 "+name); return true;
-    }catch(e){ toast("送出失敗，請稍後再試",true); return false; }
+      for(let i=0;i<lines.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
+        const rec=Object.assign(newVideoRecord({name:lines[i], rawName:lines[i]}), {id});
+        try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已建檔 "+ok+" 支新毛片，可到步驟③開始剪"); return true;
   });
 }
-// 剪輯收件匣：尚未「收到」的交辦／留言（紅色提醒）
-function inboxCard(me){
-  const msgs=(STATE.messages||[]).filter(m=>m.to===me && !m.done && !m.accepted).sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
-  if(!msgs.length) return "";
-  return `<div class="card" style="border-color:var(--red);background:var(--redbg)">
-    <b>✉ 老闆交辦／留言（${msgs.length}）</b>
-    ${msgs.map(m=>`<div style="margin-top:8px;padding:10px;background:var(--panel);border-radius:8px">
-       <div style="white-space:pre-wrap">${esc(m.text)}</div>
-       <div class="muted" style="font-size:11px;margin-top:4px">${esc(m.from||"管理員")}・${esc((m.at||"").slice(5,16).replace("T"," "))}</div>
-       <div class="row" style="gap:6px;margin-top:6px">
-         <button class="btn sm" onclick="acceptTask('${m.id}')">✅ 收到</button></div>
-     </div>`).join("")}</div>`;
-}
-// 收到交辦 → 移進「今日特別工作」（一天最多 3 個剪輯以外的工作）
-async function acceptTask(id){
-  const m=(STATE.messages||[]).find(x=>x.id===id); if(!m) return;
-  const me=currentUser();
-  const old=(STATE.reports||[]).find(x=>x.user===me && x.date===today)||{};
-  if(old.locked){ toast("今日匯報已送出，無法再接工作",true); return; }
-  let sp; try{ sp=collectSpecial(); }catch(e){ sp=Array.isArray(old.special)?old.special:[]; }
-  const items=sp.filter(s=>s.t&&String(s.t).trim());
-  if(items.length>=3){ toast("今天最多只能接 3 個剪輯以外的工作",true); return; }
-  items.push({t:m.text, m:0, task:true, from:m.from||"管理員", msgId:id});
-  while(items.length<3) items.push({t:"",m:0});
-  const rec=Object.assign({}, old, {id:me+"__"+today, user:me, date:today, special:items.slice(0,3),
-    tasks:old.tasks||[], content:specialToContent(items), done:true, startAt:old.startAt||"", endAt:old.endAt||""});
+// ② 一鍵用舊片補滿：未來 N 天未達標的日子，用滿 45 天的舊片補到每日目標
+async function fillWithOldVideos(days){
+  days=days||14; const target=dayTarget();
+  const eligible=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v));
+  if(!eligible.length){ toast("目前沒有可重播的舊片（需已完成且滿 45 天）",true); return; }
+  if(!confirm(`將用舊片把未來 ${days} 天「沒排滿」的時段補到每天 ${target} 支。\n（同一天不重複、優先用較少重播過的舊片、時段自動帶 10/12/16）\n確定？`)) return;
+  const useCount={}; eligible.forEach(v=>useCount[v.id]=v.totalUsed||0);
+  const scheduleUpd={}; const usageAdd={}; let added=0, filledDays=0;
+  for(let off=0; off<days; off++){
+    const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    const baseList=dayVideoList(ds); let dayCount=baseList.length; let need=target-dayCount; if(need<=0) continue;
+    const usedIds=new Set(baseList.map(it=>it.videoId));
+    const day=(STATE.schedule||{})[ds]||{slots:[]}; const slots=(day.slots||[]).slice();
+    const cand=eligible.filter(v=>!usedIds.has(v.id)).sort((a,b)=>(useCount[a.id]-useCount[b.id]) || String(a.finishedAt||a.scheduledDate||"").localeCompare(String(b.finishedAt||b.scheduledDate||"")));
+    let addedThisDay=0;
+    for(const v of cand){ if(need<=0) break;
+      const time=PUB_TIMES[dayCount]||"18:00"; const at=nowIso();
+      slots.push({videoId:v.id, publishedLink:"", reused:true, by:currentUser(), at, time});
+      (usageAdd[v.id]=usageAdd[v.id]||[]).push({date:ds, link:"", time, by:currentUser(), at});
+      useCount[v.id]++; usedIds.add(v.id); dayCount++; need--; added++; addedThisDay++;
+    }
+    if(addedThisDay) scheduleUpd[ds]=slots; if(need<=0) filledDays++;
+  }
+  if(!added){ toast("未來 "+days+" 天都已排滿，無需補片 ✅"); return; }
+  BULK_BUSY=true;
   try{
-    await window.DB.set("reports", rec.id, rec);
-    await window.DB.update("messages", id, {read:true, readAt:m.readAt||nowIso(), accepted:true, acceptedAt:nowIso()});
-    toast("已收到，移到今日特別工作");
-  }catch(e){ toast("更新失敗，請稍後再試",true); }
+    for(const ds of Object.keys(scheduleUpd)){ try{ await window.DB.scheduleSet(ds,{slots:scheduleUpd[ds]}); }catch(e){} }
+    for(const id of Object.keys(usageAdd)){ const v=vid(id); if(!v) continue;
+      const uh=(v.usageHistory||[]).concat(usageAdd[id]);
+      try{ await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+usageAdd[id].length, usageHistory:uh}); }catch(e){} }
+  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  await delay(400); toast(`已用舊片補滿：新增 ${added} 個重播、補滿 ${filledDays} 天`);
 }
-// 推導某剪輯今日即時狀態：開工時間、正在做什麼、完成數
-function editorStatus(u){
-  const name=u.name; const langs=["zh"];
-  const rep=(STATE.reports||[]).find(x=>x.user===name && x.date===today)||{};
-  const q=userQuota(name);
-  const doneToday=(STATE.videos||[]).reduce((n,v)=>n+(langs.some(lg=>langFinishedOn(v,lg,name,today))?1:0),0);
-  const inProg=[];
-  (STATE.videos||[]).forEach(v=>{
-    if(v.stage==="剪輯中" && (v.claimedBy===name||v.editor===name)) inProg.push(v.name||v.rawName||"(未命名)");
-    langs.forEach(lg=>{ if(lg!=="zh" && v.languages?.[lg]?.status==="二創中" && v.languages?.[lg]?.claimedBy===name)
-      inProg.push((v.name||v.rawName||"")+"·"+(LANG_LABEL[lg]||lg)); });
-  });
-  let current;
-  if(inProg.length) current="正在剪「"+inProg[0]+"」"+(inProg.length>1?(" 等 "+inProg.length+" 支"):"");
-  else if(q>0 && doneToday>=q) current="今日已達標 🎉";
-  else if(!rep.startAt) current="尚未開工";
-  else current="待命中";
-  return {name, lang:u.lang||"zh", startAt:rep.startAt||"", q, doneToday, met:q>0?doneToday>=q:true, current};
-}
-// 特別工作備註顯示
-function reportContentHtml(rep){ if(!rep) return ""; const c=rep.content||((rep.items||[]).filter(Boolean).join("、"));
-  return c? `<div style="white-space:pre-wrap">${esc(c)}</div>` : `<span class="muted">無</span>`; }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
-// 從下拉選單把一支新片拉下來開始剪
-function claimPicked(lang){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; }
-  if(lang==="zh") claimVid(id); else claimLang(id,lang); }
+function claimPicked(){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; } claimVid(id); }
 // 上片時間下拉（固定 10/12/16）
 function pubTimeSelect(id, cur){ const c=PUB_TIMES.includes(cur)?cur:"10:00";
   return `<select id="${id}">`+PUB_TIMES.map(t=>`<option ${t===c?"selected":""}>${t}</option>`).join("")+`</select>`; }
-// 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
-const DEFAULT_TAGS=["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"];
-function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
-function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
-  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
-function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
-  const all=videoTags().slice(); (selected||[]).forEach(t=>{ if(!all.includes(t)) all.push(t); });
-  return `<label>標籤（可複選）</label>
-    <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
-    <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
-function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
-function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
-  const box=document.getElementById(id+'_box');
-  if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
-  inp.value=''; }
-// 把新標籤併進設定，之後可重複選用
-async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
-  if(add.length && window.DB&&window.DB.setSettings){ try{ await window.DB.setSettings({videoTags:cur.concat(add)}); }catch(e){} } }
-// 累積「實際處理工時」：從領取那刻起，只計上班打卡時段；跨日就從隔日上班續算，直到完成
-function workedBetween(name, fromIso){
-  if(!name||!fromIso) return null;
-  const startDay=String(fromIso).slice(0,10); let total=0;
-  let d=new Date(startDay+"T00:00:00"); const end=new Date(today+"T00:00:00");
-  while(d<=end){ const ds=d.toISOString().slice(0,10);
-    const r=(STATE.reports||[]).find(x=>x.user===name && x.date===ds);
-    if(r && r.startAt){ let ws=r.startAt, we=r.endAt || (ds===today? nowIso() : null);
-      if(we){ if(ds===startDay && ws<fromIso) ws=fromIso; const m=durationMin(ws,we); if(m>0) total+=m; } }
-    d.setDate(d.getDate()+1);
-  }
-  return total;
-}
-function processedText(v){ const who=v.claimedBy||v.editor, at=v.claimedAt;
-  if(!who||!at) return ""; const m=workedBetween(who, at); return m!=null? minToText(m) : ""; }
-// 目前進行中影片一覽（含負責人與已處理工時）— 給管理員／HR 觀察
-function inProgressBoard(){
-  const rows=[];
-  (STATE.videos||[]).filter(v=>v.stage==="剪輯中").forEach(v=>{
-    rows.push({name:v.name||v.rawName||"(未命名)", who:v.claimedBy||v.editor||"", lang:"中文", t:processedText(v), id:v.id}); });
-  SCHED_LANGS.filter(l=>l!=="zh").forEach(l=>{ (STATE.videos||[]).forEach(v=>{ const L=v.languages?.[l];
-    if(L&&L.status==="二創中"&&L.claimedBy){ rows.push({name:v.name||v.rawName||"(未命名)", who:L.claimedBy, lang:(LANG_LABEL[l]||l), t:(L.claimedAt?minToText(workedBetween(L.claimedBy,L.claimedAt)):""), id:v.id}); } }); });
-  if(!rows.length) return `<div class="card"><b>🎬 待剪新片</b><p class="muted" style="margin-top:6px">目前沒有人在剪片。</p></div>`;
-  return `<div class="card"><b>🎬 待剪新片（${rows.length}）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>負責</th><th>語言</th><th>已處理</th></tr></thead>
-    <tbody>${rows.map(r=>`<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${r.id}')">${esc(r.name)}</a></td>
-      <td data-label="負責">${esc(r.who)}</td><td data-label="語言">${esc(r.lang)}</td>
-      <td data-label="已處理"><b>${esc(r.t||"—")}</b></td></tr>`).join("")}</tbody></table>
-    <p class="muted" style="font-size:11px;margin-top:6px">「已處理」只計上班打卡時段，跨日會從隔日上班續算，直到剪輯按「完成」。</p></div>`;
-}
-function claimLang(id,lang){
-  const me=currentUser();
-  if(inProgressCount(me)>=3){ toast("手上已有 3 支進行中，先完成幾支再拉",true); return; }
-  write("PUT",`/api/videos/${id}/lang/${lang}`,{lang:{status:"二創中",editor:me,claimedBy:me,claimedAt:nowIso()}},"已認領 "+(LANG_LABEL[lang]||lang)+" 二創");
-}
 function finishGate(p){ const ok=val(p+"date")&&val(p+"backup").trim()&&val(p+"social").trim();
   const b=document.getElementById("modalConfirm"); if(b){ b.disabled=!ok; b.style.opacity=ok?"":"0.5"; b.style.cursor=ok?"":"not-allowed"; } }
-function finishLang(id,lang){
-  const v=vid(id)||{}; const L=v.languages?.[lang]||{}; const def=L.scheduledDate||today; const lb=LANG_LABEL[lang]||lang;
-  showModal("完成"+lb+"二創：填上片資訊", `
-    <div class="grid cols2">
-      <div><label>上片日期（會顯示在${lb}行事曆）</label><input id="fl_date" type="date" value="${esc(def)}" oninput="finishGate('fl_')"></div>
-      <div><label>上片時間</label>${pubTimeSelect("fl_time", L.publishTime)}</div>
-    </div>
-    <label>雲端備份連結</label><input id="fl_backup" value="${esc(L.driveFolder||"")}" oninput="finishGate('fl_')" placeholder="Google Drive 備份">
-    <label>社群平台預排連結</label><input id="fl_social" value="${esc(L.socialLink||L.publishedLink||"")}" oninput="finishGate('fl_')" placeholder="排程工具／預約貼文連結">
-    <p class="muted">日期、時間與兩個連結都填好，才能按「確認送出」。</p>
-  `, async ()=>{
-    const fin=nowIso(); const cAt=L.claimedAt||null;
-    return await write("PUT",`/api/videos/${id}/lang/${lang}`,
-      {lang:{status:"完成", finishedAt:fin, scheduledDate:val("fl_date"), publishTime:val("fl_time"), editor:currentUser(),
-             claimedBy:currentUser(), claimedAt:cAt, durationMin:(cAt?durationMin(cAt,fin):null),
-             publishedLink:val("fl_social"), driveFolder:val("fl_backup"), socialLink:val("fl_social")}},
-      "已完成，已加入"+lb+"行事曆");
-  });
-  finishGate("fl_");
-}
 function finishVid(id){
   const v = vid(id)||{};
   const def = v.scheduledDate || today;
@@ -1443,42 +511,30 @@ function newSimpleVideo(){
     return await write("POST","/api/videos",{video},"已新增待剪新片");
   });
 }
-function newVideo(){
-  const s=STATE.settings||{};
-  const mains=s.mainTypes||["流量型","帶貨型","寵粉"];
-  const sources=s.sources||["老闆自拍","外部公司"];
-  const subOptions = (mt)=> (s.subTags?.[mt]||[]).map(t=>`<option value="${esc(t)}">`).join("");
-  const prodOptions = (STATE.products||[]).map(p=>`<option value="${esc(p.name)}">`).join("");
-  showModal("新增影片任務", `
-    <label>原片（素材／主題）</label><input id="m_raw" placeholder="例：劉亦菲珠寶比較">
-    <label>成品名稱（可後補）</label><input id="m_name">
-    <div class="grid cols2">
-      <div><label>主類別</label><select id="m_main" onchange="window._subOpts(this.value)">${mains.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>子標籤</label><input id="m_sub" list="m_sub_list" placeholder="輸入或選擇"><datalist id="m_sub_list">${subOptions(mains[0])}</datalist></div>
-    </div>
-    <div class="grid cols2">
-      <div><label>片源</label><select id="m_src">${sources.map(c=>`<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>預計上片日期（可空）</label><input id="m_date" type="date"></div>
-    </div>
-    <label>對應帶貨商品（帶貨型用，可空）</label><input id="m_prod" list="m_prod_list" placeholder="輸入或選擇商品名稱"><datalist id="m_prod_list">${prodOptions}</datalist>
-  `, async ()=>{
-    const video={rawName:val("m_raw").trim(), name:val("m_name").trim(),
-      mainType:val("m_main"), subTag:val("m_sub").trim(), source:val("m_src"),
-      scheduledDate:val("m_date")||null, productId:val("m_prod").trim()||null};
-    if(!video.rawName && !video.name){ toast("請輸入原片或成品名稱",true); return false; }
-    return await write("POST","/api/videos",{video},"已新增影片任務");
-  });
-  window._subOpts = (mt)=>{ const dl=document.getElementById("m_sub_list"); if(dl) dl.innerHTML=subOptions(mt); };
-}
 
-// ---- 影片庫一列（含狀態標籤）----
-// 「新片」為自動狀態：上片 45 天內算新片，超過自動移除（即成為可重播的舊片）
-const NEW_DAYS=45;
-function videoPubDate(v){ return String(v.finishedAt||v.scheduledDate||"").slice(0,10); }
-function isNewVideo(v){ if(!v||!["已完成","已上片"].includes(v.stage)) return false;
-  const d=videoPubDate(v); if(!d) return false;
-  const diff=(new Date(today+"T00:00:00")-new Date(d+"T00:00:00"))/86400000;
-  return diff>=0 && diff<=NEW_DAYS; }
+// ===================================================================
+// 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
+// ===================================================================
+const DEFAULT_TAGS=["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"];
+function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
+function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
+  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
+function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
+  const all=videoTags().slice(); (selected||[]).forEach(t=>{ if(!all.includes(t)) all.push(t); });
+  return `<label>標籤（可複選）</label>
+    <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
+    <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
+function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
+function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
+  const box=document.getElementById(id+'_box');
+  if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
+  inp.value=''; }
+async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
+  if(add.length && window.DB&&window.DB.setSettings){ try{ await window.DB.setSettings({videoTags:cur.concat(add)}); }catch(e){} } }
+
+// ===================================================================
+// 🎞 影片庫
+// ===================================================================
 function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(--traffic)";
   const stageCol={"待處理":"#94a3b8","剪輯中":"#d97706","已完成":"var(--green)","已上片":"#2563eb"}[v.stage]||"#94a3b8";
   return `<div class="vrow" onclick="editVideo('${v.id}')">
@@ -1490,7 +546,6 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
   </div>`; }
-// 依搜尋字／狀態篩選後的清單 HTML（用「剪輯人名」分組，每人一個可收合的選單）
 function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
@@ -1500,12 +555,11 @@ function vidRowsHTML(){
   const total=list.length;
   if(!total) return '<p class="muted">沒有符合的影片</p>';
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  // 依「標籤」分組（一支可有多個標籤 → 各標籤下都會出現）
   const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); const arr=t.length?t.slice():["（未分類）"]; if(isNewVideo(v)) arr.unshift("🆕 新片（45天內）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
   const names=Object.keys(groups).sort((a,b)=>{
-    const an=a.startsWith("🆕"), bn=b.startsWith("🆕"); if(an!==bn) return an?-1:1;  // 新片群置頂
+    const an=a.startsWith("🆕"), bn=b.startsWith("🆕"); if(an!==bn) return an?-1:1;
     const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
     return String(a).localeCompare(String(b)); });
   return names.map(n=>{
@@ -1520,8 +574,7 @@ function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.in
 function viewVideos(){
   const all=STATE.videos||[];
   const c=st=>all.filter(v=>v.stage===st).length;
-  const isEditor=currentRole()==="editor";
-  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依子標籤分組・點標題看細節</span></h2>
+  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依標籤分組・點標題看細節</span></h2>
   <div class="card">
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <input id="vid_q" placeholder="🔍 搜尋影片名稱／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
@@ -1532,7 +585,7 @@ function viewVideos(){
         <option value="已完成">已完成（${c("已完成")}）</option>
         <option value="已上片">已上片（${c("已上片")}）</option>
       </select>
-      <button class="btn sm" onclick="${isEditor?"newSimpleVideo()":"newVideo()"}">＋ 新增片源</button>
+      <button class="btn sm" onclick="newSimpleVideo()">＋ 新增片源</button>
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
   </div>`;
@@ -1540,12 +593,9 @@ function viewVideos(){
 function editVideo(id){
   const v = vid(id)||{};
   const s=STATE.settings||{};
-  const mains=s.mainTypes||["流量型","帶貨型","寵粉"];
   const sources=s.sources||["老闆自拍","外部公司"];
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   const stages=["待處理","剪輯中","已完成","已上片"];
-  const subOptions = (mt)=> (s.subTags?.[mt]||[]).map(t=>`<option value="${esc(t)}">`).join("");
-  const prodOptions = (STATE.products||[]).map(p=>`<option value="${esc(p.name)}">`).join("");
   showModal("編輯影片",`
     <label>原片</label><input id="e_raw" value="${esc(v.rawName||"")}">
     <label>成品名稱</label><input id="e_name" value="${esc(v.name||"")}">
@@ -1556,14 +606,10 @@ function editVideo(id){
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
-    <label>對應帶貨商品（帶貨型用，可空）</label><input id="e_prod" list="e_prod_list" value="${esc(v.productId||"")}" placeholder="輸入或選擇商品名稱"><datalist id="e_prod_list">${prodOptions}</datalist>
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
     </div>
-    ${id?`<div class="card" style="background:var(--panel2)"><b>⏱ 工時</b>
-      <p class="muted" style="margin:6px 0">領取 ${esc(v.claimedAt||"-")}　完成 ${esc(v.finishedAt||"-")}　耗時 <b>${v.claimedAt&&v.finishedAt?durationText(v.claimedAt,v.finishedAt):(v.durationMin!=null?minToText(v.durationMin):"-")}</b></p>
-    </div>`:""}
     ${id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>♻ 使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -1574,7 +620,6 @@ function editVideo(id){
     const video={rawName:val("e_raw"),name:val("e_name"),mainType,tags,subTag:tags[0]||"",
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
-      productId:val("e_prod").trim()||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal();
@@ -1582,120 +627,104 @@ function editVideo(id){
   });
 }
 
-// ---- 帶貨商品庫 ----
-function viewProd(){
-  const rows=(STATE.products||[]).map(p=>`<tr>
-    <td data-label="編號">${esc(p.id)}</td>
-    <td data-label="商品">${esc(p.name)} ${p.nickname?`<span class="muted">(${esc(p.nickname)})</span>`:""}</td>
-    <td data-label="價格">${esc(p.priceRange||"")}</td>
-    <td data-label="狀態"><span class="tag">${esc(p.status||"")}</span></td>
-    <td data-label="連結">${p.shoplineLink?`<a href="${esc(p.shoplineLink)}" target="_blank">SHOPLINE</a>`:""}</td>
-    <td data-label="">${`<button class="btn sm sec" onclick="editProd('${p.id}')">編輯</button>`}</td>
-  </tr>`).join("");
-  return `<h2>💎 帶貨商品庫</h2>
-  <div class="card"><div class="row" style="justify-content:flex-end"><button class="btn sm" onclick="editProd()">＋ 新增商品</button></div>
-  <table class="responsive"><thead><tr><th>編號</th><th>商品</th><th>價格</th><th>狀態</th><th>連結</th><th></th></tr></thead>
-  <tbody>${rows||`<tr><td class="muted">尚無商品</td></tr>`}</tbody></table></div>`;
-}
-function editProd(id){
-  const p = id?prod(id):{};
-  showModal(id?"編輯商品":"新增商品",`
-    <label>商品名稱</label><input id="p_name" value="${esc(p.name||"")}">
-    <label>內部簡稱</label><input id="p_nick" value="${esc(p.nickname||"")}">
-    <label>SHOPLINE 連結</label><input id="p_link" value="${esc(p.shoplineLink||"")}">
-    <label>關鍵字（逗號分隔）</label><input id="p_kw" value="${esc((p.keywords||[]).join(","))}">
-    <label>價錢範圍</label><input id="p_price" value="${esc(p.priceRange||"")}">
-    <label>雲端資料夾</label><input id="p_drive" value="${esc(p.driveFolder||"")}">
-    <label>發布文案</label><textarea id="p_copy">${esc(p.postCopy||"")}</textarea>
-    <label>狀態</label><select id="p_status"><option ${p.status==="可上架"?"selected":""}>可上架</option><option ${p.status==="待確認"?"selected":""}>待確認</option></select>
-  `, async ()=>{
-    const product={name:val("p_name"),nickname:val("p_nick"),shoplineLink:val("p_link"),
-      keywords:val("p_kw").split(",").map(x=>x.trim()).filter(Boolean),
-      priceRange:val("p_price"),driveFolder:val("p_drive"),postCopy:val("p_copy"),status:val("p_status")};
-    if(!product.name){ toast("請輸入商品名稱",true); return false; }
-    if(id) return await writeAdmin("PUT",`/api/products/${id}`,{product},"已更新商品");
-    return await write("POST","/api/products",{product},"已新增商品");
-  });
-}
-
-// ---- 設定（管理者） ----
-function setKpiToday(){ writeAdmin("PUT","/api/settings",{settings:{kpiStartDate:today}},"已把 KPI 起算日設為今天"); }
+// ===================================================================
+// ⚙️ 設定（管理員）
+// ===================================================================
 function viewSettings(){
   const s=STATE.settings||{};
-  const subStr = Object.entries(s.subTags||{}).map(([k,arr])=>`${k}:${(arr||[]).join("|")}`).join("\n");
-  const tt=s.typeTargets||{"流量型":3,"帶貨型":1};
-  const ft=s.fridayTargets||{"寵粉":5};
   return `<h2>⚙️ 設定</h2>
-  <div class="card"><div class="grid cols4">
-    <div><label>每日應上片數</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
-    <div><label>每位剪輯每日配額</label><input type="number" id="set_quota" value="${s.editorDailyQuota||3}"></div>
-    <div><label>新片片源低庫存門檻</label><input type="number" id="set_low" value="${s.materialLowThreshold||5}"></div>
+  <div class="card"><div class="grid cols2">
+    <div><label>每日應上片數（排滿基準）</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
     <div><label>預排天數視窗</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
   </div>
-  <label>平日 每日各類型最低數量（一～四、六、日）</label>
-  <div class="grid cols3">${(s.mainTypes||["流量型","帶貨型","寵粉"]).map(mt=>`<div><label style="margin-top:0">${esc(mt)}</label><input type="number" min="0" id="set_tt_${esc(mt)}" value="${tt[mt]||0}"></div>`).join("")}</div>
-  <label style="margin-top:10px">週五 特別配置（固定寵粉日）</label>
-  <div class="grid cols3">
-    <div><label style="margin-top:0">寵粉</label><input type="number" min="0" id="set_ft_寵粉" value="${ft["寵粉"]||5}"></div>
-  </div></div>
-  <label>KPI 起算日（超前/落後從這天開始算，建議設成正式上線那天）</label>
-  <div class="row"><input type="date" id="set_kpistart" value="${esc(s.kpiStartDate||"")}" style="max-width:200px">
-    <button class="btn sm sec" onclick="setKpiToday()">設為今天</button></div>
-  <p class="muted">應完成只計算「已過完」的工作日（不含今天）。把起算日設成今天，所有人就會從 0/0 達標開始累積。</p></div>
-  <details class="card"><summary style="cursor:pointer;font-weight:700">🛠 進階設定（類別／標籤／片源／語言／平台，少用才需要動）</summary>
-    <div style="margin-top:10px">
-      <div style="margin-bottom:10px"><b>主類別</b>（逗號分隔）
-        <input id="set_main" value="${esc((s.mainTypes||[]).join(","))}"></div>
-      <div style="margin-bottom:10px"><b>子標籤</b>（每行一個主類別，格式 主類別:標籤1|標籤2）
-        <textarea id="set_sub">${esc(subStr)}</textarea></div>
-      <div style="margin-bottom:10px"><b>片源</b>（逗號分隔）
-        <input id="set_src" value="${esc((s.sources||[]).join(","))}"></div>
-      <div style="margin-bottom:10px"><b>語言（二創）</b>（逗號分隔，zh 為母版）
-        <input id="set_langs" value="${esc((s.languages||[]).join(","))}"></div>
-      <div style="margin-bottom:10px"><b>平台清單</b>
-        <input id="set_plat" value="${esc((STATE.platforms||[]).join(","))}"></div>
-      <div><b>異地備份資料夾</b>（選填）
-        <input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}"></div>
-    </div>
-  </details>
-  <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>`;
+  <p class="muted" style="font-size:12px;margin-top:8px">月排程以「每日應上片數」判斷某天是否排滿；預排視窗是要往後排幾天。</p>
+  <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div></div>`;
 }
 async function saveSettings(){
-  const subTags={};
-  val("set_sub").split("\n").forEach(line=>{
-    const i=line.indexOf(":"); if(i<0) return;
-    const k=line.slice(0,i).trim(); const arr=line.slice(i+1).split("|").map(x=>x.trim()).filter(Boolean);
-    if(k) subTags[k]=arr;
+  const settings={ dailyPublishTarget:parseInt(val("set_pub"))||4, scheduleHorizonDays:parseInt(val("set_horizon"))||30 };
+  await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
+}
+
+// ===================================================================
+// 👥 成員管理（限管理員）
+// ===================================================================
+function viewMembers(){
+  const users=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const rows=users.map(u=>`<tr>
+    <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
+      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
+  </tr>`).join("");
+  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
+  <div class="card"><b>剪輯成員（${users.length}）</b>
+    <table class="responsive"><thead><tr><th>名字</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+  </div>
+  <div class="card"><b>新增剪輯</b>
+    <div class="row" style="gap:8px;margin-top:8px"><input id="mb_name" placeholder="名字" style="flex:1;min-width:150px">
+      <button class="btn" onclick="addMember()">新增</button></div>
+  </div>
+  <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
+    <p class="muted">清空資料不影響成員與設定，正式上線前用來清掉測試資料。</p>
+    <div class="row">
+      <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片與排程</button>
+      <button class="btn danger" onclick="clearAllData()">🧹 清空全部營運資料</button>
+    </div>
+  </div>`;
+}
+function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
+  write("POST","/api/users",{name,role:"editor"},"已新增剪輯"); }
+function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
+  writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
+function renameMember(oldName){
+  const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
+  const nn=input.trim(); if(!nn || nn===oldName) return;
+  if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }
+  withAdmin(async ()=>{
+    BULK_BUSY=true; let vc=0;
+    try{
+      const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
+      await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
+      for(const v of (STATE.videos||[])){ const patch={}; let t=false;
+        if(v.editor===oldName){ patch.editor=nn; t=true; } if(v.claimedBy===oldName){ patch.claimedBy=nn; t=true; }
+        if(t){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} } }
+      await window.DB.del("users", oldName);
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
   });
-  const mainTypes=val("set_main").split(",").map(x=>x.trim()).filter(Boolean);
-  const typeTargets={}; mainTypes.forEach(mt=>{ const e=document.getElementById("set_tt_"+mt); if(e) typeTargets[mt]=parseInt(e.value)||0; });
-  const fridayTargets={"寵粉":parseInt(val("set_ft_寵粉"))||0};
-  const settings={
-    fridayTargets,
-    dailyPublishTarget:parseInt(val("set_pub"))||4,
-    editorDailyQuota:parseInt(val("set_quota"))||3,
-    scheduleHorizonDays:parseInt(val("set_horizon"))||30,
-    materialLowThreshold:parseInt(val("set_low"))||5,
-    kpiStartDate:val("set_kpistart")||undefined,
-    mainTypes, typeTargets,
-    subTags,
-    sources:val("set_src").split(",").map(x=>x.trim()).filter(Boolean),
-    languages:val("set_langs").split(",").map(x=>x.trim()).filter(Boolean),
-    platforms:val("set_plat").split(",").map(x=>x.trim()).filter(Boolean),
-    offsiteBackupDir:val("set_offsite")
-  };
-  const pw=val("set_pw"); if(pw) settings.adminPassword=pw;
-  withAdmin(async (adminPassword)=>{
-    await writeAdminPw("PUT","/api/settings",{settings,adminPassword},"已更新設定");
+}
+// 清空全部營運資料：影片/排程/舊匯報/舊交辦/商品（保留成員與設定）
+async function clearAllData(){
+  if(!confirm("確定清空『全部營運資料』？\n包含：影片、排程、舊的每日匯報與交辦訊息、商品。\n保留：成員與設定。\n此動作無法復原！")) return;
+  if(!confirm("再次確認：真的要清空所有測試資料嗎？")) return;
+  await withAdmin(async ()=>{
+    BULK_BUSY=true; let n=0;
+    const wipe=async (coll, ids)=>{ for(const id of ids){ try{ await window.DB.del(coll, id); n++; }catch(e){} } };
+    try{
+      await wipe("videos", (STATE.videos||[]).map(v=>v.id));
+      await wipe("schedule", Object.keys(STATE.schedule||{}));
+      await wipe("reports", (STATE.reports||[]).map(r=>r.id).filter(Boolean));
+      await wipe("messages", (STATE.messages||[]).map(m=>m.id).filter(Boolean));
+      await wipe("products", (STATE.products||[]).map(p=>p.id||p.name).filter(Boolean));
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(400); toast("已清空全部營運資料，共 "+n+" 筆（成員與設定已保留）");
+  });
+}
+async function clearAllVideos(){
+  if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
+  await withAdmin(async ()=>{
+    const vids=(STATE.videos||[]).slice(); const dates=Object.keys(STATE.schedule||{});
+    let n=0; BULK_BUSY=true;
+    try{
+      for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
+      for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
+    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await delay(300); toast("已清空 "+n+" 支影片與排程");
   });
 }
 
 // ===================================================================
-// 管理者寫入輔助
-// ===================================================================
-
-// ===================================================================
-// 彈窗 / 小工具
+// 彈窗
 // ===================================================================
 function showModal(title, inner, onConfirm, confirmLabel){
   const root=document.getElementById("modalRoot");
@@ -1709,281 +738,3 @@ function showModal(title, inner, onConfirm, confirmLabel){
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
 function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
-
-// ===================================================================
-// 成員管理（只有 owner，預設 Vito 看得到此頁）
-// ===================================================================
-const ROLE_TOKENS=[["boss","管理員"],["hr","人資"],["editor:zh","剪輯"]];
-function userToken(u){ return u.role==="boss"?"boss":(u.role==="hr"?"hr":"editor:zh"); }
-function viewMembers(){
-  const users=STATE.users||[];
-  const defQ=STATE.settings?.editorDailyQuota||3;
-  const rows=users.map(u=>`<tr>
-    <td data-label="名字"><b>${esc(u.name)}</b></td>
-    <td data-label="角色">
-      <select onchange="changeRole('${esc(u.name)}',this.value)">
-        ${ROLE_TOKENS.map(([tk,lb])=>`<option value="${tk}" ${userToken(u)===tk?"selected":""}>${lb}</option>`).join("")}
-      </select></td>
-    <td data-label="每日KPI"><input type="number" min="0" style="width:70px" value="${u.dailyQuota||defQ}" onchange="changeQuota('${esc(u.name)}',this.value)"> 片</td>
-    <td data-label="密碼">${u.role==="hr"?'<span class="muted">免密碼（檢核）</span>':`<code style="background:var(--panel2);padding:2px 6px;border-radius:5px">${esc(u.pin||"0000")}</code>${u.pin?'':'<span class="muted" style="font-size:11px"> 預設</span>'} <button class="btn sm sec" onclick="setMemberPin('${esc(u.name)}')">重設</button>`}</td>
-    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
-      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
-  </tr>`).join("");
-  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
-  <div class="card"><b>現有成員（${users.length}）</b>
-    <table class="responsive"><thead><tr><th>名字</th><th>角色／語言</th><th>每日KPI</th><th>密碼</th><th></th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <div class="row" style="justify-content:space-between"><p class="muted" style="margin:0">成員以「自己的密碼」登入：先在這裡幫每人「設定密碼」發給本人，之後他可在自己儀表板按「🔑 改密碼」修改。改角色／KPI／密碼／刪除需管理密碼。</p>
-      <div class="row" style="gap:6px"><button class="btn sec sm" onclick="setAllPin()">🔑 全部成員設統一密碼</button>
-        <button class="btn sec sm" onclick="setAllQuota(3)">全部剪輯 KPI 設為 3</button></div></div>
-  </div>
-  <div class="card"><b>新增單一成員</b>
-    <div class="grid cols4">
-      <div><label>名字</label><input id="mb_name"></div>
-      <div><label>角色／語言</label><select id="mb_role">${ROLE_TOKENS.map(([tk,lb])=>`<option value="${tk}" ${tk==="editor:zh"?"selected":""}>${lb}</option>`).join("")}</select></div>
-      <div><label>每日KPI支數</label><input id="mb_quota" type="number" min="0" value="${defQ}"></div>
-      <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addMember()">新增</button></div>
-    </div>
-  </div>
-  <div class="card"><b>匯入舊 Excel 工作</b>
-    <p class="muted">把之前 Google 試算表的影片工作（共 ${ (window.LEGACY_SEED||[]).length } 筆，皆含 Drive 備份連結）一次匯入影片庫。已完成的會帶上片日期、顯示在月行事曆。</p>
-    <button class="btn" onclick="importLegacy()">📥 匯入舊工作（${ (window.LEGACY_SEED||[]).length } 筆）</button>
-  </div>
-  <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
-    <p class="muted">載入模擬資料供展示（前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘）；或清空資料。皆<b>不影響成員與設定</b>。</p>
-    <div class="row">
-      <button class="btn sec" onclick="loadDemoData()">🧪 載入模擬資料</button>
-      <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片</button>
-      <button class="btn danger" onclick="clearAllData()">🧹 清空全部營運資料</button>
-    </div>
-    <p class="muted" style="font-size:12px;margin-top:6px">「清空全部營運資料」會刪除：影片、排程、每日匯報、交辦訊息、商品（保留成員與設定），正式上線前用來清掉測試資料。</p>
-  </div>`;
-}
-// 清空全部營運資料：影片/排程/匯報/交辦/商品（保留成員與設定）
-async function clearAllData(){
-  if(!confirm("確定清空『全部營運資料』？\n包含：影片、排程、每日匯報、交辦訊息、商品。\n保留：成員與設定。\n此動作無法復原！")) return;
-  if(!confirm("再次確認：真的要清空所有測試資料嗎？")) return;
-  await withAdmin(async ()=>{
-    BULK_BUSY=true; let n=0;
-    const wipe=async (coll, ids)=>{ for(const id of ids){ try{ await window.DB.del(coll, id); n++; }catch(e){} } };
-    try{
-      await wipe("videos", (STATE.videos||[]).map(v=>v.id));
-      await wipe("schedule", Object.keys(STATE.schedule||{}));
-      await wipe("reports", (STATE.reports||[]).map(r=>r.id).filter(Boolean));
-      await wipe("messages", (STATE.messages||[]).map(m=>m.id).filter(Boolean));
-      await wipe("tasks", (STATE.tasks||[]).map(t=>t.id).filter(Boolean));
-      await wipe("products", (STATE.products||[]).map(p=>p.id||p.name).filter(Boolean));
-      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空全部營運資料("+n+"筆)"}); }catch(e){}
-    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(400); toast("已清空全部營運資料，共 "+n+" 筆（成員與設定已保留）");
-  });
-}
-async function clearAllVideos(){
-  if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
-  await withAdmin(async ()=>{
-    const vids=(STATE.videos||[]).slice(); const dates=Object.keys(STATE.schedule||{});
-    let n=0; BULK_BUSY=true;
-    try{
-      for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
-      for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
-      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"清空所有影片("+n+")"}); }catch(e){}
-    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast("已清空 "+n+" 支影片與排程");
-  });
-}
-// 批次建立影片：本地遞增 ID（避免連續寫入時 nextId 撞號），直接寫 Firestore
-async function bulkCreateVideos(list){
-  let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
-  let ok=0; BULK_BUSY=true;
-  try{
-    for(let i=0;i<list.length;i++){
-      const id="V"+String(base+i+1).padStart(3,"0");
-      const rec=Object.assign(newVideoRecord(list[i]), {id});
-      if(rec.editor) rec.languages.zh.editor=rec.editor;
-      try{ await window.DB.set("videos", id, rec); ok++; }catch(e){}
-    }
-    try{ if(window.DB&&window.DB.addAudit) await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"批次建立影片("+ok+")"}); }catch(e){}
-  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  return ok;
-}
-async function importLegacy(){
-  const seed=window.LEGACY_SEED||[];
-  if(!seed.length){ toast("找不到匯入資料",true); return; }
-  if(!confirm("將匯入 "+seed.length+" 筆舊工作到影片庫，確定？")) return;
-  const list=seed.map(r0=>{ const r=Object.assign({}, r0); delete r.enDrive; delete r.thDrive; return r; });
-  const ok=await bulkCreateVideos(list);
-  await delay(400); toast("匯入完成：成功 "+ok+" 筆。請到影片庫／月排程查看");
-}
-// 完整模擬資料：前後各約兩個月、每日≥4片、含片名/剪輯/成效、週五六寵粉、各人不均
-const DEMO_TRAFFIC=["劉亦菲紅毯1.2億珠寶竟是假的","八大珠寶派系你是哪一派","有錢人的保值密碼","真假寶石30秒分辨","婚戒避坑指南","名人最愛的冷門寶石","女人的底氣從哪來","黃金跟你的原始階層有關","為什麼貴婦都戴這款","珠寶商不告訴你的秘密","古董珠寶的真實價值","這顆鑽石為何值千萬","明星同款的平價替代","寶石顏色的等級秘密","收藏級翡翠長這樣"];
-const DEMO_SALES=["寵粉金運球開箱","本月新品鑽石項鍊","限時促銷紅寶石戒","母親節必買套組","招財貔貅手鍊","結婚對戒推薦","送禮自用兩相宜","週年慶下殺三折","新品試戴實拍","熱銷耳環補貨到"];
-const DEMO_PAMPER=["寵粉日五行法寶","寵粉專屬金運球","寵粉社群限定款","寵粉週末驚喜價","寵粉回饋開箱"];
-async function loadDemoData(){
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const allEd=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const eds = editors.length?editors:allEd;
-  if(!eds.length){ toast("請先建立至少一位剪輯成員再載入模擬資料",true); return; }
-  if(!confirm("載入完整模擬資料？前後各約兩個月、每日≥4片，約 500+ 筆，可能要 1 分鐘。")) return;
-  const T=new Date(today+"T00:00:00");
-  // 把 KPI 起算日設為本月初，模擬才看得到累積落後（否則被設成今天會全是 0/0）
-  try{ await window.DB.setSettings({kpiStartDate: new Date(T.getFullYear(),T.getMonth(),1).toISOString().slice(0,10),
-    typeTargets:{"流量型":3,"帶貨型":1}, fridayTargets:{"寵粉":5}}); }catch(e){}
-  const dOff=n=>{ const x=new Date(T); x.setDate(T.getDate()+n); return x; };
-  const ds=x=>x.toISOString().slice(0,10);
-  const at=(x,h)=>{ const y=new Date(x); y.setHours(h,Math.floor(Math.random()*60),0,0); return y.toISOString().slice(0,19); };
-  const srcs=STATE.settings?.sources||["老闆自拍","外部公司"];
-  const pick=a=>a[Math.floor(Math.random()*a.length)];
-  // 依活躍度分配：排序讓有 KPI 的剪輯在前（第1位最活躍≈接近達標，最後一位長期落後）
-  const base = eds.slice().sort((a,b)=> (userQuota(b.name)>0?1:0)-(userQuota(a.name)>0?1:0));
-  // 活躍度權重：第1位接近達標、之後遞減，最後一位長期落後（每天總量固定＝目標，不會塞爆某人）
-  const actW=base.map((u,i)=>[0.46,0.26,0.16,0.08,0.03,0.01][i] ?? 0.01);
-  const actTot=actW.reduce((a,b)=>a+b,0);
-  const pickEditor=()=>{ let r=Math.random()*actTot; for(let i=0;i<base.length;i++){ r-=actW[i]; if(r<=0) return base[i].name; } return base[base.length-1].name; };
-  let seq=0;
-  const mkVideo=(d, kind, editor)=>{ seq++;
-    let mainType, subTag, name;
-    if(kind==="pamper"){ mainType="帶貨型"; subTag="寵粉"; name=pick(DEMO_PAMPER); }
-    else if(kind==="sales"){ mainType="帶貨型"; subTag=pick(["新品","促銷","開箱"]); name=pick(DEMO_SALES); }
-    else { mainType="流量型"; subTag=pick(["名人話題","珠寶知識","家庭","理財"]); name=pick(DEMO_TRAFFIC); }
-    const past = d < T;
-    return {demo:true, rawName:name, name:name+"（"+ds(d).slice(5)+"）", mainType, subTag, pampered:kind==="pamper",
-      source:pick(srcs), editor:editor||"", stage:"已完成", scheduledDate:ds(d),
-      claimedAt:(past&&editor)?at(d,8):"",
-      finishedAt:at(d, 9+Math.floor(Math.random()*9)),
-      durationMin:20+Math.floor(Math.random()*1200),
-      ctr:+(2+Math.random()*10).toFixed(1), completionRate:30+Math.floor(Math.random()*55),
-      driveFolder:"https://drive.google.com/demo/"+seq, publishedLink:"https://ig.example/p/"+seq, socialLink:"https://buffer.example/"+seq};
-  };
-  const recs=[];
-  // 平日 流量3/帶貨1；週五 流量2/寵粉3（依當日類型目標產生）
-  const dayKinds=(d)=>{ const tg=dayTargets(d.toISOString().slice(0,10)); const k=[];
-    for(let i=0;i<(tg["流量型"]||0);i++) k.push("traffic");
-    for(let i=0;i<(tg["帶貨型"]||0);i++) k.push("sales");
-    for(let i=0;i<(tg["寵粉"]||0);i++) k.push("pamper");
-    return k; };
-  const genDay=(d)=>{ dayKinds(d).forEach(k=> recs.push(mkVideo(d,k,pickEditor()))); };
-  // 過去兩個月＋今天：每天就 target 片（歷史）
-  for(let n=-60;n<=0;n++) genDay(dOff(n));
-  // 未來：往後排（多數天有排，少數留缺口待補）— 安全天數自然形成
-  for(let n=1;n<=60;n++){ if(Math.random()<0.7) genDay(dOff(n)); }
-  // 工作台池：待處理(刻意<5觸發片源警示) + 剪輯中
-  for(let k=0;k<3;k++){ seq++; recs.push({demo:true, rawName:pick(DEMO_TRAFFIC), name:pick(DEMO_TRAFFIC)+" 待剪#"+seq, mainType:"流量型", source:pick(srcs), stage:"待處理"}); }
-  base.slice(0,3).forEach(u=>{ seq++; recs.push({demo:true, rawName:pick(DEMO_SALES), name:pick(DEMO_SALES)+" 製作中#"+seq, mainType:"帶貨型", source:pick(srcs), editor:u.name, claimedBy:u.name, stage:"剪輯中", claimedAt:at(dOff(0),8)}); });
-  // 特別工作備註（示範）：剪片數自動計入，這裡只是少數天有「特別／額外工作」才補充
-  const reportRecs=[];
-  const NOTES=["製作 7 張粉專圖片（AI 文字自行修正）","與外部公司對接 2 支新片需求","協助拍攝寵粉商品圖","設計本週縮圖","開會討論下週腳本","回覆客戶私訊、整理素材"];
-  base.forEach(u=>{ for(let n=-14;n<=0;n++){ if(Math.random()<0.35){ const d=dOff(n); const dstr=ds(d);
-    const note=pick(NOTES);
-    reportRecs.push({demo:true, id:u.name+"__"+dstr, user:u.name, date:dstr, content:note, done:true}); } } });
-  BULK_BUSY=true;
-  for(const rr of reportRecs){ try{ await window.DB.set("reports", rr.id, rr); }catch(e){} }
-  BULK_BUSY=false;
-  const ok=await bulkCreateVideos(recs);
-  await delay(500); toast("已載入完整模擬資料 "+ok+" 筆，請看總覽／月排程／我的儀表板");
-}
-function tokenToRL(tk){ const [role,lang]=String(tk||"editor:zh").split(":"); return {role, lang: role==="editor"?(lang||"zh"):"all"}; }
-async function addMember(){ const name=val("mb_name").trim(); const rl=tokenToRL(val("mb_role")); const dailyQuota=parseInt(val("mb_quota"))||0;
-  if(!name){ toast("請輸入名字",true); return; }
-  await write("POST","/api/users",{name,role:rl.role,lang:rl.lang,dailyQuota},"已新增成員"); }
-function changeRole(name,token){ const rl=tokenToRL(token); writeAdmin("PUT","/api/users/"+name,{role:rl.role,lang:rl.lang},"已更新角色／語言"); }
-function changeQuota(name,q){ writeAdmin("PUT","/api/users/"+name,{dailyQuota:parseInt(q)||0},"已更新每日 KPI"); }
-function setAllQuota(n){ if(!confirm("將『所有剪輯』的每日KPI都設為 "+n+"？")) return;
-  withAdmin(async()=>{ const eds=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor"); let c=0; BULK_BUSY=true;
-    try{ for(const u of eds){ try{ await window.DB.update("users",u.name,{dailyQuota:n}); c++; }catch(e){} } }
-    finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast("已將 "+c+" 位剪輯的每日KPI設為 "+n); }); }
-function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
-  writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
-// 成員改名：同步更新名下影片／匯報／工作的參照（限管理員）
-function renameMember(oldName){
-  const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
-  const nn=input.trim(); if(!nn || nn===oldName) return;
-  if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }
-  withAdmin(async ()=>{
-    BULK_BUSY=true; let vc=0,rc=0,tc=0;
-    try{
-      const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
-      await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
-      for(const v of (STATE.videos||[])){
-        const patch={}; let touched=false;
-        if(v.editor===oldName){ patch.editor=nn; touched=true; }
-        if(v.claimedBy===oldName){ patch.claimedBy=nn; touched=true; }
-        if(v.languages){ const L=JSON.parse(JSON.stringify(v.languages)); let lt=false;
-          for(const lg of Object.keys(L)){ if(L[lg]&&L[lg].editor===oldName){ L[lg].editor=nn; lt=true; }
-            if(L[lg]&&L[lg].claimedBy===oldName){ L[lg].claimedBy=nn; lt=true; } }
-          if(lt){ patch.languages=L; touched=true; } }
-        if(touched){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} }
-      }
-      for(const r of (STATE.reports||[])){ if(r.user===oldName){ const nid=nn+"__"+r.date;
-        try{ await window.DB.set("reports", nid, Object.assign({}, r, {id:nid, user:nn})); await window.DB.del("reports", r.id); rc++; }catch(e){} } }
-      for(const t of (STATE.tasks||[])){ if(t.user===oldName && t.id){ try{ await window.DB.update("tasks", t.id, {user:nn}); tc++; }catch(e){} } }
-      await window.DB.del("users", oldName);
-      try{ await window.DB.addAudit({ts:nowIso(),user:currentUser(),deviceId:deviceId(),action:"成員改名 "+oldName+"→"+nn+"（影片"+vc+"・匯報"+rc+"）"}); }catch(e){}
-    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+"、匯報 "+rc+" 筆同步）");
-  });
-}
-
-// ===================================================================
-// 稽核紀錄（只有 owner 看得到）：誰、哪台裝置、做了什麼
-// ===================================================================
-let AUDIT=null;
-async function loadAudit(){ try{ AUDIT = (window.DB&&window.DB.recentAudit)? await window.DB.recentAudit(300) : []; }catch(e){ AUDIT=[]; } render(); }
-function humanAction(a){
-  const m=(a.action||""); const seg=m.split(" ")[1]||""; const p=seg.split("/").filter(Boolean).slice(1);
-  const id=p[1]||""; const act=p[2]||"";
-  if(p[0]==="videos"){ if(m.startsWith("POST /api/videos ")||(p.length===1&&m.startsWith("POST"))) return "新增影片";
-    if(act==="claim") return "認領影片 "+id; if(act==="assign") return "指派影片 "+id;
-    if(act==="finish") return "完成影片 "+id; if(act==="help") return "求支援 "+id;
-    if(act==="lang") return "更新二創 "+id; if(m.startsWith("PUT")) return "編輯影片 "+id;
-    if(m.startsWith("DELETE")) return "刪除影片 "+id; return "影片 "+id; }
-  if(p[0]==="schedule"){ if(act==="publish") return "上架 "+(p[1]||""); if(act==="slot"&&m.startsWith("POST")) return "排入影片 "+(p[1]||"");
-    if(act==="slot"&&m.startsWith("DELETE")) return "移除排片 "+(p[1]||""); return "排程 "+(p[1]||""); }
-  if(p[0]==="products"){ if(m.startsWith("POST")) return "新增商品"; if(m.startsWith("PUT")) return "編輯商品 "+id; if(m.startsWith("DELETE")) return "刪除商品 "+id; }
-  if(p[0]==="users"){ if(m.startsWith("POST")) return "新增成員"; if(m.startsWith("PUT")) return "改成員角色 "+id; if(m.startsWith("DELETE")) return "刪除成員 "+id; }
-  if(p[0]==="settings") return "變更設定";
-  return m;
-}
-function viewAudit(){
-  if(!AUDIT){ loadAudit(); return `<h2>🛡 稽核紀錄</h2><p class="muted">載入中…</p>`; }
-  // 同一裝置用過哪些名字（>1 即標記）
-  const byDev={}; AUDIT.forEach(a=>{ (byDev[a.deviceId]=byDev[a.deviceId]||new Set()).add(a.user); });
-  const shared=Object.entries(byDev).filter(([d,s])=>s.size>1);
-  const sharedHtml = shared.length
-    ? shared.map(([d,s])=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0">
-        <span class="neg">⚠ 同一台裝置出現多個身分</span>
-        <span>${[...s].map(esc).join("、")} <span class="muted">(${esc((d||"").slice(0,12))}…)</span></span></div>`).join("")
-    : `<p class="pill ok">✅ 沒有發現同一裝置跨身分操作</p>`;
-  const users=[...new Set(AUDIT.map(a=>a.user).filter(Boolean))].sort();
-  const initRows=AUDIT.slice(0,250).map(auditRow).join("");
-  return `<h2>🛡 檢核紀錄 <span class="muted" style="font-size:13px">最近 ${AUDIT.length} 筆　<a href="javascript:void(0)" onclick="loadAudit()">🔄重新整理</a></span></h2>
-  <div class="card"><b>裝置／身分檢查</b>
-    <p class="muted">每台裝置（瀏覽器）第一次使用會有固定代碼。若同一台裝置用了不同人的名字去操作，就會在這裡標紅——代表可能有人登了別人的帳號。</p>
-    ${sharedHtml}
-  </div>
-  <div class="card"><b>操作明細</b>
-    <div class="row" style="gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center">
-      <select id="aud_user" onchange="auditFilter()"><option value="all">全部操作者</option>${users.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("")}</select>
-      <input type="date" id="aud_date" onchange="auditFilter()" style="max-width:170px">
-      <button class="btn sm sec" onclick="clearAuditFilter()">清除</button>
-      <span id="aud_count" class="muted" style="font-size:12px">共 ${AUDIT.length} 筆</span>
-    </div>
-    <table class="responsive"><thead><tr><th>時間</th><th>操作者</th><th>裝置</th><th>動作</th></tr></thead>
-    <tbody id="aud_body">${initRows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table>
-  </div>`;
-}
-function auditRow(a){ return `<tr>
-    <td data-label="時間">${esc((a.ts||"").replace("T"," "))}</td>
-    <td data-label="操作者"><b>${esc(a.user)}</b></td>
-    <td data-label="裝置"><span class="muted">${esc((a.deviceId||"").slice(0,12))}</span></td>
-    <td data-label="動作">${esc(humanAction(a))}</td>
-  </tr>`; }
-function auditFilter(){
-  const u=document.getElementById('aud_user')?.value||'all';
-  const d=document.getElementById('aud_date')?.value||'';
-  const list=(AUDIT||[]).filter(a=>(u==='all'||a.user===u) && (!d||String(a.ts||'').slice(0,10)===d));
-  const body=document.getElementById('aud_body');
-  if(body) body.innerHTML = list.length? list.slice(0,250).map(auditRow).join('') : '<tr><td class="muted">沒有符合的紀錄</td></tr>';
-  const c=document.getElementById('aud_count'); if(c) c.textContent='符合 '+list.length+' 筆'+(list.length>250?'（顯示前 250）':'');
-}
-function clearAuditFilter(){ const u=document.getElementById('aud_user'); if(u)u.value='all'; const d=document.getElementById('aud_date'); if(d)d.value=''; auditFilter(); }
