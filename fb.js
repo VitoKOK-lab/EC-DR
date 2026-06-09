@@ -25,6 +25,12 @@ const DEFAULT_SETTINGS = {
     3:{"流量型":3,"帶貨型":1,"寵粉":0}, 4:{"流量型":3,"帶貨型":1,"寵粉":0}, 5:{"流量型":3,"帶貨型":1,"寵粉":0},
     6:{"流量型":3,"帶貨型":1,"寵粉":0} },
   sources: ["老闆自拍", "外部公司"],
+  // 投放平台（顯示名稱 + utm 代號）：UTM 同一個 campaign、用 source 分平台
+  postPlatforms: [
+    { name: "ig666",    utm: "ig666" },
+    { name: "LINE社群",  utm: "line" },
+    { name: "fb粉專",    utm: "fb" }
+  ],
   languages: ["zh"],
   dailyPublishTarget: 4,
   editorDailyQuota: 3,
@@ -94,6 +100,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       }
       if (!cur.weekdayTargets || typeof cur.weekdayTargets !== "object") {
         await setDoc(sref, { weekdayTargets: DEFAULT_SETTINGS.weekdayTargets }, { merge: true });
+      }
+      if (!Array.isArray(cur.postPlatforms) || !cur.postPlatforms.length) {
+        await setDoc(sref, { postPlatforms: DEFAULT_SETTINGS.postPlatforms }, { merge: true });
       }
     }
 
