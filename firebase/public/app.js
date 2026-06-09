@@ -64,7 +64,27 @@ function dayVideoList(date){
   return out;
 }
 function dayScheduledCount(date){ return dayVideoList(date).length; }
-function dayTarget(){ return STATE.settings?.dailyPublishTarget||4; }
+// 每天上片目標：依「星期幾」設定 流量／帶貨／寵粉 各幾支（不分平假日）
+const TYPE_ORDER=["流量型","帶貨型","寵粉"];
+const TYPE_SHORT={"流量型":"流量","帶貨型":"帶貨","寵粉":"寵粉"};
+const WD_ORDER=[1,2,3,4,5,6,0]; const WD_LABEL={0:"日",1:"一",2:"二",3:"三",4:"四",5:"五",6:"六"};
+function defaultWeekdayTargets(){ const o={}; for(let d=0;d<7;d++) o[d]={"流量型":3,"帶貨型":1,"寵粉":0}; return o; }
+function weekdayTargets(){ const w=STATE.settings&&STATE.settings.weekdayTargets; return (w&&typeof w==="object")?w:defaultWeekdayTargets(); }
+function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay(); const w=weekdayTargets(); const t=w[wd]||w[String(wd)]||{};
+  return {"流量型":+t["流量型"]||0,"帶貨型":+t["帶貨型"]||0,"寵粉":+t["寵粉"]||0}; }
+function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["帶貨型"]||0)+(t["寵粉"]||0); }
+// 影片歸類：寵粉 > 帶貨型 > 流量型
+function videoTypeOf(v){ if(!v) return "流量型"; const tags=Array.isArray(v.tags)?v.tags:[];
+  if(v.mainType==="寵粉"||tags.includes("寵粉")||String(v.subTag||"").includes("寵粉")) return "寵粉";
+  if(v.mainType==="帶貨型"||tags.some(t=>["帶貨","代理"].includes(t))) return "帶貨型";
+  return "流量型"; }
+// 某天已排各類型數量、缺口、是否排滿
+function dayBreakdown(date){ const list=dayVideoList(date); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
+  list.forEach(it=>{ cnt[videoTypeOf(vid(it.videoId))]++; });
+  const tg=dayTargets(date); const deficits={};
+  TYPE_ORDER.forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
+  const target=daySum(date), total=list.length;
+  return {total, target, byType:cnt, deficits, tg, full:Object.keys(deficits).length===0 && total>=target}; }
 // 我目前進行中的影片數
 function inProgressCount(name){ return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length; }
 function myInProgressCount(){ return inProgressCount(currentUser()); }
@@ -170,18 +190,15 @@ function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); re
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW); }
 // 登出：顯示隨機可愛動畫，三秒後回登入頁
 function logout(){ showGoodbye(); }
-const GOODBYE_SCENES=[
-  {e:"🐱",a:"gbounce"}, {e:"🐶",a:"gwag"}, {e:"🤖",a:"gfloat"},
-  {e:"🐰",a:"ghop"}, {e:"🐻",a:"gsway"}, {e:"🐧",a:"gwaddle"} ];
+// 登出：簡單說再見 → 跳回登入頁（無動畫）
 function showGoodbye(){
   localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
   CUR_TAB=null; try{ closeModal(); }catch(e){}
-  const s=GOODBYE_SCENES[Math.floor(Math.random()*GOODBYE_SCENES.length)];
-  const st=document.getElementById("gstage"); if(st) st.innerHTML=`<span class="gemoji ${s.a}">${s.e}</span><span class="gwave">👋</span>`;
+  const st=document.getElementById("gstage"); if(st) st.innerHTML=`<span style="font-size:64px">👋</span>`;
   document.getElementById("app")?.classList.add("hidden");
   document.getElementById("login")?.classList.add("hidden");
   document.getElementById("goodbye")?.classList.add("show");
-  setTimeout(reLogin, 3000);
+  setTimeout(reLogin, 1200);
 }
 function reLogin(){ location.reload(); }
 
@@ -241,7 +258,6 @@ function viewCal(){
   if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
   const [y,m] = CAL_YM;
   const first = new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
-  const target = dayTarget();
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
@@ -250,13 +266,14 @@ function viewCal(){
     const isToday = ds===today;
     const tmk = isToday?`<span class="todaymk">今天</span>`:"";
     const within10 = ds>=today && ds<=d10s;
-    const cnt = dayScheduledCount(ds);
-    const filled = cnt>=Math.max(1,target);
+    const b = dayBreakdown(ds);
+    const filled = b.full;
     const cls = filled ? "filled" : (within10 ? "bad urgent" : "blank");
+    const defTxt=Object.keys(b.deficits).map(k=>(TYPE_SHORT[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${cnt||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${cnt?("/"+target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:"")}
+      <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
+      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:""))}
     </div>`;
   }
   return `
@@ -271,13 +288,12 @@ function viewCal(){
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:12px;font-size:13px"><b style="color:var(--green)">綠</b>=已排滿（${target} 片）、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">紅</b>=10 天內還沒排好。點任一天可<b>改上片日期</b>或<b>排舊片重播</b>。</p>
+    <p class="muted" style="margin-top:12px;font-size:13px">每天目標依「星期幾」在<b>設定</b>調整（流量／帶貨／寵粉）。<b style="color:var(--green)">綠</b>=已排滿、<b style="color:#888">灰</b>=尚未排、<b style="color:var(--red)">紅</b>=10 天內沒排好或某類型不足。點任一天可<b>改上片日期</b>或<b>排舊片重播</b>。</p>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
 
 function openDay(ds){
-  const target = dayTarget();
   const list = dayVideoList(ds);
   const rows = list.map((it)=>{
     const v = vid(it.videoId);
@@ -311,8 +327,11 @@ function openDay(ds){
       <input id="od_link" placeholder="社群連結（可後補）" style="margin-top:6px">`
       : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。新片需滿 45 天才能重播。</p>`}
   </div>`;
-  const cnt = list.length;
-  const summary = `<div class="row" style="gap:8px;margin-bottom:8px"><span class="pill ${cnt>=target?'ok':'em'}">總量 ${cnt}/${target}</span></div>`;
+  const b = dayBreakdown(ds);
+  const summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
+    TYPE_ORDER.filter(k=>(b.tg[k]||0)>0||(b.byType[k]||0)>0).map(k=>{ const ok=(b.byType[k]||0)>=(b.tg[k]||0);
+      return `<span class="pill ${ok?'ok':'em'}">${k} ${b.byType[k]||0}/${b.tg[k]||0}</span>`; }).join("")+
+    `<span class="pill ${b.total>=b.target?'ok':'em'}">總量 ${b.total}/${b.target}</span></div>`;
   showModal(`📅 ${ds}（${weekdayZh(ds)}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
@@ -346,14 +365,13 @@ function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
 // ===================================================================
 // 排程速覽：連續排滿天數（安全天數）＋未來 14 天缺口
 function scheduleGlance(){
-  const target=dayTarget();
   let runway=0;
   for(let off=0;off<=120;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    if(dayScheduledCount(ds)>=target) runway++; else break; }
+    if(dayBreakdown(ds).full) runway++; else break; }
   const defs=[];
   for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    const cnt=dayScheduledCount(ds); if(cnt<target) defs.push({ds,short:target-cnt}); }
-  return {target, runway, defs};
+    const b=dayBreakdown(ds); if(!b.full){ const short=Math.max(b.target-b.total, Object.values(b.deficits).reduce((a,n)=>a+n,0)); defs.push({ds,short}); } }
+  return {runway, defs, todayTarget:daySum(today)};
 }
 // 今日工作＝每天上班的三步驟例行作業
 function viewWork(){
@@ -391,7 +409,7 @@ function viewWork(){
   <div class="card" style="border-left:4px solid var(--accent)">
     <div class="row" style="justify-content:space-between"><b>② 用舊片排滿時段</b>
       <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
-    <p class="muted" style="font-size:13px;margin:6px 0 8px">短影音行銷每天要 ${g.target} 支；用滿 45 天的舊片（可重播庫存 ${oldCount} 支）把沒排滿的日子補上。</p>
+    <p class="muted" style="font-size:13px;margin:6px 0 8px">短影音行銷每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）；用滿 45 天的舊片（可重播庫存 ${oldCount} 支）把沒排滿的日子補上。</p>
     <div style="margin-bottom:8px">${defChips}</div>
     <div class="row" style="gap:8px">
       <button class="btn" onclick="fillWithOldVideos(14)" ${(g.defs.length&&oldCount)?'':'disabled style="opacity:.5;cursor:not-allowed"'}>♻ 一鍵用舊片補滿未來 14 天</button>
@@ -439,28 +457,33 @@ function batchNewFootage(){
 }
 // ② 一鍵用舊片補滿：未來 N 天未達標的日子，用滿 45 天的舊片補到每日目標
 async function fillWithOldVideos(days){
-  days=days||14; const target=dayTarget();
-  const eligible=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v));
-  if(!eligible.length){ toast("目前沒有可重播的舊片（需已完成且滿 45 天）",true); return; }
-  if(!confirm(`將用舊片把未來 ${days} 天「沒排滿」的時段補到每天 ${target} 支。\n（同一天不重複、優先用較少重播過的舊片、時段自動帶 10/12/16）\n確定？`)) return;
-  const useCount={}; eligible.forEach(v=>useCount[v.id]=v.totalUsed||0);
+  days=days||14;
+  const eligibleAll=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v));
+  if(!eligibleAll.length){ toast("目前沒有可重播的舊片（需已完成且滿 45 天）",true); return; }
+  if(!confirm(`將用舊片把未來 ${days} 天「沒排滿」的時段，依各星期幾設定的 流量／帶貨／寵粉 數量補滿。\n（同一天不重複、優先用較少重播過的舊片、時段自動帶 10/12/16）\n確定？`)) return;
+  const byType={"流量型":[],"帶貨型":[],"寵粉":[]}; eligibleAll.forEach(v=>byType[videoTypeOf(v)].push(v));
+  const useCount={}; eligibleAll.forEach(v=>useCount[v.id]=v.totalUsed||0);
   const scheduleUpd={}; const usageAdd={}; let added=0, filledDays=0;
   for(let off=0; off<days; off++){
     const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    const baseList=dayVideoList(ds); let dayCount=baseList.length; let need=target-dayCount; if(need<=0) continue;
-    const usedIds=new Set(baseList.map(it=>it.videoId));
+    const bd=dayBreakdown(ds); if(bd.full) continue;
+    const baseList=dayVideoList(ds); const usedIds=new Set(baseList.map(it=>it.videoId));
     const day=(STATE.schedule||{})[ds]||{slots:[]}; const slots=(day.slots||[]).slice();
-    const cand=eligible.filter(v=>!usedIds.has(v.id)).sort((a,b)=>(useCount[a.id]-useCount[b.id]) || String(a.finishedAt||a.scheduledDate||"").localeCompare(String(b.finishedAt||b.scheduledDate||"")));
-    let addedThisDay=0;
-    for(const v of cand){ if(need<=0) break;
-      const time=PUB_TIMES[dayCount]||"18:00"; const at=nowIso();
-      slots.push({videoId:v.id, publishedLink:"", reused:true, by:currentUser(), at, time});
-      (usageAdd[v.id]=usageAdd[v.id]||[]).push({date:ds, link:"", time, by:currentUser(), at});
-      useCount[v.id]++; usedIds.add(v.id); dayCount++; need--; added++; addedThisDay++;
+    let dayCount=baseList.length, addedThisDay=0, dayShort=0;
+    for(const type of TYPE_ORDER){
+      let need=bd.deficits[type]||0; if(need<=0) continue;
+      const cand=(byType[type]||[]).filter(v=>!usedIds.has(v.id)).sort((a,b)=>(useCount[a.id]-useCount[b.id]) || String(a.finishedAt||a.scheduledDate||"").localeCompare(String(b.finishedAt||b.scheduledDate||"")));
+      for(const v of cand){ if(need<=0) break;
+        const time=PUB_TIMES[dayCount]||"18:00"; const at=nowIso();
+        slots.push({videoId:v.id, publishedLink:"", reused:true, by:currentUser(), at, time});
+        (usageAdd[v.id]=usageAdd[v.id]||[]).push({date:ds, link:"", time, by:currentUser(), at});
+        useCount[v.id]++; usedIds.add(v.id); dayCount++; need--; added++; addedThisDay++;
+      }
+      dayShort+=need;
     }
-    if(addedThisDay) scheduleUpd[ds]=slots; if(need<=0) filledDays++;
+    if(addedThisDay) scheduleUpd[ds]=slots; if(dayShort===0) filledDays++;
   }
-  if(!added){ toast("未來 "+days+" 天都已排滿，無需補片 ✅"); return; }
+  if(!added){ toast("未來 "+days+" 天的時段都已排滿，或沒有對應類型的舊片可補 ✅"); return; }
   BULK_BUSY=true;
   try{
     for(const ds of Object.keys(scheduleUpd)){ try{ await window.DB.scheduleSet(ds,{slots:scheduleUpd[ds]}); }catch(e){} }
@@ -632,16 +655,37 @@ function editVideo(id){
 // ===================================================================
 function viewSettings(){
   const s=STATE.settings||{};
+  const w=weekdayTargets();
+  const rows=WD_ORDER.map(d=>{ const t=w[d]||w[String(d)]||{};
+    const cell=(k)=>`<input type="number" min="0" id="wt_${d}_${k}" value="${+t[k]||0}" oninput="wtSum(${d})" style="width:62px;text-align:center">`;
+    const sum=(+t["流量型"]||0)+(+t["帶貨型"]||0)+(+t["寵粉"]||0);
+    return `<tr><td data-label="星期"><b>週${WD_LABEL[d]}</b></td>
+      <td data-label="流量片">${cell("流量型")}</td>
+      <td data-label="帶貨片">${cell("帶貨型")}</td>
+      <td data-label="寵粉片">${cell("寵粉")}</td>
+      <td data-label="小計"><b id="wt_sum_${d}">${sum}</b> 支</td></tr>`;
+  }).join("");
   return `<h2>⚙️ 設定</h2>
-  <div class="card"><div class="grid cols2">
-    <div><label>每日應上片數（排滿基準）</label><input type="number" id="set_pub" value="${s.dailyPublishTarget||4}"></div>
-    <div><label>預排天數視窗</label><input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}"></div>
+  <div class="card"><b>每天上片數量（依星期幾，不分平假日）</b>
+    <p class="muted" style="font-size:12px;margin:6px 0 10px">設定每個星期幾要上幾支 流量片／帶貨片／寵粉片；月排程會依此判斷某天是否排滿。</p>
+    <table class="responsive"><thead><tr><th>星期</th><th>流量片</th><th>帶貨片</th><th>寵粉片</th><th>小計</th></tr></thead>
+    <tbody>${rows}</tbody></table>
   </div>
-  <p class="muted" style="font-size:12px;margin-top:8px">月排程以「每日應上片數」判斷某天是否排滿；預排視窗是要往後排幾天。</p>
-  <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div></div>`;
+  <div class="card">
+    <label>預排天數視窗（要往後排幾天）</label>
+    <input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}" style="max-width:160px">
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>`;
 }
+function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
+  if(e) e.textContent=v("流量型")+v("帶貨型")+v("寵粉"); }
 async function saveSettings(){
-  const settings={ dailyPublishTarget:parseInt(val("set_pub"))||4, scheduleHorizonDays:parseInt(val("set_horizon"))||30 };
+  const weekdayTargets={};
+  for(let d=0;d<7;d++){ weekdayTargets[d]={
+    "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
+    "帶貨型":parseInt(val("wt_"+d+"_帶貨型"))||0,
+    "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0 }; }
+  const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30 };
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
 
@@ -663,13 +707,6 @@ function viewMembers(){
   <div class="card"><b>新增剪輯</b>
     <div class="row" style="gap:8px;margin-top:8px"><input id="mb_name" placeholder="名字" style="flex:1;min-width:150px">
       <button class="btn" onclick="addMember()">新增</button></div>
-  </div>
-  <div class="card" style="border-color:var(--red)"><b>⚠️ 危險區</b>
-    <p class="muted">清空資料不影響成員與設定，正式上線前用來清掉測試資料。</p>
-    <div class="row">
-      <button class="btn danger" onclick="clearAllVideos()">🗑 清空所有影片與排程</button>
-      <button class="btn danger" onclick="clearAllData()">🧹 清空全部營運資料</button>
-    </div>
   </div>`;
 }
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
@@ -693,36 +730,6 @@ function renameMember(oldName){
     await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
   });
 }
-// 清空全部營運資料：影片/排程/舊匯報/舊交辦/商品（保留成員與設定）
-async function clearAllData(){
-  if(!confirm("確定清空『全部營運資料』？\n包含：影片、排程、舊的每日匯報與交辦訊息、商品。\n保留：成員與設定。\n此動作無法復原！")) return;
-  if(!confirm("再次確認：真的要清空所有測試資料嗎？")) return;
-  await withAdmin(async ()=>{
-    BULK_BUSY=true; let n=0;
-    const wipe=async (coll, ids)=>{ for(const id of ids){ try{ await window.DB.del(coll, id); n++; }catch(e){} } };
-    try{
-      await wipe("videos", (STATE.videos||[]).map(v=>v.id));
-      await wipe("schedule", Object.keys(STATE.schedule||{}));
-      await wipe("reports", (STATE.reports||[]).map(r=>r.id).filter(Boolean));
-      await wipe("messages", (STATE.messages||[]).map(m=>m.id).filter(Boolean));
-      await wipe("products", (STATE.products||[]).map(p=>p.id||p.name).filter(Boolean));
-    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(400); toast("已清空全部營運資料，共 "+n+" 筆（成員與設定已保留）");
-  });
-}
-async function clearAllVideos(){
-  if(!confirm("確定清空『所有影片與排程』？此動作無法復原！")) return;
-  await withAdmin(async ()=>{
-    const vids=(STATE.videos||[]).slice(); const dates=Object.keys(STATE.schedule||{});
-    let n=0; BULK_BUSY=true;
-    try{
-      for(const v of vids){ try{ await window.DB.del("videos", v.id); n++; }catch(e){} }
-      for(const d of dates){ try{ await window.DB.del("schedule", d); }catch(e){} }
-    } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast("已清空 "+n+" 支影片與排程");
-  });
-}
-
 // ===================================================================
 // 彈窗
 // ===================================================================

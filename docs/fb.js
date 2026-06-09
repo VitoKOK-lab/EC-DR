@@ -19,6 +19,11 @@ const DEFAULT_SETTINGS = {
   subTags: { "流量型": ["名人話題","珠寶知識","家庭","理財"], "帶貨型": ["新品","促銷","開箱","寵粉"], "寵粉": ["寵粉日","回饋","社群限定","開箱"] },
   typeTargets: { "流量型": 3, "帶貨型": 1 },        // 平日每日各類型最低
   fridayTargets: { "寵粉": 5 },                      // 週五固定寵粉日
+  // 每天上片數（依星期幾 0=日…6=六，不分平假日）：流量／帶貨／寵粉
+  weekdayTargets: {
+    0:{"流量型":3,"帶貨型":1,"寵粉":0}, 1:{"流量型":3,"帶貨型":1,"寵粉":0}, 2:{"流量型":3,"帶貨型":1,"寵粉":0},
+    3:{"流量型":3,"帶貨型":1,"寵粉":0}, 4:{"流量型":3,"帶貨型":1,"寵粉":0}, 5:{"流量型":3,"帶貨型":1,"寵粉":0},
+    6:{"流量型":3,"帶貨型":1,"寵粉":0} },
   sources: ["老闆自拍", "外部公司"],
   languages: ["zh"],
   dailyPublishTarget: 4,
@@ -86,6 +91,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       }
       if (!Array.isArray(cur.videoTags) || !cur.videoTags.length) {
         await setDoc(sref, { videoTags: DEFAULT_SETTINGS.videoTags }, { merge: true });
+      }
+      if (!cur.weekdayTargets || typeof cur.weekdayTargets !== "object") {
+        await setDoc(sref, { weekdayTargets: DEFAULT_SETTINGS.weekdayTargets }, { merge: true });
       }
     }
 
