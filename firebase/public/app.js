@@ -482,7 +482,7 @@ function finishVid(id){
     <label>成品名稱</label><input id="f_name" value="${esc(v.name||v.rawName||"")}">
     <label>存檔位置（雲端備份）</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份連結">
     <label>上傳位置（平台・預設全部，不上傳的取消勾選）</label>
-    <div style="display:flex;flex-wrap:wrap;gap:6px" onchange="finishGate('f_')">${platChips("f_plat", defPlat)}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px" onchange="finishGate('f_');renderFinishLinks()">${platChips("f_plat", defPlat)}</div>
     <div class="grid cols2">
       <div><label>上傳日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
       <div><label>上傳時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
@@ -492,7 +492,8 @@ function finishVid(id){
       <div><label>商品（品名）</label><input id="f_prod" list="f_prodlist" value="${esc(v.product||"")}" placeholder="這支在賣的商品"><datalist id="f_prodlist">${knownProducts().map(p=>`<option value="${esc(p)}">`).join("")}</datalist></div>
       <div><label>單價</label><input id="f_price" type="number" min="0" value="${(v.price!=null&&v.price!=="")?esc(v.price):''}"></div>
     </div>
-    <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" placeholder="https://www.tzgrotw.tw/products/...">
+    <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" oninput="renderFinishLinks()" placeholder="https://www.tzgrotw.tw/products/...">
+    <div id="f_links"></div>
     <label>社群預排連結（選填）</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具／預約貼文連結">
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
@@ -502,7 +503,18 @@ function finishVid(id){
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
-  finishGate("f_");
+  finishGate("f_"); renderFinishLinks();
+}
+// 完成上架視窗：貼上商品頁網址後，即時產生各平台導購連結可複製
+function renderFinishLinks(){
+  const box=document.getElementById("f_links"); if(!box) return;
+  const url=(val("f_url")||"").trim();
+  if(!url){ box.innerHTML=""; return; }
+  const sel=collectPlat("f_plat");
+  const plats=(sel.length?postPlatforms().filter(p=>sel.includes(p.name)):postPlatforms());
+  box.innerHTML=`<div class="card" style="background:var(--panel2);margin-top:8px"><b>🔗 導購連結（複製去發）</b>`+
+    plats.map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
+      <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
 // 剪輯端輕量新增：只填片名＋內容，建立一支待剪新片
 function newSimpleVideo(){
