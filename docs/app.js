@@ -41,7 +41,7 @@ function nextId(arr, prefix){
 function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), scheduledDate:null, rawName:"", name:"",
-    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[], platforms:[], product:"", price:0,
+    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[], platforms:[], product:"", price:0, productUrl:"",
     source:(s.sources&&s.sources[0])||"", editor:"", stage:"待處理", claimedBy:"", claimedAt:"",
     finishedAt:"", usageHistory:[], totalUsed:0, driveFolder:"", publishedLink:"", socialLink:"", locked:false };
   return Object.assign(rec, over||{});
@@ -134,6 +134,7 @@ async function route(method, path, body){
       if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
       if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
       if(body.product!==undefined) patch.product=body.product; if(body.price!=null) patch.price=Number(body.price)||0;
+      if(body.productUrl!==undefined) patch.productUrl=body.productUrl;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
@@ -486,6 +487,7 @@ function finishVid(id){
       <div><label>商品（品名）</label><input id="f_prod" list="f_prodlist" value="${esc(v.product||"")}" placeholder="這支在賣的商品"><datalist id="f_prodlist">${knownProducts().map(p=>`<option value="${esc(p)}">`).join("")}</datalist></div>
       <div><label>單價</label><input id="f_price" type="number" min="0" value="${(v.price!=null&&v.price!=="")?esc(v.price):''}"></div>
     </div>
+    <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" placeholder="https://www.tzgrotw.tw/products/...">
     <label>投放平台（可複選）</label>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("f_plat", v.platforms)}</div>
     <label>雲端備份連結</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份">
@@ -494,7 +496,7 @@ function finishVid(id){
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
       {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
-       platforms:collectPlat("f_plat"), product:val("f_prod").trim(), price:parseInt(val("f_price"))||0,
+       platforms:collectPlat("f_plat"), product:val("f_prod").trim(), price:parseInt(val("f_price"))||0, productUrl:val("f_url").trim(),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
@@ -611,7 +613,12 @@ function editVideo(id){
       <div><label>商品（品名）</label><input id="e_prod" list="e_prodlist" value="${esc(v.product||"")}"><datalist id="e_prodlist">${knownProducts().map(p=>`<option value="${esc(p)}">`).join("")}</datalist></div>
       <div><label>單價</label><input id="e_price" type="number" min="0" value="${(v.price!=null&&v.price!=="")?esc(v.price):''}"></div>
     </div>
+    <label>商品頁網址（導購連結用）</label><input id="e_url" value="${esc(v.productUrl||"")}" placeholder="https://www.tzgrotw.tw/products/...">
     <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
+    ${v.productUrl?`<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（依平台，可複製）</b>
+      ${(((Array.isArray(v.platforms)&&v.platforms.length)?postPlatforms().filter(p=>v.platforms.includes(p.name)):postPlatforms())).map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
+        <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(v.productUrl,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
+    </div>`:''}
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
@@ -624,7 +631,7 @@ function editVideo(id){
     const tags=collectTags("e"); await persistNewTags(tags);
     const mainType = tags.includes("寵粉")?"寵粉":(tags.some(t=>["帶貨","代理"].includes(t))?"帶貨型":"流量型");
     const video={rawName:val("e_raw"),name:val("e_name"),mainType,tags,subTag:tags[0]||"",
-      platforms:collectPlat("e_plat"), product:val("e_prod").trim(), price:parseInt(val("e_price"))||0,
+      platforms:collectPlat("e_plat"), product:val("e_prod").trim(), price:parseInt(val("e_price"))||0, productUrl:val("e_url").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
@@ -748,18 +755,14 @@ function collectPlat(cls){ return Array.from(document.querySelectorAll('.'+cls))
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ if(v.product) set.add(v.product); }); return [...set].sort(); }
 function viewPerf(){
-  const base=shoplineBase();
-  const links=postPlatforms().map((p,i)=>{ const link=platformUtm(base,p.utm);
-    return `<div style="margin-top:10px"><label style="margin:0 0 2px">${esc(p.name)}</label>
-      <div class="row" style="gap:8px"><input id="perf_utm_${i}" value="${esc(link)}" readonly style="flex:1;min-width:200px" onclick="this.select()"><button class="btn sm" onclick="copyFromInput('perf_utm_${i}')">複製</button></div></div>`; }).join("");
   return `<h2>📊 成效</h2>
   <div class="card">
     <b>🎬 影音流量</b>
     <div style="margin-top:10px"><a class="btn" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a></div>
   </div>
   <div class="card">
-    <b>🛒 Shopline 導購連結（依平台）</b>
-    ${base ? links : `<p class="muted" style="margin-top:8px">先到「⚙️ 設定」填入 Shopline 網址。</p>`}
+    <b>🛒 Shopline 導購連結</b>
+    <p class="muted" style="font-size:13px;margin-top:8px">每支片的導購連結在「🎞 影片庫 → 點影片 → 編輯」裡，依商品頁網址＋平台自動產生、可複製。</p>
   </div>`;
 }
 
