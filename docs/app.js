@@ -720,91 +720,31 @@ function renameMember(oldName){
   });
 }
 // ===================================================================
-// 📊 成效追蹤：上片滿 7 天回填 IG/FB 流量 + Shopline 轉換
+// 📊 成效：流量連到 meta-dashboard；Shopline 用一條固定導購連結
 // ===================================================================
-const PERF_DAYS=7;
-let PERF_SORT="views";
-const METRIC_FIELDS=[["views","觀看數"],["reach","觸及"],["eng","互動(讚留分享)"],["clicks","連結點擊"],["orders","Shopline訂單"],["revenue","業績($)"]];
+const META_DASH_URL="https://vitokok-lab.github.io/meta-dashboard/index.html";
 function shoplineBase(){ return (STATE.settings&&STATE.settings.shoplineBase)||""; }
-// 每支片專屬的 Shopline 追蹤連結（utm_campaign=影片代號），看哪支片帶最多單
-function utmLink(videoId, date){ const base=shoplineBase(); if(!base) return "";
-  const sep=base.includes("?")?"&":"?";
-  return base+sep+"utm_source=igfb&utm_medium=short&utm_campaign="+encodeURIComponent(videoId)+(date?("&utm_content="+date):""); }
-function daysAgo(ds){ return Math.round((new Date(today+"T00:00:00")-new Date(ds+"T00:00:00"))/86400000); }
-function num(n){ n=+n||0; return n>=1000?n.toLocaleString():String(n); }
-// 所有「發佈事件」：新片上架(影片) + 每次舊片重播(排程 slot)，各自有網址與成效
-function publishEvents(){
-  const out=[];
-  (STATE.videos||[]).forEach(v=>{ if(["已完成","已上片"].includes(v.stage) && (v.scheduledDate||v.finishedAt)){
-    out.push({key:"v:"+v.id, videoId:v.id, name:v.name||v.rawName||v.id, date:String(v.scheduledDate||v.finishedAt).slice(0,10),
-      link:v.publishedLink||v.socialLink||"", kind:"new", metrics:v.metrics||null}); } });
-  Object.keys(STATE.schedule||{}).forEach(date=>{ const slots=((STATE.schedule||{})[date]||{}).slots||[];
-    slots.forEach((s,idx)=>{ if(s&&s.reused){ const v=vid(s.videoId);
-      out.push({key:"s:"+date+":"+idx, videoId:s.videoId, name:(v?(v.name||v.rawName):s.videoId), date:String(date).slice(0,10),
-        link:s.publishedLink||"", kind:"reuse", scheduleDate:date, slotIndex:idx, metrics:s.metrics||null}); } }); });
-  return out;
-}
-function perfCutoff(){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-PERF_DAYS); return d.toISOString().slice(0,10); }
-function dueEvents(){ const cut=perfCutoff(); return publishEvents().filter(e=>e.date<=cut && !(e.metrics&&e.metrics.filledAt)).sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
-function filledEvents(){ return publishEvents().filter(e=>e.metrics&&e.metrics.filledAt); }
+// 固定一條導購連結：所有短影音共用（utm_campaign=shorts），看短影音整體帶單
+function fixedUtm(){ const base=shoplineBase(); if(!base) return "";
+  const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source=igfb&utm_medium=short&utm_campaign=shorts"; }
+function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; e.focus(); e.select();
+  const t=e.value; if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>toast("已選取，請手動複製",true)); }
+  else { try{ document.execCommand("copy"); toast("已複製連結"); }catch(_){ toast("已選取，請手動複製",true); } } }
 function viewPerf(){
-  const due=dueEvents(); const filled=filledEvents(); const sortBy=PERF_SORT;
-  const ranking=filled.slice().sort((a,b)=>(+(b.metrics[sortBy]||0))-(+(a.metrics[sortBy]||0))).slice(0,30);
-  const dueRows=due.map(e=>`<tr>
-    <td data-label="影片"><b>${esc(e.name)}</b> ${e.kind==="reuse"?'<span class="tag" style="background:#ede9fe;color:#6d28d9">重播</span>':'<span class="tag">新片</span>'}</td>
-    <td data-label="上片日">${esc(e.date)}<span class="muted">（${daysAgo(e.date)}天前）</span></td>
-    <td data-label="貼文">${e.link?`<a href="${esc(e.link)}" target="_blank">看貼文</a>`:'<span class="muted">無連結</span>'}</td>
-    <td data-label=""><button class="btn sm" onclick="fillMetrics('${e.key}')">填成效</button></td></tr>`).join("")
-    || '<tr><td class="muted">目前沒有滿 '+PERF_DAYS+' 天待回填的影片 ✅</td></tr>';
-  const rankRows=ranking.map((e,i)=>`<tr>
-    <td>${i+1}</td>
-    <td data-label="影片"><b>${esc(e.name)}</b> <span class="muted" style="font-size:11px">${esc(e.date)}</span></td>
-    <td data-label="觀看">${num(e.metrics.views)}</td>
-    <td data-label="互動">${num(e.metrics.eng)}</td>
-    <td data-label="點擊">${num(e.metrics.clicks)}</td>
-    <td data-label="訂單">${num(e.metrics.orders)}</td>
-    <td data-label="業績">${e.metrics.revenue?("$"+num(e.metrics.revenue)):"-"}</td>
-    <td data-label=""><button class="btn sm sec" onclick="fillMetrics('${e.key}')">編輯</button></td></tr>`).join("")
-    || '<tr><td class="muted">尚無已回填的成效</td></tr>';
-  const noBase=shoplineBase()?"":`<div class="card" style="border-color:var(--amber)"><b style="color:var(--amber)">尚未設定 Shopline 網址</b>
-    <span class="muted"> — 到「設定」填入 Shopline 網址，系統就會幫每支片產生專屬追蹤連結（看哪支帶最多單）。</span></div>`;
-  return `<h2>📊 成效追蹤 <span class="muted" style="font-size:13px">上片滿 ${PERF_DAYS} 天回填 IG/FB 流量＋Shopline 轉換</span></h2>
-  ${noBase}
-  <div class="card"><div class="row" style="justify-content:space-between"><b>📥 待回填（上片滿 ${PERF_DAYS} 天）</b>
-    <span class="pill ${due.length?'wa':'ok'}">${due.length} 支</span></div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">滿 ${PERF_DAYS} 天就到 IG/FB 後台看數據，點「填成效」把數字填進來。</p>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>上片日</th><th>貼文</th><th></th></tr></thead>
-    <tbody>${dueRows}</tbody></table></div>
-  <div class="card"><div class="row" style="justify-content:space-between;align-items:center"><b>🏆 成效排行</b>
-    <select onchange="PERF_SORT=this.value;render()" style="max-width:140px">
-      ${[["views","依觀看數"],["clicks","依點擊"],["orders","依訂單"],["revenue","依業績"]].map(([v,l])=>`<option value="${v}" ${sortBy===v?"selected":""}>${l}</option>`).join("")}</select></div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>#</th><th>影片</th><th>觀看</th><th>互動</th><th>點擊</th><th>訂單</th><th>業績</th><th></th></tr></thead>
-    <tbody>${rankRows}</tbody></table></div>`;
-}
-function fillMetrics(key){
-  const e=publishEvents().find(x=>x.key===key); if(!e){ toast("找不到該發佈紀錄",true); return; }
-  const m=e.metrics||{}; const utm=utmLink(e.videoId, e.date);
-  showModal("填成效："+e.name+"（"+e.date+"）", `
-    ${e.link?`<p class="muted" style="font-size:12px">貼文：<a href="${esc(e.link)}" target="_blank">開啟看數據</a></p>`:'<p class="muted" style="font-size:12px">這支沒有上傳連結，可先填數字。</p>'}
-    ${utm?`<p class="muted" style="font-size:12px">這支片的 Shopline 追蹤連結：<br><code style="word-break:break-all">${esc(utm)}</code></p>`:''}
-    <div class="grid cols2">
-      ${METRIC_FIELDS.map(([k,l])=>`<div><label>${l}</label><input id="mt_${k}" type="number" min="0" value="${m[k]!=null?esc(m[k]):''}"></div>`).join("")}
-    </div>
-    <label>備註</label><input id="mt_note" value="${esc(m.note||'')}" placeholder="例：這支導購最好／某平台特別高">
-  `, async ()=>{
-    const data={filledAt:nowIso(), by:currentUser(), note:val("mt_note")};
-    METRIC_FIELDS.forEach(([k])=>{ data[k]=parseInt(val("mt_"+k))||0; });
-    return await saveMetrics(e, data);
-  });
-}
-async function saveMetrics(e, data){
-  try{
-    if(e.kind==="new"){ await window.DB.update("videos", e.videoId, {metrics:data}); }
-    else { const day=(STATE.schedule||{})[e.scheduleDate]||{slots:[]}; const slots=(day.slots||[]).slice();
-      if(slots[e.slotIndex]) slots[e.slotIndex]=Object.assign({}, slots[e.slotIndex], {metrics:data});
-      await window.DB.scheduleSet(e.scheduleDate, {slots}); }
-    toast("已存成效"); return true;
-  }catch(err){ toast("儲存失敗，請稍後再試",true); return false; }
+  const utm=fixedUtm();
+  return `<h2>📊 成效</h2>
+  <div class="card">
+    <b>🎬 影音流量（IG / FB）</b>
+    <p class="muted" style="font-size:13px;margin:6px 0 12px">每支片的觀看、觸及、讚、留言、分享都在「短影音成效儀表板」自動更新（由 Meta 資料每天匯整），不用手動回填。</p>
+    <a class="btn" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a>
+  </div>
+  <div class="card">
+    <b>🛒 Shopline 導購連結（固定一條）</b>
+    <p class="muted" style="font-size:13px;margin:6px 0 12px">把這條連結放在 IG/FB 個人簡介，所有短影音共用。之後在 Shopline 報表用 <code>utm_campaign=shorts</code> 看短影音整體帶多少單。</p>
+    ${utm
+      ? `<div class="row" style="gap:8px;align-items:center"><input id="perf_utm" value="${esc(utm)}" readonly style="flex:1;min-width:200px" onclick="this.select()"><button class="btn sm" onclick="copyFromInput('perf_utm')">複製</button></div>`
+      : `<p class="muted">先到「⚙️ 設定」填入 Shopline 網址，這裡就會自動產生固定導購連結。</p>`}
+  </div>`;
 }
 
 // ===================================================================
