@@ -314,17 +314,18 @@ function openDay(ds){
   const usedIds = new Set(list.map(it=>it.videoId));
   const doneList=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage) && !usedIds.has(v.id) && !isNewVideo(v))  // 新片(45天內)不可重播
     .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
-  const dayCount = list.length; const autoTime = PUB_TIMES[dayCount];
-  const timeField = (dayCount<3)
-    ? `<div style="min-width:118px"><input id="od_time" value="${autoTime}" readonly style="background:var(--panel2);text-align:center"><div class="muted" style="font-size:10px;text-align:center">自動・第 ${dayCount+1} 段</div></div>`
-    : `<div style="min-width:118px"><input id="od_time" type="time" value="18:00"><div class="muted" style="font-size:10px;text-align:center">已滿3段・自選</div></div>`;
+  const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
+  const timeField = `<div style="min-width:120px"><label style="margin:0 0 2px">上片時間</label>
+    <select id="od_time">${PUB_TIMES.map(t=>`<option ${t===autoTime?"selected":""}>${t}</option>`).join("")}</select></div>`;
   const reusePicker = `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片重播到這天</b>
-    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-start">
-        <select id="od_vid" style="flex:1;min-width:150px">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select>
+    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
+        <div style="flex:1;min-width:150px"><label style="margin:0 0 2px">選一支舊片</label>
+          <select id="od_vid">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select></div>
         ${timeField}
         <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
       </div>
-      <input id="od_link" placeholder="社群連結（可後補）" style="margin-top:6px">`
+      <label style="margin:8px 0 2px">上片連結（社群貼文網址）</label>
+      <input id="od_link" placeholder="貼上這支重播要發佈的連結">`
       : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無已完成舊片）。新片需滿 45 天才能重播。</p>`}
   </div>`;
   const b = dayBreakdown(ds);
@@ -417,13 +418,12 @@ function viewWork(){
       <div style="flex:1;min-width:0">
         <div class="row" style="justify-content:space-between"><b style="font-size:17px">用舊片排滿時段</b>
           <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div>
-        <p class="muted" style="font-size:13px;margin:3px 0 0">每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）；用滿 45 天的舊片（可重播 ${oldCount} 支）補上沒排滿的日子。</p>
+        <p class="muted" style="font-size:13px;margin:3px 0 0">每天依「星期幾」要排滿（今天 ${g.todayTarget} 支）。到月排程點下面缺口的日子，用舊片（可重播 ${oldCount} 支）補上，<b>選好上片時間、貼上連結</b>。</p>
       </div>
     </div>
     <div style="margin:10px 0 8px">${defChips}</div>
     <div class="row" style="gap:8px">
-      <button class="btn" onclick="fillWithOldVideos(14)" ${(g.defs.length&&oldCount)?'':'disabled style="opacity:.5;cursor:not-allowed"'}>♻ 一鍵用舊片補滿未來 14 天</button>
-      <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程手動調整</button>
+      <button class="btn" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程排舊片</button>
     </div>
   </div>
 
@@ -468,44 +468,6 @@ function batchNewFootage(){
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已建檔 "+ok+" 支新毛片，可到步驟③開始剪"); return true;
   });
-}
-// ② 一鍵用舊片補滿：未來 N 天未達標的日子，用滿 45 天的舊片補到每日目標
-async function fillWithOldVideos(days){
-  days=days||14;
-  const eligibleAll=(STATE.videos||[]).filter(v=>["已完成","已上片"].includes(v.stage)&&!isNewVideo(v));
-  if(!eligibleAll.length){ toast("目前沒有可重播的舊片（需已完成且滿 45 天）",true); return; }
-  if(!confirm(`將用舊片把未來 ${days} 天「沒排滿」的時段，依各星期幾設定的 流量／帶貨／寵粉 數量補滿。\n（同一天不重複、優先用較少重播過的舊片、時段自動帶 10/12/16）\n確定？`)) return;
-  const byType={"流量型":[],"帶貨型":[],"寵粉":[]}; eligibleAll.forEach(v=>byType[videoTypeOf(v)].push(v));
-  const useCount={}; eligibleAll.forEach(v=>useCount[v.id]=v.totalUsed||0);
-  const scheduleUpd={}; const usageAdd={}; let added=0, filledDays=0;
-  for(let off=0; off<days; off++){
-    const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    const bd=dayBreakdown(ds); if(bd.full) continue;
-    const baseList=dayVideoList(ds); const usedIds=new Set(baseList.map(it=>it.videoId));
-    const day=(STATE.schedule||{})[ds]||{slots:[]}; const slots=(day.slots||[]).slice();
-    let dayCount=baseList.length, addedThisDay=0, dayShort=0;
-    for(const type of TYPE_ORDER){
-      let need=bd.deficits[type]||0; if(need<=0) continue;
-      const cand=(byType[type]||[]).filter(v=>!usedIds.has(v.id)).sort((a,b)=>(useCount[a.id]-useCount[b.id]) || String(a.finishedAt||a.scheduledDate||"").localeCompare(String(b.finishedAt||b.scheduledDate||"")));
-      for(const v of cand){ if(need<=0) break;
-        const time=PUB_TIMES[dayCount]||"18:00"; const at=nowIso();
-        slots.push({videoId:v.id, publishedLink:"", reused:true, by:currentUser(), at, time});
-        (usageAdd[v.id]=usageAdd[v.id]||[]).push({date:ds, link:"", time, by:currentUser(), at});
-        useCount[v.id]++; usedIds.add(v.id); dayCount++; need--; added++; addedThisDay++;
-      }
-      dayShort+=need;
-    }
-    if(addedThisDay) scheduleUpd[ds]=slots; if(dayShort===0) filledDays++;
-  }
-  if(!added){ toast("未來 "+days+" 天的時段都已排滿，或沒有對應類型的舊片可補 ✅"); return; }
-  BULK_BUSY=true;
-  try{
-    for(const ds of Object.keys(scheduleUpd)){ try{ await window.DB.scheduleSet(ds,{slots:scheduleUpd[ds]}); }catch(e){} }
-    for(const id of Object.keys(usageAdd)){ const v=vid(id); if(!v) continue;
-      const uh=(v.usageHistory||[]).concat(usageAdd[id]);
-      try{ await window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+usageAdd[id].length, usageHistory:uh}); }catch(e){} }
-  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  await delay(400); toast(`已用舊片補滿：新增 ${added} 個重播、補滿 ${filledDays} 天`);
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
 function claimPicked(){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; } claimVid(id); }
