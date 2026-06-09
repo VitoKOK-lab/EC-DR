@@ -727,13 +727,13 @@ function renameMember(oldName){
 const META_DASH_URL="https://vitokok-lab.github.io/meta-dashboard/index.html";
 function shoplineBase(){ return (STATE.settings&&STATE.settings.shoplineBase)||""; }
 const DEFAULT_PLATFORMS=[
-  {name:"溱姐主（@tzgems1111）", utm:"tzgems1111"},
-  {name:"泰熙爾汗（@tzgems5588）", utm:"tzgems5588"},
-  {name:"英文（@tzgrotwofficial）", utm:"tzgrotwofficial"},
-  {name:"代理（@tzgems666）", utm:"tzgems666"},
-  {name:"官方（@tzgrotw）", utm:"tzgrotw"},
-  {name:"粉專（Zanagems）", utm:"zanagems"},
-  {name:"LINE社群（珠寶社群）", utm:"line_group"}
+  {name:"IG 溱姐主（@tzgems1111）", utm:"ig_tzgems1111"},
+  {name:"IG 泰熙爾汗（@tzgems5588）", utm:"ig_tzgems5588"},
+  {name:"IG 英文（@tzgrotwofficial）", utm:"ig_tzgrotwofficial"},
+  {name:"IG 代理（@tzgems666）", utm:"ig_tzgems666"},
+  {name:"IG 官方（@tzgrotw）", utm:"ig_tzgrotw"},
+  {name:"FB 粉專（Zanagems）", utm:"fb_zanagems"},
+  {name:"LINE 社群（珠寶社群）", utm:"line_group"}
 ];
 function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
 // 依平台一條導購連結，最短：只用 utm_source（月底靠訂單時間對應商品）
