@@ -25,11 +25,15 @@ const DEFAULT_SETTINGS = {
     3:{"流量型":3,"帶貨型":1,"寵粉":0}, 4:{"流量型":3,"帶貨型":1,"寵粉":0}, 5:{"流量型":3,"帶貨型":1,"寵粉":0},
     6:{"流量型":3,"帶貨型":1,"寵粉":0} },
   sources: ["老闆自拍", "外部公司"],
-  // 投放平台（顯示名稱 + utm 代號）：UTM 同一個 campaign、用 source 分平台
+  // 投放平台（顯示名稱 + utm 代號）：UTM 最短，只用 utm_source 分帳號
   postPlatforms: [
-    { name: "ig666",    utm: "ig666" },
-    { name: "LINE社群",  utm: "line" },
-    { name: "fb粉專",    utm: "fb" }
+    { name: "IG 溱姐主（@tzgems1111）",      utm: "ig_tzgems1111" },
+    { name: "IG 泰熙爾汗（@tzgems5588）",    utm: "ig_tzgems5588" },
+    { name: "IG 英文（@tzgrotwofficial）",  utm: "ig_tzgrotwofficial" },
+    { name: "IG 代理（@tzgems666）",         utm: "ig_tzgems666" },
+    { name: "IG 官方（@tzgrotw）",           utm: "ig_tzgrotw" },
+    { name: "FB 粉專（Zanagems）",           utm: "fb_zanagems" },
+    { name: "LINE 社群（珠寶社群）",          utm: "line_group" }
   ],
   languages: ["zh"],
   dailyPublishTarget: 4,
