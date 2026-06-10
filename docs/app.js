@@ -199,6 +199,9 @@ function bootLogin(){
 }
 function loginAs(u){ setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; applyState(LAST_RAW); }
 function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
+  const want=String((STATE.settings&&STATE.settings.adminPassword)||"1234");
+  const pw=prompt("請輸入管理員密碼："); if(pw===null) return;
+  if(String(pw).trim()!==want){ toast("密碼錯誤",true); return; }
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW); }
 // 登出：顯示隨機可愛動畫，三秒後回登入頁
 function logout(){ showGoodbye(); }
@@ -690,6 +693,8 @@ function viewSettings(){
     <textarea id="set_plat" style="min-height:88px">${esc(platStr)}</textarea>
     <label style="margin-top:12px">Shopline 網址</label>
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
+    <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
+    <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
@@ -704,6 +709,7 @@ async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
   if(plats.length) settings.postPlatforms=plats;
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
