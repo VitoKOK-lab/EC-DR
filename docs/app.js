@@ -38,12 +38,19 @@ function nextId(arr, prefix){
   let mx=0; (arr||[]).forEach(it=>{ const m=String(it.id||"").match(new RegExp("^"+prefix+"(\\d+)$")); if(m) mx=Math.max(mx,parseInt(m[1])); });
   return prefix+String(mx+1).padStart(3,"0");
 }
+// 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 1）。每筆寫入都用這個確保一致。
 function newVideoRecord(over){
   const s=STATE.settings||{};
-  const rec={ id: nextId(STATE.videos,"V"), scheduledDate:null, rawName:"", name:"",
-    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型", subTag:"", tags:[], platforms:[], product:"", price:0, productUrl:"",
-    source:(s.sources&&s.sources[0])||"", editor:"", stage:"待處理", claimedBy:"", claimedAt:"",
-    finishedAt:"", usageHistory:[], totalUsed:0, driveFolder:"", publishedLink:"", socialLink:"", locked:false };
+  const rec={ id: nextId(STATE.videos,"V"),
+    name:"", rawName:"", tags:[], subTag:"",
+    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
+    source:(s.sources&&s.sources[0])||"", stage:"待處理",
+    editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
+    scheduledDate:null, publishTime:"", platforms:[],
+    product:"", price:0, productUrl:"",
+    driveFolder:"", publishedLink:"", socialLink:"",
+    usageHistory:[], totalUsed:0,
+    locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
 }
 
