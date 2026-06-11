@@ -38,16 +38,16 @@ function nextId(arr, prefix){
   let mx=0; (arr||[]).forEach(it=>{ const m=String(it.id||"").match(new RegExp("^"+prefix+"(\\d+)$")); if(m) mx=Math.max(mx,parseInt(m[1])); });
   return prefix+String(mx+1).padStart(3,"0");
 }
-// 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 1）。每筆寫入都用這個確保一致。
+// 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 2）。每筆寫入都用這個確保一致。
 function newVideoRecord(over){
   const s=STATE.settings||{};
-  const rec={ id: nextId(STATE.videos,"V"),
+  const rec={ id: nextId(STATE.videos,"V"), code:"",
     name:"", rawName:"", tags:[], subTag:"",
     mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
     scheduledDate:null, publishTime:"", platforms:[],
-    product:"", price:0, productUrl:"",
+    products:[], productUrl:"",
     driveFolder:"", publishedLink:"", socialLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
@@ -140,7 +140,7 @@ async function route(method, path, body){
       if(body.publishTime) patch.publishTime=body.publishTime;
       if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
       if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
-      if(body.product!==undefined) patch.product=body.product; if(body.price!=null) patch.price=Number(body.price)||0;
+      if(Array.isArray(body.products)) patch.products=body.products;
       if(body.productUrl!==undefined) patch.productUrl=body.productUrl;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
@@ -461,7 +461,7 @@ function viewWork(){
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
   showModal("批次建檔新毛片", `
-    <label>片名（一行一支）</label>
+    <label>原始片名（一行一支）</label>
     <textarea id="bf_list" style="min-height:150px" placeholder="劉亦菲紅毯珠寶&#10;八大珠寶派系&#10;真假寶石30秒分辨"></textarea>
   `, async ()=>{
     const lines=val("bf_list").split("\n").map(s=>s.trim()).filter(Boolean);
@@ -489,27 +489,28 @@ function finishVid(id){
   const def = v.scheduledDate || today;
   const defPlat = (Array.isArray(v.platforms)&&v.platforms.length)?v.platforms:postPlatforms().map(p=>p.name); // 預設全部上傳
   showModal("完成上架：填上片資訊", `
-    <label>成品名稱</label><input id="f_name" value="${esc(v.name||v.rawName||"")}">
+    <label>成品標題名稱（編號＝原片編號，不填則同原始片名）</label>
+    <div class="row" style="gap:8px">
+      <input value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;background:var(--panel2);text-align:center" title="影片編號">
+      <input id="f_name" value="${esc(v.name||v.rawName||"")}" style="flex:1" placeholder="成品標題名稱">
+    </div>
     <label>存檔位置（雲端備份）</label><input id="f_backup" value="${esc(v.driveFolder||"")}" oninput="finishGate('f_')" placeholder="Google Drive 備份連結">
     <label>上傳位置（平台・預設全部，不上傳的取消勾選）</label>
     <div style="display:flex;flex-wrap:wrap;gap:6px" onchange="finishGate('f_');renderFinishLinks()">${platChips("f_plat", defPlat)}</div>
     <div class="grid cols2">
-      <div><label>上傳日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
-      <div><label>上傳時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
+      <div><label>預排上片日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
+      <div><label>預排上片時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
     </div>
     ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
-    <div class="grid cols2">
-      <div><label>商品（品名）</label><input id="f_prod" list="f_prodlist" value="${esc(v.product||"")}" placeholder="這支在賣的商品"><datalist id="f_prodlist">${knownProducts().map(p=>`<option value="${esc(p)}">`).join("")}</datalist></div>
-      <div><label>單價</label><input id="f_price" type="number" min="0" value="${(v.price!=null&&v.price!=="")?esc(v.price):''}"></div>
-    </div>
+    ${productRows("f", v.products)}
     <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" oninput="renderFinishLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <div id="f_links"></div>
     <label>社群預排連結（選填）</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具／預約貼文連結">
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:val("f_name")||undefined, scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
-       platforms:collectPlat("f_plat"), product:val("f_prod").trim(), price:parseInt(val("f_price"))||0, productUrl:val("f_url").trim(),
+      {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
+       platforms:collectPlat("f_plat"), products:collectProducts("f"), productUrl:val("f_url").trim(),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
@@ -526,15 +527,14 @@ function renderFinishLinks(){
     plats.map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
       <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
-// 剪輯端輕量新增：只填片名＋內容，建立一支待剪新片
+// 剪輯端輕量新增：填原始片名，建立一支待剪新片（成品標題預設同原始片名）
 function newSimpleVideo(){
   showModal("新增待剪新片", `
-    <label>片名</label><input id="sv_name" placeholder="影片標題">
-    <label>內容（素材／主題說明）</label><textarea id="sv_content" placeholder="這支片的素材、主題、重點…"></textarea>
+    <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
   `, async ()=>{
-    const name=val("sv_name").trim(); const content=val("sv_content").trim();
-    if(!name && !content){ toast("請至少填片名或內容",true); return false; }
-    const video={name:name||content.slice(0,24), rawName:content||name};
+    const name=val("sv_name").trim();
+    if(!name){ toast("請輸入原始片名",true); return false; }
+    const video={name, rawName:name};
     return await write("POST","/api/videos",{video},"已新增待剪新片");
   });
 }
@@ -624,8 +624,16 @@ function editVideo(id){
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   const stages=["待處理","剪輯中","已完成","已上片"];
   showModal("編輯影片",`
-    <label>原片</label><input id="e_raw" value="${esc(v.rawName||"")}">
-    <label>成品名稱</label><input id="e_name" value="${esc(v.name||"")}">
+    <label>編號 ／ 原始片名</label>
+    <div class="row" style="gap:8px">
+      <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="編號" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
+      <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1" placeholder="原始片名">
+    </div>
+    <label>編號 ／ 成品標題名稱（不填則同原始片名）</label>
+    <div class="row" style="gap:8px">
+      <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
+      <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="成品標題名稱">
+    </div>
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -633,12 +641,9 @@ function editVideo(id){
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>投放平台（可複選）</label><div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("e_plat", v.platforms)}</div>
-    <div class="grid cols2">
-      <div><label>商品（品名）</label><input id="e_prod" list="e_prodlist" value="${esc(v.product||"")}"><datalist id="e_prodlist">${knownProducts().map(p=>`<option value="${esc(p)}">`).join("")}</datalist></div>
-      <div><label>單價</label><input id="e_price" type="number" min="0" value="${(v.price!=null&&v.price!=="")?esc(v.price):''}"></div>
-    </div>
+    ${productRows("e", v.products)}
     <label>商品頁網址（導購連結用）</label><input id="e_url" value="${esc(v.productUrl||"")}" placeholder="https://www.tzgrotw.tw/products/...">
-    <label>上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
+    <label>預排上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     ${v.productUrl?`<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（依平台，可複製）</b>
       ${(((Array.isArray(v.platforms)&&v.platforms.length)?postPlatforms().filter(p=>v.platforms.includes(p.name)):postPlatforms())).map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
         <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(v.productUrl,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
@@ -654,8 +659,8 @@ function editVideo(id){
   `, async ()=>{
     const tags=collectTags("e"); await persistNewTags(tags);
     const mainType = tags.includes("寵粉")?"寵粉":(tags.some(t=>["帶貨","代理"].includes(t))?"帶貨型":"流量型");
-    const video={rawName:val("e_raw"),name:val("e_name"),mainType,tags,subTag:tags[0]||"",
-      platforms:collectPlat("e_plat"), product:val("e_prod").trim(), price:parseInt(val("e_price"))||0, productUrl:val("e_url").trim(),
+    const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"",
+      platforms:collectPlat("e_plat"), products:collectProducts("e"), productUrl:val("e_url").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
       driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
@@ -779,8 +784,28 @@ function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; 
 function platChips(cls, selected){ const sel=new Set(selected||[]);
   return postPlatforms().map(p=>`<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px"><input type="checkbox" class="${cls}" value="${esc(p.name)}" ${sel.has(p.name)?"checked":""} style="width:auto;margin:0"> ${esc(p.name)}</label>`).join(""); }
 function collectPlat(cls){ return Array.from(document.querySelectorAll('.'+cls)).filter(x=>x.checked).map(x=>x.value); }
+// 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主
+function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
+function vidTitle(v){ return (v&&(v.name||v.rawName))||"(未命名)"; }
 // 已用過的商品名（下拉選用，讓品名一致）
-function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ if(v.product) set.add(v.product); }); return [...set].sort(); }
+function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
+// 商品列：最多 3 個，每個 品名(下拉)+單價(手動)
+function productRows(prefix, products){
+  const ps=Array.isArray(products)?products:[];
+  let h=`<label>商品（最多 3 個，品名可下拉、單價手動）</label>`;
+  for(let i=0;i<3;i++){ const p=ps[i]||{};
+    h+=`<div class="row" style="gap:8px;margin-bottom:6px">
+      <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
+      <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="單價" style="flex:1;min-width:80px">
+    </div>`; }
+  h+=`<datalist id="${prefix}_plist">${knownProducts().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
+  return h;
+}
+function collectProducts(prefix){ const out=[];
+  for(let i=0;i<3;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
+    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0}); }
+  return out;
+}
 function viewPerf(){
   return `<h2>📊 成效</h2>
   <div class="card">
