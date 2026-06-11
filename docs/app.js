@@ -319,7 +319,7 @@ function openDay(ds){
     const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?(v.name||v.rawName):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
       <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
       <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
       <td data-label="連結">${upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'<span class="muted">未填</span>'}${drive?` ・<a href="${esc(drive)}" target="_blank" class="muted">存檔</a>`:''}</td>
@@ -339,7 +339,7 @@ function openDay(ds){
   const reusePicker = `<div class="card" style="border-color:var(--accent)"><b>♻ 排舊片重播到這天</b>
     ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
         <div style="flex:1;min-width:150px"><label style="margin:0 0 2px">選一支舊片</label>
-          <select id="od_vid" onchange="odPickVid()">${doneList.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||v.id)}（已用 ${usageList(v).length} 次）</option>`).join("")}</select></div>
+          <select id="od_vid" onchange="odPickVid()">${doneList.map(v=>`<option value="${v.id}">${esc(vidTitle(v))}（已用 ${usageList(v).length} 次）</option>`).join("")}</select></div>
         ${timeField}
         <button class="btn sm" onclick="odReuse('${ds}')">排入</button>
       </div>
@@ -403,10 +403,10 @@ function viewWork(){
   const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
   const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理");
-  const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(v.name||v.rawName||"(未命名)")}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
+  const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(vidTitle(v))}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
   const myDoneToday = (STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===today).length;
   const matRow = (v)=>`<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(v.name||v.rawName||"(未命名)")}</a> ${typeTag(v.mainType)}</td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> ${typeTag(v.mainType)}</td>
       <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
       <td data-label=""><button class="btn sm" onclick="finishVid('${v.id}')">完成上架✔</button></td>
     </tr>`;
@@ -567,7 +567,7 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
   return `<div class="vrow" onclick="editVideo('${v.id}')">
     <span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="light" style="background:${dot};flex:none"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.name||v.rawName||"(未命名)")}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>
       ${isNewVideo(v)?'<span class="tag" style="background:#fde68a;color:#92400e;flex:none">🆕新片</span>':''}</span>
     <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
@@ -786,7 +786,7 @@ function platChips(cls, selected){ const sel=new Set(selected||[]);
 function collectPlat(cls){ return Array.from(document.querySelectorAll('.'+cls)).filter(x=>x.checked).map(x=>x.value); }
 // 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主
 function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
-function vidTitle(v){ return (v&&(v.name||v.rawName))||"(未命名)"; }
+function vidTitle(v){ const t=(v&&(v.name||v.rawName))||"(未命名)"; const c=vidCode(v); return c?(c+" "+t):t; }
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
 // 商品列：最多 3 個，每個 品名(下拉)+單價(手動)
