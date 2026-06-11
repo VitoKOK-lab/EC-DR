@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 1**
+- 目前版本：**schemaVersion = 2**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -15,9 +15,10 @@
 
 | 欄位 | 型別 | 中文 | 說明 |
 |---|---|---|---|
-| `id` | string | 編號 | 與文件 ID 相同，`V001` |
-| `name` | string | 成品名稱 | 影片標題 |
-| `rawName` | string | 原片／內容 | 毛片素材、主題、重點說明 |
+| `id` | string | 系統編號 | 與文件 ID 相同，`V001`（遞增） |
+| `code` | string | 影片編號 | 可自訂的編號；空白則取 `id` 數字（V001→001） |
+| `name` | string | 成品標題名稱 | **對外顯示以此為主**；不填則同 `rawName` |
+| `rawName` | string | 原始片名 | 毛片名稱／素材說明 |
 | `tags` | string[] | 標籤 | 由 `settings.videoTags` 選；寵粉/代理/流量/帶貨/家庭/理財/投資/教育/個人成長 |
 | `subTag` | string | 子標籤 | = `tags[0]`，相容舊資料用 |
 | `mainType` | string | 主類別 | `流量型`／`帶貨型`／`寵粉`，由標籤推導，**排程分類用** |
@@ -28,11 +29,10 @@
 | `claimedAt` | string(ISO) | 認領時間 | |
 | `finishedAt` | string(ISO) | 完成時間 | 完成上架的時間（排序、KPI 用） |
 | `durationMin` | number\|null | 剪輯耗時 | 分鐘（認領→完成） |
-| `scheduledDate` | string\|null | 上片日期 | `YYYY-MM-DD` |
-| `publishTime` | string | 上片時間 | `HH:MM`（10:00/12:00/16:00） |
+| `scheduledDate` | string\|null | 預排上片日期 | `YYYY-MM-DD` |
+| `publishTime` | string | 預排上片時間 | `HH:MM`（10:00/12:00/16:00） |
 | `platforms` | string[] | 投放平台 | 對應 `settings.postPlatforms[].name` |
-| `product` | string | 商品品名 | 這支在賣的商品 |
-| `price` | number | 單價 | |
+| `products` | object[] | 商品（最多 3 個） | 每筆 `{name, price}`，單價手動輸入 |
 | `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
@@ -87,7 +87,7 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| `schemaVersion` | number | 結構版本（目前 1） |
+| `schemaVersion` | number | 結構版本（目前 2） |
 | `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `videoTags` | string[] | 影片標籤清單 |
@@ -95,10 +95,10 @@
 | `shoplineBase` | string | Shopline 網址（導購連結用） |
 | `sources` | string[] | 片源清單 |
 | `mainTypes` | string[] | 主類別清單 |
-| `subTags` | map | 各主類別的子標籤 |
-| `reuseWindowDays` / `reuseCap` | number | 重播熱度視窗／上限 |
+| `reuseWindowDays` | number | 重播熱度視窗 |
+| `adminPassword` | string | 管理員登入密碼（預設 1234，可於設定自改） |
 
-**已淘汰（保留不再使用，勿依賴）**：`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`adminPassword`、`offsiteBackupDir`。
+**已淘汰（保留不再使用，勿依賴）**：`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`subTags`、`reuseCap`、`offsiteBackupDir`。
 
 ---
 

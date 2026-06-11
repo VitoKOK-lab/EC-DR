@@ -12,7 +12,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"],
@@ -77,7 +77,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       if (!Array.isArray(cur.videoTags) || !cur.videoTags.length) patch.videoTags = DEFAULT_SETTINGS.videoTags;
       if (!cur.weekdayTargets || typeof cur.weekdayTargets !== "object") patch.weekdayTargets = DEFAULT_SETTINGS.weekdayTargets;
       if (!Array.isArray(cur.postPlatforms) || !cur.postPlatforms.length) patch.postPlatforms = DEFAULT_SETTINGS.postPlatforms;
-      if (cur.schemaVersion == null) patch.schemaVersion = 1;
+      if (cur.schemaVersion == null) patch.schemaVersion = 2;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 
