@@ -102,6 +102,8 @@ function isNewVideo(v){ if(!v||!["已完成","已上片"].includes(v.stage)) ret
   const d=videoPubDate(v); if(!d) return false;
   const diff=(new Date(today+"T00:00:00")-new Date(d+"T00:00:00"))/86400000;
   return diff>=0 && diff<=NEW_DAYS; }
+// 手選「新片」若已過上片 45 天 → 顯示歸為舊片（沒上片日則維持手選）
+function pastNewWindow(v){ const d=videoPubDate(v); if(!d) return false; return (new Date(today+"T00:00:00")-new Date(d+"T00:00:00"))/86400000 > NEW_DAYS; }
 
 // ---------- 寫入路由（操作 Firestore） ----------
 function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id); }
@@ -543,7 +545,7 @@ function newSimpleVideo(){
 // ===================================================================
 // 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
 // ===================================================================
-const DEFAULT_TAGS=["每日寵粉","招商","銷售"];
+const DEFAULT_TAGS=["新片","舊片","每日寵粉","招商","銷售"];
 function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
   <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
@@ -584,9 +586,10 @@ function vidRowsHTML(){
   if(!total) return '<p class="muted">沒有符合的影片</p>';
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
   const tagsOf=(v)=>{ const arr=[];
-    if(["已完成","已上片"].includes(v.stage)) arr.push(isNewVideo(v)?"新片":"舊片");
     const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]);
-    t.forEach(x=>{ const sx=String(x).trim(); if(sx) arr.push(sx); });
+    t.forEach(x=>{ let sx=String(x).trim(); if(!sx) return;
+      if(sx==="新片" && pastNewWindow(v)) sx="舊片";
+      if(!arr.includes(sx)) arr.push(sx); });
     if(!arr.length) arr.push("（未分類）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
@@ -624,7 +627,7 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
-      ${["新片","舊片"].concat(videoTags()).map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
+      ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
       <button class="btn sm sec" onclick="vidTagClear()">全部</button>
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
