@@ -73,7 +73,7 @@ function dayVideoList(date){
 function dayScheduledCount(date){ return dayVideoList(date).length; }
 // 每天上片目標：依「星期幾」設定 流量／帶貨／寵粉 各幾支（不分平假日）
 const TYPE_ORDER=["流量型","帶貨型","寵粉"];
-const TYPE_SHORT={"流量型":"流量","帶貨型":"帶貨","寵粉":"寵粉"};
+const TYPE_SHORT={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
 const WD_ORDER=[1,2,3,4,5,6,0]; const WD_LABEL={0:"日",1:"一",2:"二",3:"三",4:"四",5:"五",6:"六"};
 function defaultWeekdayTargets(){ const o={}; for(let d=0;d<7;d++) o[d]={"流量型":3,"帶貨型":1,"寵粉":0}; return o; }
 function weekdayTargets(){ const w=STATE.settings&&STATE.settings.weekdayTargets; return (w&&typeof w==="object")?w:defaultWeekdayTargets(); }

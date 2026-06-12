@@ -179,16 +179,17 @@
     .modal .box{padding:18px;border-radius:16px}
     .addRow{flex-direction:column}
     .cal{gap:5px}
-    .day{min-height:60px;padding:5px;border-radius:8px}
-    .day .dnum{font-size:14px}
-    .day .big{font-size:17px}
+    .day{min-height:62px;padding:5px;border-radius:8px;align-items:center;justify-content:center;text-align:center}
+    .day .dnum{font-size:14px;position:absolute;top:3px;left:5px}
+    .day .todaymk{font-size:8px;padding:1px 4px}
+    .day .big{font-size:20px;margin-top:0}
     .day .big span{font-size:10px !important}
-    .day .pmk{font-size:9px;margin-top:1px}
-    .day .tbar .seg{height:5px}
-    .day.urgent{min-height:66px}
+    .day .pmk{display:none}            /* 手機隱藏缺口明細，用底色表達狀態，點進去看細節 */
+    .day .tbar{display:none}
+    .day.urgent{min-height:62px}
     .day.urgent .dnum{font-size:15px}
-    .day.urgent .big{font-size:24px}
-    .day.urgent .pmk{font-size:11px}
+    .day.urgent .big{font-size:22px}
+    .day.urgent .pmk{display:none}
   }
   @media (max-width:380px){
     .grid.cols4{grid-template-columns:1fr 1fr !important}
