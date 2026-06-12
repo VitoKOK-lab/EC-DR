@@ -32,7 +32,7 @@
 | `scheduledDate` | string\|null | 預排上片日期 | `YYYY-MM-DD` |
 | `publishTime` | string | 預排上片時間 | `HH:MM`（10:00/12:00/16:00） |
 | `platforms` | string[] | 投放平台 | 對應 `settings.postPlatforms[].name` |
-| `products` | object[] | 商品（最多 3 個） | 每筆 `{name, price}`，單價手動輸入 |
+| `products` | object[] | 商品（最多 4 個） | 每筆 `{name, price}`，單價手動輸入 |
 | `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
