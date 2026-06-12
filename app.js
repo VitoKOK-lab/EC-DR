@@ -568,8 +568,7 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
   return `<div class="vrow" onclick="editVideo('${v.id}')">
     <span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="light" style="background:${dot};flex:none"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>
-      ${isNewVideo(v)?'<span class="tag" style="background:#fde68a;color:#92400e;flex:none">🆕新片</span>':''}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></span>
     <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
