@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
   schemaVersion: 2,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
-  videoTags: ["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"],
+  videoTags: ["每日寵粉","招商","銷售"],
   sources: ["老闆自拍", "外部公司"],
   // 每天上片數（依星期幾 0=日…6=六）：流量／帶貨／寵粉
   weekdayTargets: {
