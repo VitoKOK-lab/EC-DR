@@ -332,7 +332,7 @@ function openDay(ds){
     .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
   const timeField = `<div style="min-width:120px"><label style="margin:0 0 2px">上片時間</label>
-    <select id="od_time">${PUB_TIMES.map(t=>`<option ${t===autoTime?"selected":""}>${t}</option>`).join("")}</select></div>`;
+    <input id="od_time" type="time" value="${autoTime}"></div>`;
   // 存檔位置（雲端備份）＝這支影片本來的存檔，重播都一樣 → 自動帶入；切換影片時更新
   OD_DRIVE={}; doneList.forEach(v=>{ OD_DRIVE[v.id]=v.driveFolder||""; });
   const firstDrive = doneList.length ? (doneList[0].driveFolder||"") : "";
