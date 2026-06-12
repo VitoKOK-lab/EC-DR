@@ -82,8 +82,8 @@ function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay()
 function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["帶貨型"]||0)+(t["寵粉"]||0); }
 // 影片歸類：寵粉 > 帶貨型 > 流量型
 function videoTypeOf(v){ if(!v) return "流量型"; const tags=Array.isArray(v.tags)?v.tags:[];
-  if(v.mainType==="寵粉"||tags.includes("寵粉")||String(v.subTag||"").includes("寵粉")) return "寵粉";
-  if(v.mainType==="帶貨型"||tags.some(t=>["帶貨","代理"].includes(t))) return "帶貨型";
+  if(v.mainType==="寵粉"||tags.some(t=>String(t).includes("寵粉"))||String(v.subTag||"").includes("寵粉")) return "寵粉";
+  if(v.mainType==="帶貨型"||tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))) return "帶貨型";
   return "流量型"; }
 // 某天已排各類型數量、缺口、是否排滿
 function dayBreakdown(date){ const list=dayVideoList(date); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
@@ -543,7 +543,7 @@ function newSimpleVideo(){
 // ===================================================================
 // 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
 // ===================================================================
-const DEFAULT_TAGS=["寵粉","代理","流量","帶貨","家庭","理財","投資","教育","個人成長"];
+const DEFAULT_TAGS=["每日寵粉","招商","銷售"];
 function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
   <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
@@ -583,13 +583,15 @@ function vidRowsHTML(){
   const total=list.length;
   if(!total) return '<p class="muted">沒有符合的影片</p>';
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); const arr=t.length?t.slice():["（未分類）"]; if(isNewVideo(v)) arr.unshift("🆕 新片（45天內）"); return arr; };
+  const tagsOf=(v)=>{ const arr=[];
+    if(["已完成","已上片"].includes(v.stage)) arr.push(isNewVideo(v)?"新片":"舊片");
+    const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]);
+    t.forEach(x=>{ const sx=String(x).trim(); if(sx) arr.push(sx); });
+    if(!arr.length) arr.push("（未分類）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
-  let names=Object.keys(groups).sort((a,b)=>{
-    const an=a.startsWith("🆕"), bn=b.startsWith("🆕"); if(an!==bn) return an?-1:1;
-    const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
-    return String(a).localeCompare(String(b)); });
+  const tord=(n)=>n==="新片"?0:(n==="舊片"?1:(n.startsWith("（")?9:5));
+  let names=Object.keys(groups).sort((a,b)=> tord(a)-tord(b) || String(a).localeCompare(String(b)));
   if(VID_TAGS.size) names=names.filter(n=>VID_TAGS.has(n));
   if(!names.length) return '<p class="muted">沒有符合所選標籤的影片</p>';
   const shownIds=new Set(); names.forEach(n=>groups[n].forEach(v=>shownIds.add(v.id)));
@@ -622,7 +624,7 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
-      ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
+      ${["新片","舊片"].concat(videoTags()).map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
       <button class="btn sm sec" onclick="vidTagClear()">全部</button>
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
@@ -669,7 +671,7 @@ function editVideo(id){
       </tbody></table></div>`:""}
   `, async ()=>{
     const tags=collectTags("e"); await persistNewTags(tags);
-    const mainType = tags.includes("寵粉")?"寵粉":(tags.some(t=>["帶貨","代理"].includes(t))?"帶貨型":"流量型");
+    const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
     const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"",
       platforms:collectPlat("e_plat"), products:collectProducts("e"), productUrl:val("e_url").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
