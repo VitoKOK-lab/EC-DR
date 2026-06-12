@@ -531,10 +531,11 @@ function renderFinishLinks(){
 function newSimpleVideo(){
   showModal("新增待剪新片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
+    ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name};
+    const video={name, rawName:name, products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增待剪新片");
   });
 }
@@ -792,8 +793,8 @@ function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (
 // 商品列：最多 3 個，每個 品名(下拉)+單價(手動)
 function productRows(prefix, products){
   const ps=Array.isArray(products)?products:[];
-  let h=`<label>商品（最多 3 個，品名可下拉、單價手動）</label>`;
-  for(let i=0;i<3;i++){ const p=ps[i]||{};
+  let h=`<label>銷售商品（最多 4 個，品名可下拉、單價手動）</label>`;
+  for(let i=0;i<4;i++){ const p=ps[i]||{};
     h+=`<div class="row" style="gap:8px;margin-bottom:6px">
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
       <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="單價" style="flex:1;min-width:80px">
@@ -802,7 +803,7 @@ function productRows(prefix, products){
   return h;
 }
 function collectProducts(prefix){ const out=[];
-  for(let i=0;i<3;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
+  for(let i=0;i<4;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
     out.push({name, price:parseInt(val(prefix+"_pp"+i))||0}); }
   return out;
 }
