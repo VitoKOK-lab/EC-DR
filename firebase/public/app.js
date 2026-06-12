@@ -628,7 +628,7 @@ function viewVideos(){
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
       ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
-      <button class="btn sm sec" onclick="vidTagClear()">全部</button>
+      <a href="javascript:void(0)" onclick="vidTagClear()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
   </div>`;
