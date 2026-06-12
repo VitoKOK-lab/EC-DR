@@ -499,7 +499,7 @@ function finishVid(id){
     <div style="display:flex;flex-wrap:wrap;gap:6px" onchange="finishGate('f_');renderFinishLinks()">${platChips("f_plat", defPlat)}</div>
     <div class="grid cols2">
       <div><label>預排上片日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
-      <div><label>預排上片時間</label>${pubTimeSelect("f_time", v.publishTime)}</div>
+      <div><label>預排上片時間</label><input id="f_time" type="time" value="${esc(v.publishTime||"10:00")}"></div>
     </div>
     ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
     ${productRows("f", v.products)}
