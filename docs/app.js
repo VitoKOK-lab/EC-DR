@@ -573,6 +573,7 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
   </div>`; }
+let VID_TAGS=new Set();   // 影片庫的標籤篩選（可複選）
 function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
@@ -585,19 +586,24 @@ function vidRowsHTML(){
   const tagsOf=(v)=>{ const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]); const arr=t.length?t.slice():["（未分類）"]; if(isNewVideo(v)) arr.unshift("🆕 新片（45天內）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
-  const names=Object.keys(groups).sort((a,b)=>{
+  let names=Object.keys(groups).sort((a,b)=>{
     const an=a.startsWith("🆕"), bn=b.startsWith("🆕"); if(an!==bn) return an?-1:1;
     const au=a.startsWith("（"), bu=b.startsWith("（"); if(au!==bu) return au?1:-1;
     return String(a).localeCompare(String(b)); });
+  if(VID_TAGS.size) names=names.filter(n=>VID_TAGS.has(n));
+  if(!names.length) return '<p class="muted">沒有符合所選標籤的影片</p>';
+  const shownIds=new Set(); names.forEach(n=>groups[n].forEach(v=>shownIds.add(v.id)));
   return names.map(n=>{
     const vs=groups[n].sort((a,b)=>(rank[a.stage]??9)-(rank[b.stage]??9) || String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
     return `<details class="vgrp" ${q?'open':''} style="border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:4px 10px">
       <summary style="cursor:pointer;font-weight:700;padding:8px 0">🏷 ${esc(n)} <span class="muted" style="font-weight:500;font-size:12px">（${vs.length}）</span></summary>
       <div style="padding-bottom:4px">${vs.map(videoItemRich).join('')}</div>
     </details>`;
-  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${total} 筆・${names.length} 個標籤</p>`;
+  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${VID_TAGS.size?shownIds.size:total} 筆・${names.length} 個標籤</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
+function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
+function vidTagClear(){ VID_TAGS.clear(); render(); }
 function viewVideos(){
   const all=STATE.videos||[];
   const c=st=>all.filter(v=>v.stage===st).length;
@@ -613,6 +619,11 @@ function viewVideos(){
         <option value="已上片">已上片（${c("已上片")}）</option>
       </select>
       <button class="btn sm" onclick="newSimpleVideo()">＋ 新增片源</button>
+    </div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
+      <span class="muted" style="font-size:12px">標籤：</span>
+      ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
+      <button class="btn sm sec" onclick="vidTagClear()">全部</button>
     </div>
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
   </div>`;
