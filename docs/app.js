@@ -612,18 +612,18 @@ function vidTagClear(){ VID_TAGS.clear(); render(); }
 function viewVideos(){
   const all=STATE.videos||[];
   const c=st=>all.filter(v=>v.stage===st).length;
-  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依標籤分組・點標題看細節</span></h2>
+  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依標籤分類・點影片看／改細節</span></h2>
   <div class="card">
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
       <input id="vid_q" placeholder="🔍 搜尋影片名稱／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
       <select id="vid_stage" onchange="vidFilter()">
-        <option value="all">全部狀態（${all.length}）</option>
+        <option value="all">全部影片（${all.length}）</option>
         <option value="待處理">待處理（${c("待處理")}）</option>
         <option value="剪輯中">剪輯中（${c("剪輯中")}）</option>
         <option value="已完成">已完成（${c("已完成")}）</option>
         <option value="已上片">已上片（${c("已上片")}）</option>
       </select>
-      <button class="btn sm" onclick="newSimpleVideo()">＋ 新增片源</button>
+      <button class="btn sm" onclick="newSimpleVideo()">＋ 新增影片</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
