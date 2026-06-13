@@ -6,7 +6,7 @@
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
   boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["perf","📊 成效"]],
-  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"],["perf","📊 成效"]],
+  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
