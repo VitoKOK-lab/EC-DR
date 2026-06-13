@@ -1,7 +1,7 @@
 // ===================================================================
 // Firebase 資料層 — 連線、匿名登入、Firestore 即時同步
 // 只負責「資料進出」；畫面與運算在 app.js。結構見 SCHEMA.md。
-// 讀取最佳化：本機快取(persistent cache) → 重新整理只抓「有變動的」。
+// 即時同步：onSnapshot 監聽，任何裝置改資料庫 ~1 秒同步到所有人。
 // ===================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
@@ -43,12 +43,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
 } else {
   const app = initializeApp(firebaseConfig);
   // 本機快取：重新整理／重開時優先用快取，伺服器只傳「有變動」的文件 → 大幅降低讀取數
-  let db;
-  try {
-    db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
-  } catch (e) {
-    db = getFirestore(app); // 萬一瀏覽器不支援 IndexedDB，退回一般模式
-  }
+  // 一般記憶體快取（不持久化到 IndexedDB）→ 每次載入都抓最新，避免舊資料殘留造成不同步
+  const db = getFirestore(app);
   const auth = getAuth(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
