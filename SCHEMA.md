@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 2**
+- 目前版本：**schemaVersion = 3**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -37,12 +37,17 @@
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
 | `socialLink` | string | 社群預排連結 | 排程工具／預約貼文（選填） |
+| `note` | string | 備註 | 補充說明（整併自舊 Google 試算表） |
 | `usageHistory` | object[] | 重播紀錄 | 每筆 `{date, link, drive, time, by, at}` |
 | `totalUsed` | number | 重播次數 | |
 | `locked` | boolean | 鎖定 | 完成上架後鎖定 |
 | `published` | boolean | 已上架 | 完成確認旗標 |
 | `backupDone` | boolean | 已備份 | 完成確認旗標 |
 | `socialScheduled` | boolean | 已預排 | 完成確認旗標 |
+| `reviewStatus` | string | 審核狀態 | 老闆娘選擇性審核：``／`通過`／`退回`（不擋上架） |
+| `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
+| `reviewedBy` | string | 審核人 | |
+| `reviewedAt` | string(ISO) | 審核時間 | |
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、`isNewVideo`（上片 45 天內為新片）。
 
@@ -87,7 +92,7 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| `schemaVersion` | number | 結構版本（目前 2） |
+| `schemaVersion` | number | 結構版本（目前 3） |
 | `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `videoTags` | string[] | 影片標籤清單 |
