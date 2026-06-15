@@ -425,47 +425,52 @@ function viewWork(){
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
   ${rejCard}
+  <p class="muted" style="margin:-8px 0 14px;font-size:13px">作業順序：① 領取毛片 → ② 剪輯製作 → ③ 完成上架（自動排程・老闆娘抽查）</p>
+
   <div class="card" style="border-left:5px solid var(--accent)">
     <div class="row" style="gap:14px;align-items:center">
       ${numBadge(1,'var(--accent)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">建檔新毛片</b>
-        <span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div></div>
-    </div>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" onclick="batchNewFootage()">＋ 批次建檔今天的新毛片</button>
-      <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
-    </div>
-  </div>
-
-  <div class="card" style="border-left:5px solid var(--accent)">
-    <div class="row" style="gap:14px;align-items:center">
-      ${numBadge(2,'var(--accent)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">用舊片排滿時段</b>
-        <span class="pill" style="border:1px solid ${runCol};color:${runCol};background:none">排程安全 ${g.runway} 天</span></div></div>
-    </div>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程排舊片</button>
-    </div>
-  </div>
-
-  <div class="card" style="border-left:5px solid var(--green)">
-    <div class="row" style="gap:14px;align-items:center">
-      ${numBadge(3,'var(--green)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">下拉新毛片開始剪</b>
-        <span style="display:flex;gap:6px">
-          <span class="pill ok">✔ 今日 ${myDoneToday}</span>
-          <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></span></div></div>
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">領取毛片開始剪</b>
+        <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></div></div>
     </div>
     ${pool.length
       ? `<div class="row" style="gap:8px;margin-top:10px">
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
            <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
          </div>`
-      : ``}
-    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支進行中</p>`:""}
-    <table class="responsive" style="margin-top:12px"><thead><tr><th>我進行中的影片</th><th>片源</th><th></th></tr></thead>
-    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">—</td></tr>`}</tbody></table>
-  </div>`;
+      : `<p class="muted" style="margin-top:10px">目前沒有待剪新片，可到下方「其他工具」建檔新毛片。</p>`}
+    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支進行中，先完成幾支再領</p>`:``}
+  </div>
+
+  <div class="card" style="border-left:5px solid var(--amber)">
+    <div class="row" style="gap:14px;align-items:center">
+      ${numBadge(2,'var(--amber)')}
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">剪輯製作中（剪好按右邊完成上架）</b>
+        <span class="pill ${inProg?'wa':'ok'}">${inProg} 支</span></div></div>
+    </div>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th>片源</th><th>完成上架</th></tr></thead>
+    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，先到 ① 領取</td></tr>`}</tbody></table>
+  </div>
+
+  <div class="card" style="border-left:5px solid var(--green)">
+    <div class="row" style="gap:14px;align-items:center">
+      ${numBadge(3,'var(--green)')}
+      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">完成上架</b>
+        <span class="pill ok">✔ 今日完成 ${myDoneToday}</span></div></div>
+    </div>
+    <p class="muted" style="font-size:13px;margin:8px 0 0">在 ② 按「完成上架✔」→ 填齊 標題／雲端連結／預排時間／平台／標籤／商品／備註 → 自動排入月行事曆，老闆娘會抽查；被退回的會出現在本頁最上方。</p>
+  </div>
+
+  <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">🛠 其他工具（建檔新毛片 / 排舊片）</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="row" style="justify-content:space-between"><b>＋ 建檔新毛片</b><span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn sm" onclick="batchNewFootage()">批次建檔</button>
+        <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
+        <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程排舊片（安全 ${g.runway} 天）</button>
+      </div>
+    </div>
+  </details>`
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
