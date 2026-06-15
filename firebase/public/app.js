@@ -298,16 +298,21 @@ function viewCal(){
   return `
   <h2>📅 月排程</h2>
   <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <button class="btn sm sec" onclick="calMove(-1)">← 上月</button>
-      <b>${y} 年 ${m+1} 月</b>
-      <button class="btn sm sec" onclick="calMove(1)">下月 →</button>
+    <div class="calhead">
+      <button class="calnav" onclick="calMove(-1)" title="上月">‹</button>
+      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
+      <button class="calnav" onclick="calMove(1)" title="下月">›</button>
     </div>
-    <div class="cal" style="margin-top:12px">
+    <div class="cal">
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <p class="muted" style="margin-top:10px;font-size:12px"><span style="color:var(--green)">●</span> 已排滿　<span style="color:#888">●</span> 未排　<span style="color:var(--red)">●</span> 待補</p>
+    <div class="callegend">
+      <span><i class="lg-g"></i>已排滿</span>
+      <span><i class="lg-r"></i>待補</span>
+      <span><i class="lg-b"></i>未排</span>
+      <span><i class="lg-t"></i>今天</span>
+    </div>
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
