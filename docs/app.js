@@ -612,17 +612,17 @@ function vidRowsHTML(){
     t.forEach(x=>{ let sx=String(x).trim(); if(!sx) return;
       if(sx==="新片" && pastNewWindow(v)) sx="舊片";
       if(!arr.includes(sx)) arr.push(sx); });
-    if(!arr.length) arr.push("（未分類）"); return arr; };
+    if(!arr.length) arr.push(v.stage==="待處理"?"🆕 待處理（待剪）":"（未分類）"); return arr; };
   const groups={};
   list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
-  const tord=(n)=>n==="新片"?0:(n==="舊片"?1:(n.startsWith("（")?9:5));
+  const tord=(n)=>String(n).startsWith("🆕")?-1:(n==="新片"?0:(n==="舊片"?1:(n.startsWith("（")?9:5)));
   let names=Object.keys(groups).sort((a,b)=> tord(a)-tord(b) || String(a).localeCompare(String(b)));
   if(VID_TAGS.size) names=names.filter(n=>VID_TAGS.has(n));
   if(!names.length) return '<p class="muted">沒有符合所選標籤的影片</p>';
   const shownIds=new Set(); names.forEach(n=>groups[n].forEach(v=>shownIds.add(v.id)));
   return names.map(n=>{
     const vs=groups[n].sort((a,b)=>(rank[a.stage]??9)-(rank[b.stage]??9) || String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
-    return `<details class="vgrp" ${q?'open':''} style="border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:4px 10px">
+    return `<details class="vgrp" ${(q||String(n).startsWith("🆕"))?'open':''} style="border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:4px 10px">
       <summary style="cursor:pointer;font-weight:700;padding:8px 0">🏷 ${esc(n)} <span class="muted" style="font-weight:500;font-size:12px">（${vs.length}）</span></summary>
       <div style="padding-bottom:4px">${vs.map(videoItemRich).join('')}</div>
     </details>`;
