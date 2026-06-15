@@ -47,7 +47,8 @@ function newVideoRecord(over){
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
     scheduledDate:null, publishTime:"", platforms:[],
-    products:[], productUrl:"",
+    products:[], productUrl:"", note:"",
+    reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
     driveFolder:"", publishedLink:"", socialLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
@@ -144,6 +145,7 @@ async function route(method, path, body){
       if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
       if(Array.isArray(body.products)) patch.products=body.products;
       if(body.productUrl!==undefined) patch.productUrl=body.productUrl;
+      if(body.note!==undefined) patch.note=body.note;
       if(body.publishedLink) patch.publishedLink=body.publishedLink; if(body.socialLink) patch.socialLink=body.socialLink;
       await window.DB.update("videos",id,patch); return;
     }
@@ -415,9 +417,14 @@ function viewWork(){
   const g=scheduleGlance(); const SAFE=15;
   const runCol=g.runway>=SAFE?'var(--green)':(g.runway>=7?'var(--amber)':'var(--red)');
   const numBadge=(n,col)=>`<span style="flex:none;width:54px;height:54px;border-radius:50%;background:${col};color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">${n}</span>`;
+  const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
+  const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">🔁 老闆娘退回待修（${rejected.length}）</b>
+    ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:8px">
+      <a href="javascript:void(0)" onclick="editVideo('${v.id}')"><b>${esc(vidTitle(v))}</b></a>
+      ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">退回原因：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
   return `
   <h2>📋 今日工作（${esc(me)}）</h2>
-
+  ${rejCard}
   <div class="card" style="border-left:5px solid var(--accent)">
     <div class="row" style="gap:14px;align-items:center">
       ${numBadge(1,'var(--accent)')}
@@ -508,11 +515,12 @@ function finishVid(id){
     <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" oninput="renderFinishLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <div id="f_links"></div>
     <label>社群預排連結（選填）</label><input id="f_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具／預約貼文連結">
+    <label>備註（選填）</label><input id="f_note" value="${esc(v.note||"")}" placeholder="補充說明">
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
       {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
-       platforms:collectPlat("f_plat"), products:collectProducts("f"), productUrl:val("f_url").trim(),
+       platforms:collectPlat("f_plat"), products:collectProducts("f"), productUrl:val("f_url").trim(), note:val("f_note").trim(),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
   });
@@ -572,9 +580,18 @@ function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"
       <span class="light" style="background:${dot};flex:none"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></span>
     <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
+      ${v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">✔審</span>':(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">✘退</span>':'')}
       <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
       <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
   </div>`; }
+// 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
+function reviewVid(id, status){
+  let note="";
+  if(status==="退回"){ note=prompt("退回原因（給剪輯修正）："); if(note===null) return; if(!note.trim()){ toast("請填退回原因",true); return; } }
+  window.DB.update("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso()})
+    .then(()=>{ toast(status==="通過"?"已通過 ✔":"已退回，剪輯會收到 🔁"); closeModal(); })
+    .catch(()=>toast("操作失敗，請稍後再試",true));
+}
 let VID_TAGS=new Set();   // 影片庫的標籤篩選（可複選）
 function vidRowsHTML(){
   const all=STATE.videos||[];
@@ -664,6 +681,13 @@ function editVideo(id){
       ${(((Array.isArray(v.platforms)&&v.platforms.length)?postPlatforms().filter(p=>v.platforms.includes(p.name)):postPlatforms())).map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
         <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(v.productUrl,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
     </div>`:''}
+    <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
+    ${currentRole()==='boss'?`<div class="card" style="background:var(--panel2)"><b>👩‍💼 老闆娘審核</b>
+      <div class="row" style="gap:8px;margin-top:6px;align-items:center">
+        <button class="btn sm" type="button" onclick="reviewVid('${id}','通過')">✔ 通過</button>
+        <button class="btn sm danger" type="button" onclick="reviewVid('${id}','退回')">✘ 退回</button>
+        <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
+      </div></div>`:''}
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
@@ -679,7 +703,7 @@ function editVideo(id){
       platforms:collectPlat("e_plat"), products:collectProducts("e"), productUrl:val("e_url").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
-      driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social")};
+      driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social"), note:val("e_note").trim()};
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal();
     return ok;
