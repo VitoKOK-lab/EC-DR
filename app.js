@@ -660,6 +660,13 @@ function viewVideos(){
     <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
   </div>`;
 }
+// 刪除影片：二次確認，無法復原
+function delVideo(id){
+  const v=vid(id)||{};
+  if(!confirm("確定要刪除「"+vidTitle(v)+"」？")) return;
+  if(!confirm("再次確認：真的要永久刪除這支影片嗎？刪除後無法復原。")) return;
+  write("DELETE","/api/videos/"+id,{},"已刪除影片").then(ok=>{ if(ok) closeModal(); });
+}
 function editVideo(id){
   const v = vid(id)||{};
   const s=STATE.settings||{};
@@ -706,6 +713,10 @@ function editVideo(id){
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
       </tbody></table></div>`:""}
+    <div class="card" style="border-color:var(--red)">
+      <button class="btn danger sm" type="button" onclick="delVideo('${id}')">🗑 刪除這支影片</button>
+      <span class="muted" style="font-size:12px;margin-left:8px">需二次確認，刪除後無法復原</span>
+    </div>
   `, async ()=>{
     const tags=collectTags("e"); await persistNewTags(tags);
     const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
@@ -717,7 +728,7 @@ function editVideo(id){
     const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
     if(ok) closeModal();
     return ok;
-  });
+  }, "💾 儲存修改");
 }
 
 // ===================================================================
