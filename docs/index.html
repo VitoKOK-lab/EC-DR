@@ -19,7 +19,7 @@
     --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
     --shadow:0 1px 2px rgba(40,30,55,.05),0 2px 10px rgba(40,30,55,.05);
     --shadow2:0 12px 36px rgba(40,30,55,.14);
-    --r:14px; --rs:10px;
+    --r:10px; --rs:6px;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
@@ -91,9 +91,9 @@
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   th{color:var(--muted);font-weight:700;font-size:12px;letter-spacing:.5px;text-transform:none}
   tbody tr:hover{background:var(--panel2)}
-  .tag{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--chip);font-size:12px;font-weight:700;color:#6a6478}
-  .tag.traffic{background:var(--trafficbg);color:var(--traffic)}
-  .tag.sales{background:var(--salesbg);color:var(--sales)}
+  .tag{display:inline-block;padding:2px 9px;border-radius:6px;background:var(--chip);font-size:12px;font-weight:700;color:#6a6478}
+  .tag.traffic{background:var(--chip);color:#6a6478}
+  .tag.sales{background:var(--salesbg);color:var(--accent)}
   .light{display:inline-block;width:10px;height:10px;border-radius:50%}
   .green{background:var(--green)} .yellow{background:var(--amber)} .red{background:var(--red)}
   .muted{color:var(--muted)}
@@ -105,7 +105,7 @@
   .neg{color:var(--red);font-weight:800}
 
   .progbar{height:9px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:6px}
-  .progbar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:6px}
+  .progbar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:6px}
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
@@ -230,6 +230,18 @@
   table.wk th:nth-child(1),table.wk td:nth-child(1){width:34%}
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+  /* 影片庫分頁 + 表格 */
+  .vtabs{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px}
+  .vtab{flex:1;background:transparent;border:none;color:var(--muted);font-weight:700;font-size:14px;padding:9px 10px;border-radius:6px;cursor:pointer;transition:.14s;display:flex;align-items:center;justify-content:center;gap:6px}
+  .vtab:hover{color:var(--txt)}
+  .vtab.on{background:var(--panel);color:var(--accent);box-shadow:var(--shadow)}
+  .vtab-n{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
+  .vtab.on .vtab-n{background:var(--salesbg);color:var(--accent)}
+  .vthumb{flex:none;width:26px;height:26px;border-radius:6px;background:var(--salesbg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px}
+  table.vtable{margin-top:4px}
+  table.vtable th{white-space:nowrap}
+  table.vtable tbody tr{transition:.1s}
+  .ststack{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .vrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px;transition:.12s}
   .vrow:hover{background:var(--panel2)}
   .vrow:last-child{border-bottom:none}
