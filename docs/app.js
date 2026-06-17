@@ -328,7 +328,7 @@ function openDay(ds){
     const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:#ede9fe;color:#6d28d9">♻ 重播</span>':''}</td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:var(--chip);color:var(--gold-dk)">♻ 重播</span>':''}</td>
       <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
       <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
       <td data-label="連結">${upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'<span class="muted">未填</span>'}${drive?` ・<a href="${esc(drive)}" target="_blank" class="muted">存檔</a>`:''}</td>
@@ -620,7 +620,7 @@ function vidTableRow(v){
     :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">✘ 退回</span>':'');
   const upd=vidUpdated(v), sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
-    <td data-label="影片"><span style="display:flex;align-items:center;gap:8px;min-width:0">
+    <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></span></td>
     <td data-label="標籤">${tagHTML}</td>
@@ -644,17 +644,27 @@ function vidRowsHTML(){
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
   list.sort((a,b)=> (rank[a.stage]??9)-(rank[b.stage]??9) || String(vidUpdated(b)).localeCompare(String(vidUpdated(a))) || String(b.id).localeCompare(String(a.id)));
   return `<table class="vtable responsive">
+    <colgroup><col class="c-vid"><col class="c-tag"><col class="c-upd"><col class="c-sch"><col class="c-prod"><col class="c-ed"><col class="c-st"></colgroup>
     <thead><tr><th>影片</th><th>標籤</th><th>最後更新</th><th>預排上片</th><th>商品</th><th>剪輯師</th><th>狀態</th></tr></thead>
     <tbody>${list.map(vidTableRow).join("")}</tbody></table>
     <p class="muted" style="margin-top:8px;font-size:12px">共 ${list.length} 支</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
-function vidSetView(view){ VID_VIEW=view; render(); }
+function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 function viewVideos(){
   const all=STATE.videos||[];
   const nNew=all.filter(v=>!vidIsOld(v)).length, nOld=all.filter(v=>vidIsOld(v)).length;
   const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
+  // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
+  const viewList=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="old"?vidIsOld(v):!vidIsOld(v)));
+  const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
+  const order=videoTags();
+  const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
+  const tagBtns=present.length
+    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
+      +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>`
+    : '<span class="muted" style="font-size:12px">此分頁的影片尚未加標籤</span>';
   return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點任一列看／改細節</span></h2>
   <div class="card">
     <div class="vtabs">
@@ -668,8 +678,7 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
-      ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
-      <a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>
+      ${tagBtns}
     </div>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;

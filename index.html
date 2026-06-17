@@ -9,16 +9,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700;900&display=swap" rel="stylesheet">
 <style>
   :root{
-    /* 珠寶品牌：玫瑰紫主色 × 冷調乾淨淺底 */
-    --bg:#f5f4f8; --panel:#ffffff; --panel2:#f2f1f7; --line:#e8e6ef;
-    --txt:#272233; --muted:#8a8598;
-    --accent:#9b2c7e; --accent2:#7d1a5e;
-    --green:#0f8a6f; --greenbg:#e4f3ef; --amber:#b5924e; --amberbg:#f6eede; --red:#c0392b; --redbg:#fae9e7;
-    --chip:#efedf6; --traffic:#2f6f9e; --trafficbg:#e7f0f7; --sales:#b07a9e; --salesbg:#f6ecf2; --pamper:#7c3aed; --pamperbg:#f1e9fe;
-    --gold:#c2a35a; --gold-dk:#a07f3a; --espresso:#2a1c28;
+    /* 珠寶品牌：黑白灰金，金為唯一主色 */
+    --bg:#f4f3f0; --panel:#ffffff; --panel2:#f4f2ed; --line:#e7e4dc;
+    --txt:#26221c; --muted:#8c877d;
+    --accent:#9a7d39; --accent2:#7a611f;
+    --green:#3f7d5b; --greenbg:#e9f1ec; --amber:#a8842f; --amberbg:#f4ecd8; --red:#a8443a; --redbg:#f4e7e4;
+    --chip:#efece4; --traffic:#6f6a60; --trafficbg:#efece4; --sales:#9a7d39; --salesbg:#f3ecd9; --pamper:#9a7d39; --pamperbg:#f3ecd9;
+    --gold:#b8924e; --gold-dk:#9a7b34; --espresso:#26221c;
     --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
-    --shadow:0 1px 2px rgba(40,30,55,.05),0 2px 10px rgba(40,30,55,.05);
-    --shadow2:0 12px 36px rgba(40,30,55,.14);
+    --shadow:0 1px 2px rgba(40,35,25,.05),0 2px 10px rgba(40,35,25,.05);
+    --shadow2:0 12px 36px rgba(40,35,25,.14);
     --r:10px; --rs:6px;
   }
   *{box-sizing:border-box}
@@ -32,8 +32,8 @@
 
   /* 登入 */
   #login{position:fixed;inset:0;background:
-      radial-gradient(1100px 480px at 50% -8%, rgba(155,44,126,.12), transparent 60%),
-      radial-gradient(800px 460px at 92% 112%, rgba(155,44,126,.07), transparent 55%),
+      radial-gradient(1100px 480px at 50% -8%, rgba(154,125,57,.10), transparent 60%),
+      radial-gradient(800px 460px at 92% 112%, rgba(154,125,57,.06), transparent 55%),
       var(--bg);
     display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:50;padding:24px}
   #login h1{font-family:var(--serif);font-weight:900;font-size:30px;margin:0 0 4px;color:var(--accent);letter-spacing:2px}
@@ -52,16 +52,16 @@
   .addRow input,.addRow select{padding:10px;border-radius:var(--rs);border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
   /* 頂列：深咖啡 + 金線 */
-  header{position:sticky;top:0;z-index:30;background:linear-gradient(120deg,#3a1f37,#2a1626);
-         border-bottom:2px solid var(--gold);display:flex;align-items:center;gap:10px;padding:11px 18px;box-shadow:0 2px 16px rgba(42,22,38,.22)}
-  header .brand{font-family:var(--serif);font-weight:700;white-space:nowrap;letter-spacing:1.5px;color:#f6ecf2}
+  header{position:sticky;top:0;z-index:30;background:linear-gradient(120deg,#2a2620,#1b1814);
+         border-bottom:2px solid var(--gold);display:flex;align-items:center;gap:10px;padding:11px 18px;box-shadow:0 2px 16px rgba(20,17,12,.28)}
+  header .brand{font-family:var(--serif);font-weight:700;white-space:nowrap;letter-spacing:1.5px;color:#f1e7cf}
   header .brand .mk{color:var(--gold)}
   header .spacer{flex:1}
-  .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:7px 15px;border-radius:999px;font-weight:600;box-shadow:0 2px 10px rgba(125,26,94,.35)}
-  .whoami .dot{width:7px;height:7px;border-radius:50%;background:#ffd9f0}
+  .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:7px 15px;border-radius:999px;font-weight:600;box-shadow:0 2px 10px rgba(122,97,31,.30)}
+  .whoami .dot{width:7px;height:7px;border-radius:50%;background:#e8d39a}
   .whoami .rb{font-size:11px;opacity:.9}
   .offline{background:var(--red)!important}
-  header .btn.sec{background:rgba(255,255,255,.10);color:#f6ecf2;border:1px solid rgba(246,236,242,.25)}
+  header .btn.sec{background:rgba(255,255,255,.10);color:#f1e7cf;border:1px solid rgba(241,231,207,.25)}
   header .btn.sec:hover{background:rgba(255,255,255,.18)}
 
   nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);padding:0 12px;position:sticky;top:55px;z-index:29;box-shadow:var(--shadow)}
@@ -77,12 +77,12 @@
   .grid{display:grid;gap:14px}
   label{font-size:13px;color:var(--muted);display:block;margin:12px 0 5px;font-weight:600}
   input,select,textarea{width:100%;padding:11px 12px;border-radius:var(--rs);border:1px solid var(--line);background:#fdfbf8;color:var(--txt);font-size:14px;transition:.15s}
-  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(155,44,126,.14)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(154,125,57,.16)}
   textarea{min-height:60px}
-  .btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;padding:11px 18px;border-radius:var(--rs);font-weight:700;letter-spacing:.5px;transition:.16s;box-shadow:0 2px 10px rgba(125,26,94,.22)}
-  .btn:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 5px 16px rgba(125,26,94,.30)}
-  .btn.sec{background:var(--chip);color:#5b5566;border:1px solid var(--line);box-shadow:none}
-  .btn.sec:hover{background:#e6e3ef;filter:none;transform:translateY(-1px)}
+  .btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;padding:11px 18px;border-radius:var(--rs);font-weight:700;letter-spacing:.5px;transition:.16s;box-shadow:0 2px 10px rgba(122,97,31,.20)}
+  .btn:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 5px 16px rgba(122,97,31,.28)}
+  .btn.sec{background:var(--chip);color:#5b564c;border:1px solid var(--line);box-shadow:none}
+  .btn.sec:hover{background:#e7e3d8;filter:none;transform:translateY(-1px)}
   .btn.danger{background:linear-gradient(135deg,#c0473b,#a12f25);color:#fff;box-shadow:0 2px 10px rgba(161,47,37,.22)}
   .btn.danger:hover{filter:brightness(1.04)}
   .btn.sm{padding:7px 13px;font-size:13px;border-radius:8px}
@@ -91,8 +91,8 @@
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
   th{color:var(--muted);font-weight:700;font-size:12px;letter-spacing:.5px;text-transform:none}
   tbody tr:hover{background:var(--panel2)}
-  .tag{display:inline-block;padding:2px 9px;border-radius:6px;background:var(--chip);font-size:12px;font-weight:700;color:#6a6478}
-  .tag.traffic{background:var(--chip);color:#6a6478}
+  .tag{display:inline-block;padding:2px 9px;border-radius:6px;background:var(--chip);font-size:12px;font-weight:700;color:#6d685e}
+  .tag.traffic{background:var(--chip);color:#6d685e}
   .tag.sales{background:var(--salesbg);color:var(--accent)}
   .light{display:inline-block;width:10px;height:10px;border-radius:50%}
   .green{background:var(--green)} .yellow{background:var(--amber)} .red{background:var(--red)}
@@ -165,7 +165,7 @@
 
   /* 登出 */
   #goodbye{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;
-    background:radial-gradient(800px 400px at 50% 30%, rgba(155,44,126,.08), transparent 60%), var(--bg);color:var(--txt);text-align:center;padding:20px}
+    background:radial-gradient(800px 400px at 50% 30%, rgba(154,125,57,.08), transparent 60%), var(--bg);color:var(--txt);text-align:center;padding:20px}
   #goodbye.show{display:flex}
   #gstage{height:120px;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:18px}
   #goodbye .gtitle{font-family:var(--serif);font-size:34px;font-weight:900;letter-spacing:4px;margin:0;color:var(--accent)}
@@ -238,9 +238,17 @@
   .vtab-n{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
   .vtab.on .vtab-n{background:var(--salesbg);color:var(--accent)}
   .vthumb{flex:none;width:26px;height:26px;border-radius:6px;background:var(--salesbg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px}
-  table.vtable{margin-top:4px}
+  table.vtable{margin-top:4px;table-layout:fixed}
   table.vtable th{white-space:nowrap}
-  table.vtable tbody tr{transition:.1s}
+  table.vtable th,table.vtable td{overflow:hidden}
+  table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
+  table.vtable .c-vid{width:34%}
+  table.vtable .c-tag{width:15%}
+  table.vtable .c-upd{width:10%}
+  table.vtable .c-sch{width:11%}
+  table.vtable .c-prod{width:11%}
+  table.vtable .c-ed{width:9%}
+  table.vtable .c-st{width:10%}
   .ststack{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .vrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px;transition:.12s}
   .vrow:hover{background:var(--panel2)}
