@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 3**
+- 目前版本：**schemaVersion = 4**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -28,6 +28,7 @@
 | `claimedBy` | string | 認領人 | 拉下來剪的人 |
 | `claimedAt` | string(ISO) | 認領時間 | |
 | `finishedAt` | string(ISO) | 完成時間 | 完成上架的時間（排序、KPI 用） |
+| `updatedAt` | string(ISO) | 最後更新 | 任何欄位異動時間（影片庫「最後更新日」、排序用） |
 | `durationMin` | number\|null | 剪輯耗時 | 分鐘（認領→完成） |
 | `scheduledDate` | string\|null | 預排上片日期 | `YYYY-MM-DD` |
 | `publishTime` | string | 預排上片時間 | `HH:MM`（10:00/12:00/16:00） |
@@ -92,7 +93,7 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| `schemaVersion` | number | 結構版本（目前 3） |
+| `schemaVersion` | number | 結構版本（目前 4） |
 | `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `videoTags` | string[] | 影片標籤清單 |

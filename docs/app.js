@@ -46,7 +46,7 @@ function newVideoRecord(over){
     mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
-    scheduledDate:null, publishTime:"", platforms:[],
+    updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
     products:[], productUrl:"", note:"",
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
     driveFolder:"", publishedLink:"", socialLink:"",
@@ -125,18 +125,18 @@ async function route(method, path, body){
   if(head==="videos"){
     if(method==="POST" && seg.length===1){
       const inc=Object.assign({}, body.video); delete inc.id;
-      const v=newVideoRecord(inc); await window.DB.set("videos", v.id, v); return;
+      const v=newVideoRecord(inc); v.updatedAt=nowIso(); await window.DB.set("videos", v.id, v); return;
     }
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
       if(inProgressCount(user)>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
-      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中"}); return; }
+      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",updatedAt:nowIso()}); return; }
     if(action==="finish"){
       const date=body.scheduledDate; if(!date) throw new Error("請選擇上片日期");
       if(!(body.published && body.backupDone && body.socialScheduled)) throw new Error("需確認：已上架、已上傳雲端備份、社群平台已預排");
       const ed=v.editor||v.claimedBy||user;
-      const patch={stage:"已完成",finishedAt:nowIso(),editor:ed,locked:true,
+      const patch={stage:"已完成",finishedAt:nowIso(),editor:ed,locked:true,updatedAt:nowIso(),
         scheduledDate:date, published:true, backupDone:true, socialScheduled:true};
       if(v.claimedAt) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
@@ -161,7 +161,7 @@ async function route(method, path, body){
       await window.DB.update("videos", id, patch);
       return;
     }
-    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; await window.DB.update("videos",id,patch); return; }
+    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso(); await window.DB.update("videos",id,patch); return; }
     if(method==="DELETE"){ await window.DB.del("videos",id); return; }
   }
   if(head==="schedule"){
@@ -583,81 +583,95 @@ async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[])
 // ===================================================================
 // 🎞 影片庫
 // ===================================================================
-function videoItemRich(v){ const dot = v.mainType==="帶貨型"?"var(--sales)":"var(--traffic)";
-  const stageCol={"待處理":"#94a3b8","剪輯中":"#d97706","已完成":"var(--green)","已上片":"#2563eb"}[v.stage]||"#94a3b8";
-  return `<div class="vrow" onclick="editVideo('${v.id}')">
-    <span style="display:flex;align-items:center;gap:8px;min-width:0">
-      <span class="light" style="background:${dot};flex:none"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></span>
-    <span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex:none">
-      ${v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">✔審</span>':(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">✘退</span>':'')}
-      <span class="pill" style="font-size:10px;border-color:${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
-      <span class="muted" style="font-size:12px">${esc(v.editor||"")}${v.scheduledDate?(" · "+v.scheduledDate.slice(5)):""}</span></span>
-  </div>`; }
+// 影片的顯示標籤（新片過 45 天自動顯示為舊片；去重）
+function videoTagsOf(v){
+  let t=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
+  t=t.map(x=>{ let s=String(x).trim(); if(s==="新片"&&pastNewWindow(v)) s="舊片"; return s; }).filter(Boolean);
+  return [...new Set(t)];
+}
+// 是否歸為「舊片」：手選舊片、或上片已超過 45 天
+function vidIsOld(v){
+  const t=Array.isArray(v.tags)?v.tags:[];
+  if(t.includes("舊片")&&!t.includes("新片")) return true;
+  return pastNewWindow(v);
+}
+// 最後更新日（資料庫任何異動）
+function vidUpdated(v){ return String(v.updatedAt||v.finishedAt||v.claimedAt||"").slice(0,10); }
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
 function reviewVid(id, status){
   let note="";
   if(status==="退回"){ note=prompt("退回原因（給剪輯修正）："); if(note===null) return; if(!note.trim()){ toast("請填退回原因",true); return; } }
-  window.DB.update("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso()})
+  window.DB.update("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso(), updatedAt:nowIso()})
     .then(()=>{ toast(status==="通過"?"已通過 ✔":"已退回，剪輯會收到 🔁"); closeModal(); })
     .catch(()=>toast("操作失敗，請稍後再試",true));
 }
-let VID_TAGS=new Set();   // 影片庫的標籤篩選（可複選）
+let VID_VIEW="new";       // 影片庫分頁：new=新片待發 / old=舊片歸檔 / all=全部
+let VID_TAGS=new Set();   // 標籤篩選（可複選）
+// 一列 = 一支影片
+function vidTableRow(v){
+  const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
+  const tags=videoTagsOf(v);
+  const tagHTML=tags.length?tags.map(t=>`<span class="tag" style="font-size:11px">${esc(t)}</span>`).join(" "):'<span class="muted" style="font-size:12px">—</span>';
+  const prod=(v.productUrl||"").trim();
+  const prodCount=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]).length;
+  const prodHTML=prod?`<a href="${esc(prod)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 商品頁${prodCount?`（${prodCount}）`:""}</a>`
+    :(prodCount?`<span class="muted" style="font-size:12px">${prodCount} 項</span>`:'<span class="muted" style="font-size:12px">—</span>');
+  const rev=v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">✔ 已審</span>'
+    :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">✘ 退回</span>':'');
+  const upd=vidUpdated(v), sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+  return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
+    <td data-label="影片"><span style="display:flex;align-items:center;gap:8px;min-width:0">
+      <span class="vthumb">▶</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></span></td>
+    <td data-label="標籤">${tagHTML}</td>
+    <td data-label="最後更新" class="muted" style="font-size:12px;white-space:nowrap">${upd||"—"}</td>
+    <td data-label="預排上片" style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
+    <td data-label="商品">${prodHTML}</td>
+    <td data-label="剪輯師">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+    <td data-label="狀態"><span class="ststack">
+      <span class="pill" style="font-size:11px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(v.stage||"")}</span>
+      ${rev}</span></td>
+  </tr>`;
+}
 function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
-  const stage=document.getElementById('vid_stage')?.value||'all';
-  let list=all.filter(v=> stage==='all'?true:(v.stage===stage));
-  if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
-  const total=list.length;
-  if(!total) return '<p class="muted">沒有符合的影片</p>';
+  let list=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="old"?vidIsOld(v):!vidIsOld(v)));
+  if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.code||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
+  if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
+  if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
+  // 待發在前、依最後更新日新到舊
   const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  const tagsOf=(v)=>{ const arr=[];
-    const t=Array.isArray(v.tags)&&v.tags.length?v.tags:(v.subTag?[v.subTag]:[]);
-    t.forEach(x=>{ let sx=String(x).trim(); if(!sx) return;
-      if(sx==="新片" && pastNewWindow(v)) sx="舊片";
-      if(!arr.includes(sx)) arr.push(sx); });
-    if(!arr.length) arr.push(v.stage==="待處理"?"🆕 待處理（待剪）":"（未分類）"); return arr; };
-  const groups={};
-  list.forEach(v=>{ tagsOf(v).forEach(k=>{ k=String(k).trim()||"（未分類）"; (groups[k]=groups[k]||[]).push(v); }); });
-  const tord=(n)=>String(n).startsWith("🆕")?-1:(n==="新片"?0:(n==="舊片"?1:(n.startsWith("（")?9:5)));
-  let names=Object.keys(groups).sort((a,b)=> tord(a)-tord(b) || String(a).localeCompare(String(b)));
-  if(VID_TAGS.size) names=names.filter(n=>VID_TAGS.has(n));
-  if(!names.length) return '<p class="muted">沒有符合所選標籤的影片</p>';
-  const shownIds=new Set(); names.forEach(n=>groups[n].forEach(v=>shownIds.add(v.id)));
-  return names.map(n=>{
-    const vs=groups[n].sort((a,b)=>(rank[a.stage]??9)-(rank[b.stage]??9) || String(b.scheduledDate||b.claimedAt||'').localeCompare(String(a.scheduledDate||a.claimedAt||'')));
-    return `<details class="vgrp" ${(q||String(n).startsWith("🆕"))?'open':''} style="border:1px solid var(--line);border-radius:8px;margin-bottom:8px;padding:4px 10px">
-      <summary style="cursor:pointer;font-weight:700;padding:8px 0">🏷 ${esc(n)} <span class="muted" style="font-weight:500;font-size:12px">（${vs.length}）</span></summary>
-      <div style="padding-bottom:4px">${vs.map(videoItemRich).join('')}</div>
-    </details>`;
-  }).join('') + `<p class="muted" style="margin-top:6px;font-size:12px">共 ${VID_TAGS.size?shownIds.size:total} 筆・${names.length} 個標籤</p>`;
+  list.sort((a,b)=> (rank[a.stage]??9)-(rank[b.stage]??9) || String(vidUpdated(b)).localeCompare(String(vidUpdated(a))) || String(b.id).localeCompare(String(a.id)));
+  return `<table class="vtable responsive">
+    <thead><tr><th>影片</th><th>標籤</th><th>最後更新</th><th>預排上片</th><th>商品</th><th>剪輯師</th><th>狀態</th></tr></thead>
+    <tbody>${list.map(vidTableRow).join("")}</tbody></table>
+    <p class="muted" style="margin-top:8px;font-size:12px">共 ${list.length} 支</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
-function vidTagClear(){ VID_TAGS.clear(); render(); }
+function vidSetView(view){ VID_VIEW=view; render(); }
 function viewVideos(){
   const all=STATE.videos||[];
-  const c=st=>all.filter(v=>v.stage===st).length;
-  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">依標籤分類・點影片看／改細節</span></h2>
+  const nNew=all.filter(v=>!vidIsOld(v)).length, nOld=all.filter(v=>vidIsOld(v)).length;
+  const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
+  return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點任一列看／改細節</span></h2>
   <div class="card">
-    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="vid_q" placeholder="🔍 搜尋影片名稱／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
-      <select id="vid_stage" onchange="vidFilter()">
-        <option value="all">全部影片（${all.length}）</option>
-        <option value="待處理">待處理（${c("待處理")}）</option>
-        <option value="剪輯中">剪輯中（${c("剪輯中")}）</option>
-        <option value="已完成">已完成（${c("已完成")}）</option>
-        <option value="已上片">已上片（${c("已上片")}）</option>
-      </select>
+    <div class="vtabs">
+      ${tab("new","新片待發",nNew)}
+      ${tab("old","舊片歸檔",nOld)}
+      ${tab("all","全部影片",all.length)}
+    </div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <input id="vid_q" placeholder="🔍 搜尋編號／片名／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
       <button class="btn sm" onclick="newSimpleVideo()">＋ 新增影片</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
       ${videoTags().map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)}</button>`).join("")}
-      <a href="javascript:void(0)" onclick="vidTagClear()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>
+      <a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>
     </div>
-    <div id="vid_list" style="margin-top:10px">${vidRowsHTML()}</div>
+    <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;
 }
 // 刪除影片：二次確認，無法復原
