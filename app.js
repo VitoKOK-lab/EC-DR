@@ -432,7 +432,6 @@ function viewWork(){
   const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理")
     .sort((a,b)=>String(b.updatedAt||b.id).localeCompare(String(a.updatedAt||a.id)));
   const POOL_CAP=40; const poolShown=pool.slice(0,POOL_CAP);
-  const work = mine.concat(poolShown);   // 剪輯中在前、毛片待剪在後
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const tasks = myTasks();
   const g=scheduleGlance();
@@ -453,17 +452,30 @@ function viewWork(){
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">✂ 剪輯工作</b>
+      <b style="font-size:16px">🎬 待剪毛片（先搶先剪・所有剪輯都看得到）</b>
+      <span class="pill ${pool.length?'ok':'wa'}">待剪 ${pool.length} 支</span>
+    </div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">在 🎞 影片庫「＋ 新增毛片」建立後就會出現在這裡。按「⬇ 認領開始剪」會把這支拉進下方「我的剪輯工作」，其他人就看不到、不會重複剪。</p>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
+    <tbody>${poolShown.map(v=>`<tr>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="按一下＝認領並開始剪（變剪輯中、進我的工作）">⬇ 認領開始剪</button></td>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有待剪毛片，去 🎞 影片庫「＋ 新增毛片」建立</td></tr>`}</tbody></table>
+    ${pool.length>POOL_CAP?`<p class="muted" style="font-size:12px;margin:8px 0 0">還有 ${pool.length-POOL_CAP} 支未顯示，可到 🎞 影片庫查看。</p>`:''}
+    ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">你已有 3 支製作中，先完成幾支再領</span></p>':''}
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="font-size:16px">✂ 我的剪輯工作（進行中）</b>
       <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
-    ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">已有 3 支製作中，先完成幾支再領</span></p>':''}
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:140px">狀態</th></tr></thead>
-    <tbody>${work.map(v=>`<tr>
-        <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
+    <tbody>${mine.map(v=>`<tr>
+        <td data-label="天數">${dayBadge(v)}</td>
         <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="狀態">${stageBtn(v)}</td>
-      </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有毛片，去 🎞 影片庫「＋ 新增毛片」建立</td></tr>`}</tbody></table>
-    ${pool.length>POOL_CAP?`<p class="muted" style="font-size:12px;margin:8px 0 0">毛片待剪還有 ${pool.length-POOL_CAP} 支未顯示，可到 🎞 影片庫查看。</p>`:''}
+      </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
 
   <div class="card">
@@ -1048,7 +1060,7 @@ function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").i
 // ===================================================================
 let TUT_ON=false, TUT_TIMER=null, TUT_CUR=null;
 const TUT_RULES=[
-  {oc:"claimVid",        title:"毛片待剪 ▶（開始剪）", text:"按一下把這支毛片認領給自己，狀態變「剪輯中」，會出現在你的上班計畫。"},
+  {oc:"claimVid",        title:"⬇ 認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的剪輯工作」，其他剪輯就看不到、不會重複剪。"},
   {oc:"quickFinish",     title:"剪輯中 ▶（完成上架）", text:"剪好了按這裡，狀態直接變「完成」。沒排上片日的會進「新片未排程」，之後到月排程再排日期。"},
   {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個帶貨商品；其餘細節剪片時再補。"},
   {oc:"newSimpleVideo",  title:"新增影片", text:"建立一支新影片，填原始片名、影片文案與商品。"},
