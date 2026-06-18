@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 5**
+- 目前版本：**schemaVersion = 6**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -87,6 +87,38 @@
 | `isDefault` | boolean | 系統預設旗標 |
 
 > 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。
+
+---
+
+## 3b. `tasks/{id}` — 交辦工作（剪輯以外，每日）
+
+文件 ID = `T<base36 時間戳>`。剪輯在「上班計畫」手動建立；下班匯報依 `done` 顯示已完成／未完成。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 文件 ID |
+| `user` | string | 負責剪輯（= users.name） |
+| `date` | string | `YYYY-MM-DD`，當天計畫 |
+| `title` | string | 工作項目 |
+| `report` | string | 回報狀況（進度） |
+| `done` | boolean | 完成打勾（false=進行中） |
+| `createdAt` | string(ISO) | 建立時間 |
+
+---
+
+## 3c. `shifts/{name__date}` — 上下班打卡（**只給管理員看**）
+
+文件 ID = `名字__YYYY-MM-DD`。登入（上班）寫 `clockIn`；按「下班匯報→確認下班」寫 `clockOut`。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | `名字__日期` |
+| `user` | string | 剪輯名字 |
+| `date` | string | `YYYY-MM-DD` |
+| `clockIn` | string(ISO) | 上班時間 |
+| `clockOut` | string(ISO) | 下班時間（空＝上班中） |
+
+> 單片工時（認領→完成）由 `videos.claimedAt`／`finishedAt`／`durationMin` 衍生，亦只給管理員看（「工時/KPI」頁）。
 
 ---
 

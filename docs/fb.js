@@ -12,7 +12,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["新片","舊片","每日寵粉","招商","銷售"],
@@ -48,7 +48,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const auth = getAuth(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
-  const raw = { users: [], videos: [], schedule: {}, settings: {} };
+  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {} };
   function push() { if (window.__onState) window.__onState(JSON.parse(JSON.stringify(raw))); }
 
   // 暴露給 app.js 的寫入介面
@@ -73,7 +73,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       if (!Array.isArray(cur.videoTags) || !cur.videoTags.length) patch.videoTags = DEFAULT_SETTINGS.videoTags;
       if (!cur.weekdayTargets || typeof cur.weekdayTargets !== "object") patch.weekdayTargets = DEFAULT_SETTINGS.weekdayTargets;
       if (!Array.isArray(cur.postPlatforms) || !cur.postPlatforms.length) patch.postPlatforms = DEFAULT_SETTINGS.postPlatforms;
-      if (cur.schemaVersion == null || cur.schemaVersion < 5) patch.schemaVersion = 5;
+      if (cur.schemaVersion == null || cur.schemaVersion < 6) patch.schemaVersion = 6;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 
@@ -82,5 +82,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "users"),    q => { raw.users    = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "videos"),   q => { raw.videos   = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
+    onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
+    onSnapshot(collection(db, "shifts"),   q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.shifts = s; push(); });
   });
 }
