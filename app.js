@@ -42,7 +42,7 @@ function nextId(arr, prefix){
 function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), code:"",
-    name:"", rawName:"", tags:[], subTag:"",
+    name:"", rawName:"", tags:[], subTag:"", copyType:"",
     mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
@@ -548,14 +548,23 @@ function renderFinishLinks(){
       <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
 // 剪輯端輕量新增：填原始片名，建立一支待剪新片（成品標題預設同原始片名）
+const COPY_TYPES=["口播文案","貼文文案"];
+function copyTypeSelect(id, cur){
+  return `<label>文案類型</label>
+    <select id="${id}_copytype">
+      <option value="" ${!cur?"selected":""}>（未指定）</option>
+      ${COPY_TYPES.map(t=>`<option value="${esc(t)}" ${cur===t?"selected":""}>${esc(t)}</option>`).join("")}
+    </select>`;
+}
 function newSimpleVideo(){
   showModal("新增待剪新片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
+    ${copyTypeSelect("sv","")}
     ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, products:collectProducts("sv")};
+    const video={name, rawName:name, copyType:val("sv_copytype"), products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增待剪新片");
   });
 }
@@ -587,6 +596,7 @@ async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[])
 function videoTagsOf(v){
   let t=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
   t=t.map(x=>{ let s=String(x).trim(); if(s==="新片"&&pastNewWindow(v)) s="舊片"; return s; }).filter(Boolean);
+  if(v.copyType) t.unshift(String(v.copyType));   // 文案類型也當作可篩選標籤
   return [...new Set(t)];
 }
 // 是否歸為「舊片」：手選舊片、或上片已超過 45 天
@@ -707,6 +717,7 @@ function editVideo(id){
       <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
       <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="成品標題名稱">
     </div>
+    ${copyTypeSelect("e", v.copyType||"")}
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -743,7 +754,7 @@ function editVideo(id){
   `, async ()=>{
     const tags=collectTags("e"); await persistNewTags(tags);
     const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
-    const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"",
+    const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"", copyType:val("e_copytype"),
       platforms:collectPlat("e_plat"), products:collectProducts("e"), productUrl:val("e_url").trim(),
       source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
       scheduledDate:val("e_date")||null,
