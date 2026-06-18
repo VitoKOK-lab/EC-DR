@@ -51,7 +51,7 @@
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
 
-**衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、`isNewVideo`（上片 45 天內為新片）。
+**衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
 ---
 
