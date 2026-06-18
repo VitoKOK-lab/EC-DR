@@ -822,13 +822,58 @@ function delVideo(id){
   if(!confirm("再次確認：真的要永久刪除這支影片嗎？刪除後無法復原。")) return;
   write("DELETE","/api/videos/"+id,{},"已刪除影片").then(ok=>{ if(ok) closeModal(); });
 }
-function editVideo(id){
+// 影片內容：預設檢視（不可改）；右上「✎ 編輯」才進編輯、右上「✕」關閉
+function editVideo(id){ openVideoModal(id, false); }
+function openVideoModal(id, edit){
   const v = vid(id)||{};
   const s=STATE.settings||{};
   const sources=s.sources||["老闆自拍","外部公司"];
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   const stages=["待處理","剪輯中","已完成","已上片"];
-  showModal("編輯影片",`
+  const tags=videoTagsOf(v);
+  const prodList=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]);
+  const reviewCard = currentRole()==='boss'?`<div class="card" style="background:var(--panel2)"><b>👩‍💼 老闆娘審核</b>
+      <div class="row" style="gap:8px;margin-top:6px;align-items:center">
+        <button class="btn sm" type="button" onclick="reviewVid('${id}','通過')">✔ 通過</button>
+        <button class="btn sm danger" type="button" onclick="reviewVid('${id}','退回')">✘ 退回</button>
+        <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
+      </div></div>`:'';
+  const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>♻ 使用紀錄（共 ${usageList(v).length} 次）</b>
+      <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
+      ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
+      </tbody></table></div>`:"";
+  const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
+      <h3 style="margin:0">影片內容</h3>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">✎ 編輯</button>`}
+        <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">✕</button>
+      </div></div>`;
+
+  if(!edit){
+    const row=(l,c)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="muted" style="width:100px;flex:none;font-size:13px">${l}</div><div style="flex:1;min-width:0">${c||'<span class="muted">—</span>'}</div></div>`;
+    const body=`
+      ${row("編號", esc(vidCode(v)))}
+      ${row("原始片名", esc(v.rawName||""))}
+      ${row("成品標題", esc(v.name||""))}
+      ${row("標籤", tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
+      ${row("片源", esc(v.source||""))}
+      ${row("階段", `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(v.stage||"")}</span>`)}
+      ${row("剪輯人員", esc(v.editor||""))}
+      ${row("商品", prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（$${esc(p.price)}）`:"")).join("、"):'')}
+      ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
+      ${row("預排上片日", esc(v.scheduledDate||""))}
+      ${row("雲端備份", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
+      ${row("社群連結", v.socialLink||v.publishedLink?`<a href="${esc(v.socialLink||v.publishedLink)}" target="_blank">開啟</a>`:'')}
+      ${row("備註", esc(v.note||""))}
+      ${row("審核", v.reviewStatus?esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':''):'未審')}
+      ${editLinksHTML(v.productUrl)}
+      ${reviewCard}
+      ${usageCard}`;
+    document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}</div></div>`;
+    return;
+  }
+
+  const body=`
     <label>編號 ／ 原始片名</label>
     <div class="row" style="gap:8px">
       <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="編號" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
@@ -845,42 +890,36 @@ function editVideo(id){
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
-    <label>投放平台（可複選）</label><div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("e_plat", v.platforms)}</div>
     ${productRows("e", v.products)}
     <label>商品頁網址（導購連結用・輸入一次即可，下方自動帶各平台參數）</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <label>預排上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
-    ${currentRole()==='boss'?`<div class="card" style="background:var(--panel2)"><b>👩‍💼 老闆娘審核</b>
-      <div class="row" style="gap:8px;margin-top:6px;align-items:center">
-        <button class="btn sm" type="button" onclick="reviewVid('${id}','通過')">✔ 通過</button>
-        <button class="btn sm danger" type="button" onclick="reviewVid('${id}','退回')">✘ 退回</button>
-        <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
-      </div></div>`:''}
+    ${reviewCard}
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
       <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
     </div>
-    ${id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>♻ 使用紀錄（共 ${usageList(v).length} 次）</b>
-      <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
-      ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
-      </tbody></table></div>`:""}
+    ${usageCard}
     <div class="card" style="border-color:var(--red)">
       <button class="btn danger sm" type="button" onclick="delVideo('${id}')">🗑 刪除這支影片</button>
       <span class="muted" style="font-size:12px;margin-left:8px">需二次確認，刪除後無法復原</span>
-    </div>
-  `, async ()=>{
-    const tags=collectTags("e"); await persistNewTags(tags);
-    const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
-    const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"", copyType:val("e_copytype"),
-      platforms:collectPlat("e_plat"), products:collectProducts("e"), productUrl:val("e_url").trim(),
-      source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
-      scheduledDate:val("e_date")||null,
-      driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social"), note:val("e_note").trim()};
-    const ok=await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
-    if(ok) closeModal();
-    return ok;
-  }, "💾 儲存修改");
+    </div>`;
+  const foot=`<div class="modalFoot">
+      <button class="btn sec" type="button" onclick="openVideoModal('${id}',false)">取消編輯</button>
+      <button class="btn" id="vmSave" type="button">💾 儲存修改</button></div>`;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}${foot}</div></div>`;
+  document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(ok) closeModal(); };
+}
+async function saveVideo(id){
+  const tags=collectTags("e"); await persistNewTags(tags);
+  const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
+  const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"", copyType:val("e_copytype"),
+    products:collectProducts("e"), productUrl:val("e_url").trim(),
+    source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
+    scheduledDate:val("e_date")||null,
+    driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social"), note:val("e_note").trim()};
+  return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
 // ===================================================================
