@@ -633,14 +633,19 @@ function renderFinishLinks(){
     plats.map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
       <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
-// 編輯影片視窗：商品頁網址輸入一次，下方即時帶各平台導購連結（utm_source）
+// 編輯影片視窗：商品頁網址輸入一次，下方各平台用「按鈕」呈現，按一下＝複製該平台 utm 連結
 function editLinksHTML(url){ url=(url||"").trim(); if(!url) return "";
-  return `<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（依平台，可複製）</b>
-    ${postPlatforms().map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
-      <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
-  </div>`;
+  return `<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（按一下即複製）</b>
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+    ${postPlatforms().map(p=>`<button class="btn sm" type="button" onclick="copyStr('${encodeURIComponent(platformUtm(url,p.utm))}')">📋 ${esc(p.name)}</button>`).join("")}
+    </div></div>`;
 }
 function renderEditLinks(){ const box=document.getElementById("e_links"); if(box) box.innerHTML=editLinksHTML(val("e_url")); }
+// 複製一段文字到剪貼簿（連結直接內嵌、免選取輸入框）
+function copyStr(enc){ const t=decodeURIComponent(enc);
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>fallbackCopy(t)); }
+  else fallbackCopy(t); }
+function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("已複製連結"); }catch(e){ toast("複製失敗，請手動",true); } }
 // 剪輯端輕量新增：填原始片名，建立一支待剪新片（成品標題預設同原始片名）
 const COPY_TYPES=["口播文案","貼文文案"];
 function copyTypeSelect(id, cur){
