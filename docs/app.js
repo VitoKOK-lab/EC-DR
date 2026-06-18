@@ -633,6 +633,14 @@ function renderFinishLinks(){
     plats.map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
       <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
+// 編輯影片視窗：商品頁網址輸入一次，下方即時帶各平台導購連結（utm_source）
+function editLinksHTML(url){ url=(url||"").trim(); if(!url) return "";
+  return `<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（依平台，可複製）</b>
+    ${postPlatforms().map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
+      <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
+  </div>`;
+}
+function renderEditLinks(){ const box=document.getElementById("e_links"); if(box) box.innerHTML=editLinksHTML(val("e_url")); }
 // 剪輯端輕量新增：填原始片名，建立一支待剪新片（成品標題預設同原始片名）
 const COPY_TYPES=["口播文案","貼文文案"];
 function copyTypeSelect(id, cur){
@@ -839,12 +847,9 @@ function editVideo(id){
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     <label>投放平台（可複選）</label><div style="display:flex;flex-wrap:wrap;gap:6px">${platChips("e_plat", v.platforms)}</div>
     ${productRows("e", v.products)}
-    <label>商品頁網址（導購連結用）</label><input id="e_url" value="${esc(v.productUrl||"")}" placeholder="https://www.tzgrotw.tw/products/...">
+    <label>商品頁網址（導購連結用・輸入一次即可，下方自動帶各平台參數）</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <label>預排上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
-    ${v.productUrl?`<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（依平台，可複製）</b>
-      ${(((Array.isArray(v.platforms)&&v.platforms.length)?postPlatforms().filter(p=>v.platforms.includes(p.name)):postPlatforms())).map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
-        <div class="row" style="gap:8px"><input id="ev_link_${i}" value="${esc(platformUtm(v.productUrl,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('ev_link_${i}')">複製</button></div></div>`).join("")}
-    </div>`:''}
+    <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
     ${currentRole()==='boss'?`<div class="card" style="background:var(--panel2)"><b>👩‍💼 老闆娘審核</b>
       <div class="row" style="gap:8px;margin-top:6px;align-items:center">
