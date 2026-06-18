@@ -5,8 +5,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["perf","📊 成效"]],
-  editor: [["work","📋 今日工作"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
+  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["shifts","🕒 工時/KPI"],["perf","📊 成效"]],
+  editor: [["work","📋 上班計畫"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -195,9 +195,18 @@ function bootLogin(){
   const editors=((STATE?.users)||[]).filter(u=>(u.role||"editor")==="editor").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!editors.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無剪輯成員，請按「🔒 管理員登入」進入後新增"; g.appendChild(n); return; }
   editors.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
-    b.innerHTML = esc(u.name)+'<span class="role">剪輯</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
+    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
-function loginAs(u){ setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; applyState(LAST_RAW); }
+function loginAs(u){ setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW); }
+// 上班打卡：記錄當天第一次登入時間（只給管理員看）
+function shiftId(name,date){ return name+"__"+date; }
+async function clockIn(name){
+  try{ const id=shiftId(name,today); const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
+    if(ex&&ex.clockIn) return;   // 已打過上班卡
+    await window.DB.set("shifts", id, {id, user:name, date:today, clockIn:nowIso(), clockOut:""});
+  }catch(e){}
+}
+function myShift(){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(currentUser(),today)])||null; }
 function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
   const want=String((STATE.settings&&STATE.settings.adminPassword)||"1234");
   const pw=prompt("請輸入管理員密碼："); if(pw===null) return;
@@ -261,7 +270,7 @@ function render(){
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, perf:viewPerf, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
+  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, perf:viewPerf, shifts:viewShifts, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
 
@@ -402,64 +411,79 @@ function scheduleGlance(){
     const b=dayBreakdown(ds); if(!b.full){ const short=Math.max(b.target-b.total, Object.values(b.deficits).reduce((a,n)=>a+n,0)); defs.push({ds,short}); } }
   return {runway, defs, todayTarget:daySum(today)};
 }
-// 今日工作＝每天上班的三步驟例行作業
+// ===== 交辦工作（剪輯以外）：tasks/{id} =====
+function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
+  .filter(t=>t && t.user===currentUser() && t.date===today)
+  .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
+  const id="T"+Date.now().toString(36);
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, report:"", done:false, createdAt:nowIso()}); }
+  catch(e){ toast("新增失敗，請稍後再試",true); } }
+function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
+function taskDone(id, done){ window.DB.update("tasks", id, {done:!!done}).catch(()=>toast("更新失敗",true)); }
+function delTask(id){ if(!confirm("刪除這項交辦工作？")) return; window.DB.del("tasks", id).catch(()=>toast("刪除失敗",true)); }
+
+// 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
   const me = currentUser();
   const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
-  const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
+  const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
+    .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
   const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理");
   const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(vidTitle(v))}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
-  const myDoneToday = (STATE.videos||[]).filter(v=>v.editor===me && ["已完成","已上片"].includes(v.stage) && String(v.finishedAt||"").slice(0,10)===today).length;
-  const matRow = (v)=>`<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> ${typeTag(v.mainType)}</td>
-      <td data-label="片源"><span class="muted">${esc(v.source||"")}</span></td>
-      <td data-label=""><button class="btn sm" onclick="finishVid('${v.id}')">完成上架✔</button></td>
-    </tr>`;
-  const g=scheduleGlance(); const SAFE=15;
-  const runCol=g.runway>=SAFE?'var(--green)':(g.runway>=7?'var(--amber)':'var(--red)');
-  const numBadge=(n,col)=>`<span style="flex:none;width:54px;height:54px;border-radius:50%;background:${col};color:#fff;font-size:30px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)">${n}</span>`;
+  const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  const tasks = myTasks();
+  const g=scheduleGlance();
+  // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
+  const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
+    return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:8px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
   const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">🔁 老闆娘退回待修（${rejected.length}）</b>
     ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:8px">
       <a href="javascript:void(0)" onclick="editVideo('${v.id}')"><b>${esc(vidTitle(v))}</b></a>
       ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">退回原因：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
   return `
-  <h2>📋 今日工作（${esc(me)}）</h2>
+  <h2>📋 本日上班計畫（${esc(me)}）</h2>
   ${rejCard}
-  <p class="muted" style="margin:-8px 0 14px;font-size:13px">作業順序：① 領取毛片 → ② 剪輯製作 → ③ 完成上架（自動排程・老闆娘抽查）</p>
+  <p class="muted" style="margin:-8px 0 14px;font-size:13px">製作中的影片會自動帶到下面（標天數：新＝今天領、2＝昨天領、3＝前天…）。剪好按「完成上架」，下班時會自動進匯報。</p>
 
-  <div class="card" style="border-left:5px solid var(--accent)">
-    <div class="row" style="gap:14px;align-items:center">
-      ${numBadge(1,'var(--accent)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">領取毛片開始剪</b>
-        <span class="pill ${atLimit?'wa':'ok'}">進行中 ${inProg}/3</span></div></div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="font-size:16px">✂ 剪輯工作</b>
+      <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
     ${pool.length
       ? `<div class="row" style="gap:8px;margin-top:10px">
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
-           <button class="btn" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 拉下來開始剪</button>
-         </div>`
-      : `<p class="muted" style="margin-top:10px">目前沒有待剪新片，可到下方「其他工具」建檔新毛片。</p>`}
-    ${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支進行中，先完成幾支再領</p>`:``}
+           <button class="btn sm" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 領取新毛片</button>
+         </div>${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支製作中，先完成幾支再領</p>`:``}`
+      : `<p class="muted" style="margin:8px 0 0">目前沒有待剪新片，可到下方「其他工具」建檔。</p>`}
+    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:64px">天數</th><th>影片</th><th style="width:120px">完成上架</th></tr></thead>
+    <tbody>${mine.map(v=>`<tr>
+        <td data-label="天數">${dayBadge(v)}</td>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label=""><button class="btn sm" onclick="finishVid('${v.id}')">完成上架✔</button></td>
+      </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有製作中的影片，按上面「領取新毛片」開始</td></tr>`}</tbody></table>
   </div>
 
-  <div class="card" style="border-left:5px solid var(--amber)">
-    <div class="row" style="gap:14px;align-items:center">
-      ${numBadge(2,'var(--amber)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">剪輯製作中（剪好按右邊完成上架）</b>
-        <span class="pill ${inProg?'wa':'ok'}">${inProg} 支</span></div></div>
-    </div>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th>片源</th><th>完成上架</th></tr></thead>
-    <tbody>${mine.map(matRow).join("")||`<tr><td class="muted">目前沒有進行中的影片，先到 ① 領取</td></tr>`}</tbody></table>
+  <div class="card">
+    <b style="font-size:16px">📌 交辦工作（剪輯以外）</b>
+    <p class="muted" style="font-size:12px;margin:4px 0 8px">先輸入工作項目，做的時候填回報狀況；完成後自己打勾，下班會顯示已完成／未完成。</p>
+    <table class="responsive"><thead><tr><th>工作項目</th><th>回報狀況</th><th style="width:120px">狀態</th><th style="width:44px"></th></tr></thead>
+    <tbody>${tasks.map(t=>`<tr>
+        <td data-label="工作項目">${esc(t.title)}</td>
+        <td data-label="回報狀況"><input value="${esc(t.report||'')}" onchange="taskReport('${t.id}',this.value)" placeholder="進度／回報…"></td>
+        <td data-label="狀態"><label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:${t.done?'var(--green)':'var(--amber)'}">
+          <input type="checkbox" ${t.done?'checked':''} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label></td>
+        <td data-label=""><button class="btn sec sm" onclick="delTask('${t.id}')">刪</button></td>
+      </tr>`).join("")||`<tr><td colspan="4" class="muted">尚無交辦工作</td></tr>`}</tbody></table>
+    <div class="row" style="gap:8px;margin-top:10px"><input id="wp_newtask" placeholder="新增交辦工作項目…" style="flex:1" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
   </div>
 
-  <div class="card" style="border-left:5px solid var(--green)">
-    <div class="row" style="gap:14px;align-items:center">
-      ${numBadge(3,'var(--green)')}
-      <div style="flex:1;min-width:0"><div class="row" style="justify-content:space-between"><b style="font-size:17px">完成上架</b>
-        <span class="pill ok">✔ 今日完成 ${myDoneToday}</span></div></div>
-    </div>
-    <p class="muted" style="font-size:13px;margin:8px 0 0">在 ② 按「完成上架✔」→ 填齊 標題／雲端連結／預排時間／平台／標籤／商品／備註 → 自動排入月行事曆，老闆娘會抽查；被退回的會出現在本頁最上方。</p>
+  <div class="card" style="text-align:center">
+    <span class="pill ok">今日已完成上架 ${doneToday.length} 支</span>
+    <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">交辦完成 ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
+    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">🔔 下班匯報</button></div>
   </div>
 
   <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">🛠 其他工具（建檔新毛片 / 排舊片）</summary>
@@ -472,6 +496,72 @@ function viewWork(){
       </div>
     </div>
   </details>`
+}
+// 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
+function clockOutReport(){
+  const me=currentUser();
+  const doneVids=(STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
+  const tasks=myTasks();
+  const body=`
+    <p class="muted" style="margin-top:-6px">這是自動整理的今日成果，確認後打卡下班。</p>
+    <div class="card" style="background:var(--panel2)"><b>✅ 今日完成上架（${doneVids.length}）</b>
+      ${doneVids.length?doneVids.map(v=>`<div style="margin-top:6px">• ${esc(vidTitle(v))} <span class="pill ok" style="font-size:10px">已完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)} 天</span></div>`).join("")
+        :'<p class="muted" style="margin:6px 0 0">今日尚無完成上架</p>'}
+      ${wip.length?`<p class="muted" style="font-size:12px;margin:8px 0 0">尚有 ${wip.length} 支製作中（未完成，保留至明天）</p>`:''}
+    </div>
+    <div class="card" style="background:var(--panel2)"><b>📌 交辦工作（${tasks.filter(t=>t.done).length}/${tasks.length} 完成）</b>
+      ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?'<span class="pill ok" style="font-size:10px">已完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
+        :'<p class="muted" style="margin:6px 0 0">今日無交辦工作</p>'}
+    </div>`;
+  showModal("🔔 下班匯報", body, async ()=>{ await doClockOut(); closeModal(); toast("辛苦了，已下班 👋"); setTimeout(showGoodbye,300); return true; }, "✅ 確認下班");
+}
+async function doClockOut(){
+  const id=shiftId(currentUser(),today);
+  try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso()});
+       else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso()}); }catch(e){}
+}
+// 🕒 工時 / KPI（只給管理員看）
+function viewShifts(){
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
+  const shifts=Object.values((STATE&&STATE.shifts)||{});
+  const todayShifts=shifts.filter(s=>s.date===today);
+  const hm=iso=>String(iso||"").slice(11,16);
+  const dur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
+  const fin=(STATE.videos||[]).filter(v=>isPublished(v)&&v.finishedAt&&v.editor);
+  // 每位剪輯累計 KPI
+  const kpi=editors.map(name=>{ const my=fin.filter(v=>v.editor===name);
+    const days=my.map(editDays).filter(x=>x!=null); const avgDays=days.length?(days.reduce((a,b)=>a+b,0)/days.length):null;
+    const mins=my.map(v=>v.durationMin).filter(x=>typeof x==="number"); const avgMin=mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null;
+    const sales=my.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
+    return {name, count:my.length, avgDays, avgMin, sales}; });
+  const recent=fin.slice().sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||""))).slice(0,20);
+  return `<h2>🕒 工時 / KPI <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+  <div class="card"><b>📅 今日出勤（${today}）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>剪輯</th><th>上班</th><th>下班</th><th>工時</th></tr></thead>
+    <tbody>${editors.map(name=>{ const s=todayShifts.find(x=>x.user===name);
+      return `<tr><td data-label="剪輯">${esc(name)}</td>
+        <td data-label="上班">${s&&s.clockIn?hm(s.clockIn):'<span class="muted">未上班</span>'}</td>
+        <td data-label="下班">${s&&s.clockOut?hm(s.clockOut):(s&&s.clockIn?'<span class="muted">上班中</span>':'—')}</td>
+        <td data-label="工時">${s&&s.clockIn?dur(s.clockIn,s.clockOut||nowIso()):'—'}</td></tr>`; }).join("")||'<tr><td colspan="4" class="muted">尚無剪輯成員</td></tr>'}</tbody></table>
+  </div>
+  <div class="card"><b>📊 剪輯 KPI（累計）</b>
+    <p class="muted" style="font-size:12px;margin:4px 0 8px">平均剪片天數＝認領到完成；帶貨支數＝含商品連結的完成片。成效（觀看／互動）請見「成效」儀表板。</p>
+    <table class="responsive"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
+    <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
+      <td data-label="完成數">${k.count}</td>
+      <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
+      <td data-label="平均工時">${k.avgMin!=null?(Math.floor(k.avgMin/60)?Math.floor(k.avgMin/60)+"h":"")+(k.avgMin%60)+"m":'—'}</td>
+      <td data-label="帶貨支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
+  </div>
+  <div class="card"><b>🎬 近期完成（單片工時）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>剪輯</th><th>完成日</th><th>剪片天數</th><th>工時</th></tr></thead>
+    <tbody>${recent.map(v=>`<tr><td data-label="影片">${esc(vidTitle(v))}</td>
+      <td data-label="剪輯">${esc(v.editor||"")}</td>
+      <td data-label="完成日">${String(v.finishedAt||"").slice(0,10)}</td>
+      <td data-label="剪片天數">${editDaysLabel(v)||'—'}</td>
+      <td data-label="工時">${typeof v.durationMin==="number"?((Math.floor(v.durationMin/60)?Math.floor(v.durationMin/60)+"h":"")+(v.durationMin%60)+"m"):'—'}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無完成紀錄</td></tr>'}</tbody></table>
+  </div>`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
@@ -613,16 +703,22 @@ function vidIsOld(v){
   if(t.includes("新片")&&!t.includes("舊片")) return false;
   return airedPast(v);
 }
-// 影片的顯示標籤（去重）：文案類型 + 其他標籤 + 新/舊片
+// 影片的顯示標籤（去重）：文案類型 + 其他標籤
+// 新/舊片不放進來 → 由上方分頁代表，避免與標籤重覆
 function videoTagsOf(v){
   const base=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
   let t=base.map(x=>String(x).trim()).filter(s=>s && s!=="新片" && s!=="舊片");
   if(v.copyType) t.unshift(String(v.copyType));   // 文案類型也當作可篩選標籤
-  const manualNO = base.includes("新片")||base.includes("舊片");
-  // 剪好或手選過 → 顯示新/舊片；過了預排上片日為舊片，否則新片
-  if(isPublished(v) || manualNO) t.push(vidIsOld(v)?"舊片":"新片");
   return [...new Set(t)];
 }
+// 天數差（b - a，以日為單位）
+function daysBetween(a,b){ const d1=new Date(String(a).slice(0,10)+"T00:00:00"), d2=new Date(String(b).slice(0,10)+"T00:00:00");
+  if(isNaN(d1)||isNaN(d2)) return 0; return Math.round((d2-d1)/86400000); }
+// 上班計畫的天數標記：今天拉的＝新，昨天＝2，前天＝3…
+function claimDayBadge(v){ const c=String(v.claimedAt||"").slice(0,10); if(!c) return "新"; const d=daysBetween(c,today); return d<=0?"新":String(d+1); }
+// 剪輯耗時（天）：認領→完成，當天完成＝「-」，跨 2 天＝2，3 天＝3…（KPI 用）
+function editDays(v){ const c=String(v.claimedAt||"").slice(0,10), f=String(v.finishedAt||"").slice(0,10); if(!c||!f) return null; return daysBetween(c,f)+1; }
+function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<=1?"-":String(d); }
 // 最後更新日（資料庫任何異動）
 function vidUpdated(v){ return String(v.updatedAt||v.finishedAt||v.claimedAt||"").slice(0,10); }
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
