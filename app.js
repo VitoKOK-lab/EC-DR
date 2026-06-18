@@ -458,7 +458,7 @@ function viewWork(){
       <b style="font-size:16px">✂ 剪輯工作</b>
       <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">按「毛片待剪」開始剪（變剪輯中）；剪好按「剪輯中 ▶」＝完成上架。${atLimit?'<span style="color:var(--red)">　已有 3 支製作中，先完成幾支再領</span>':''}</p>
+    ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">已有 3 支製作中，先完成幾支再領</span></p>':''}
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:140px">狀態</th></tr></thead>
     <tbody>${work.map(v=>`<tr>
         <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
@@ -567,18 +567,28 @@ function viewShifts(){
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
-  showModal("新增毛片（一行一支，可大量一次新增）", `
-    <label>毛片片名（一行一支）</label>
-    <textarea id="bf_list" style="min-height:170px" placeholder="劉亦菲紅毯珠寶&#10;八大珠寶派系&#10;真假寶石30秒分辨"></textarea>
-    <p class="muted" style="font-size:12px;margin-top:6px">建立後狀態為「毛片待剪」，細節到影片庫點進去再補。</p>
+  let blocks="";
+  for(let i=0;i<5;i++){
+    blocks+=`<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px">
+      <legend style="font-size:13px;color:var(--muted);padding:0 6px">第 ${i+1} 支</legend>
+      <label>原始片名</label><input id="bn${i}" placeholder="毛片片名（留空＝不建立這支）">
+      ${productRows("b"+i, [])}
+    </fieldset>`;
+  }
+  showModal("新增毛片（一次最多 5 支，可帶商品）", `
+    <style>.modal .box{max-width:760px}</style>
+    <p class="muted" style="font-size:12px;margin:-2px 0 10px">每支可填片名＋最多 4 個帶貨商品；其餘細節（標籤、文案、上片日）剪片時再補。一次最多 5 支。</p>
+    ${blocks}
   `, async ()=>{
-    const lines=val("bf_list").split("\n").map(s=>s.trim()).filter(Boolean);
-    if(!lines.length){ toast("請至少輸入一支片名",true); return false; }
+    const items=[];
+    for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
+      items.push({name, products:collectProducts("b"+i)}); }
+    if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
     let ok=0; BULK_BUSY=true;
     try{
-      for(let i=0;i<lines.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({name:lines[i], rawName:lines[i]}), {id});
+      for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
+        const rec=Object.assign(newVideoRecord({name:items[i].name, rawName:items[i].name, products:items[i].products}), {id});
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
@@ -891,13 +901,11 @@ function openVideoModal(id, edit){
       ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row("預排上片日", esc(v.scheduledDate||""))}
       ${row("雲端備份", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
-      ${row("社群連結", v.socialLink||v.publishedLink?`<a href="${esc(v.socialLink||v.publishedLink)}" target="_blank">開啟</a>`:'')}
-      ${row("備註", esc(v.note||""))}
-      ${row("審核", v.reviewStatus?esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':''):'未審')}
       ${editLinksHTML(v.productUrl)}
       ${reviewCard}
       ${usageCard}`;
-    document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}</div></div>`;
+    MODAL_DIRTY=false;
+    document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}</div></div>`;
     return;
   }
 
@@ -937,7 +945,8 @@ function openVideoModal(id, edit){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="openVideoModal('${id}',false)">取消編輯</button>
       <button class="btn" id="vmSave" type="button">💾 儲存修改</button></div>`;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}${foot}</div></div>`;
+  MODAL_DIRTY=false;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
   document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(ok) closeModal(); };
 }
 async function saveVideo(id){
@@ -1102,9 +1111,12 @@ function viewPerf(){
 // ===================================================================
 // 彈窗
 // ===================================================================
+let MODAL_DIRTY=false;
 function showModal(title, inner, onConfirm, confirmLabel){
   const root=document.getElementById("modalRoot");
-  const html=`<div class="modal"><div class="box">
+  MODAL_DIRTY=false;
+  // 點視窗外（背景）即可關閉；但只要動過任何欄位就不關，避免誤觸丟資料
+  const html=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">
     <h3>${esc(title)}</h3>${inner}
     <div class="modalFoot">
       <button class="btn sec" onclick="closeModal()">取消</button>
@@ -1113,4 +1125,5 @@ function showModal(title, inner, onConfirm, confirmLabel){
   root.innerHTML = html;
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
-function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
+function modalBackdrop(e){ if(e.target&&e.target.classList&&e.target.classList.contains("modal")){ if(MODAL_DIRTY) return; closeModal(); } }
+function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").innerHTML=""; }
