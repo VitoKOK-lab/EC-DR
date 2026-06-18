@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 7**
+- 目前版本：**schemaVersion = 8**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -20,7 +20,7 @@
 | `name` | string | 成品標題名稱 | **對外顯示以此為主**；不填則同 `rawName` |
 | `rawName` | string | 原始片名 | 毛片名稱／素材說明 |
 | `voiceCopy` | string | 口播文案 | 新增影片時輸入 |
-| `titleCopy` | string | 影片標題文案 | 新增影片時輸入；同步寫入 `name`／`rawName` 供顯示 |
+| `postCopy` | string | 貼文文案 | 新增影片時輸入 |
 | `tags` | string[] | 標籤 | 由 `settings.videoTags` 選；寵粉/代理/流量/帶貨/家庭/理財/投資/教育/個人成長 |
 | `subTag` | string | 子標籤 | = `tags[0]`，相容舊資料用 |
 | `mainType` | string | 主類別 | `流量型`／`帶貨型`／`寵粉`，由標籤推導，**排程分類用** |
@@ -127,7 +127,7 @@
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| `schemaVersion` | number | 結構版本（目前 7） |
+| `schemaVersion` | number | 結構版本（目前 8） |
 | `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `videoTags` | string[] | 影片標籤清單 |
