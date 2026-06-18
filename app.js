@@ -442,7 +442,7 @@ function viewWork(){
   const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
     return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:8px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
   // 階段按鈕：毛片待剪 →（按）剪輯中 →（按）完成上架
-  const stageBtn=(v)=>{ if(v.stage==="剪輯中") return `<button class="btn sm" onclick="finishVid('${v.id}')" title="按一下＝完成上架">剪輯中 ▶</button>`;
+  const stageBtn=(v)=>{ if(v.stage==="剪輯中") return `<button class="btn sm" onclick="quickFinish('${v.id}')" title="按一下＝完成上架（之後再排上片日）">剪輯中 ▶</button>`;
     return `<button class="btn sec sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="按一下＝開始剪（變剪輯中）">毛片待剪 ▶</button>`; };
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
   const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">🔁 老闆娘退回待修（${rejected.length}）</b>
@@ -584,7 +584,40 @@ function batchNewFootage(){
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
   });
 }
+// 大量編輯：把目前分頁的影片放進表格，一次改片名／影片文案／標籤，統一儲存
+function bulkEditVideos(){
+  const seg=VID_VIEW;
+  const list=(STATE.videos||[]).filter(v=> seg==="all"?true:vidSegment(v)===seg).slice(0,100);
+  if(!list.length){ toast("此分頁沒有可編輯的影片",true); return; }
+  const rows=list.map(v=>`<tr>
+      <td data-label="編號"><input id="be_code_${v.id}" value="${esc(vidCode(v))}" style="width:64px;text-align:center"></td>
+      <td data-label="片名"><input id="be_name_${v.id}" value="${esc(v.name||v.rawName||"")}" placeholder="片名"></td>
+      <td data-label="影片文案"><input id="be_vcopy_${v.id}" value="${esc(v.videoCopy||"")}" placeholder="影片文案"></td>
+      <td data-label="標籤"><input id="be_tags_${v.id}" value="${esc((Array.isArray(v.tags)?v.tags.filter(t=>t!=='新片'&&t!=='舊片'):[]).join('、'))}" placeholder="標籤(、分隔)"></td>
+    </tr>`).join("");
+  showModal(`📝 大量編輯（${list.length} 支）`, `
+    <style>.modal .box{max-width:1000px}</style>
+    <p class="muted" style="margin-top:-4px;font-size:12px">直接改下面欄位，按「全部儲存」一次寫入。標籤用「、」分隔。</p>
+    <div style="overflow:auto">
+    <table class="responsive"><thead><tr><th style="width:70px">編號</th><th>片名</th><th>影片文案</th><th>標籤</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+  `, async ()=>{
+    let ok=0, allTags=[]; BULK_BUSY=true;
+    try{ for(const v of list){
+      const tags=(val("be_tags_"+v.id)||"").split(/[、,，\s]+/).map(s=>s.trim()).filter(Boolean);
+      allTags=allTags.concat(tags);
+      const nm=val("be_name_"+v.id).trim()||v.rawName||v.name||"";
+      const patch={code:val("be_code_"+v.id).trim(), name:nm, rawName:v.rawName||nm, videoCopy:val("be_vcopy_"+v.id).trim(),
+        tags, subTag:tags[0]||"", updatedAt:nowIso()};
+      try{ await window.DB.update("videos", v.id, patch); ok++; }catch(e){}
+    } } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    await persistNewTags(allTags);
+    await delay(300); toast("已儲存 "+ok+" 支"); return true;
+  }, "💾 全部儲存");
+}
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
+// 完成上架：只改狀態為完成（不跳視窗）；預排上片日留空 → 進「新片未排程」
+function quickFinish(id){ write("POST",`/api/videos/${id}/finish`,{},"已完成上架（新片未排程，記得去排上片日）"); }
 function claimPicked(){ const id=val("poolPick"); if(!id){ toast("請先從清單選一支影片",true); return; } claimVid(id); }
 // 上片時間下拉（固定 10/12/16）
 function pubTimeSelect(id, cur){ const c=PUB_TIMES.includes(cur)?cur:"10:00";
@@ -796,11 +829,11 @@ function viewVideos(){
       ${tab("newNoSched","新片未排程",seg.newNoSched)}
       ${tab("newSched","新片已排程",seg.newSched)}
       ${tab("old","舊片",seg.old)}
-      ${tab("all","全部",all.length)}
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="🔍 搜尋編號／片名／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
       <button class="btn sm" onclick="batchNewFootage()">＋ 新增毛片</button>
+      <button class="btn sec sm" onclick="bulkEditVideos()">📝 大量編輯</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
