@@ -336,6 +336,7 @@ function openDay(ds){
       <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
       <td data-label="連結">${[upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'', drive?`<a href="${esc(drive)}" target="_blank" class="muted">存檔</a>`:''].filter(Boolean).join(' ・ ')||'<span class="muted">—</span>'}</td>
       <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
+      <td data-label="操作"><button class="btn sec sm" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="只把這支移出這天的排程，影片本身不會刪除，之後可重新再排">移出排程</button></td>
     </tr>`;
   }).join("");
   // 排舊片到這天：當天已排過的不再出現；時段自動帶 10/12/16，超過 3 個可自選時間
@@ -369,7 +370,7 @@ function openDay(ds){
   showModal(`📅 ${ds}（${weekdayZh(ds)}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th></tr></thead>
+      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th><th>操作</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
     </div>
     ${reusePicker}`, null);
@@ -395,6 +396,32 @@ async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) 
 // 改上片日期（移動時間，不刪除）
 function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:newDate}},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
+// 移出排程（新片）：只把這支移出這天，影片本身保留 → 回到「新片未排程」，可重新再排
+async function unscheduleVid(id, ds){
+  const v=vid(id)||{};
+  if(!confirm("把「"+vidTitle(v)+"」移出「"+ds+"」的排程？\n\n只是移出這天，影片本身不會刪除，之後可重新再排。")) return;
+  try{
+    const slots=((STATE.schedule||{})[ds]||{}).slots||[];
+    const idx=slots.findIndex(s=>s.videoId===id && !s.reused);
+    if(idx>=0) await route("DELETE",`/api/schedule/${ds}/slot/${idx}`,{});
+    await route("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}});
+    await delay(140); toast("已移出排程（影片保留，可重新排）"); openDay(ds);
+  }catch(e){ toast(e.message||"移出失敗",true); }
+}
+// 移出排程（舊片重播）：只移除這天的重播，影片保留、使用次數同步退回
+async function unscheduleReuse(id, ds){
+  const v=vid(id)||{};
+  const slots=((STATE.schedule||{})[ds]||{}).slots||[];
+  const idx=slots.findIndex(s=>s.videoId===id && s.reused);
+  if(idx<0){ toast("找不到這天的重播排程",true); return; }
+  if(!confirm("把「"+vidTitle(v)+"」的重播移出「"+ds+"」？\n\n只移除這天的重播排程，影片不會刪除。")) return;
+  try{
+    await route("DELETE",`/api/schedule/${ds}/slot/${idx}`,{});
+    const uh=(v.usageHistory||[]).filter(u=>!(u&&typeof u==="object"&&u.date===ds));
+    await window.DB.update("videos", id, {usageHistory:uh, totalUsed:Math.max(0,(v.totalUsed||0)-1)});
+    await delay(140); toast("已移出這天的重播（影片保留）"); openDay(ds);
+  }catch(e){ toast(e.message||"移出失敗",true); }
+}
 
 // ===================================================================
 // 📋 今日工作（🆕 新片上架）
@@ -466,7 +493,6 @@ function viewWork(){
       <b style="font-size:16px">🎬 待剪毛片（先搶先剪・所有剪輯都看得到）</b>
       <span class="pill ${pool.length?'ok':'wa'}">待剪 ${pool.length} 支</span>
     </div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">在 🎞 影片庫「＋ 新增毛片」建立後就會出現在這裡。按「⬇ 認領開始剪」會把這支拉進下方「我的剪輯工作」，其他人就看不到、不會重複剪。</p>
     <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
         <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
@@ -481,7 +507,6 @@ function viewWork(){
       <b style="font-size:16px">✂ 我的剪輯工作</b>
       <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">「我作業中…」按一下變「編輯內容 ▶」→ 進編輯畫面填好按「儲存並完成」就變「✔ 已完成」。已完成的會留在這裡，按「🔔 下班匯報」後才消失；沒剪完的隔天還在原位繼續。</p>
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
         <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
@@ -492,7 +517,6 @@ function viewWork(){
 
   <div class="card">
     <b style="font-size:16px">📌 交辦工作（剪輯以外）</b>
-    <p class="muted" style="font-size:12px;margin:4px 0 8px">先輸入工作項目，做的時候填回報狀況（填寫完整處理狀況及後續才能打勾完成）；下班會顯示已完成／未完成。</p>
     <table class="responsive"><thead><tr><th>工作項目</th><th>回報狀況</th><th style="width:120px">狀態</th><th style="width:44px"></th></tr></thead>
     <tbody>${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; return `<tr>
         <td data-label="工作項目">${esc(t.title)}</td>
@@ -570,7 +594,6 @@ function viewShifts(){
         <td data-label="工時">${s&&s.clockIn?dur(s.clockIn,s.clockOut||nowIso()):'—'}</td></tr>`; }).join("")||'<tr><td colspan="4" class="muted">尚無剪輯成員</td></tr>'}</tbody></table>
   </div>
   <div class="card"><b>📊 剪輯 KPI（累計）</b>
-    <p class="muted" style="font-size:12px;margin:4px 0 8px">平均剪片天數＝認領到完成；帶貨支數＝含商品連結的完成片。成效（觀看／互動）請見「成效」儀表板。</p>
     <table class="responsive"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
     <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
       <td data-label="完成數">${k.count}</td>
@@ -603,7 +626,6 @@ function batchNewFootage(){
   }
   showModal("新增毛片（一次最多 5 支，可帶商品）", `
     <style>.modal .box{max-width:760px}</style>
-    <p class="muted" style="font-size:12px;margin:-2px 0 10px">每支可填片名＋最多 4 個帶貨商品；其餘細節（標籤、文案、上片日）剪片時再補。一次最多 5 支。</p>
     ${blocks}
   `, async ()=>{
     const items=[];
