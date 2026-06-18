@@ -627,17 +627,15 @@ function renderFinishLinks(){
     plats.map((p,i)=>`<div style="margin-top:6px"><label style="margin:0 0 2px">${esc(p.name)}</label>
       <div class="row" style="gap:8px"><input id="fl_${i}" value="${esc(platformUtm(url,p.utm))}" readonly onclick="this.select()" style="flex:1;min-width:180px"><button class="btn sm" type="button" onclick="copyFromInput('fl_${i}')">複製</button></div></div>`).join("")+`</div>`;
 }
-// 新增影片：兩個小文字欄位（口播文案／影片標題文案）＋ 商品
+// 新增影片：填片名即可建檔（其餘到「影片內容」再補）
 function newSimpleVideo(){
   showModal("新增影片", `
-    <label>口播文案</label><input id="sv_voice" placeholder="口播文案">
-    <label>影片標題文案</label><input id="sv_title" placeholder="影片標題文案">
+    <label>影片片名</label><input id="sv_name" placeholder="片名">
     ${productRows("sv", [])}
   `, async ()=>{
-    const title=val("sv_title").trim(), voice=val("sv_voice").trim();
-    if(!title && !voice){ toast("請至少填入影片標題文案或口播文案",true); return false; }
-    const nm=title||voice;
-    const video={name:nm, rawName:nm, titleCopy:title, voiceCopy:voice, products:collectProducts("sv")};
+    const name=val("sv_name").trim();
+    if(!name){ toast("請輸入影片片名",true); return false; }
+    const video={name, rawName:name, products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
