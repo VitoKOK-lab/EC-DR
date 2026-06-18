@@ -124,7 +124,9 @@ async function route(method, path, body){
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
       if(inProgressCount(user)>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
-      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",updatedAt:nowIso()}); return; }
+      await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",workStep:0,updatedAt:nowIso()}); return; }
+    if(action==="unclaim"){
+      await window.DB.update("videos",id,{stage:"待處理",claimedBy:"",claimedAt:"",editor:"",workStep:0,updatedAt:nowIso()}); return; }
     if(action==="finish"){
       const date=body.scheduledDate||null;   // 預排上片日可留空 → 進「新片未排程」
       const ed=v.editor||v.claimedBy||user;
@@ -433,14 +435,23 @@ function viewWork(){
     .sort((a,b)=>String(b.updatedAt||b.id).localeCompare(String(a.updatedAt||a.id)));
   const POOL_CAP=40; const poolShown=pool.slice(0,POOL_CAP);
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
+  const clockedOut = !!(myShift() && myShift().clockOut);
+  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
+    .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
+  const myWork = mine.concat(myDoneToday);
   const tasks = myTasks();
   const g=scheduleGlance();
   // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
   const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
     return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:8px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
-  // 階段按鈕：毛片待剪 →（按）剪輯中 →（按）完成上架
-  const stageBtn=(v)=>{ if(v.stage==="剪輯中") return `<button class="btn sm" onclick="quickFinish('${v.id}')" title="按一下＝完成上架（之後再排上片日）">剪輯中 ▶</button>`;
-    return `<button class="btn sec sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="按一下＝開始剪（變剪輯中）">毛片待剪 ▶</button>`; };
+  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）
+  const workBtn=(v)=>{
+    if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">✔ 已完成</button>`;
+    if(v.workStep===1) return `<button class="btn sm" onclick="openVideoModal('${v.id}',true,true)" title="進入編輯畫面，填好按「儲存並完成」＝已完成">編輯內容 ▶</button>`;
+    return `<button class="btn sec sm" onclick="setWorkStep('${v.id}',1)" title="剪好了？按一下進到「編輯內容」填資料">我作業中…</button>`; };
+  // 退回鍵：把認領的毛片放回待剪清單重選（一人最多 3 支）
+  const undoBtn=(v)=> v.stage==="剪輯中" ? `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="後悔了？退回給大家重選">↩ 退回</button>` : '';
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
   const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">🔁 老闆娘退回待修（${rejected.length}）</b>
     ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:8px">
@@ -467,14 +478,15 @@ function viewWork(){
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">✂ 我的剪輯工作（進行中）</b>
+      <b style="font-size:16px">✂ 我的剪輯工作</b>
       <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:140px">狀態</th></tr></thead>
-    <tbody>${mine.map(v=>`<tr>
-        <td data-label="天數">${dayBadge(v)}</td>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">「我作業中…」按一下變「編輯內容 ▶」→ 進編輯畫面填好按「儲存並完成」就變「✔ 已完成」。已完成的會留在這裡，按「🔔 下班匯報」後才消失；沒剪完的隔天還在原位繼續。</p>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
+    <tbody>${myWork.map(v=>`<tr>
+        <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
         <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
-        <td data-label="狀態">${stageBtn(v)}</td>
+        <td data-label="狀態"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
 
@@ -581,7 +593,11 @@ function batchNewFootage(){
   for(let i=0;i<5;i++){
     blocks+=`<fieldset style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 10px">
       <legend style="font-size:13px;color:var(--muted);padding:0 6px">第 ${i+1} 支</legend>
-      <label>原始片名</label><input id="bn${i}" placeholder="毛片片名（留空＝不建立這支）">
+      <label>編號 ／ 原始片名</label>
+      <div class="row" style="gap:8px">
+        <input id="bc${i}" style="flex:none;width:90px;text-align:center" placeholder="編號">
+        <input id="bn${i}" style="flex:1" placeholder="毛片片名（留空＝不建立這支）">
+      </div>
       ${productRows("b"+i, [])}
     </fieldset>`;
   }
@@ -592,21 +608,23 @@ function batchNewFootage(){
   `, async ()=>{
     const items=[];
     for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
-      items.push({name, products:collectProducts("b"+i)}); }
+      items.push({code:(val("bc"+i)||"").trim(), name, products:collectProducts("b"+i)}); }
     if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
     let ok=0; BULK_BUSY=true;
     try{
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({name:items[i].name, rawName:items[i].name, products:items[i].products}), {id});
+        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, products:items[i].products}), {id});
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
   });
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
-// 完成上架：只改狀態為完成（不跳視窗）；預排上片日留空 → 進「新片未排程」
-function quickFinish(id){ write("POST",`/api/videos/${id}/finish`,{},"已完成上架（新片未排程，記得去排上片日）"); }
+// 退回：把已認領的毛片放回共用「待剪毛片」清單，重新給大家選（一人最多 3 支）
+function unclaimVid(id){ if(!confirm("退回這支毛片到待剪清單？大家就能重新認領。")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待剪毛片清單"); }
+// 我的剪輯工作：作業中 →（按一下）編輯內容
+function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 // 編輯影片視窗：商品頁網址輸入一次，下方各平台用「按鈕」呈現，按一下＝複製該平台 utm 連結
 function editLinksHTML(url){ url=(url||"").trim(); if(!url) return "";
   return `<div class="card" style="background:var(--panel2)"><b>🔗 導購連結（按一下即複製）</b>
@@ -790,7 +808,7 @@ function delVideo(id){
 }
 // 影片內容：預設檢視（不可改）；右上「✎ 編輯」才進編輯、右上「✕」關閉
 function editVideo(id){ openVideoModal(id, false); }
-function openVideoModal(id, edit){
+function openVideoModal(id, edit, fromWork){
   const v = vid(id)||{};
   const s=STATE.settings||{};
   const sources=s.sources||["老闆自拍","外部公司"];
@@ -873,10 +891,12 @@ function openVideoModal(id, edit){
     </div>`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="openVideoModal('${id}',false)">取消編輯</button>
-      <button class="btn" id="vmSave" type="button">💾 儲存修改</button></div>`;
+      <button class="btn" id="vmSave" type="button">${fromWork?'💾 儲存並完成':'💾 儲存修改'}</button></div>`;
   MODAL_DIRTY=false;
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
-  document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(ok) closeModal(); };
+  document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(!ok) return;
+    if(fromWork){ await write("POST",`/api/videos/${id}/finish`,{scheduledDate:val("e_date")||null},"已完成（保留在工作列，下班後消失）"); }
+    closeModal(); };
 }
 async function saveVideo(id){
   const tags=collectTags("e"); await persistNewTags(tags);
@@ -1061,7 +1081,8 @@ function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").i
 let TUT_ON=false, TUT_TIMER=null, TUT_CUR=null;
 const TUT_RULES=[
   {oc:"claimVid",        title:"⬇ 認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的剪輯工作」，其他剪輯就看不到、不會重複剪。"},
-  {oc:"quickFinish",     title:"剪輯中 ▶（完成上架）", text:"剪好了按這裡，狀態直接變「完成」。沒排上片日的會進「新片未排程」，之後到月排程再排日期。"},
+  {oc:"setWorkStep",     title:"我作業中…", text:"剪好了？按一下進到「編輯內容 ▶」，再進編輯畫面填資料。"},
+  {oc:"unclaimVid",      title:"↩ 退回", text:"後悔了或想改選？把這支退回共用的待剪清單，大家可重新認領（一人最多 3 支）。"},
   {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個帶貨商品；其餘細節剪片時再補。"},
   {oc:"newSimpleVideo",  title:"新增影片", text:"建立一支新影片，填原始片名、影片文案與商品。"},
   {oc:"editVideo",       title:"打開影片內容", text:"點影片名稱可看這支片的完整資料；裡面再按「✎ 編輯」才能修改。"},
