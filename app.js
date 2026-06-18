@@ -142,6 +142,7 @@ async function route(method, path, body){
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
       if(body.publishTime) patch.publishTime=body.publishTime;
       if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
+      if(body.copyType!==undefined) patch.copyType=body.copyType;
       if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
       if(Array.isArray(body.products)) patch.products=body.products;
       if(body.productUrl!==undefined) patch.productUrl=body.productUrl;
@@ -520,7 +521,7 @@ function finishVid(id){
       <div><label>預排上片日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
       <div><label>預排上片時間</label><input id="f_time" type="time" value="${esc(v.publishTime||"10:00")}"></div>
     </div>
-    ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
+    ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]), v.copyType||"")}
     ${productRows("f", v.products)}
     <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" oninput="renderFinishLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <div id="f_links"></div>
@@ -529,7 +530,7 @@ function finishVid(id){
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
+      {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"", copyType:val("f_copytype"),
        platforms:collectPlat("f_plat"), products:collectProducts("f"), productUrl:val("f_url").trim(), note:val("f_note").trim(),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
@@ -573,15 +574,31 @@ function newSimpleVideo(){
 // 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
 // ===================================================================
 const DEFAULT_TAGS=["新片","舊片","每日寵粉","招商","銷售"];
+const NEWOLD_TAGS=["新片","舊片"];
 function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
+// 「其他標籤」= 設定的標籤清單，去掉自成一類的 新片/舊片 與 文案類型
+function otherTags(){ const skip=new Set([...NEWOLD_TAGS,...COPY_TYPES]); return videoTags().filter(t=>!skip.has(t)); }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
   <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
-function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
-  const all=videoTags().slice(); (selected||[]).forEach(t=>{ if(!all.includes(t)) all.push(t); });
-  return `<label>標籤（可複選）</label>
+// 標籤分三類：①新舊片（下拉）②文案類型（下拉）③其他標籤（點選複選）
+function tagPickerHTML(id, selected, copyType){ const sel=new Set(selected||[]);
+  const newold = sel.has("舊片")?"舊片":(sel.has("新片")?"新片":"");
+  const skip=new Set([...NEWOLD_TAGS,...COPY_TYPES]);
+  const all=otherTags().slice(); (selected||[]).forEach(t=>{ if(!skip.has(t)&&!all.includes(t)) all.push(t); });
+  return `<div class="grid cols2">
+      <div><label>新舊片</label>
+        <select id="${id}_newold">
+          <option value="" ${!newold?"selected":""}>自動（依上片日 45 天）</option>
+          <option value="新片" ${newold==="新片"?"selected":""}>新片</option>
+          <option value="舊片" ${newold==="舊片"?"selected":""}>舊片</option>
+        </select></div>
+      <div>${copyTypeSelect(id, copyType||"")}</div>
+    </div>
+    <label>其他標籤（可複選）</label>
     <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
     <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
-function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
+function collectTags(id){ const chips=Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value);
+  const no=val(id+'_newold'); if(no) chips.push(no); return chips; }
 function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
   const box=document.getElementById(id+'_box');
   if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
@@ -717,8 +734,7 @@ function editVideo(id){
       <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
       <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="成品標題名稱">
     </div>
-    ${copyTypeSelect("e", v.copyType||"")}
-    ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
+    ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]), v.copyType||"")}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
