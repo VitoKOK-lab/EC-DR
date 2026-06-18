@@ -163,6 +163,18 @@
   .toast.show{opacity:1}
   .toast.err{background:var(--red);border-color:#e2a59d}
 
+  /* 新手教學模式 */
+  #tutBtn.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:var(--accent)}
+  #tutBanner{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:80;max-width:92vw;
+    background:var(--espresso);color:#f5ead7;border:1px solid var(--gold);border-radius:999px;
+    padding:9px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow2);text-align:center}
+  #tutTip{position:fixed;z-index:81;max-width:280px;background:#1b1814;color:#f5ead7;border:1px solid var(--gold);
+    border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;box-shadow:var(--shadow2);pointer-events:none}
+  #tutTip b{color:#e8d39a;display:block;margin-bottom:3px;font-size:13px}
+  body.tut [data-tip],
+  body.tut button,body.tut a,body.tut input,body.tut select,body.tut textarea,body.tut .vtab,body.tut td[onclick]{cursor:help !important}
+  body.tut .tut-hl{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px}
+
   /* 登出 */
   #goodbye{position:fixed;inset:0;z-index:90;display:none;flex-direction:column;align-items:center;justify-content:center;
     background:radial-gradient(800px 400px at 50% 30%, rgba(154,125,57,.08), transparent 60%), var(--bg);color:var(--txt);text-align:center;padding:20px}
@@ -288,6 +300,7 @@
     <span class="brand"><span class="mk">✦</span> 剪輯部 · 短影音</span>
     <span class="spacer"></span>
     <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
+    <button class="btn sm sec" id="tutBtn" onclick="toggleTutorial()" title="新手教學：開啟後把游標停在按鈕或欄位上就會出現說明">🎓 教學</button>
     <button class="btn sm sec" onclick="location.reload()" title="重新整理資料">🔄</button>
     <button class="btn sm sec" onclick="logout()">登出</button>
   </header>
@@ -295,6 +308,8 @@
   <main id="view"></main>
 </div>
 
+<div id="tutBanner" class="hidden"></div>
+<div id="tutTip" class="hidden"></div>
 <div id="modalRoot"></div>
 <div class="toast" id="toast"></div>
 
@@ -306,7 +321,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606181516"></script>
-<script type="module" src="fb.js?v=202606181516"></script>
+<script src="app.js?v=202606181529"></script>
+<script type="module" src="fb.js?v=202606181529"></script>
 </body>
 </html>
