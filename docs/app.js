@@ -5,7 +5,7 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["shifts","📋 每日匯報"],["perf","📊 成效"]],
+  boss:   [["dashboard","📊 儀表板"]],
   editor: [["work","📋 上班計畫"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -22,7 +22,7 @@ function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerNam
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  if(isOwner()){ t.push(["settings","⚙️ 設定"]); t.push(["members","👥 成員管理"]); } return t; }
+  if(isOwner()){ t.push(["settings","⚙️ 設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
 function durationMin(a,b){ const s=new Date(a), e=new Date(b||nowIso()); if(isNaN(s)||isNaN(e)||e<s) return null; return Math.round((e-s)/60000); }
@@ -268,7 +268,7 @@ function render(){
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { cal:viewCal, work:viewWork, videos:viewVideos, perf:viewPerf, shifts:viewShifts, settings:viewSettings, members:viewMembers }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
 
@@ -573,8 +573,8 @@ async function doClockOut(){
   try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso()});
        else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso()}); }catch(e){}
 }
-// 🕒 工時 / 每日匯報 / KPI（只給管理員看）
-function viewShifts(){
+// 📊 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
+function viewDashboard(){
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
   const shifts=Object.values((STATE&&STATE.shifts)||{});
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
@@ -639,9 +639,40 @@ function viewShifts(){
     const sales=my.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     return {name, count:my.length, avgDays, avgMin, sales}; });
 
-  return `<h2>📋 每日匯報 / KPI <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+  // ---- 今日上片進度 ＋ 排程健康/庫存 ----
+  const bT=dayBreakdown(today);
+  const g=scheduleGlance();
+  const poolN=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
+  const noSchedN=(STATE.videos||[]).filter(v=>vidSegment(v)==="newNoSched").length;
+  const wipN=(STATE.videos||[]).filter(v=>v.stage==="剪輯中").length;
+  const runwayCls=g.runway>=7?'ok':(g.runway>=3?'wa':'em');
+  const todayPills=TYPE_ORDER.filter(k=>(bT.tg[k]||0)>0||(bT.byType[k]||0)>0).map(k=>{
+    const ok=(bT.byType[k]||0)>=(bT.tg[k]||0); return `<span class="pill ${ok?'ok':'em'}">${TYPE_SHORT[k]||k} ${bT.byType[k]||0}/${bT.tg[k]||0}</span>`; }).join("");
+
+  return `<h2>📊 儀表板 <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+
   <div class="card">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+    <b style="font-size:16px">🎯 今日上片進度（${today}・${weekdayZh(today)}）</b>
+    <div class="row" style="gap:8px;margin-top:10px">
+      ${todayPills||'<span class="muted">今日尚未設定上片目標</span>'}
+      <span class="pill ${bT.total>=bT.target?'ok':'em'}">總量 ${bT.total}/${bT.target}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px">🗓 排程健康 ／ 庫存</b>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <span class="pill ${runwayCls}">安全天數 ${g.runway} 天</span>
+      <span class="pill ${poolN?'wa':'ok'}">待剪毛片 ${poolN}</span>
+      <span class="pill wa">製作中 ${wipN}</span>
+      <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
+    </div>
+    ${g.defs.length?`<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天缺口：${g.defs.map(d=>`${d.ds.slice(5)} 缺${d.short}`).join("　")}</div>`:'<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天都排滿了 👍</div>'}
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px">👥 每日匯報（各剪輯當日工作＋下班匯報）</b>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:10px">
       <div class="row" style="gap:8px;align-items:center">
         <button class="btn sec sm" onclick="shiftDateMove(-1)" title="前一天">‹</button>
         <input type="date" max="${today}" value="${D}" onchange="shiftDateSet(this.value)" style="width:auto">
@@ -664,6 +695,9 @@ function viewShifts(){
       <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
       <td data-label="平均工時">${minLabel(k.avgMin)}</td>
       <td data-label="帶貨支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
+  </div>
+  <div class="card"><b>📈 外部成效</b>
+    <div style="margin-top:10px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a></div>
   </div>`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
@@ -1002,6 +1036,12 @@ function viewSettings(){
       <td data-label="小計"><b id="wt_sum_${d}">${sum}</b> 支</td></tr>`;
   }).join("");
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
+  const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const memberRows=members.map(u=>`<tr>
+    <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
+      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
+  </tr>`).join("");
   return `<h2>⚙️ 設定</h2>
   <div class="card"><b>每天上片數量（依星期幾）</b>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>帶貨片</th><th>寵粉片</th><th>小計</th></tr></thead>
@@ -1017,6 +1057,12 @@ function viewSettings(){
     <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
     <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>👥 剪輯成員（${members.length}）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th></th></tr></thead>
+    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+    <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增剪輯名字" style="flex:1;min-width:150px">
+      <button class="btn" onclick="addMember()">＋ 新增剪輯</button></div>
   </div>`;
 }
 function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
@@ -1036,25 +1082,8 @@ async function saveSettings(){
 }
 
 // ===================================================================
-// 👥 成員管理（限管理員）
+// 👥 成員管理（限管理員・併入設定頁）
 // ===================================================================
-function viewMembers(){
-  const users=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
-  const rows=users.map(u=>`<tr>
-    <td data-label="名字"><b>${esc(u.name)}</b></td>
-    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
-      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
-  </tr>`).join("");
-  return `<h2>👥 成員管理 <span class="muted" style="font-size:13px">（限管理員）</span></h2>
-  <div class="card"><b>剪輯成員（${users.length}）</b>
-    <table class="responsive"><thead><tr><th>名字</th><th></th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-  </div>
-  <div class="card"><b>新增剪輯</b>
-    <div class="row" style="gap:8px;margin-top:8px"><input id="mb_name" placeholder="名字" style="flex:1;min-width:150px">
-      <button class="btn" onclick="addMember()">新增</button></div>
-  </div>`;
-}
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
   write("POST","/api/users",{name,role:"editor"},"已新增剪輯"); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
@@ -1117,17 +1146,6 @@ function collectProducts(prefix){ const out=[];
   for(let i=0;i<4;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
     out.push({name, price:parseInt(val(prefix+"_pp"+i))||0}); }
   return out;
-}
-function viewPerf(){
-  return `<h2>📊 成效</h2>
-  <div class="card">
-    <b>🎬 影音流量</b>
-    <div style="margin-top:10px"><a class="btn" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a></div>
-  </div>
-  <div class="card">
-    <b>🛒 Shopline 導購連結</b>
-    <p class="muted" style="font-size:13px;margin-top:8px">每支片的導購連結在「🎞 影片庫 → 點影片 → 編輯」裡，依商品頁網址＋平台自動產生、可複製。</p>
-  </div>`;
 }
 
 // ===================================================================
