@@ -439,7 +439,6 @@ function viewWork(){
   const poolOpts = pool.map(v=>`<option value="${v.id}">${esc(vidTitle(v))}${v.source?(" ・"+esc(v.source)):""}</option>`).join("");
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const tasks = myTasks();
-  const g=scheduleGlance();
   // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
   const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
     return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:8px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
@@ -463,7 +462,7 @@ function viewWork(){
            <select id="poolPick" style="flex:1;min-width:160px">${poolOpts}</select>
            <button class="btn sm" onclick="claimPicked()" ${atLimit?`disabled style="opacity:.5;cursor:not-allowed"`:""}>⬇ 領取新毛片</button>
          </div>${atLimit?`<p class="muted" style="margin:6px 0 0;color:var(--red)">⚠ 已有 3 支製作中，先完成幾支再領</p>`:``}`
-      : `<p class="muted" style="margin:8px 0 0">目前沒有待剪新片，可到下方「其他工具」建檔。</p>`}
+      : `<p class="muted" style="margin:8px 0 0">目前沒有毛片可領，請到 <a href="javascript:void(0)" onclick="CUR_TAB='videos';buildNav();render()">🎞 影片庫</a> 建檔。</p>`}
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:64px">天數</th><th>影片</th><th style="width:120px">完成上架</th></tr></thead>
     <tbody>${mine.map(v=>`<tr>
         <td data-label="天數">${dayBadge(v)}</td>
@@ -490,18 +489,7 @@ function viewWork(){
     <span class="pill ok">今日已完成上架 ${doneToday.length} 支</span>
     <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">交辦完成 ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">🔔 下班匯報</button></div>
-  </div>
-
-  <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">🛠 其他工具（建檔新毛片 / 排舊片）</summary>
-    <div class="card" style="margin-top:8px">
-      <div class="row" style="justify-content:space-between"><b>＋ 建檔新毛片</b><span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
-      <div class="row" style="gap:8px;margin-top:8px">
-        <button class="btn sm" onclick="batchNewFootage()">批次建檔</button>
-        <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
-        <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">📅 去月排程排舊片（安全 ${g.runway} 天）</button>
-      </div>
-    </div>
-  </details>`
+  </div>`
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
@@ -786,6 +774,7 @@ function viewVideos(){
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="🔍 搜尋編號／片名／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
       <button class="btn sm" onclick="newSimpleVideo()">＋ 新增影片</button>
+      <button class="btn sec sm" onclick="batchNewFootage()">批次建檔</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">標籤：</span>
