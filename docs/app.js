@@ -609,18 +609,22 @@ async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[])
 // ===================================================================
 // 🎞 影片庫
 // ===================================================================
-// 影片的顯示標籤（新片過 45 天自動顯示為舊片；去重）
-function videoTagsOf(v){
-  let t=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
-  t=t.map(x=>{ let s=String(x).trim(); if(s==="新片"&&pastNewWindow(v)) s="舊片"; return s; }).filter(Boolean);
-  if(v.copyType) t.unshift(String(v.copyType));   // 文案類型也當作可篩選標籤
-  return [...new Set(t)];
-}
+// 是否已上片（完成上架）
+function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
 // 是否歸為「舊片」：手選舊片、或上片已超過 45 天
 function vidIsOld(v){
   const t=Array.isArray(v.tags)?v.tags:[];
   if(t.includes("舊片")&&!t.includes("新片")) return true;
   return pastNewWindow(v);
+}
+// 影片的顯示標籤（去重）：文案類型 + 其他標籤 +（已上片或曾手選時）新/舊片
+function videoTagsOf(v){
+  const base=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
+  let t=base.map(x=>String(x).trim()).filter(s=>s && s!=="新片" && s!=="舊片");
+  if(v.copyType) t.unshift(String(v.copyType));   // 文案類型也當作可篩選標籤
+  const manualNO = base.includes("新片")||base.includes("舊片");
+  if(isPublished(v) || manualNO) t.push(vidIsOld(v)?"舊片":"新片");  // 已上片才有新/舊之分
+  return [...new Set(t)];
 }
 // 最後更新日（資料庫任何異動）
 function vidUpdated(v){ return String(v.updatedAt||v.finishedAt||v.claimedAt||"").slice(0,10); }
@@ -632,7 +636,7 @@ function reviewVid(id, status){
     .then(()=>{ toast(status==="通過"?"已通過 ✔":"已退回，剪輯會收到 🔁"); closeModal(); })
     .catch(()=>toast("操作失敗，請稍後再試",true));
 }
-let VID_VIEW="new";       // 影片庫分頁：new=新片待發 / old=舊片歸檔 / all=全部
+let VID_VIEW="todo";      // 影片庫分頁：todo=待上片(未上) / done=已上片 / all=全部
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
 // 一列 = 一支影片
 function vidTableRow(v){
@@ -663,7 +667,7 @@ function vidTableRow(v){
 function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
-  let list=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="old"?vidIsOld(v):!vidIsOld(v)));
+  let list=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="done"?isPublished(v):!isPublished(v)));
   if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.code||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
   if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
@@ -681,10 +685,10 @@ function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classL
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 function viewVideos(){
   const all=STATE.videos||[];
-  const nNew=all.filter(v=>!vidIsOld(v)).length, nOld=all.filter(v=>vidIsOld(v)).length;
+  const nTodo=all.filter(v=>!isPublished(v)).length, nDone=all.filter(v=>isPublished(v)).length;
   const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
   // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
-  const viewList=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="old"?vidIsOld(v):!vidIsOld(v)));
+  const viewList=all.filter(v=> VID_VIEW==="all"?true:(VID_VIEW==="done"?isPublished(v):!isPublished(v)));
   const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
   const order=videoTags();
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
@@ -695,8 +699,8 @@ function viewVideos(){
   return `<h2>🎞 影片庫 <span class="muted" style="font-size:13px">點任一列看／改細節</span></h2>
   <div class="card">
     <div class="vtabs">
-      ${tab("new","新片待發",nNew)}
-      ${tab("old","舊片歸檔",nOld)}
+      ${tab("todo","待上片",nTodo)}
+      ${tab("done","已上片",nDone)}
       ${tab("all","全部影片",all.length)}
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
