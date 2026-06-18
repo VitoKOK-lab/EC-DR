@@ -231,7 +231,8 @@
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
   /* 影片庫分頁 + 表格 */
-  .vtabs{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px}
+  .vtabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px}
+  .vtab{min-width:84px}
   .vtab{flex:1;background:transparent;border:none;color:var(--muted);font-weight:700;font-size:14px;padding:9px 10px;border-radius:6px;cursor:pointer;transition:.14s;display:flex;align-items:center;justify-content:center;gap:6px}
   .vtab:hover{color:var(--txt)}
   .vtab.on{background:var(--panel);color:var(--accent);box-shadow:var(--shadow)}
