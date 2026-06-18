@@ -904,7 +904,6 @@ function openVideoModal(id, edit, fromWork){
     ${reviewCard}
     <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
       <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
-      <label>社群平台預排連結</label><input id="e_social" value="${esc(v.socialLink||v.publishedLink||"")}" placeholder="排程工具 / 預約貼文連結">
     </div>
     ${usageCard}
     <div class="card" style="border-color:var(--red)">
@@ -927,7 +926,7 @@ async function saveVideo(id){
     products:collectProducts("e"), productUrl:val("e_url").trim(),
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), publishedLink:val("e_social"), socialLink:val("e_social"), note:val("e_note").trim()};
+    driveFolder:val("e_drive"), note:val("e_note").trim()};
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
