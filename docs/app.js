@@ -901,13 +901,11 @@ function openVideoModal(id, edit){
       ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row("預排上片日", esc(v.scheduledDate||""))}
       ${row("雲端備份", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
-      ${row("社群連結", v.socialLink||v.publishedLink?`<a href="${esc(v.socialLink||v.publishedLink)}" target="_blank">開啟</a>`:'')}
-      ${row("備註", esc(v.note||""))}
-      ${row("審核", v.reviewStatus?esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':''):'未審')}
       ${editLinksHTML(v.productUrl)}
       ${reviewCard}
       ${usageCard}`;
-    document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}</div></div>`;
+    MODAL_DIRTY=false;
+    document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}</div></div>`;
     return;
   }
 
@@ -947,7 +945,8 @@ function openVideoModal(id, edit){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="openVideoModal('${id}',false)">取消編輯</button>
       <button class="btn" id="vmSave" type="button">💾 儲存修改</button></div>`;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal"><div class="box">${head}${body}${foot}</div></div>`;
+  MODAL_DIRTY=false;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
   document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(ok) closeModal(); };
 }
 async function saveVideo(id){
