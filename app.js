@@ -5,7 +5,7 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["shifts","🕒 工時/KPI"],["perf","📊 成效"]],
+  boss:   [["cal","📅 月排程"],["videos","🎞 影片庫"],["shifts","📋 每日匯報"],["perf","📊 成效"]],
   editor: [["work","📋 上班計畫"],["cal","📅 月排程"],["videos","🎞 影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -276,6 +276,10 @@ function render(){
 // 📅 月排程（＋ 舊片重覆上架）
 // ===================================================================
 let CAL_YM = null;
+let SHIFT_DATE = today;   // 管理員「每日匯報」檢視的日期
+function shiftDateMove(n){ const d=new Date(SHIFT_DATE+"T00:00:00"); d.setDate(d.getDate()+n);
+  const nd=new Date(d.getTime()+288e5).toISOString().slice(0,10); if(nd>today) return; SHIFT_DATE=nd; render(); }
+function shiftDateSet(v){ if(v){ SHIFT_DATE=(v>today?today:v); render(); } }
 function viewCal(){
   if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
   const [y,m] = CAL_YM;
@@ -569,45 +573,97 @@ async function doClockOut(){
   try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso()});
        else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso()}); }catch(e){}
 }
-// 🕒 工時 / KPI（只給管理員看）
+// 🕒 工時 / 每日匯報 / KPI（只給管理員看）
 function viewShifts(){
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
   const shifts=Object.values((STATE&&STATE.shifts)||{});
-  const todayShifts=shifts.filter(s=>s.date===today);
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const D=SHIFT_DATE, isToday=(D===today);
   const hm=iso=>String(iso||"").slice(11,16);
   const dur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
+  const minLabel=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
   const fin=(STATE.videos||[]).filter(v=>isPublished(v)&&v.finishedAt&&v.editor);
-  // 每位剪輯累計 KPI
+
+  // ---- 每位剪輯：所選日期的當日明細 ----
+  const perEditor=editors.map(name=>{
+    const s=shifts.find(x=>x.user===name && x.date===D);
+    const done=(STATE.videos||[]).filter(v=>v.editor===name && isPublished(v) && String(v.finishedAt||"").slice(0,10)===D)
+      .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
+    const wip=isToday?(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
+    const tasks=allTasks.filter(t=>t.user===name && t.date===D);
+    const sales=done.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
+    const mins=done.map(v=>v.durationMin).filter(x=>typeof x==="number");
+    const sumMin=mins.reduce((a,b)=>a+b,0);
+    return {name,s,done,wip,tasks,sales,sumMin};
+  });
+  const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
+  const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
+  const teamSales=perEditor.reduce((a,e)=>a+e.sales,0);
+  const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
+  const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
+
+  const statusPill=(s)=> !s||!s.clockIn ? '<span class="pill em">未上班</span>'
+      : (s.clockOut?'<span class="pill ok">已下班</span>':'<span class="pill wa">上班中</span>');
+  const vline=(v,extra)=>`<div style="margin:5px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a>${extra||""}</div>`;
+
+  const cards=perEditor.map(e=>{
+    const att=e.s&&e.s.clockIn? `${hm(e.s.clockIn)}–${e.s.clockOut?hm(e.s.clockOut):'…'}　工時 ${dur(e.s.clockIn,e.s.clockOut||(isToday?nowIso():e.s.clockIn))}` : '—';
+    const doneHTML=e.done.length? e.done.map(v=>vline(v,` <span class="pill ok" style="font-size:10px">完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)||'-'} 天・工時 ${minLabel(v.durationMin)}</span>`)).join("")
+        : '<div class="muted" style="font-size:13px;margin-top:4px">當日無完成</div>';
+    const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
+        : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
+    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
+        : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+        <b style="font-size:16px">👤 ${esc(e.name)}</b>
+        <span>${statusPill(e.s)}</span>
+      </div>
+      <div class="muted" style="font-size:13px;margin-top:2px">🕒 ${att}</div>
+      <div class="row" style="gap:6px;margin-top:8px">
+        <span class="pill ok">完成 ${e.done.length}</span>
+        <span class="pill ${e.sales?'ok':'wa'}">帶貨 ${e.sales}</span>
+        <span class="pill wa">工時 ${minLabel(e.sumMin)}</span>
+        <span class="pill ${e.tasks.length&&e.tasks.every(t=>t.done)?'ok':(e.tasks.length?'em':'wa')}">交辦 ${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</span>
+      </div>
+      <div style="margin-top:12px"><b style="font-size:13px">✅ 今日完成上架</b>${doneHTML}</div>
+      ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">✂ 進行中（未完成）</b>${wipHTML}</div>`:''}
+      <div style="margin-top:10px"><b style="font-size:13px">📌 交辦工作（下班匯報）</b>${taskHTML}</div>
+    </div>`;
+  }).join("")||'<div class="card muted">尚無剪輯成員</div>';
+
+  // ---- 累計 KPI ----
   const kpi=editors.map(name=>{ const my=fin.filter(v=>v.editor===name);
     const days=my.map(editDays).filter(x=>x!=null); const avgDays=days.length?(days.reduce((a,b)=>a+b,0)/days.length):null;
     const mins=my.map(v=>v.durationMin).filter(x=>typeof x==="number"); const avgMin=mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null;
     const sales=my.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     return {name, count:my.length, avgDays, avgMin, sales}; });
-  const recent=fin.slice().sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||""))).slice(0,20);
-  return `<h2>🕒 工時 / KPI <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
-  <div class="card"><b>📅 今日出勤（${today}）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>剪輯</th><th>上班</th><th>下班</th><th>工時</th></tr></thead>
-    <tbody>${editors.map(name=>{ const s=todayShifts.find(x=>x.user===name);
-      return `<tr><td data-label="剪輯">${esc(name)}</td>
-        <td data-label="上班">${s&&s.clockIn?hm(s.clockIn):'<span class="muted">未上班</span>'}</td>
-        <td data-label="下班">${s&&s.clockOut?hm(s.clockOut):(s&&s.clockIn?'<span class="muted">上班中</span>':'—')}</td>
-        <td data-label="工時">${s&&s.clockIn?dur(s.clockIn,s.clockOut||nowIso()):'—'}</td></tr>`; }).join("")||'<tr><td colspan="4" class="muted">尚無剪輯成員</td></tr>'}</tbody></table>
+
+  return `<h2>📋 每日匯報 / KPI <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+      <div class="row" style="gap:8px;align-items:center">
+        <button class="btn sec sm" onclick="shiftDateMove(-1)" title="前一天">‹</button>
+        <input type="date" max="${today}" value="${D}" onchange="shiftDateSet(this.value)" style="width:auto">
+        <button class="btn sec sm" onclick="shiftDateMove(1)" title="後一天" ${D>=today?'disabled style="opacity:.4"':''}>›</button>
+        <b style="font-size:15px">${D}（${weekdayZh(D)}）${isToday?'<span class="pill ok" style="font-size:10px;margin-left:4px">今天</span>':''}</b>
+      </div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <span class="pill ${present?'ok':'em'}">出勤 ${present}/${editors.length}</span>
+      <span class="pill ok">完成上架 ${teamDone}</span>
+      <span class="pill ${teamSales?'ok':'wa'}">帶貨 ${teamSales}</span>
+      <span class="pill ${teamTasks&&teamTasksDone===teamTasks?'ok':(teamTasks?'em':'wa')}">交辦 ${teamTasksDone}/${teamTasks}</span>
+    </div>
   </div>
-  <div class="card"><b>📊 剪輯 KPI（累計）</b>
-    <table class="responsive"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
+  ${cards}
+  <div class="card"><b>📊 剪輯 KPI（累計・全期）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
     <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
       <td data-label="完成數">${k.count}</td>
       <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
-      <td data-label="平均工時">${k.avgMin!=null?(Math.floor(k.avgMin/60)?Math.floor(k.avgMin/60)+"h":"")+(k.avgMin%60)+"m":'—'}</td>
+      <td data-label="平均工時">${minLabel(k.avgMin)}</td>
       <td data-label="帶貨支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
-  </div>
-  <div class="card"><b>🎬 近期完成（單片工時）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>影片</th><th>剪輯</th><th>完成日</th><th>剪片天數</th><th>工時</th></tr></thead>
-    <tbody>${recent.map(v=>`<tr><td data-label="影片">${esc(vidTitle(v))}</td>
-      <td data-label="剪輯">${esc(v.editor||"")}</td>
-      <td data-label="完成日">${String(v.finishedAt||"").slice(0,10)}</td>
-      <td data-label="剪片天數">${editDaysLabel(v)||'—'}</td>
-      <td data-label="工時">${typeof v.durationMin==="number"?((Math.floor(v.durationMin/60)?Math.floor(v.durationMin/60)+"h":"")+(v.durationMin%60)+"m"):'—'}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無完成紀錄</td></tr>'}</tbody></table>
   </div>`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
