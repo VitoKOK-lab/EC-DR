@@ -42,7 +42,7 @@ function nextId(arr, prefix){
 function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), code:"",
-    name:"", rawName:"", tags:[], subTag:"", copyType:"",
+    name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
@@ -137,7 +137,6 @@ async function route(method, path, body){
       if(body.driveFolder) patch.driveFolder=body.driveFolder; if(body.name) patch.name=body.name;
       if(body.publishTime) patch.publishTime=body.publishTime;
       if(Array.isArray(body.tags)) patch.tags=body.tags; if(body.subTag!==undefined) patch.subTag=body.subTag;
-      if(body.copyType!==undefined) patch.copyType=body.copyType;
       if(Array.isArray(body.platforms)) patch.platforms=body.platforms;
       if(Array.isArray(body.products)) patch.products=body.products;
       if(body.productUrl!==undefined) patch.productUrl=body.productUrl;
@@ -606,7 +605,7 @@ function finishVid(id){
       <div><label>預排上片日期</label><input id="f_date" type="date" value="${esc(def)}" oninput="finishGate('f_')"></div>
       <div><label>預排上片時間</label><input id="f_time" type="time" value="${esc(v.publishTime||"10:00")}"></div>
     </div>
-    ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]), v.copyType||"")}
+    ${tagPickerHTML("f", v.tags||(v.subTag?[v.subTag]:[]))}
     ${productRows("f", v.products)}
     <label>商品頁網址（導購連結用）</label><input id="f_url" value="${esc(v.productUrl||"")}" oninput="renderFinishLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <div id="f_links"></div>
@@ -615,7 +614,7 @@ function finishVid(id){
   `, async ()=>{
     const tags=collectTags("f"); await persistNewTags(tags);
     return await write("POST",`/api/videos/${id}/finish`,
-      {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"", copyType:val("f_copytype"),
+      {name:(val("f_name").trim()||v.rawName||v.name||""), scheduledDate:val("f_date"), publishTime:val("f_time"), tags, subTag:tags[0]||"",
        platforms:collectPlat("f_plat"), products:collectProducts("f"), productUrl:val("f_url").trim(), note:val("f_note").trim(),
        publishedLink:val("f_social"), driveFolder:val("f_backup"), socialLink:val("f_social"),
        published:true, backupDone:true, socialScheduled:true}, "已完成，已加入月行事曆");
@@ -646,25 +645,17 @@ function copyStr(enc){ const t=decodeURIComponent(enc);
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>fallbackCopy(t)); }
   else fallbackCopy(t); }
 function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("已複製連結"); }catch(e){ toast("複製失敗，請手動",true); } }
-// 剪輯端輕量新增：填原始片名，建立一支待剪新片（成品標題預設同原始片名）
-const COPY_TYPES=["口播文案","貼文文案"];
-function copyTypeSelect(id, cur){
-  return `<label>文案類型</label>
-    <select id="${id}_copytype">
-      <option value="" ${!cur?"selected":""}>（未指定）</option>
-      ${COPY_TYPES.map(t=>`<option value="${esc(t)}" ${cur===t?"selected":""}>${esc(t)}</option>`).join("")}
-    </select>`;
-}
+// 新增影片：原始片名 ＋ 影片文案 ＋ 商品
 function newSimpleVideo(){
-  showModal("新增待剪新片", `
+  showModal("新增影片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
-    ${copyTypeSelect("sv","")}
+    <label>影片文案</label><input id="sv_vcopy" placeholder="影片文案">
     ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, copyType:val("sv_copytype"), products:collectProducts("sv")};
-    return await write("POST","/api/videos",{video},"已新增待剪新片");
+    const video={name, rawName:name, videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
+    return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
 
@@ -674,29 +665,18 @@ function newSimpleVideo(){
 const DEFAULT_TAGS=["新片","舊片","每日寵粉","招商","銷售"];
 const NEWOLD_TAGS=["新片","舊片"];
 function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
-// 「其他標籤」= 設定的標籤清單，去掉自成一類的 新片/舊片 與 文案類型
-function otherTags(){ const skip=new Set([...NEWOLD_TAGS,...COPY_TYPES]); return videoTags().filter(t=>!skip.has(t)); }
+// 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
+function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:14px;cursor:pointer;font-size:13px">
   <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
-// 標籤分三類：①新舊片（下拉）②文案類型（下拉）③其他標籤（點選複選）
-function tagPickerHTML(id, selected, copyType){ const sel=new Set(selected||[]);
-  const newold = sel.has("舊片")?"舊片":(sel.has("新片")?"新片":"");
-  const skip=new Set([...NEWOLD_TAGS,...COPY_TYPES]);
+// 標籤：只留可複選的其他標籤（新舊片自動、不設選單）
+function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
+  const skip=new Set(NEWOLD_TAGS);
   const all=otherTags().slice(); (selected||[]).forEach(t=>{ if(!skip.has(t)&&!all.includes(t)) all.push(t); });
-  return `<div class="grid cols2">
-      <div><label>新舊片</label>
-        <select id="${id}_newold">
-          <option value="" ${!newold?"selected":""}>自動（過了預排上片日＝舊片）</option>
-          <option value="新片" ${newold==="新片"?"selected":""}>新片</option>
-          <option value="舊片" ${newold==="舊片"?"selected":""}>舊片</option>
-        </select></div>
-      <div>${copyTypeSelect(id, copyType||"")}</div>
-    </div>
-    <label>其他標籤（可複選）</label>
+  return `<label>標籤（可複選）</label>
     <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
     <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
-function collectTags(id){ const chips=Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value);
-  const no=val(id+'_newold'); if(no) chips.push(no); return chips; }
+function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
 function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
   const box=document.getElementById(id+'_box');
   if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
@@ -721,7 +701,6 @@ function vidIsOld(v){
 function videoTagsOf(v){
   const base=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
   let t=base.map(x=>String(x).trim()).filter(s=>s && s!=="新片" && s!=="舊片");
-  if(v.copyType) t.unshift(String(v.copyType));   // 文案類型也當作可篩選標籤
   return [...new Set(t)];
 }
 // 天數差（b - a，以日為單位）
@@ -859,7 +838,8 @@ function openVideoModal(id, edit){
     const body=`
       ${row("編號", esc(vidCode(v)))}
       ${row("原始片名", esc(v.rawName||""))}
-      ${row("成品標題", esc(v.name||""))}
+      ${row("影片貼文文案", esc(v.name||""))}
+      ${row("影片文案", v.videoCopy?esc(v.videoCopy).replace(/\n/g,'<br>'):'')}
       ${row("標籤", tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
       ${row("片源", esc(v.source||""))}
       ${row("階段", `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(v.stage||"")}</span>`)}
@@ -884,12 +864,13 @@ function openVideoModal(id, edit){
       <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="編號" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
       <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1" placeholder="原始片名">
     </div>
-    <label>編號 ／ 成品標題名稱（不填則同原始片名）</label>
+    <label>編號 ／ 影片貼文文案（不填則同原始片名）</label>
     <div class="row" style="gap:8px">
       <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
-      <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="成品標題名稱">
+      <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="影片貼文文案">
     </div>
-    ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]), v.copyType||"")}
+    <label>影片文案</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" placeholder="影片文案">
+    ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -919,7 +900,7 @@ function openVideoModal(id, edit){
 async function saveVideo(id){
   const tags=collectTags("e"); await persistNewTags(tags);
   const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
-  const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), mainType,tags,subTag:tags[0]||"", copyType:val("e_copytype"),
+  const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
     products:collectProducts("e"), productUrl:val("e_url").trim(),
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
