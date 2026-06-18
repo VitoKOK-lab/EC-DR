@@ -444,7 +444,6 @@ function viewWork(){
   return `
   <h2>📋 本日上班計畫（${esc(me)}）</h2>
   ${rejCard}
-  <p class="muted" style="margin:-8px 0 14px;font-size:13px">製作中的影片會自動帶到下面（標天數：新＝今天領、2＝昨天領、3＝前天…）。剪好按「完成上架」，下班時會自動進匯報。</p>
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
