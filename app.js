@@ -49,7 +49,7 @@ function newVideoRecord(over){
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
     products:[], productUrl:"", note:"",
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
-    driveFolder:"", publishedLink:"", socialLink:"",
+    driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
@@ -446,8 +446,18 @@ function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
 async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
   const id="T"+Date.now().toString(36);
-  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, report:"", done:false, createdAt:nowIso()}); }
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
+    const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; }
   catch(e){ toast("新增失敗，請稍後再試",true); } }
+// 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
+async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim();
+  if(!name){ toast("請先選擇要指派的員工",true); return; }
+  if(!t){ toast("請輸入要指派的工作內容",true); return; }
+  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
+    const inp=document.getElementById('asg_txt'); if(inp) inp.value=''; toast("已指派給 "+name); }
+  catch(e){ toast("指派失敗，請稍後再試",true); } }
+function ackTask(id){ window.DB.update("tasks", id, {ack:true}).catch(()=>toast("更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
 function taskDone(id, done){
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -508,7 +518,7 @@ function viewWork(){
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">✂ 我的剪輯工作</b>
+      <b style="font-size:16px">✂ 我的今日工作</b>
       <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
     </div>
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
@@ -520,16 +530,24 @@ function viewWork(){
   </div>
 
   <div class="card">
-    <b style="font-size:16px">📌 交辦工作（剪輯以外）</b>
-    <table class="responsive"><thead><tr><th>工作項目</th><th>回報狀況</th><th style="width:120px">狀態</th><th style="width:44px"></th></tr></thead>
-    <tbody>${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; return `<tr>
-        <td data-label="工作項目">${esc(t.title)}</td>
-        <td data-label="回報狀況"><input id="tr_${t.id}" value="${esc(t.report||'')}" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="填寫完整處理狀況及後續…"></td>
-        <td data-label="狀態"><label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;color:${t.done?'var(--green)':'var(--amber)'}">
-          <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label></td>
-        <td data-label=""><button class="btn sec sm" onclick="delTask('${t.id}')">刪</button></td>
-      </tr>`;}).join("")||`<tr><td colspan="4" class="muted">尚無交辦工作</td></tr>`}</tbody></table>
-    <div class="row" style="gap:8px;margin-top:10px"><input id="wp_newtask" placeholder="新增交辦工作項目…" style="flex:1" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
+    <b style="font-size:16px">📌 我的今日交辦工作（剪輯以外）</b>
+    <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
+      const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+          <b style="font-size:14px">${esc(t.title)}</b>
+          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">老闆指派</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">刪</button>`}
+        </div>`;
+      if(needAck) return `<div style="border:1px solid var(--amber);background:var(--panel2);border-radius:10px;padding:12px;margin-bottom:10px">
+        ${head}
+        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・請先按「收到」</div>
+        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">✅ 收到</button></div>`;
+      return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px">
+        ${head}
+        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">✅ 已收到（老闆 ${esc(t.assignedBy)} 指派）</div>`:''}
+        <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="填寫完整處理狀況及後續…">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
+          <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label>
+      </div>`;}).join("")||`<div class="muted">尚無交辦工作</div>`}</div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:1" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
   </div>
 
   <div class="card" style="text-align:center">
@@ -606,13 +624,14 @@ function viewDashboard(){
       : (s.clockOut?'<span class="pill ok">已下班</span>':'<span class="pill wa">上班中</span>');
   const vline=(v,extra)=>`<div style="margin:5px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a>${extra||""}</div>`;
 
-  const cards=perEditor.map(e=>{
+  const cards=perEditor.map((e,i)=>{
     const att=e.s&&e.s.clockIn? `${hm(e.s.clockIn)}–${e.s.clockOut?hm(e.s.clockOut):'…'}　工時 ${dur(e.s.clockIn,e.s.clockOut||(isToday?nowIso():e.s.clockIn))}` : '—';
     const doneHTML=e.done.length? e.done.map(v=>vline(v,` <span class="pill ok" style="font-size:10px">完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)||'-'} 天・工時 ${minLabel(v.durationMin)}</span>`)).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無完成</div>';
     const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
-    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
+    const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
+    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
@@ -620,7 +639,7 @@ function viewDashboard(){
         <span>${statusPill(e.s)}</span>
       </div>
       <div class="muted" style="font-size:13px;margin-top:2px">🕒 ${att}</div>
-      <div class="row" style="gap:6px;margin-top:8px">
+      <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
         <span class="pill ok">完成 ${e.done.length}</span>
         <span class="pill ${e.sales?'ok':'wa'}">帶貨 ${e.sales}</span>
         <span class="pill wa">工時 ${minLabel(e.sumMin)}</span>
@@ -671,6 +690,16 @@ function viewDashboard(){
   </div>
 
   <div class="card">
+    <b style="font-size:16px">✉️ 指派交辦事項給員工</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">送出後自動出現在該員工頁面（今天），員工需按「收到」。</div>
+    <div style="margin-top:10px">
+      <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+      <textarea id="asg_txt" rows="2" placeholder="要交辦的工作內容…" style="margin-top:8px"></textarea>
+      <button class="btn" style="width:100%;margin-top:8px" onclick="assignTaskSel()">📨 送出交辦</button>
+    </div>
+  </div>
+
+  <div class="card">
     <b style="font-size:16px">👥 每日匯報（各剪輯當日工作＋下班匯報）</b>
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:10px">
       <div class="row" style="gap:8px;align-items:center">
@@ -711,6 +740,8 @@ function batchNewFootage(){
         <input id="bc${i}" style="flex:none;width:90px;text-align:center" placeholder="編號">
         <input id="bn${i}" style="flex:1" placeholder="毛片片名（留空＝不建立這支）">
       </div>
+      <label>毛片雲端連結</label>
+      <input id="bl${i}" placeholder="毛片原始檔雲端連結（選填）">
       ${productRows("b"+i, [])}
     </fieldset>`;
   }
@@ -720,13 +751,13 @@ function batchNewFootage(){
   `, async ()=>{
     const items=[];
     for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
-      items.push({code:(val("bc"+i)||"").trim(), name, products:collectProducts("b"+i)}); }
+      items.push({code:(val("bc"+i)||"").trim(), name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
     let ok=0; BULK_BUSY=true;
     try{
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, products:items[i].products}), {id});
+        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products}), {id});
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
@@ -754,12 +785,13 @@ function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.v
 function newSimpleVideo(){
   showModal("新增影片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
+    <label>毛片雲端連結</label><input id="sv_link" placeholder="毛片原始檔雲端連結（選填）">
     <label>影片文案</label><input id="sv_vcopy" placeholder="影片文案">
     ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
+    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
@@ -959,7 +991,8 @@ function openVideoModal(id, edit, fromWork){
       ${row("商品", prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（$${esc(p.price)}）`:"")).join("、"):'')}
       ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row("預排上片日", esc(v.scheduledDate||""))}
-      ${row("雲端備份", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
+      ${row("毛片雲端連結", v.rawLink?`<a href="${esc(v.rawLink)}" target="_blank">開啟</a>`:'')}
+      ${row("完成影片存檔連結", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
       ${editLinksHTML(v.productUrl)}
       ${reviewCard}
       ${usageCard}`;
@@ -979,6 +1012,7 @@ function openVideoModal(id, edit, fromWork){
       <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
       <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="影片貼文文案">
     </div>
+    <label>毛片雲端連結</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="毛片原始檔雲端連結">
     <label>影片文案</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" placeholder="影片文案">
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
@@ -992,8 +1026,8 @@ function openVideoModal(id, edit, fromWork){
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
     ${reviewCard}
-    <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
-      <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
+    <div class="card" style="background:var(--panel2)"><b>🔗 完成影片存檔連結</b>
+      <label>完成影片存檔連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="剪輯完成後的成品存檔連結">
     </div>
     ${usageCard}
     <div class="card" style="border-color:var(--red)">
@@ -1016,7 +1050,7 @@ async function saveVideo(id){
     products:collectProducts("e"), productUrl:val("e_url").trim(),
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), note:val("e_note").trim()};
+    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:val("e_note").trim()};
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
@@ -1175,7 +1209,7 @@ function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").i
 // ===================================================================
 let TUT_ON=false, TUT_TIMER=null, TUT_CUR=null;
 const TUT_RULES=[
-  {oc:"claimVid",        title:"⬇ 認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的剪輯工作」，其他剪輯就看不到、不會重複剪。"},
+  {oc:"claimVid",        title:"⬇ 認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的今日工作」，其他剪輯就看不到、不會重複剪。"},
   {oc:"setWorkStep",     title:"我作業中…", text:"剪好了？按一下進到「編輯內容 ▶」，再進編輯畫面填資料。"},
   {oc:"unclaimVid",      title:"↩ 退回", text:"後悔了或想改選？把這支退回共用的待剪清單，大家可重新認領（一人最多 3 支）。"},
   {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個帶貨商品；其餘細節剪片時再補。"},
