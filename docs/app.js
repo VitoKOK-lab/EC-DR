@@ -49,7 +49,7 @@ function newVideoRecord(over){
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
     products:[], productUrl:"", note:"",
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
-    driveFolder:"", publishedLink:"", socialLink:"",
+    driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
@@ -449,12 +449,13 @@ async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("�
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; }
   catch(e){ toast("新增失敗，請稍後再試",true); } }
-// 老闆指派交辦給某位剪輯：自動出現在他的頁面，需按「收到」
-async function assignTask(idx){ const inp=document.getElementById('asg_'+idx); const name=inp?inp.dataset.name:''; const t=(inp?inp.value:'').trim();
-  if(!t){ toast("請輸入要指派的工作",true); return; }
+// 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
+async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim();
+  if(!name){ toast("請先選擇要指派的員工",true); return; }
+  if(!t){ toast("請輸入要指派的工作內容",true); return; }
   const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
-    if(inp) inp.value=''; toast("已指派給 "+name); }
+    const inp=document.getElementById('asg_txt'); if(inp) inp.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
 function ackTask(id){ window.DB.update("tasks", id, {ack:true}).catch(()=>toast("更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
@@ -632,9 +633,6 @@ function viewDashboard(){
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
     const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
-    const assignHTML=isToday?`<div class="row" style="gap:6px;margin-top:8px">
-        <input id="asg_${i}" data-name="${esc(e.name)}" placeholder="指派交辦給 ${esc(e.name)}…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')assignTask(${i})">
-        <button class="btn sm" style="flex:none" onclick="assignTask(${i})">派工</button></div>`:'';
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
         <b style="font-size:16px">👤 ${esc(e.name)}</b>
@@ -649,7 +647,7 @@ function viewDashboard(){
       </div>
       <div style="margin-top:12px"><b style="font-size:13px">✅ 今日完成上架</b>${doneHTML}</div>
       ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">✂ 進行中（未完成）</b>${wipHTML}</div>`:''}
-      <div style="margin-top:10px"><b style="font-size:13px">📌 交辦工作（下班匯報）</b>${taskHTML}${assignHTML}</div>
+      <div style="margin-top:10px"><b style="font-size:13px">📌 交辦工作（下班匯報）</b>${taskHTML}</div>
     </div>`;
   }).join("")||'<div class="card muted">尚無剪輯成員</div>';
 
@@ -689,6 +687,16 @@ function viewDashboard(){
       <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
     </div>
     ${g.defs.length?`<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天缺口：${g.defs.map(d=>`${d.ds.slice(5)} 缺${d.short}`).join("　")}</div>`:'<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天都排滿了 👍</div>'}
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px">✉️ 指派交辦事項給員工</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">送出後自動出現在該員工頁面（今天），員工需按「收到」。</div>
+    <div style="margin-top:10px">
+      <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+      <textarea id="asg_txt" rows="2" placeholder="要交辦的工作內容…" style="margin-top:8px"></textarea>
+      <button class="btn" style="width:100%;margin-top:8px" onclick="assignTaskSel()">📨 送出交辦</button>
+    </div>
   </div>
 
   <div class="card">
@@ -732,6 +740,8 @@ function batchNewFootage(){
         <input id="bc${i}" style="flex:none;width:90px;text-align:center" placeholder="編號">
         <input id="bn${i}" style="flex:1" placeholder="毛片片名（留空＝不建立這支）">
       </div>
+      <label>毛片雲端連結</label>
+      <input id="bl${i}" placeholder="毛片原始檔雲端連結（選填）">
       ${productRows("b"+i, [])}
     </fieldset>`;
   }
@@ -741,13 +751,13 @@ function batchNewFootage(){
   `, async ()=>{
     const items=[];
     for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
-      items.push({code:(val("bc"+i)||"").trim(), name, products:collectProducts("b"+i)}); }
+      items.push({code:(val("bc"+i)||"").trim(), name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
     let ok=0; BULK_BUSY=true;
     try{
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, products:items[i].products}), {id});
+        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products}), {id});
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
@@ -775,12 +785,13 @@ function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.v
 function newSimpleVideo(){
   showModal("新增影片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
+    <label>毛片雲端連結</label><input id="sv_link" placeholder="毛片原始檔雲端連結（選填）">
     <label>影片文案</label><input id="sv_vcopy" placeholder="影片文案">
     ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
+    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
@@ -980,7 +991,8 @@ function openVideoModal(id, edit, fromWork){
       ${row("商品", prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（$${esc(p.price)}）`:"")).join("、"):'')}
       ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row("預排上片日", esc(v.scheduledDate||""))}
-      ${row("雲端備份", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
+      ${row("毛片雲端連結", v.rawLink?`<a href="${esc(v.rawLink)}" target="_blank">開啟</a>`:'')}
+      ${row("完成影片存檔連結", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
       ${editLinksHTML(v.productUrl)}
       ${reviewCard}
       ${usageCard}`;
@@ -1000,6 +1012,7 @@ function openVideoModal(id, edit, fromWork){
       <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="同原片編號">
       <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="影片貼文文案">
     </div>
+    <label>毛片雲端連結</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="毛片原始檔雲端連結">
     <label>影片文案</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" placeholder="影片文案">
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
@@ -1013,8 +1026,8 @@ function openVideoModal(id, edit, fromWork){
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
     ${reviewCard}
-    <div class="card" style="background:var(--panel2)"><b>🔗 連結</b>
-      <label>雲端備份連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="Google Drive / 雲端備份">
+    <div class="card" style="background:var(--panel2)"><b>🔗 完成影片存檔連結</b>
+      <label>完成影片存檔連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="剪輯完成後的成品存檔連結">
     </div>
     ${usageCard}
     <div class="card" style="border-color:var(--red)">
@@ -1037,7 +1050,7 @@ async function saveVideo(id){
     products:collectProducts("e"), productUrl:val("e_url").trim(),
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), note:val("e_note").trim()};
+    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:val("e_note").trim()};
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
