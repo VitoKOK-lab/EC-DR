@@ -5,7 +5,7 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dashboard","儀表板"],["products","商品庫"]],
+  boss:   [["dashboard","儀表板"]],
   editor: [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -286,7 +286,7 @@ function render(){
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, products:viewProducts, settings:viewSettings }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + fn();
 }
 
@@ -1335,117 +1335,7 @@ function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; 
 function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
 function vidTitle(v){ const t=(v&&(v.name||v.rawName))||"(未命名)"; const c=vidCode(v); return c?(c+" "+t):t; }
 // 已用過的商品名（下拉選用，讓品名一致）
-function knownProducts(){ const set=new Set();
-  (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); });
-  Object.values((STATE&&STATE.products)||{}).forEach(p=>{ if(p&&p.name) set.add(p.name); });
-  return [...set].sort(); }
-
-// ===================================================================
-// 商品庫：手動建立商品（系列＋品項自訂＋拍照上傳）
-// ===================================================================
-function productList(){ return Object.values((STATE&&STATE.products)||{}).filter(Boolean)
-  .sort((a,b)=>String(a.series||"").localeCompare(String(b.series||""))||String(a.name||"").localeCompare(String(b.name||""))); }
-function productSeriesOptions(){ const set=new Set(); productList().forEach(p=>{ const v=String(p.series||"").trim(); if(v) set.add(v); }); return [...set].sort((a,b)=>a.localeCompare(b)); }
-function productItemOptions(){ const set=new Set(); productList().forEach(p=>{ const v=String(p.itemType||"").trim(); if(v) set.add(v); }); ["項鍊","戒指","耳環","手鍊","墜飾"].forEach(v=>set.add(v)); return [...set].sort((a,b)=>a.localeCompare(b)); }
-let PHOTO_BUF=null; // 暫存目前商品視窗的照片（dataURL）
-
-function viewProducts(){
-  const ps=productList();
-  const series=productSeriesOptions();
-  const cards=(arr)=>arr.map(p=>`<div class="card" style="padding:0;overflow:hidden">
-    <div style="aspect-ratio:1/1;background:var(--panel2);display:flex;align-items:center;justify-content:center;overflow:hidden">
-      ${p.photo?`<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover" alt="">`:'<span class="muted" style="font-size:12px">無照片</span>'}
-    </div>
-    <div style="padding:12px">
-      <div style="font-weight:700;font-size:15px">${esc(p.name||"未命名")}</div>
-      <div class="muted" style="font-size:12px;margin-top:2px">${p.itemType?esc(p.itemType):''}${p.price?` · $${esc(String(p.price))}`:''}</div>
-      ${p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener" style="font-size:12px">商品頁 →</a>`:''}
-      <div class="row" style="gap:6px;margin-top:8px">
-        <button class="btn sec sm" style="padding:4px 10px" onclick="openProductModal('${p.id}')">編輯</button>
-        <button class="btn danger sm" style="padding:4px 10px" onclick="delProduct('${p.id}')">刪除</button>
-      </div>
-    </div></div>`).join("");
-  let body;
-  if(!ps.length){ body=`<div class="card"><div class="muted">尚無商品，點右上「＋ 新增商品」開始建立。</div></div>`; }
-  else {
-    const groups=series.map(s=>{ const arr=ps.filter(p=>String(p.series||"").trim()===s);
-      return `<div style="margin-bottom:8px"><h3 style="font-family:var(--serif);font-size:17px;margin:6px 0 10px">${esc(s)}<span class="muted" style="font-size:12px;font-weight:400">　${arr.length} 件</span></h3>
-        <div class="pgrid">${cards(arr)}</div></div>`; }).join("");
-    const noSeries=ps.filter(p=>!String(p.series||"").trim());
-    const noSeriesHTML=noSeries.length?`<div style="margin-bottom:8px"><h3 style="font-family:var(--serif);font-size:17px;margin:6px 0 10px">未分系列<span class="muted" style="font-size:12px;font-weight:400">　${noSeries.length} 件</span></h3>
-      <div class="pgrid">${cards(noSeries)}</div></div>`:'';
-    body=groups+noSeriesHTML;
-  }
-  return `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h2 style="margin:0">商品庫<span class="muted" style="font-size:13px;font-weight:400">　${ps.length} 件</span></h2>
-      <button class="btn" onclick="openProductModal('')">＋ 新增商品</button>
-    </div>${body}`;
-}
-
-function openProductModal(id){
-  const p=(id&&STATE.products&&STATE.products[id])||{};
-  PHOTO_BUF = p.photo||null;
-  const seriesOpts=productSeriesOptions(), itemOpts=productItemOptions();
-  const inner=`
-    <label>系列（可下拉選或輸入新系列，例：藍寶石系列）</label>
-    <input id="pd_series" list="pd_series_dl" value="${esc(p.series||'')}" placeholder="例：藍寶石系列">
-    <datalist id="pd_series_dl">${seriesOpts.map(s=>`<option value="${esc(s)}"></option>`).join("")}</datalist>
-    <label>品項（可下拉選或自行新增，例：項鍊、戒指）</label>
-    <input id="pd_item" list="pd_item_dl" value="${esc(p.itemType||'')}" placeholder="例：項鍊／戒指">
-    <datalist id="pd_item_dl">${itemOpts.map(s=>`<option value="${esc(s)}"></option>`).join("")}</datalist>
-    <label>商品名稱</label>
-    <input id="pd_name" value="${esc(p.name||'')}" placeholder="例：藍寶石經典項鍊">
-    <div class="grid cols2">
-      <div><label>單價（選填）</label><input id="pd_price" type="number" value="${esc(String(p.price||''))}" placeholder="0"></div>
-      <div><label>商品頁網址（選填）</label><input id="pd_url" value="${esc(p.url||'')}" placeholder="https://..."></div>
-    </div>
-    <label>照片（手機可直接拍照上傳）</label>
-    <div class="row" style="gap:10px;align-items:center">
-      <div id="pd_preview" style="width:88px;height:88px;border-radius:var(--rs);background:var(--panel2);border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;flex:none">
-        ${PHOTO_BUF?`<img src="${PHOTO_BUF}" style="width:100%;height:100%;object-fit:cover">`:'<span class="muted" style="font-size:11px">無</span>'}</div>
-      <div style="flex:1">
-        <input id="pd_photo" type="file" accept="image/*" capture="environment" onchange="onProductPhoto(this)" style="border:none;padding:0">
-        <div class="muted" style="font-size:11px;margin-top:4px">手機會開相機；照片會自動壓縮。<button type="button" class="btn sec sm" style="padding:2px 8px;margin-top:4px" onclick="clearProductPhoto()">移除照片</button></div>
-      </div>
-    </div>
-    <label>備註（選填）</label>
-    <input id="pd_note" value="${esc(p.note||'')}" placeholder="材質、克拉、賣點…">`;
-  showModal(id?"編輯商品":"新增商品", inner, ()=>saveProduct(id), id?"儲存修改":"建立商品");
-}
-
-// 拍照／選圖：用 canvas 壓縮到最長邊 1280、JPEG 0.72，存成 dataURL（免 Storage）
-function onProductPhoto(input){
-  const f=input.files&&input.files[0]; if(!f) return;
-  if(!/^image\//.test(f.type)){ toast("請選擇圖片檔",true); return; }
-  const fr=new FileReader();
-  fr.onload=()=>{ const img=new Image(); img.onload=()=>{
-      let w=img.width,h=img.height; const scale=Math.min(1,1280/Math.max(w,h));
-      w=Math.round(w*scale); h=Math.round(h*scale);
-      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
-      cv.getContext("2d").drawImage(img,0,0,w,h);
-      PHOTO_BUF=cv.toDataURL("image/jpeg",0.72); MODAL_DIRTY=true;
-      const pv=document.getElementById("pd_preview"); if(pv) pv.innerHTML=`<img src="${PHOTO_BUF}" style="width:100%;height:100%;object-fit:cover">`;
-    }; img.onerror=()=>toast("圖片讀取失敗",true); img.src=fr.result; };
-  fr.onerror=()=>toast("檔案讀取失敗",true); fr.readAsDataURL(f);
-}
-function clearProductPhoto(){ PHOTO_BUF=null; const pv=document.getElementById("pd_preview"); if(pv) pv.innerHTML='<span class="muted" style="font-size:11px">無</span>';
-  const inp=document.getElementById("pd_photo"); if(inp) inp.value=""; MODAL_DIRTY=true; }
-
-async function saveProduct(id){
-  const name=(val("pd_name")||"").trim();
-  if(!name){ toast("請輸入商品名稱",true); return false; }
-  const pid=id||nextId(Object.values((STATE&&STATE.products)||{}),"P");
-  const old=(id&&STATE.products&&STATE.products[id])||{};
-  const rec={ id:pid, name,
-    series:(val("pd_series")||"").trim(), itemType:(val("pd_item")||"").trim(),
-    price:parseInt(val("pd_price"))||0, url:(val("pd_url")||"").trim(),
-    note:(val("pd_note")||"").trim(), photo:PHOTO_BUF||"",
-    createdAt:old.createdAt||nowIso(), updatedAt:nowIso() };
-  try{ await window.DB.set("products", pid, rec); toast(id?"已更新商品":"已建立商品「"+name+"」"); PHOTO_BUF=null; return true; }
-  catch(e){ toast("儲存失敗，照片可能過大，請再試一次",true); return false; }
-}
-function delProduct(id){ const p=(STATE.products&&STATE.products[id])||{}; if(!confirm("刪除商品「"+(p.name||"")+"」？")) return;
-  window.DB.del("products", id).then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
+function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
 // 商品列：最多 4 個，每個 品名(下拉)+單價(手動)
 function productRows(prefix, products){
   const ps=Array.isArray(products)?products:[];
