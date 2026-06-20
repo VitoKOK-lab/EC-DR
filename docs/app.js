@@ -462,15 +462,33 @@ function scheduleGlance(){
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .filter(t=>t && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
-// 對接窗口：彙整所有任務（含員工自建）輸入過的窗口，做成下拉可選＋可自行新增
+// 對接窗口：後台名單（settings.contacts）＋ 任務曾用過的窗口，合併去重做成下拉
+function settingsContacts(){ const sc=(STATE&&STATE.settings&&STATE.settings.contacts); return Array.isArray(sc)?sc.slice():[]; }
 function contactOptions(){ const set=new Set();
+  settingsContacts().forEach(c=>{ const v=String(c||"").trim(); if(v) set.add(v); });
   Object.values((STATE&&STATE.tasks)||{}).forEach(t=>{ const c=t&&t.contact&&String(t.contact).trim(); if(c) set.add(c); });
   return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b))); }
 function contactDatalist(id){ return `<datalist id="${id}">${contactOptions().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>`; }
+// 任務裡輸入的新窗口，自動寫入後台名單，方便日後在設定裡修改／刪除
+function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
+  const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===c)) return;
+  cur.push(c); try{ window.DB.setSettings({contacts:cur}); }catch(e){} }
+// 後台名單管理（限管理員・設定頁）
+function addContact(){ const v=(val("ct_name")||"").trim(); if(!v){ toast("請輸入窗口名稱",true); return; }
+  const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===v)){ toast("已有相同窗口",true); return; }
+  cur.push(v); window.DB.setSettings({contacts:cur}).then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
+function delContact(name){ if(!confirm("刪除對接窗口「"+name+"」？（不影響已建立的交辦）")) return;
+  const cur=settingsContacts().filter(x=>String(x).trim()!==String(name).trim());
+  window.DB.setSettings({contacts:cur}).then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
+function renameContact(name){ const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
+  if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
+  if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
+  cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
 async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
   const id="T"+Date.now().toString(36);
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
+    if(contact) rememberContact(contact);
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast("新增失敗，請稍後再試",true); } }
 // 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
@@ -479,6 +497,7 @@ async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt"
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
+    if(contact) rememberContact(contact);
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
 function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
@@ -1213,6 +1232,12 @@ function viewSettings(){
       <button class="btn sm sec" onclick="resetMemberPw('${esc(u.name)}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
+  const contactList=contactOptions();
+  const contactRows=contactList.map(c=>`<tr>
+    <td data-label="窗口名稱"><b>${esc(c)}</b></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(c)}')">改名</button>
+      <button class="btn sm danger" onclick="delContact('${esc(c)}')">刪除</button></td>
+  </tr>`).join("");
   return `<h2>設定</h2>
   <div class="card"><b>每天上片數量（依星期幾）</b>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>寵粉片</th><th>代理招商片</th><th>小計</th></tr></thead>
@@ -1234,6 +1259,13 @@ function viewSettings(){
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增剪輯名字" style="flex:1;min-width:150px">
       <button class="btn" onclick="addMember()">＋ 新增剪輯</button></div>
+  </div>
+  <div class="card"><b>對接窗口名單（${contactList.length}）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">交辦時可從這份名單下拉選用；員工指派或自建任務時輸入的新窗口，也會自動進這份名單，可在此修改或刪除</div>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>窗口名稱</th><th></th></tr></thead>
+    <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
+    <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
+      <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
   </div>`;
 }
 function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
