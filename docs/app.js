@@ -11,6 +11,7 @@ const ROLE_TABS = {
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
+const yesterday = new Date(Date.now()+288e5-864e5).toISOString().slice(0,10); // 前一日
 
 function currentUser(){ return localStorage.getItem("ecdr_user") || ""; }
 function setUser(n){ localStorage.setItem("ecdr_user", n); }
@@ -276,7 +277,7 @@ function render(){
 // 月排程（＋ 舊片重覆上架）
 // ===================================================================
 let CAL_YM = null;
-let SHIFT_DATE = today;   // 管理員「每日匯報」檢視的日期
+let SHIFT_DATE = yesterday;   // 管理員「每日匯報」預設看昨天的工作進度
 function shiftDateMove(n){ const d=new Date(SHIFT_DATE+"T00:00:00"); d.setDate(d.getDate()+n);
   const nd=new Date(d.getTime()+288e5).toISOString().slice(0,10); if(nd>today) return; SHIFT_DATE=nd; render(); }
 function shiftDateSet(v){ if(v){ SHIFT_DATE=(v>today?today:v); render(); } }
@@ -654,9 +655,9 @@ function viewDashboard(){
         <span class="pill wa">工時 ${minLabel(e.sumMin)}</span>
         <span class="pill ${e.tasks.length&&e.tasks.every(t=>t.done)?'ok':(e.tasks.length?'em':'wa')}">交辦 ${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</span>
       </div>
-      <div style="margin-top:12px"><b style="font-size:13px">今日完成上架</b>${doneHTML}</div>
+      <div style="margin-top:12px"><b style="font-size:13px">完成上架（當日）</b>${doneHTML}</div>
       ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">進行中（未完成）</b>${wipHTML}</div>`:''}
-      <div style="margin-top:10px"><b style="font-size:13px">交辦工作（下班匯報）</b>${taskHTML}</div>
+      <div style="margin-top:10px"><b style="font-size:13px">交辦回報（是否完成）</b>${taskHTML}</div>
     </div>`;
   }).join("")||'<div class="card muted">尚無剪輯成員</div>';
 
@@ -677,65 +678,67 @@ function viewDashboard(){
   const todayPills=TYPE_ORDER.filter(k=>(bT.tg[k]||0)>0||(bT.byType[k]||0)>0).map(k=>{
     const ok=(bT.byType[k]||0)>=(bT.tg[k]||0); return `<span class="pill ${ok?'ok':'em'}">${TYPE_SHORT[k]||k} ${bT.byType[k]||0}/${bT.tg[k]||0}</span>`; }).join("");
 
+  const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
+
   return `<h2>儀表板 <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
 
-  <div class="card">
-    <b style="font-size:16px">今日上片進度（${today}・${weekdayZh(today)}）</b>
-    <div class="row" style="gap:8px;margin-top:10px">
-      ${todayPills||'<span class="muted">今日尚未設定上片目標</span>'}
-      <span class="pill ${bT.total>=bT.target?'ok':'em'}">總量 ${bT.total}/${bT.target}</span>
+  <div class="card" style="border-color:var(--gold)">
+    <div class="row" style="align-items:baseline;gap:8px">
+      <b style="font-size:16px">① 指派交辦給員工</b>
+      <span class="muted" style="font-size:12px">送出＝自動進到該員工今天頁面，需按「收到」</span>
     </div>
+    <div class="grid cols2" style="margin-top:12px;align-items:end">
+      <div><label>選擇員工</label>
+        <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></div>
+      <div><label>交辦內容</label>
+        <textarea id="asg_txt" rows="1" placeholder="要交辦的工作內容…"></textarea></div>
+    </div>
+    <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>
 
   <div class="card">
-    <b style="font-size:16px">排程健康 ／ 庫存</b>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <span class="pill ${runwayCls}">安全天數 ${g.runway} 天</span>
-      <span class="pill ${poolN?'wa':'ok'}">待剪毛片 ${poolN}</span>
-      <span class="pill wa">製作中 ${wipN}</span>
-      <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
-    </div>
-    ${g.defs.length?`<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天缺口：${g.defs.map(d=>`${d.ds.slice(5)} 缺${d.short}`).join("　")}</div>`:'<div class="muted" style="font-size:12px;margin-top:10px">未來 14 天都排滿了 </div>'}
-  </div>
-
-  <div class="card">
-    <b style="font-size:16px">指派交辦事項給員工</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">送出後自動出現在該員工頁面（今天），員工需按「收到」。</div>
-    <div style="margin-top:10px">
-      <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
-      <textarea id="asg_txt" rows="2" placeholder="要交辦的工作內容…" style="margin-top:8px"></textarea>
-      <button class="btn" style="width:100%;margin-top:8px" onclick="assignTaskSel()">送出交辦</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <b style="font-size:16px">每日匯報（各剪輯當日工作＋下班匯報）</b>
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:10px">
-      <div class="row" style="gap:8px;align-items:center">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+      <b style="font-size:16px">② 工作進度與交辦回報</b>
+      <div class="row" style="gap:6px;align-items:center">
         <button class="btn sec sm" onclick="shiftDateMove(-1)" title="前一天">‹</button>
         <input type="date" max="${today}" value="${D}" onchange="shiftDateSet(this.value)" style="width:auto">
         <button class="btn sec sm" onclick="shiftDateMove(1)" title="後一天" ${D>=today?'disabled style="opacity:.4"':''}>›</button>
-        <b style="font-size:15px">${D}（${weekdayZh(D)}）${isToday?'<span class="pill ok" style="font-size:10px;margin-left:4px">今天</span>':''}</b>
       </div>
     </div>
+    <div class="muted" style="font-size:13px;margin-top:8px"><b style="color:var(--txt)">${D}（${weekdayZh(D)}）</b> <span class="pill ${isToday?'wa':'ok'}" style="font-size:10px;margin-left:4px">${dayLabel}</span></div>
     <div class="row" style="gap:8px;margin-top:10px">
       <span class="pill ${present?'ok':'em'}">出勤 ${present}/${editors.length}</span>
       <span class="pill ok">完成上架 ${teamDone}</span>
       <span class="pill ${teamSales?'ok':'wa'}">帶貨 ${teamSales}</span>
-      <span class="pill ${teamTasks&&teamTasksDone===teamTasks?'ok':(teamTasks?'em':'wa')}">交辦 ${teamTasksDone}/${teamTasks}</span>
+      <span class="pill ${teamTasks&&teamTasksDone===teamTasks?'ok':(teamTasks?'em':'wa')}">交辦完成 ${teamTasksDone}/${teamTasks}</span>
     </div>
   </div>
   ${cards}
-  <div class="card"><b>剪輯 KPI（累計・全期）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
+
+  <div class="card">
+    <b style="font-size:16px">③ 未來影片排程（達標／缺片）</b>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <span class="pill ${runwayCls}">安全天數 ${g.runway} 天</span>
+      <span class="pill ${bT.total>=bT.target?'ok':'em'}">今日上片 ${bT.total}/${bT.target}</span>
+      <span class="pill ${poolN?'wa':'ok'}">待剪毛片 ${poolN}</span>
+      <span class="pill wa">製作中 ${wipN}</span>
+      <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
+    </div>
+    ${g.defs.length
+      ? `<div style="margin-top:12px"><div class="muted" style="font-size:12px;margin-bottom:6px">未來 14 天還缺片的日子（點數字去排片）：</div>
+         <div class="row" style="gap:6px">${g.defs.map(d=>`<button class="btn sec sm" onclick="CUR_TAB='cal';CAL_YM=[${(+d.ds.slice(0,4))},${(+d.ds.slice(5,7))-1}];buildNav();render()" title="去月排程補這天">${d.ds.slice(5)} 缺${d.short}</button>`).join("")}</div></div>`
+      : '<div class="muted" style="font-size:12px;margin-top:12px">未來 14 天都排滿了，進度健康。</div>'}
+  </div>
+
+  <div class="card">
+    <b style="font-size:16px">④ 員工長期績效（累計・全期）</b>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
     <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
       <td data-label="完成數">${k.count}</td>
       <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
       <td data-label="平均工時">${minLabel(k.avgMin)}</td>
       <td data-label="帶貨支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
-  </div>
-  <div class="card"><b>外部成效</b>
-    <div style="margin-top:10px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音成效儀表板 →</a></div>
+    <div style="margin-top:14px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音外部成效儀表板 →</a></div>
   </div>`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
