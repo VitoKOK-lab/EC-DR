@@ -619,16 +619,19 @@ function viewDashboard(){
       .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
     const wip=isToday?(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
     const tasks=allTasks.filter(t=>t.user===name && t.date===D);
+    const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && !t.done)
+      .sort((a,b)=>String(b.createdAt||b.date||"").localeCompare(String(a.createdAt||a.date||"")));
     const sales=done.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     const mins=done.map(v=>v.durationMin).filter(x=>typeof x==="number");
     const sumMin=mins.reduce((a,b)=>a+b,0);
-    return {name,s,done,wip,tasks,sales,sumMin};
+    return {name,s,done,wip,tasks,assignedOpen,sales,sumMin};
   });
   const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
   const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
   const teamSales=perEditor.reduce((a,e)=>a+e.sales,0);
   const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
   const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
+  const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
 
   const statusPill=(s)=> !s||!s.clockIn ? '<span class="pill em">未上班</span>'
       : (s.clockOut?'<span class="pill ok">已下班</span>':'<span class="pill wa">上班中</span>');
@@ -643,6 +646,14 @@ function viewDashboard(){
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
     const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
+    // 我交辦給他、還沒完成的：跨日期都追蹤，知道交給誰、處理結果、下一步
+    const trackHTML=e.assignedOpen.length?`<div style="margin-top:12px;padding:10px 12px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px">
+      <b style="font-size:13px;color:var(--gold-dk)">我交辦給他的（追蹤中 ${e.assignedOpen.length}）</b>
+      ${e.assignedOpen.map(t=>`<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
+        <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已收到</span>':'<span class="pill em" style="font-size:10px">未讀</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
+        <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
+        <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+      </div>`).join("")}</div>`:'';
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
         <b style="font-size:16px">${esc(e.name)}</b>
@@ -655,6 +666,7 @@ function viewDashboard(){
         <span class="pill wa">工時 ${minLabel(e.sumMin)}</span>
         <span class="pill ${e.tasks.length&&e.tasks.every(t=>t.done)?'ok':(e.tasks.length?'em':'wa')}">交辦 ${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</span>
       </div>
+      ${trackHTML}
       <div style="margin-top:12px"><b style="font-size:13px">完成上架（當日）</b>${doneHTML}</div>
       ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">進行中（未完成）</b>${wipHTML}</div>`:''}
       <div style="margin-top:10px"><b style="font-size:13px">交辦回報（是否完成）</b>${taskHTML}</div>
@@ -711,6 +723,7 @@ function viewDashboard(){
       <span class="pill ok">完成上架 ${teamDone}</span>
       <span class="pill ${teamSales?'ok':'wa'}">帶貨 ${teamSales}</span>
       <span class="pill ${teamTasks&&teamTasksDone===teamTasks?'ok':(teamTasks?'em':'wa')}">交辦完成 ${teamTasksDone}/${teamTasks}</span>
+      <span class="pill ${teamAssignedOpen?'wa':'ok'}">我交辦追蹤中 ${teamAssignedOpen}</span>
     </div>
   </div>
   ${cards}
