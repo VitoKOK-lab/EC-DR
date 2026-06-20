@@ -13,11 +13,11 @@
 <style>
   :root{
     /* ===== 泰熙爾札娜 TAHIR ZAINAB — CIS：白底主導，桃紅領銜、燙金細節、湖綠點綴 ===== */
-    --bg:#FFFCFA; --panel:#FFFFFF; --panel2:#FBF4F8; --line:#EDE4E8;
-    --txt:#2B1822; --muted:#6A5560; --faint:#A999A2;
-    --accent:#E6007E; --accent2:#B12468;                  /* 桃紅 / 暗桃紅 */
-    --green:#2C8077; --greenbg:#EAF8F6; --amber:#937C44; --amberbg:#FAF6EA; --red:#B12468; --redbg:#FDF0F7;
-    --chip:#F7EEF3; --traffic:#2C8077; --trafficbg:#EAF8F6; --sales:#937C44; --salesbg:#FAF6EA; --pamper:#B12468; --pamperbg:#FDF0F7;
+    --bg:#F7F6F3; --panel:#FFFFFF; --panel2:#F1EFEA; --line:#E5E1DA;
+    --txt:#221C18; --muted:#665F57; --faint:#A49C92;
+    --accent:#8A7338; --accent2:#6B5829;                  /* 古金（互動主色） */ --signal:#E6007E; /* 桃紅：品牌簽名色，僅 ✦ 用 */
+    --green:#2C8077; --greenbg:#EAF8F6; --amber:#937C44; --amberbg:#FAF6EA; --red:#B0473A; --redbg:#F7EBE8;
+    --chip:#EFEBE3; --traffic:#2C8077; --trafficbg:#EAF8F6; --sales:#937C44; --salesbg:#FAF6EA; --pamper:#B12468; --pamperbg:#FBE9F2;
     --gold:#C5B382; --gold-dk:#937C44; --espresso:#2B1822;
     --pink200:#F4A9D2; --teal:#50C8BE;
     --serif:"Noto Serif TC","思源宋體","Songti TC","PingFang TC",serif;
@@ -44,7 +44,7 @@
       var(--bg);
     display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:50;padding:24px}
   #login h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:6px 0 6px;color:var(--txt);letter-spacing:3px}
-  #login h1 .di{color:var(--accent);font-style:normal}
+  #login h1 .di{color:var(--signal);font-style:normal}
   #login .sub{font-family:var(--latin);color:var(--gold-dk);font-weight:500;letter-spacing:.32em;font-size:12px;margin:0;text-transform:uppercase}
   #login p{color:var(--muted);margin:0 0 24px;text-align:center}
   .userGrid{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:620px}
@@ -63,13 +63,13 @@
   header{position:sticky;top:0;z-index:30;background:linear-gradient(120deg,#2B1822,#1B0E16);
          border-bottom:2px solid transparent;border-image:var(--foil) 1;display:flex;align-items:center;gap:10px;padding:11px 18px;box-shadow:0 2px 16px rgba(27,14,22,.26)}
   header .brand{font-family:var(--latin);font-weight:600;white-space:nowrap;letter-spacing:.26em;color:#F6ECDA;text-transform:uppercase;font-size:15px;display:flex;align-items:center;gap:9px}
-  header .brand .mk{color:var(--gold);font-size:15px}
+  header .brand .mk{color:var(--signal);font-size:15px}
   header .brand .zh{font-family:var(--sans);letter-spacing:.12em;font-weight:500;font-size:13px;color:#CBB9C2;text-transform:none}
   header .spacer{flex:1}
-  .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:7px 15px;border-radius:999px;font-weight:600;box-shadow:0 6px 16px rgba(230,0,126,.26)}
-  .whoami .dot{width:7px;height:7px;border-radius:50%;background:#FFE0F0}
+  .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#3A2F25,#221C18);color:#F3E9D6;padding:7px 15px;border-radius:999px;font-weight:600;border:1px solid rgba(197,179,130,.35);box-shadow:0 4px 14px rgba(34,28,24,.20)}
+  .whoami .dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
   .whoami .rb{font-size:11px;opacity:.9}
-  .offline{background:var(--accent2)!important}
+  .offline{background:var(--red)!important}
   header .btn.sec{background:rgba(255,255,255,.08);color:#F6ECDA;border:1px solid rgba(246,236,218,.22)}
   header .btn.sec:hover{background:rgba(255,255,255,.16)}
 
@@ -86,16 +86,16 @@
   .grid{display:grid;gap:14px}
   label{font-size:11px;color:var(--muted);display:block;margin:12px 0 5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;font-family:var(--latin)}
   input,select,textarea{width:100%;padding:11px 12px;border-radius:var(--rs);border:1.5px solid var(--line);background:#fff;color:var(--txt);font-size:14px;font-family:var(--sans);transition:.15s}
-  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--redbg)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(138,115,56,.16)}
   textarea{min-height:60px}
-  .btn{background:var(--accent);border:none;color:#fff;padding:11px 20px;border-radius:2px;font-weight:600;letter-spacing:.1em;font-family:var(--sans);transition:.18s;box-shadow:0 6px 16px rgba(230,0,126,.18)}
-  .btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 9px 22px rgba(230,0,126,.26)}
+  .btn{background:var(--txt);border:none;color:#fff;padding:11px 20px;border-radius:2px;font-weight:600;letter-spacing:.1em;font-family:var(--sans);transition:.18s;box-shadow:0 5px 14px rgba(34,28,24,.22)}
+  .btn:hover{background:#3E342B;transform:translateY(-1px);box-shadow:0 9px 22px rgba(34,28,24,.28)}
   .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
-  .btn.sec:hover{background:var(--panel2);color:var(--txt);border-color:var(--pink200);transform:translateY(-1px)}
+  .btn.sec:hover{background:var(--panel2);color:var(--txt);border-color:var(--gold);transform:translateY(-1px)}
   .btn.gold{background:#fff;color:var(--gold-dk);border:1px solid var(--gold);box-shadow:none}
   .btn.gold:hover{background:var(--amberbg);transform:translateY(-1px)}
-  .btn.danger{background:var(--accent2);color:#fff;box-shadow:0 6px 16px rgba(177,36,104,.20)}
-  .btn.danger:hover{background:#8E1A52;filter:none}
+  .btn.danger{background:var(--red);color:#fff;box-shadow:0 6px 16px rgba(176,71,58,.22)}
+  .btn.danger:hover{background:#8F3329;filter:none}
   .btn.sm{padding:7px 14px;font-size:13px;border-radius:2px;letter-spacing:.06em}
   .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
   table{width:100%;border-collapse:collapse;font-size:14px}
@@ -135,7 +135,7 @@
   .day{position:relative;border:1px solid var(--line);border-radius:7px;padding:9px 8px;min-height:100px;cursor:pointer;
        background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:.18s;overflow:hidden;box-shadow:var(--shadow)}
   .day::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:transparent;transition:.18s}
-  .day:hover{transform:translateY(-3px);box-shadow:var(--shadow2);border-color:var(--pink200)}
+  .day:hover{transform:translateY(-3px);box-shadow:var(--shadow2);border-color:var(--gold)}
   .day .dnum{position:absolute;top:7px;left:10px;font-size:13px;font-weight:700;color:var(--muted)}
   .day .big{font-family:var(--serif);font-size:28px;font-weight:900;line-height:1;color:var(--txt)}
   .day .big span{font-size:12px;color:var(--muted);font-weight:600}
@@ -148,10 +148,10 @@
   .day.warn{background:linear-gradient(180deg,#FAF6EA,#fff)}
   .day.warn::before{background:var(--gold)}
   .day.warn .big{color:var(--gold-dk)}
-  .day.bad,.day.urgent{background:linear-gradient(180deg,#FDF0F7,#fff)}
+  .day.bad,.day.urgent{background:linear-gradient(180deg,#F7EBE8,#fff)}
   .day.bad::before,.day.urgent::before{background:var(--red)}
   .day.bad .big,.day.urgent .big{color:var(--red)}
-  .day.urgent{border-color:var(--pink200)}
+  .day.urgent{border-color:#E2B7B0}
   .day.urgent .pmk{color:var(--red)}
   .day.blank{background:var(--panel)}
   .day.blank .big{color:#D8CBD2}
@@ -332,7 +332,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200431"></script>
-<script type="module" src="fb.js?v=202606200431"></script>
+<script src="app.js?v=202606200450"></script>
+<script type="module" src="fb.js?v=202606200450"></script>
 </body>
 </html>
