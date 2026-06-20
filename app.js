@@ -458,13 +458,13 @@ async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt"
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     const inp=document.getElementById('asg_txt'); if(inp) inp.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
-function ackTask(id){ window.DB.update("tasks", id, {ack:true}).catch(()=>toast("更新失敗",true)); }
+function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
 function taskDone(id, done){
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
     if(t && (t.report||'').trim().length<12){ toast("請填寫完整處理狀況及後續才能打勾完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; } }
-  window.DB.update("tasks", id, {done:!!done}).catch(()=>toast("更新失敗",true)); }
+  window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast("更新失敗",true)); }
 function delTask(id){ if(!confirm("刪除這項交辦工作？")) return; window.DB.del("tasks", id).catch(()=>toast("刪除失敗",true)); }
 
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
@@ -621,10 +621,12 @@ function viewDashboard(){
     const tasks=allTasks.filter(t=>t.user===name && t.date===D);
     const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && !t.done)
       .sort((a,b)=>String(b.createdAt||b.date||"").localeCompare(String(a.createdAt||a.date||"")));
+    const assignedDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.done && t.doneAt && daysBetween(String(t.doneAt).slice(0,10),today)<=7)
+      .sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||""))).slice(0,6);
     const sales=done.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     const mins=done.map(v=>v.durationMin).filter(x=>typeof x==="number");
     const sumMin=mins.reduce((a,b)=>a+b,0);
-    return {name,s,done,wip,tasks,assignedOpen,sales,sumMin};
+    return {name,s,done,wip,tasks,assignedOpen,assignedDone,sales,sumMin};
   });
   const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
   const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
@@ -646,14 +648,30 @@ function viewDashboard(){
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
     const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
-    // 我交辦給他、還沒完成的：跨日期都追蹤，知道交給誰、處理結果、下一步
-    const trackHTML=e.assignedOpen.length?`<div style="margin-top:12px;padding:10px 12px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px">
-      <b style="font-size:13px;color:var(--gold-dk)">我交辦給他的（追蹤中 ${e.assignedOpen.length}）</b>
-      ${e.assignedOpen.map(t=>`<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
+    // 我交辦給他的：跨日期追蹤，知道交給誰、收到沒、花多久、處理結果、下一步、做完沒
+    const openHTML=e.assignedOpen.map(t=>{
+      const elapsed=t.ackAt?durationMin(t.ackAt,nowIso()):null;
+      const timeLine=t.ackAt
+        ? `<div style="font-size:12px;margin-top:2px"><span class="muted">收到 ${hm(t.ackAt)} ·</span> <b style="color:var(--gold-dk)">計時中 ${minLabel(elapsed)}</b></div>`
+        : `<div class="muted" style="font-size:12px;margin-top:2px">等員工按「收到」才開始計時</div>`;
+      return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
         <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已收到</span>':'<span class="pill em" style="font-size:10px">未讀</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
+        ${timeLine}
         <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
-      </div>`).join("")}</div>`:'';
+      </div>`;}).join("");
+    const doneHTMLa=e.assignedDone.map(t=>{
+      const took=durationMin(t.ackAt||t.createdAt,t.doneAt);
+      return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
+        <div style="font-weight:600;font-size:13.5px">${esc(t.title)} <span class="pill ok" style="font-size:10px">已完成</span></div>
+        <div class="muted" style="font-size:11px;margin-top:2px">完成 ${String(t.doneAt||'').slice(5,10)} ${hm(t.doneAt)} · <b style="color:var(--green)">耗時 ${minLabel(took)}</b></div>
+        ${t.report?`<div style="font-size:12px;margin-top:3px"><span class="muted">結果：</span>${esc(t.report)}</div>`:''}
+      </div>`;}).join("");
+    const trackHTML=(e.assignedOpen.length||e.assignedDone.length)?`<div style="margin-top:12px;padding:10px 12px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px">
+      <b style="font-size:13px;color:var(--gold-dk)">我交辦給他的</b>
+      ${e.assignedOpen.length?`<div style="margin-top:4px"><span class="pill wa" style="font-size:10px">追蹤中 ${e.assignedOpen.length}</span></div>${openHTML}`:''}
+      ${e.assignedDone.length?`<div style="margin-top:10px"><span class="pill ok" style="font-size:10px">近 7 天完成 ${e.assignedDone.length}</span></div>${doneHTMLa}`:''}
+    </div>`:'';
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
         <b style="font-size:16px">${esc(e.name)}</b>
@@ -687,8 +705,15 @@ function viewDashboard(){
   const noSchedN=(STATE.videos||[]).filter(v=>vidSegment(v)==="newNoSched").length;
   const wipN=(STATE.videos||[]).filter(v=>v.stage==="剪輯中").length;
   const runwayCls=g.runway>=7?'ok':(g.runway>=3?'wa':'em');
-  const todayPills=TYPE_ORDER.filter(k=>(bT.tg[k]||0)>0||(bT.byType[k]||0)>0).map(k=>{
-    const ok=(bT.byType[k]||0)>=(bT.tg[k]||0); return `<span class="pill ${ok?'ok':'em'}">${TYPE_SHORT[k]||k} ${bT.byType[k]||0}/${bT.tg[k]||0}</span>`; }).join("");
+  // ---- 未來 35 天排程視覺帶 ----
+  const STRIP_N=35; const strip=[];
+  for(let off=0;off<STRIP_N;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+    const b=dayBreakdown(ds); strip.push({ds,off,total:b.total,target:b.target,st:b.full?'full':(b.total>0?'part':'none')}); }
+  const reD=new Date(today+"T00:00:00"); reD.setDate(reD.getDate()+Math.max(g.runway-1,0)); const runwayEnd=reD.toISOString().slice(0,10);
+  const gapN=strip.filter(x=>x.st!=='full').length;
+  const stripHTML=strip.map(x=>{ const wd="日一二三四五六"[new Date(x.ds+"T00:00:00").getDay()];
+    return `<div class="sday sd-${x.st} ${x.off===0?'sd-today':''}" title="${x.ds}（${wd}）已排 ${x.total}/${x.target}" onclick="CUR_TAB='cal';CAL_YM=[${+x.ds.slice(0,4)},${+x.ds.slice(5,7)-1}];buildNav();render()">
+      <span class="sd-wd">${wd}</span><span class="sd-n">${+x.ds.slice(8,10)}</span><span class="sd-c">${x.total}/${x.target}</span></div>`; }).join("");
 
   const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
 
@@ -729,18 +754,25 @@ function viewDashboard(){
   ${cards}
 
   <div class="card">
-    <b style="font-size:16px">③ 未來影片排程（達標／缺片）</b>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <span class="pill ${runwayCls}">安全天數 ${g.runway} 天</span>
-      <span class="pill ${bT.total>=bT.target?'ok':'em'}">今日上片 ${bT.total}/${bT.target}</span>
+    <b style="font-size:16px">③ 未來影片排程</b>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <span style="font-family:var(--serif);font-size:40px;font-weight:700;line-height:1;color:${g.runway>=7?'var(--green)':(g.runway>=3?'var(--gold-dk)':'var(--red)')}">${g.runway}</span>
+      <span style="font-size:15px">天完整排程</span>
+      <span class="muted" style="font-size:13px">從今天起連續排滿到 <b style="color:var(--txt)">${g.runway>0?runwayEnd+'（'+weekdayZh(runwayEnd)+'）':'—（今天就缺）'}</b></span>
+    </div>
+    <div class="sstrip" style="margin-top:12px">${stripHTML}</div>
+    <div class="row" style="gap:14px;margin-top:4px;font-size:11px">
+      <span class="muted"><i class="slg slg-full"></i> 已排滿</span>
+      <span class="muted"><i class="slg slg-part"></i> 不足</span>
+      <span class="muted"><i class="slg slg-none"></i> 未排（缺片）</span>
+      <span class="muted">・點任一天 → 去月排程補片</span>
+    </div>
+    <div class="row" style="gap:8px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <span class="pill ${gapN?'em':'ok'}">未來 35 天缺 ${gapN} 天</span>
       <span class="pill ${poolN?'wa':'ok'}">待剪毛片 ${poolN}</span>
       <span class="pill wa">製作中 ${wipN}</span>
       <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
     </div>
-    ${g.defs.length
-      ? `<div style="margin-top:12px"><div class="muted" style="font-size:12px;margin-bottom:6px">未來 14 天還缺片的日子（點數字去排片）：</div>
-         <div class="row" style="gap:6px">${g.defs.map(d=>`<button class="btn sec sm" onclick="CUR_TAB='cal';CAL_YM=[${(+d.ds.slice(0,4))},${(+d.ds.slice(5,7))-1}];buildNav();render()" title="去月排程補這天">${d.ds.slice(5)} 缺${d.short}</button>`).join("")}</div></div>`
-      : '<div class="muted" style="font-size:12px;margin-top:12px">未來 14 天都排滿了，進度健康。</div>'}
   </div>
 
   <div class="card">

@@ -253,6 +253,22 @@
   table.wk th:nth-child(1),table.wk td:nth-child(1){width:34%}
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+  /* 未來排程視覺帶 */
+  .sstrip{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px}
+  .sday{flex:0 0 auto;width:48px;border-radius:6px;border:1px solid var(--line);background:#fff;padding:7px 4px;text-align:center;cursor:pointer;transition:.14s;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .sday:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .sday .sd-wd{font-size:10px;color:var(--muted)}
+  .sday .sd-n{font-family:var(--serif);font-size:18px;font-weight:700;line-height:1}
+  .sday .sd-c{font-size:9.5px;letter-spacing:.02em}
+  .sday.sd-full{background:var(--greenbg);border-color:#bfe3d9}
+  .sday.sd-full .sd-n,.sday.sd-full .sd-c{color:var(--green)}
+  .sday.sd-part{background:var(--amberbg);border-color:var(--gold)}
+  .sday.sd-part .sd-n,.sday.sd-part .sd-c{color:var(--gold-dk)}
+  .sday.sd-none{background:var(--redbg);border-color:#e2b7b0}
+  .sday.sd-none .sd-n,.sday.sd-none .sd-c{color:var(--red)}
+  .sday.sd-today{box-shadow:0 0 0 2px var(--accent)}
+  .slg{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .slg-full{background:var(--green)} .slg-part{background:var(--gold)} .slg-none{background:var(--red)}
   /* 影片庫分頁 + 表格 */
   .vtabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px}
   .vtab{min-width:84px}
@@ -332,7 +348,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200520"></script>
-<script type="module" src="fb.js?v=202606200520"></script>
+<script src="app.js?v=202606200550"></script>
+<script type="module" src="fb.js?v=202606200550"></script>
 </body>
 </html>
