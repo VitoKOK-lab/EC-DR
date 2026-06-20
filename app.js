@@ -111,8 +111,8 @@ async function route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      await window.DB.set("users", name, {name, role, isDefault:false}); return; }
-    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role;
+      await window.DB.set("users", name, {name, role, isDefault:false, pw:"0000"}); return; }
+    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
@@ -196,7 +196,23 @@ function bootLogin(){
   editors.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
-function loginAs(u){ setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW); }
+function loginAs(u){
+  const want=String(u.pw==null?"0000":u.pw);
+  const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
+  if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
+  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW); }
+// 員工自行修改密碼（需先輸入舊密碼）
+async function changeMyPw(){
+  const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
+  if(!u){ toast("找不到你的帳號",true); return; }
+  const cur=String(u.pw==null?"0000":u.pw);
+  const old=prompt("請輸入目前密碼（預設 0000）："); if(old===null) return;
+  if(String(old).trim()!==cur){ toast("目前密碼錯誤",true); return; }
+  const n1=prompt("請設定新密碼（至少 4 碼）："); if(n1===null) return;
+  const np=String(n1).trim(); if(np.length<4){ toast("新密碼至少 4 碼",true); return; }
+  const n2=prompt("請再輸入一次新密碼："); if(n2===null) return;
+  if(String(n2).trim()!==np){ toast("兩次輸入不一致，請重來",true); return; }
+  await write("PUT","/api/users/"+me,{pw:np},"密碼已更新，下次登入請用新密碼"); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 async function clockIn(name){
@@ -243,6 +259,7 @@ function applyState(raw){
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
     document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
+    { const pb=document.getElementById("pwBtn"); if(pb) pb.style.display=(currentRole()==="editor")?"":"none"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
   } else {
@@ -1160,6 +1177,7 @@ function viewSettings(){
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
+      <button class="btn sm sec" onclick="resetMemberPw('${esc(u.name)}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>設定</h2>
@@ -1208,6 +1226,10 @@ function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸
   write("POST","/api/users",{name,role:"editor"},"已新增剪輯"); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
+// 主管線上重設員工密碼為 0000，員工再自行修改
+function resetMemberPw(name){
+  if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
+  writeAdmin("PUT","/api/users/"+name,{pw:"0000"},"已將「"+name+"」密碼重設為 0000"); }
 function renameMember(oldName){
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
