@@ -485,6 +485,21 @@ function taskDone(id, done){
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; } }
   window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast("更新失敗",true)); }
 function delTask(id){ if(!confirm("刪除這項交辦工作？")) return; window.DB.del("tasks", id).catch(()=>toast("刪除失敗",true)); }
+// 管理員：把交辦工作轉移給其他員工（原員工會消失，新員工需重新按「收到」）
+function transferTask(id){
+  const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
+  if(!t){ toast("找不到這項交辦",true); return; }
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor" && u.name!==t.user).map(u=>u.name);
+  if(!editors.length){ toast("沒有其他員工可轉移",true); return; }
+  const menu=editors.map((n,i)=>`${i+1}. ${n}`).join("\n");
+  const ans=prompt("把「"+t.title+"」轉移給哪位員工？輸入編號：\n"+menu); if(ans===null) return;
+  const idx=parseInt(String(ans).trim(),10)-1;
+  if(isNaN(idx)||idx<0||idx>=editors.length){ toast("編號不正確",true); return; }
+  const to=editors[idx];
+  window.DB.update("tasks", id, {user:to, ack:false, ackAt:"", done:false, doneAt:""})
+    .then(()=>toast("已轉移給「"+to+"」，等對方按「收到」重新計時"))
+    .catch(()=>toast("轉移失敗",true));
+}
 
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
@@ -674,6 +689,10 @@ function viewDashboard(){
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
         ${timeLine}
         <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+        <div class="row" style="gap:6px;margin-top:6px">
+          <button class="btn sec sm" style="padding:4px 10px" onclick="transferTask('${t.id}')">轉移</button>
+          <button class="btn danger sm" style="padding:4px 10px" onclick="delTask('${t.id}')">刪除</button>
+        </div>
       </div>`;}).join("");
     const doneHTMLa=e.assignedDone.map(t=>{
       const took=durationMin(t.ackAt||t.createdAt,t.doneAt);
@@ -681,6 +700,9 @@ function viewDashboard(){
         <div style="font-weight:600;font-size:13.5px">${esc(t.title)} <span class="pill ok" style="font-size:10px">已完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">完成 ${String(t.doneAt||'').slice(5,10)} ${hm(t.doneAt)} · <b style="color:var(--green)">耗時 ${minLabel(took)}</b></div>
         ${t.report?`<div style="font-size:12px;margin-top:3px"><span class="muted">結果：</span>${esc(t.report)}</div>`:''}
+        <div class="row" style="gap:6px;margin-top:6px">
+          <button class="btn sec sm" style="padding:4px 10px" onclick="delTask('${t.id}')">刪除</button>
+        </div>
       </div>`;}).join("");
     const trackHTML=(e.assignedOpen.length||e.assignedDone.length)?`<div style="margin-top:12px;padding:10px 12px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px">
       <b style="font-size:13px;color:var(--gold-dk)">我交辦給他的</b>
