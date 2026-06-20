@@ -463,17 +463,18 @@ function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .filter(t=>t && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
 async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
+  const contact=(val("wp_contact")||"").trim();
   const id="T"+Date.now().toString(36);
-  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
-    const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; }
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
+    const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast("新增失敗，請稍後再試",true); } }
 // 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
-async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim();
+async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
-  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
-    const inp=document.getElementById('asg_txt'); if(inp) inp.value=''; toast("已指派給 "+name); }
+  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
+    const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
 function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
@@ -574,18 +575,19 @@ function viewWork(){
           <b style="font-size:14px">${esc(t.title)}</b>
           ${assigned?`<span class="pill em" style="font-size:10px;flex:none">老闆指派</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">刪</button>`}
         </div>`;
+      const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
       if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
-        ${head}
+        ${head}${contactLine}
         <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・<b style="color:var(--gold-dk)">按下收到開始執行</b></div>
         <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">我收到了</button></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
-        ${head}
+        ${head}${contactLine}
         ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">已收到（老闆 ${esc(t.assignedBy)} 指派）</div>`:''}
         <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="填寫完整處理狀況及後續…">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label>
       </div>`;}).join("")||`<div class="muted">尚無交辦工作</div>`}</div>
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:1" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" placeholder="對接窗口（選填）" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
   </div>
 
   <div class="card" style="text-align:center">
@@ -676,7 +678,7 @@ function viewDashboard(){
     const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
-    const taskHTML=e.tasks.length? e.tasks.map((t,ti)=>`<div style="margin:5px 0"><b style="color:var(--muted)">${ti+1}.</b> ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 16px">（未填回報）</div>'}</div>`).join("")
+    const taskHTML=e.tasks.length? e.tasks.map((t,ti)=>`<div style="margin:5px 0"><b style="color:var(--muted)">${ti+1}.</b> ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.contact?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">對接窗口：<b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 16px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
     // 我交辦給他的：跨日期追蹤，知道交給誰、收到沒、花多久、處理結果、下一步、做完沒
     const openHTML=e.assignedOpen.map(t=>{
@@ -687,6 +689,7 @@ function viewDashboard(){
       return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
         <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已收到</span>':'<span class="pill em" style="font-size:10px">未讀</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
+        ${t.contact?`<div style="font-size:12px;margin-top:2px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
         ${timeLine}
         <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
         <div class="row" style="gap:6px;margin-top:6px">
@@ -699,6 +702,7 @@ function viewDashboard(){
       return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
         <div style="font-weight:600;font-size:13.5px">${esc(t.title)} <span class="pill ok" style="font-size:10px">已完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">完成 ${String(t.doneAt||'').slice(5,10)} ${hm(t.doneAt)} · <b style="color:var(--green)">耗時 ${minLabel(took)}</b></div>
+        ${t.contact?`<div style="font-size:12px;margin-top:2px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
         ${t.report?`<div style="font-size:12px;margin-top:3px"><span class="muted">結果：</span>${esc(t.report)}</div>`:''}
         <div class="row" style="gap:6px;margin-top:6px">
           <button class="btn sec sm" style="padding:4px 10px" onclick="delTask('${t.id}')">刪除</button>
@@ -783,6 +787,8 @@ function viewDashboard(){
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
+    <div style="margin-top:10px"><label>對接窗口（選填・要找誰協作，同事或主管）</label>
+      <input id="asg_contact" placeholder="例：王姐／主管阿明（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>
 
