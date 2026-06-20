@@ -462,6 +462,8 @@ function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
 function taskDone(id, done){
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
+    if(t && t.assignedBy && !t.ack){ toast("請先按「收到」再回報完成",true);
+      const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; }
     if(t && (t.report||'').trim().length<12){ toast("請填寫完整處理狀況及後續才能打勾完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; } }
   window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast("更新失敗",true)); }
@@ -543,10 +545,10 @@ function viewWork(){
           <b style="font-size:14px">${esc(t.title)}</b>
           ${assigned?`<span class="pill em" style="font-size:10px;flex:none">老闆指派</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">刪</button>`}
         </div>`;
-      if(needAck) return `<div style="border:1px solid var(--amber);background:var(--panel2);border-radius:6px;padding:12px;margin-bottom:10px">
+      if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}
-        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・請先按「收到」</div>
-        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">收到</button></div>`;
+        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・<b style="color:var(--gold-dk)">先按「收到」</b>才能填寫回報與打勾完成（按下後老闆開始計時）</div>
+        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">我收到了</button></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}
         ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">已收到（老闆 ${esc(t.assignedBy)} 指派）</div>`:''}
