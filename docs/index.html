@@ -200,12 +200,25 @@
   @media (max-width:640px){
     main{padding:12px}
     h2{font-size:18px;margin-bottom:14px}
-    header{padding:9px 12px;gap:6px}
-    header .brand{font-size:15px;overflow:hidden;text-overflow:ellipsis;max-width:44vw}
-    .whoami{padding:6px 11px;font-size:13px}
+    header{padding:9px 11px;gap:5px}
+    header .brand{font-size:14px;letter-spacing:.06em;flex:0 1 auto;min-width:0;overflow:hidden}
+    header .brand .wm{display:none}                 /* 手機隱藏英文字標，保留 ✦ + 中文 */
+    header .brand .zh{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    header .spacer{flex:1 1 auto;min-width:4px}
+    header .btn.sm{padding:7px 9px;font-size:12px;letter-spacing:0;min-height:34px}
+    .whoami{padding:6px 10px;font-size:12px;max-width:34vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .whoami .rb{display:none}                        /* 角色字省略，節省空間 */
     nav{top:53px;padding:0 6px}
-    nav button{padding:12px 11px;font-size:13px}
-    .card{padding:16px;border-radius:var(--r)}
+    nav button{padding:13px 14px;font-size:14px}
+    .card{padding:15px;border-radius:var(--r)}
+    /* iOS：輸入框字級 <16px 會自動放大畫面，這裡統一 16px 避免聚焦時跳動 */
+    input,select,textarea{font-size:16px;padding:12px 12px}
+    /* 主要按鈕加大、好按；次要小鈕也維持足夠觸控高度 */
+    .btn{min-height:46px;padding:12px 18px}
+    .btn.sm{min-height:38px}
+    /* 日期選擇器與導覽鈕加大 */
+    input[type=date]{min-height:44px}
+    .pill{font-size:12.5px;padding:4px 12px}
     .hideMobile{display:none}
     table.responsive thead{display:none}
     table.responsive tr{display:block;border:1px solid var(--line);border-radius:var(--rs);margin-bottom:10px;padding:12px;background:var(--panel)}
@@ -254,7 +267,10 @@
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
   /* 未來排程視覺帶 */
-  .sstrip{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px}
+  .sstrip{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  .sstrip .sday{scroll-snap-align:start}
+  .sstrip::-webkit-scrollbar{height:5px}
+  .sstrip::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
   .sday{flex:0 0 auto;width:48px;border-radius:6px;border:1px solid var(--line);background:#fff;padding:7px 4px;text-align:center;cursor:pointer;transition:.14s;display:flex;flex-direction:column;align-items:center;gap:2px}
   .sday:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
   .sday .sd-wd{font-size:10px;color:var(--muted)}
@@ -324,7 +340,7 @@
 <!-- 主畫面 -->
 <div id="app" class="hidden">
   <header>
-    <span class="brand"><span class="mk">✦</span> TAHIR ZAINAB <span class="zh">剪輯部 · 短影音</span></span>
+    <span class="brand"><span class="mk">✦</span> <span class="wm">TAHIR ZAINAB</span> <span class="zh">剪輯部 · 短影音</span></span>
     <span class="spacer"></span>
     <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
     <button class="btn sm sec" id="tutBtn" onclick="toggleTutorial()" title="新手教學：開啟後把游標停在按鈕或欄位上就會出現說明">教學</button>
@@ -348,7 +364,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200555"></script>
-<script type="module" src="fb.js?v=202606200555"></script>
+<script src="app.js?v=202606200559"></script>
+<script type="module" src="fb.js?v=202606200559"></script>
 </body>
 </html>
