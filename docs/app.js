@@ -83,7 +83,7 @@ function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay()
 function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["寵粉"]||0)+(t["代理招商"]||0); }
 // 影片歸類：代理招商（代理/招商）＞ 寵粉（含舊「帶貨」「銷售」）＞ 流量型
 function videoTypeOf(v){ if(!v) return "流量型"; const tags=Array.isArray(v.tags)?v.tags:[];
-  if(v.mainType==="代理招商"||tags.some(t=>["代理","招商"].includes(t))) return "代理招商";
+  if(v.mainType==="代理招商"||tags.some(t=>["代理","招商","代理招商"].includes(t))) return "代理招商";
   if(v.mainType==="寵粉"||v.mainType==="帶貨型"||tags.some(t=>String(t).includes("寵粉")||["帶貨","銷售"].includes(t))||String(v.subTag||"").includes("寵粉")) return "寵粉";
   return "流量型"; }
 // 某天已排各類型數量、缺口、是否排滿
@@ -505,8 +505,7 @@ function viewWork(){
   <h2>本日上班計畫（${esc(me)}）</h2>
   ${rejCard}
 
-  <div class="grid cols2" style="align-items:start">
-  <div>
+  <div class="workgrid">
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -535,9 +534,6 @@ function viewWork(){
       </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
 
-  </div>
-  <div>
-
   <div class="card">
     <b style="font-size:16px">我的今日交辦工作（剪輯以外）</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
@@ -565,7 +561,6 @@ function viewWork(){
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>
 
-  </div>
   </div>
 
   <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">其他工具（建檔新毛片 / 排舊片）</summary>
@@ -855,9 +850,16 @@ function newSimpleVideo(){
 // ===================================================================
 // 影片標籤（可複選＋可新增），預設清單存在 settings.videoTags
 // ===================================================================
-const DEFAULT_TAGS=["新片","舊片","每日寵粉","代理","招商","銷售"];
+const DEFAULT_TAGS=["新片","舊片","寵粉","珠寶介紹","子女傳承","代理招商","銷售"];
+// 標籤正規化：舊名 → 新名（每日寵粉→寵粉、珠寶→珠寶介紹、招商/代理→代理招商）
+const TAG_RENAME={"每日寵粉":"寵粉","珠寶":"珠寶介紹","招商":"代理招商","代理":"代理招商"};
+function renameTag(t){ t=String(t||"").trim(); return TAG_RENAME[t]||t; }
 const NEWOLD_TAGS=["新片","舊片"];
-function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags; return (Array.isArray(t)&&t.length)?t:DEFAULT_TAGS; }
+function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags;
+  const src=(Array.isArray(t)&&t.length)?t:DEFAULT_TAGS;
+  const out=[]; src.forEach(x=>{ const r=renameTag(x); if(r&&!out.includes(r)) out.push(r); });
+  ["寵粉","珠寶介紹","子女傳承","代理招商"].forEach(x=>{ if(!out.includes(x)) out.push(x); }); // 確保新標籤一定可選
+  return out; }
 // 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
 function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px">
@@ -899,7 +901,7 @@ function vidSegment(v){
 // 新/舊片不放進來 → 由上方分頁代表，避免與標籤重覆
 function videoTagsOf(v){
   const base=Array.isArray(v.tags)&&v.tags.length?v.tags.slice():(v.subTag?[String(v.subTag)]:[]);
-  let t=base.map(x=>String(x).trim()).filter(s=>s && s!=="新片" && s!=="舊片");
+  let t=base.map(x=>renameTag(x)).filter(s=>s && s!=="新片" && s!=="舊片");
   return [...new Set(t)];
 }
 // 天數差（b - a，以日為單位）
@@ -1100,8 +1102,8 @@ function openVideoModal(id, edit, fromWork){
     closeModal(); };
 }
 async function saveVideo(id){
-  const tags=collectTags("e"); await persistNewTags(tags);
-  const mainType = tags.some(t=>["代理","招商"].includes(t))?"代理招商"
+  const tags=[...new Set(collectTags("e").map(renameTag))]; await persistNewTags(tags);
+  const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"流量型");
   const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
     products:collectProducts("e"), productUrl:val("e_url").trim(),
