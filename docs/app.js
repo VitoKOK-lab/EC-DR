@@ -690,7 +690,7 @@ function viewDashboard(){
       const elapsed=t.ackAt?durationMin(t.ackAt,nowIso()):null;
       const timeLine=t.ackAt
         ? `<div style="font-size:12px;margin-top:2px"><span class="muted">已接收 ${hm(t.ackAt)} ·</span> <b style="color:var(--gold-dk)">計時中 ${minLabel(elapsed)}</b></div>`
-        : `<div class="muted" style="font-size:12px;margin-top:2px">尚未接收</div>`;
+        : `<div style="font-size:12px;margin-top:2px;color:var(--red);font-weight:700">尚未接收</div>`;
       return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
         <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已接收</span>':'<span class="pill em" style="font-size:10px">尚未接收</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
