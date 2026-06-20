@@ -72,22 +72,21 @@ function dayVideoList(date){
   (STATE.videos||[]).forEach(v=>{ if(v.scheduledDate===date && ["已完成","已上片"].includes(v.stage) && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
-// 每天上片目標：依「星期幾」設定 流量／帶貨／寵粉 各幾支（不分平假日）
-const TYPE_ORDER=["流量型","帶貨型","寵粉"];
-const TYPE_SHORT={"流量型":"流","帶貨型":"帶","寵粉":"寵"};
+// 每天上片目標：依「星期幾」設定 流量／寵粉 各幾支（帶貨已併入寵粉，不分平假日）
+const TYPE_ORDER=["流量型","寵粉"];
+const TYPE_SHORT={"流量型":"流","寵粉":"寵"};
 const WD_ORDER=[1,2,3,4,5,6,0]; const WD_LABEL={0:"日",1:"一",2:"二",3:"三",4:"四",5:"五",6:"六"};
-function defaultWeekdayTargets(){ const o={}; for(let d=0;d<7;d++) o[d]={"流量型":3,"帶貨型":1,"寵粉":0}; return o; }
+function defaultWeekdayTargets(){ const o={}; for(let d=0;d<7;d++) o[d]={"流量型":3,"寵粉":1}; return o; }
 function weekdayTargets(){ const w=STATE.settings&&STATE.settings.weekdayTargets; return (w&&typeof w==="object")?w:defaultWeekdayTargets(); }
 function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay(); const w=weekdayTargets(); const t=w[wd]||w[String(wd)]||{};
-  return {"流量型":+t["流量型"]||0,"帶貨型":+t["帶貨型"]||0,"寵粉":+t["寵粉"]||0}; }
-function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["帶貨型"]||0)+(t["寵粉"]||0); }
-// 影片歸類：寵粉 > 帶貨型 > 流量型
+  return {"流量型":+t["流量型"]||0,"寵粉":(+t["寵粉"]||0)+(+t["帶貨型"]||0)}; }   // 舊資料的帶貨型併入寵粉
+function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["寵粉"]||0); }
+// 影片歸類：寵粉（含舊「帶貨」）＞ 流量型
 function videoTypeOf(v){ if(!v) return "流量型"; const tags=Array.isArray(v.tags)?v.tags:[];
-  if(v.mainType==="寵粉"||tags.some(t=>String(t).includes("寵粉"))||String(v.subTag||"").includes("寵粉")) return "寵粉";
-  if(v.mainType==="帶貨型"||tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))) return "帶貨型";
+  if(v.mainType==="寵粉"||v.mainType==="帶貨型"||tags.some(t=>String(t).includes("寵粉")||["帶貨","代理","招商","銷售"].includes(t))||String(v.subTag||"").includes("寵粉")) return "寵粉";
   return "流量型"; }
 // 某天已排各類型數量、缺口、是否排滿
-function dayBreakdown(date){ const list=dayVideoList(date); const cnt={"流量型":0,"帶貨型":0,"寵粉":0};
+function dayBreakdown(date){ const list=dayVideoList(date); const cnt={"流量型":0,"寵粉":0};
   list.forEach(it=>{ cnt[videoTypeOf(vid(it.videoId))]++; });
   const tg=dayTargets(date); const deficits={};
   TYPE_ORDER.forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
@@ -259,7 +258,7 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
-function typeTag(t){ const c=t==="帶貨型"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
+function typeTag(t){ const c=t==="寵粉"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
 
 // ===================================================================
 // 畫面路由
@@ -682,7 +681,7 @@ function viewDashboard(){
       <div class="muted" style="font-size:13px;margin-top:2px">上班 ${att}</div>
       <div class="mstat">
         <div><div class="n ${e.done.length?'':'muted'}">${e.done.length}</div><div class="l">完成上架</div></div>
-        <div><div class="n ${e.sales?'':'muted'}">${e.sales}</div><div class="l">其中帶貨</div></div>
+        <div><div class="n ${e.sales?'':'muted'}">${e.sales}</div><div class="l">其中寵粉</div></div>
         <div><div class="n ${e.tasks.length&&e.tasks.filter(t=>t.done).length<e.tasks.length?'warn':''} ${e.tasks.length?'':'muted'}">${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</div><div class="l">交辦完成</div></div>
       </div>
       ${trackHTML}
@@ -777,12 +776,12 @@ function viewDashboard(){
 
   <div class="card">
     <b style="font-size:16px">④ 員工長期績效（累計・全期）</b>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>帶貨支數</th></tr></thead>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>寵粉支數</th></tr></thead>
     <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
       <td data-label="完成數">${k.count}</td>
       <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
       <td data-label="平均工時">${minLabel(k.avgMin)}</td>
-      <td data-label="帶貨支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
+      <td data-label="寵粉支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
     <div style="margin-top:14px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音外部成效儀表板 →</a></div>
   </div>`;
 }
@@ -1102,7 +1101,7 @@ function openVideoModal(id, edit, fromWork){
 }
 async function saveVideo(id){
   const tags=collectTags("e"); await persistNewTags(tags);
-  const mainType = tags.some(t=>String(t).includes("寵粉"))?"寵粉":(tags.some(t=>["帶貨","代理","招商","銷售"].includes(t))?"帶貨型":"流量型");
+  const mainType = (tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","代理","招商","銷售"].includes(t)))?"寵粉":"流量型";
   const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
     products:collectProducts("e"), productUrl:val("e_url").trim(),
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
@@ -1118,13 +1117,12 @@ function viewSettings(){
   const s=STATE.settings||{};
   const w=weekdayTargets();
   const rows=WD_ORDER.map(d=>{ const t=w[d]||w[String(d)]||{};
-    const cell=(k)=>`<input type="number" min="0" id="wt_${d}_${k}" value="${+t[k]||0}" oninput="wtSum(${d})" style="width:62px;text-align:center">`;
-    const sum=(+t["流量型"]||0)+(+t["帶貨型"]||0)+(+t["寵粉"]||0);
+    const traffic=+t["流量型"]||0; const pamper=(+t["寵粉"]||0)+(+t["帶貨型"]||0); // 舊帶貨併入寵粉
+    const inp=(k,v)=>`<input type="number" min="0" id="wt_${d}_${k}" value="${v}" oninput="wtSum(${d})" style="width:62px;text-align:center">`;
     return `<tr><td data-label="星期"><b>週${WD_LABEL[d]}</b></td>
-      <td data-label="流量片">${cell("流量型")}</td>
-      <td data-label="帶貨片">${cell("帶貨型")}</td>
-      <td data-label="寵粉片">${cell("寵粉")}</td>
-      <td data-label="小計"><b id="wt_sum_${d}">${sum}</b> 支</td></tr>`;
+      <td data-label="流量片">${inp("流量型",traffic)}</td>
+      <td data-label="寵粉片">${inp("寵粉",pamper)}</td>
+      <td data-label="小計"><b id="wt_sum_${d}">${traffic+pamper}</b> 支</td></tr>`;
   }).join("");
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
   const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
@@ -1135,7 +1133,7 @@ function viewSettings(){
   </tr>`).join("");
   return `<h2>設定</h2>
   <div class="card"><b>每天上片數量（依星期幾）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>帶貨片</th><th>寵粉片</th><th>小計</th></tr></thead>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>寵粉片</th><th>小計</th></tr></thead>
     <tbody>${rows}</tbody></table>
   </div>
   <div class="card">
@@ -1157,13 +1155,12 @@ function viewSettings(){
   </div>`;
 }
 function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
-  if(e) e.textContent=v("流量型")+v("帶貨型")+v("寵粉"); }
+  if(e) e.textContent=v("流量型")+v("寵粉"); }
 async function saveSettings(){
   const weekdayTargets={};
   for(let d=0;d<7;d++){ weekdayTargets[d]={
     "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
-    "帶貨型":parseInt(val("wt_"+d+"_帶貨型"))||0,
-    "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0 }; }
+    "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0 }; }   // 帶貨已併入寵粉，不再儲存
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
@@ -1269,7 +1266,7 @@ const TUT_RULES=[
   {oc:"claimVid",        title:"認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的今日工作」，其他剪輯就看不到、不會重複剪。"},
   {oc:"setWorkStep",     title:"我作業中…", text:"剪好了？按一下進到「編輯內容 ▶」，再進編輯畫面填資料。"},
   {oc:"unclaimVid",      title:"退回", text:"後悔了或想改選？把這支退回共用的待剪清單，大家可重新認領（一人最多 3 支）。"},
-  {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個帶貨商品；其餘細節剪片時再補。"},
+  {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個商品；其餘細節剪片時再補。"},
   {oc:"newSimpleVideo",  title:"新增影片", text:"建立一支新影片，填原始片名、影片文案與商品。"},
   {oc:"editVideo",       title:"打開影片內容", text:"點影片名稱可看這支片的完整資料；裡面再按「編輯」才能修改。"},
   {oc:"vidSetView",      title:"影片庫分頁", text:"切換影片清單：毛片待剪／新片未排程／新片已排程／舊片。"},
