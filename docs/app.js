@@ -462,6 +462,11 @@ function scheduleGlance(){
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .filter(t=>t && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+// 對接窗口：彙整所有任務（含員工自建）輸入過的窗口，做成下拉可選＋可自行新增
+function contactOptions(){ const set=new Set();
+  Object.values((STATE&&STATE.tasks)||{}).forEach(t=>{ const c=t&&t.contact&&String(t.contact).trim(); if(c) set.add(c); });
+  return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b))); }
+function contactDatalist(id){ return `<datalist id="${id}">${contactOptions().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>`; }
 async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
   const id="T"+Date.now().toString(36);
@@ -587,7 +592,7 @@ function viewWork(){
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label>
       </div>`;}).join("")||`<div class="muted">尚無交辦工作</div>`}</div>
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" placeholder="對接窗口（選填）" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()"><button class="btn sm" onclick="createTask()">＋ 加入</button></div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="對接窗口（選填）" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ 加入</button></div>
   </div>
 
   <div class="card" style="text-align:center">
@@ -787,8 +792,8 @@ function viewDashboard(){
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
-    <div style="margin-top:10px"><label>對接窗口（選填・要找誰協作，同事或主管）</label>
-      <input id="asg_contact" placeholder="例：王姐／主管阿明（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
+    <div style="margin-top:10px"><label>對接窗口（選填・可下拉選或直接輸入新窗口）</label>
+      <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>
 
