@@ -26,7 +26,7 @@
     --foil:linear-gradient(110deg,#9C8550 0%,#C5B382 18%,#DCCD9E 36%,#F1E9CD 50%,#CFBE8A 64%,#B5A06A 84%,#9C8550 100%);
     --shadow:0 2px 10px rgba(43,24,34,.06);
     --shadow2:0 24px 60px rgba(43,24,34,.12);
-    --r:14px; --rs:8px;
+    --r:8px; --rs:5px;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--sans);
@@ -35,7 +35,7 @@
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
   .hidden{display:none !important}
-  code{background:var(--chip);padding:1px 6px;border-radius:6px;font-size:13px}
+  code{background:var(--chip);padding:1px 6px;border-radius:4px;font-size:13px}
 
   /* 登入 */
   #login{position:fixed;inset:0;background:
@@ -88,7 +88,7 @@
   input,select,textarea{width:100%;padding:11px 12px;border-radius:var(--rs);border:1.5px solid var(--line);background:#fff;color:var(--txt);font-size:14px;font-family:var(--sans);transition:.15s}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--redbg)}
   textarea{min-height:60px}
-  .btn{background:var(--accent);border:none;color:#fff;padding:11px 20px;border-radius:3px;font-weight:600;letter-spacing:.1em;font-family:var(--sans);transition:.18s;box-shadow:0 6px 16px rgba(230,0,126,.18)}
+  .btn{background:var(--accent);border:none;color:#fff;padding:11px 20px;border-radius:2px;font-weight:600;letter-spacing:.1em;font-family:var(--sans);transition:.18s;box-shadow:0 6px 16px rgba(230,0,126,.18)}
   .btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 9px 22px rgba(230,0,126,.26)}
   .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
   .btn.sec:hover{background:var(--panel2);color:var(--txt);border-color:var(--pink200);transform:translateY(-1px)}
@@ -96,7 +96,7 @@
   .btn.gold:hover{background:var(--amberbg);transform:translateY(-1px)}
   .btn.danger{background:var(--accent2);color:#fff;box-shadow:0 6px 16px rgba(177,36,104,.20)}
   .btn.danger:hover{background:#8E1A52;filter:none}
-  .btn.sm{padding:7px 14px;font-size:13px;border-radius:3px;letter-spacing:.06em}
+  .btn.sm{padding:7px 14px;font-size:13px;border-radius:2px;letter-spacing:.06em}
   .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle;overflow-wrap:anywhere;word-break:break-word}
@@ -120,7 +120,7 @@
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
-  .modal .box{background:var(--panel);border-radius:18px;padding:24px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow2);border:1px solid var(--line)}
+  .modal .box{background:var(--panel);border-radius:10px;padding:24px;max-width:680px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow2);border:1px solid var(--line)}
   .modal h3{font-family:var(--serif);font-weight:700;margin:0 0 16px;letter-spacing:.5px}
   .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 
@@ -132,7 +132,7 @@
   .calmonth span{font-size:14px;color:var(--muted);font-weight:500;margin:0 2px}
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
   .cal .dow{color:var(--muted);text-align:center;font-size:12px;font-weight:700;padding:6px 4px;letter-spacing:2px}
-  .day{position:relative;border:1px solid var(--line);border-radius:12px;padding:9px 8px;min-height:100px;cursor:pointer;
+  .day{position:relative;border:1px solid var(--line);border-radius:7px;padding:9px 8px;min-height:100px;cursor:pointer;
        background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:.18s;overflow:hidden;box-shadow:var(--shadow)}
   .day::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:transparent;transition:.18s}
   .day:hover{transform:translateY(-3px);box-shadow:var(--shadow2);border-color:var(--pink200)}
@@ -215,10 +215,10 @@
     .grid.cols2{grid-template-columns:1fr !important}
     .grid.cols3{grid-template-columns:1fr !important}
     .grid.cols4{grid-template-columns:1fr 1fr !important}
-    .modal .box{padding:18px;border-radius:16px}
+    .modal .box{padding:18px;border-radius:10px}
     .addRow{flex-direction:column}
     .cal{gap:5px}
-    .day{min-height:62px;padding:5px;border-radius:8px;align-items:center;justify-content:center;text-align:center}
+    .day{min-height:62px;padding:5px;border-radius:6px;align-items:center;justify-content:center;text-align:center}
     .day .dnum{font-size:14px;position:absolute;top:3px;left:5px}
     .day .todaymk{font-size:8px;padding:1px 4px}
     .day .big{font-size:20px;margin-top:0}
@@ -254,9 +254,9 @@
   table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
   .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
   /* 影片庫分頁 + 表格 */
-  .vtabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px}
+  .vtabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px}
   .vtab{min-width:84px}
-  .vtab{flex:1;background:transparent;border:none;color:var(--muted);font-weight:700;font-size:14px;padding:9px 10px;border-radius:6px;cursor:pointer;transition:.14s;display:flex;align-items:center;justify-content:center;gap:6px}
+  .vtab{flex:1;background:transparent;border:none;color:var(--muted);font-weight:700;font-size:14px;padding:9px 10px;border-radius:4px;cursor:pointer;transition:.14s;display:flex;align-items:center;justify-content:center;gap:6px}
   .vtab:hover{color:var(--txt)}
   .vtab.on{background:var(--panel);color:var(--accent);box-shadow:var(--shadow)}
   .vtab-n{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
@@ -284,7 +284,7 @@
 <!-- 尚未設定 Firebase 時顯示 -->
 <div id="setup" class="hidden" style="position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px">
   <div class="card" style="max-width:640px">
-    <h2>⚙️ 還沒設定 Firebase</h2>
+    <h2>還沒設定 Firebase</h2>
     <p class="muted">請依 <b>README.md</b> 建一個 Firebase 專案，把網頁設定貼到 <code>public/firebase-config.js</code>，重新整理即可。</p>
     <ol class="muted" style="line-height:1.9">
       <li>到 console.firebase.google.com 建立專案</li>
@@ -301,7 +301,7 @@
   <h1><span class="di">✦</span> 剪輯部</h1>
   <p>點自己的名字＝上班打卡（多人即時同步）</p>
   <div class="userGrid" id="userGrid"><p class="muted">連線中…</p></div>
-  <div class="addRow"><button class="btn sec" onclick="ownerLogin()">🔒 管理員登入</button></div>
+  <div class="addRow"><button class="btn sec" onclick="ownerLogin()">管理員登入</button></div>
   <p class="muted" style="margin-top:14px;font-size:12px">點名字即可上班（免密碼），下班請按工作頁的「下班匯報」；「管理員登入」可管理成員與設定</p>
 </div>
 
@@ -311,8 +311,8 @@
     <span class="brand"><span class="mk">✦</span> TAHIR ZAINAB <span class="zh">剪輯部 · 短影音</span></span>
     <span class="spacer"></span>
     <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
-    <button class="btn sm sec" id="tutBtn" onclick="toggleTutorial()" title="新手教學：開啟後把游標停在按鈕或欄位上就會出現說明">🎓 教學</button>
-    <button class="btn sm sec" onclick="location.reload()" title="重新整理資料">🔄</button>
+    <button class="btn sm sec" id="tutBtn" onclick="toggleTutorial()" title="新手教學：開啟後把游標停在按鈕或欄位上就會出現說明">教學</button>
+    <button class="btn sm sec" onclick="location.reload()" title="重新整理資料">重整</button>
     <button class="btn sm sec" onclick="logout()">登出</button>
   </header>
   <nav id="nav"></nav>
@@ -332,7 +332,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200425"></script>
-<script type="module" src="fb.js?v=202606200425"></script>
+<script src="app.js?v=202606200431"></script>
+<script type="module" src="fb.js?v=202606200431"></script>
 </body>
 </html>
