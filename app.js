@@ -502,6 +502,9 @@ function viewWork(){
   <h2>📋 本日上班計畫（${esc(me)}）</h2>
   ${rejCard}
 
+  <div class="grid cols2" style="align-items:start">
+  <div>
+
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">🎬 待剪毛片（先搶先剪・所有剪輯都看得到）</b>
@@ -529,6 +532,9 @@ function viewWork(){
       </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
 
+  </div>
+  <div>
+
   <div class="card">
     <b style="font-size:16px">📌 我的今日交辦工作（剪輯以外）</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
@@ -554,6 +560,9 @@ function viewWork(){
     <span class="pill ok">今日已完成上架 ${doneToday.length} 支</span>
     <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">交辦完成 ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">🔔 下班匯報</button></div>
+  </div>
+
+  </div>
   </div>
 
   <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">🛠 其他工具（建檔新毛片 / 排舊片）</summary>
