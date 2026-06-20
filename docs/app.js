@@ -561,7 +561,7 @@ function viewWork(){
         </div>`;
       if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}
-        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・<b style="color:var(--gold-dk)">先按「收到」</b>才能填寫回報與打勾完成（按下後老闆開始計時）</div>
+        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・<b style="color:var(--gold-dk)">按下收到開始執行</b></div>
         <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">我收到了</button></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}
