@@ -536,6 +536,7 @@ function viewWork(){
 
   <div class="card">
     <b style="font-size:16px">我的今日交辦工作（剪輯以外）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px;color:var(--gold-dk)">做完請先打勾並填寫回報，主管即時看得到（不用等下班）</div>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
           <b style="font-size:14px">${esc(t.title)}</b>
@@ -643,7 +644,7 @@ function viewDashboard(){
     const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
-    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
+    const taskHTML=e.tasks.length? e.tasks.map((t,ti)=>`<div style="margin:5px 0"><b style="color:var(--muted)">${ti+1}.</b> ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 16px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
     // 我交辦給他的：跨日期追蹤，知道交給誰、收到沒、花多久、處理結果、下一步、做完沒
     const openHTML=e.assignedOpen.map(t=>{
@@ -681,9 +682,9 @@ function viewDashboard(){
         <div><div class="n ${e.tasks.length&&e.tasks.filter(t=>t.done).length<e.tasks.length?'warn':''} ${e.tasks.length?'':'muted'}">${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</div><div class="l">交辦完成</div></div>
       </div>
       ${trackHTML}
-      <div style="margin-top:12px"><b style="font-size:13px">完成上架（當日）</b>${doneHTML}</div>
+      <div style="margin-top:12px"><b style="font-size:13px">剪輯進度</b>${doneHTML}</div>
       ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">進行中（未完成）</b>${wipHTML}</div>`:''}
-      <div style="margin-top:10px"><b style="font-size:13px">交辦回報（是否完成）</b>${taskHTML}</div>
+      <div style="margin-top:10px"><b style="font-size:13px">交辦回報</b>${taskHTML}</div>
     </div>`;
   }).join("")||'<div class="card muted">尚無剪輯成員</div>';
 
@@ -692,7 +693,15 @@ function viewDashboard(){
     const days=my.map(editDays).filter(x=>x!=null); const avgDays=days.length?(days.reduce((a,b)=>a+b,0)/days.length):null;
     const mins=my.map(v=>v.durationMin).filter(x=>typeof x==="number"); const avgMin=mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null;
     const sales=my.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
-    return {name, count:my.length, avgDays, avgMin, sales}; });
+    const aDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.done);
+    const aMins=aDone.map(t=>durationMin(t.ackAt||t.createdAt,t.doneAt)).filter(x=>typeof x==="number");
+    const aAvg=aMins.length?Math.round(aMins.reduce((a,b)=>a+b,0)/aMins.length):null;
+    return {name, count:my.length, avgDays, avgMin, sales, aCount:aDone.length, aAvg}; });
+  // 各項最佳（用於標綠）：剪片最快＝平均天數最低、交辦最多、交辦最快
+  const okEditors=kpi.length>1;
+  const bestEdit=Math.min(Infinity,...kpi.filter(k=>k.avgDays!=null).map(k=>k.avgDays));
+  const bestACount=Math.max(0,...kpi.map(k=>k.aCount));
+  const bestATime=Math.min(Infinity,...kpi.filter(k=>k.aAvg!=null).map(k=>k.aAvg));
 
   // ---- 排程健康/庫存 ----
   const g=scheduleGlance();
@@ -719,11 +728,11 @@ function viewDashboard(){
     <div class="row" style="align-items:baseline;gap:8px">
       <b style="font-size:16px">① 指派交辦給員工</b>
     </div>
-    <div class="grid cols2" style="margin-top:12px;align-items:end">
+    <div class="grid cols2" style="margin-top:12px">
       <div><label>選擇員工</label>
         <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></div>
       <div><label>交辦內容</label>
-        <textarea id="asg_txt" rows="1" placeholder="要交辦的工作內容…"></textarea></div>
+        <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>
@@ -772,12 +781,15 @@ function viewDashboard(){
 
   <div class="card">
     <b style="font-size:16px">④ 員工長期績效（累計・全期）</b>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>完成數</th><th>平均天數</th><th>平均工時</th><th>寵粉支數</th></tr></thead>
-    <tbody>${kpi.map(k=>`<tr><td data-label="剪輯">${esc(k.name)}</td>
-      <td data-label="完成數">${k.count}</td>
-      <td data-label="平均天數">${k.avgDays!=null?k.avgDays.toFixed(1):'—'}</td>
+    <div class="muted" style="font-size:12px;margin-top:2px">綠色＝該項表現最佳：剪片最快、交辦完成最多、交辦完成最快</div>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>剪片完成</th><th>剪片速度</th><th>平均工時</th><th>寵粉</th><th>交辦完成</th><th>交辦速度</th></tr></thead>
+    <tbody>${kpi.map(k=>`<tr><td data-label="剪輯"><b>${esc(k.name)}</b></td>
+      <td data-label="剪片完成">${k.count}</td>
+      <td data-label="剪片速度" class="${okEditors&&k.avgDays!=null&&k.avgDays===bestEdit?'pos':''}">${k.avgDays!=null?k.avgDays.toFixed(1)+' 天':'—'}</td>
       <td data-label="平均工時">${minLabel(k.avgMin)}</td>
-      <td data-label="寵粉支數">${k.sales}</td></tr>`).join("")||'<tr><td colspan="5" class="muted">尚無資料</td></tr>'}</tbody></table>
+      <td data-label="寵粉">${k.sales}</td>
+      <td data-label="交辦完成" class="${okEditors&&k.aCount&&k.aCount===bestACount?'pos':''}">${k.aCount}</td>
+      <td data-label="交辦速度" class="${okEditors&&k.aAvg!=null&&k.aAvg===bestATime?'pos':''}">${k.aAvg!=null?minLabel(k.aAvg):'—'}</td></tr>`).join("")||'<tr><td colspan="7" class="muted">尚無資料</td></tr>'}</tbody></table>
     <div style="margin-top:14px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音外部成效儀表板 →</a></div>
   </div>`;
 }
