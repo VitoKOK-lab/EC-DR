@@ -745,7 +745,6 @@ function viewDashboard(){
       <div class="muted" style="font-size:13px;margin-top:2px">上班 ${att}</div>
       <div class="mstat">
         <div><div class="n ${e.done.length?'':'muted'}">${e.done.length}</div><div class="l">完成上架</div></div>
-        <div><div class="n ${e.sales?'':'muted'}">${e.sales}</div><div class="l">其中寵粉</div></div>
         <div><div class="n ${e.tasks.length&&e.tasks.filter(t=>t.done).length<e.tasks.length?'warn':''} ${e.tasks.length?'':'muted'}">${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</div><div class="l">交辦完成</div></div>
       </div>
       ${trackHTML}
