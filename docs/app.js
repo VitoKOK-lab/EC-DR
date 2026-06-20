@@ -648,7 +648,7 @@ function viewDashboard(){
     const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
-    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
+    const taskHTML=e.tasks.length? e.tasks.map(t=>`<div style="margin:5px 0">• ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 12px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 12px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
     // 我交辦給他的：跨日期追蹤，知道交給誰、收到沒、花多久、處理結果、下一步、做完沒
     const openHTML=e.assignedOpen.map(t=>{
@@ -679,12 +679,11 @@ function viewDashboard(){
         <b style="font-size:16px">${esc(e.name)}</b>
         <span>${statusPill(e.s)}</span>
       </div>
-      <div class="muted" style="font-size:13px;margin-top:2px">${att}</div>
-      <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-        <span class="pill ok">完成 ${e.done.length}</span>
-        <span class="pill ${e.sales?'ok':'wa'}">帶貨 ${e.sales}</span>
-        <span class="pill wa">工時 ${minLabel(e.sumMin)}</span>
-        <span class="pill ${e.tasks.length&&e.tasks.every(t=>t.done)?'ok':(e.tasks.length?'em':'wa')}">交辦 ${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</span>
+      <div class="muted" style="font-size:13px;margin-top:2px">上班 ${att}</div>
+      <div class="mstat">
+        <div><div class="n ${e.done.length?'':'muted'}">${e.done.length}</div><div class="l">完成上架</div></div>
+        <div><div class="n ${e.sales?'':'muted'}">${e.sales}</div><div class="l">其中帶貨</div></div>
+        <div><div class="n ${e.tasks.length&&e.tasks.filter(t=>t.done).length<e.tasks.length?'warn':''} ${e.tasks.length?'':'muted'}">${e.tasks.filter(t=>t.done).length}/${e.tasks.length}</div><div class="l">交辦完成</div></div>
       </div>
       ${trackHTML}
       <div style="margin-top:12px"><b style="font-size:13px">完成上架（當日）</b>${doneHTML}</div>
@@ -745,12 +744,11 @@ function viewDashboard(){
       </div>
     </div>
     <div class="muted" style="font-size:13px;margin-top:8px"><b style="color:var(--txt)">${D}（${weekdayZh(D)}）</b> <span class="pill ${isToday?'wa':'ok'}" style="font-size:10px;margin-left:4px">${dayLabel}</span></div>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <span class="pill ${present?'ok':'em'}">出勤 ${present}/${editors.length}</span>
-      <span class="pill ok">完成上架 ${teamDone}</span>
-      <span class="pill ${teamSales?'ok':'wa'}">帶貨 ${teamSales}</span>
-      <span class="pill ${teamTasks&&teamTasksDone===teamTasks?'ok':(teamTasks?'em':'wa')}">交辦完成 ${teamTasksDone}/${teamTasks}</span>
-      <span class="pill ${teamAssignedOpen?'wa':'ok'}">我交辦追蹤中 ${teamAssignedOpen}</span>
+    <div class="mstat">
+      <div><div class="n ${present<editors.length?'warn':''}">${present}/${editors.length}</div><div class="l">出勤人數</div></div>
+      <div><div class="n ${teamDone?'':'muted'}">${teamDone}</div><div class="l">完成上架</div></div>
+      <div><div class="n ${teamTasks&&teamTasksDone<teamTasks?'warn':''} ${teamTasks?'':'muted'}">${teamTasksDone}/${teamTasks}</div><div class="l">交辦完成</div></div>
+      ${teamAssignedOpen?`<div><div class="n warn">${teamAssignedOpen}</div><div class="l">交辦待結</div></div>`:''}
     </div>
   </div>
   ${cards}

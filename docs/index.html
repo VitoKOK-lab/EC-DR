@@ -285,6 +285,13 @@
   .sday.sd-today{box-shadow:0 0 0 2px var(--accent)}
   .slg{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
   .slg-full{background:var(--green)} .slg-part{background:var(--gold)} .slg-none{background:var(--red)}
+  /* 數據讀數：大字＋小標籤，預設中性色，只有「需要注意」才轉紅 */
+  .mstat{display:flex;flex-wrap:wrap;gap:20px;margin-top:12px}
+  .mstat>div{min-width:46px}
+  .mstat .n{font-family:var(--serif);font-size:21px;font-weight:700;line-height:1.05;color:var(--txt)}
+  .mstat .n.warn{color:var(--red)}
+  .mstat .n.muted{color:var(--faint)}
+  .mstat .l{font-size:11px;color:var(--muted);margin-top:3px;letter-spacing:.03em}
   /* 影片庫分頁 + 表格 */
   .vtabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px}
   .vtab{min-width:84px}
@@ -364,7 +371,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200559"></script>
-<script type="module" src="fb.js?v=202606200559"></script>
+<script src="app.js?v=202606200609"></script>
+<script type="module" src="fb.js?v=202606200609"></script>
 </body>
 </html>
