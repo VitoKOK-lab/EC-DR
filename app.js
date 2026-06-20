@@ -682,17 +682,17 @@ function viewDashboard(){
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無完成</div>';
     const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
-    const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已收到</span>':' <span class="pill em" style="font-size:10px">未讀</span>') : '';
+    const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已接收</span>':' <span class="pill em" style="font-size:10px">尚未接收</span>') : '';
     const taskHTML=e.tasks.length? e.tasks.map((t,ti)=>`<div style="margin:5px 0"><b style="color:var(--muted)">${ti+1}.</b> ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.contact?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">對接窗口：<b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 16px">（未填回報）</div>'}</div>`).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無交辦工作</div>';
     // 我交辦給他的：跨日期追蹤，知道交給誰、收到沒、花多久、處理結果、下一步、做完沒
     const openHTML=e.assignedOpen.map(t=>{
       const elapsed=t.ackAt?durationMin(t.ackAt,nowIso()):null;
       const timeLine=t.ackAt
-        ? `<div style="font-size:12px;margin-top:2px"><span class="muted">收到 ${hm(t.ackAt)} ·</span> <b style="color:var(--gold-dk)">計時中 ${minLabel(elapsed)}</b></div>`
-        : `<div class="muted" style="font-size:12px;margin-top:2px">等員工按「收到」才開始計時</div>`;
+        ? `<div style="font-size:12px;margin-top:2px"><span class="muted">已接收 ${hm(t.ackAt)} ·</span> <b style="color:var(--gold-dk)">計時中 ${minLabel(elapsed)}</b></div>`
+        : `<div class="muted" style="font-size:12px;margin-top:2px">尚未接收</div>`;
       return `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--gold)">
-        <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已收到</span>':'<span class="pill em" style="font-size:10px">未讀</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
+        <div style="font-weight:600;font-size:13.5px">${esc(t.title)} ${t.ack?'<span class="pill ok" style="font-size:10px">已接收</span>':'<span class="pill em" style="font-size:10px">尚未接收</span>'} <span class="pill em" style="font-size:10px">未完成</span></div>
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
         ${t.contact?`<div style="font-size:12px;margin-top:2px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
         ${timeLine}
