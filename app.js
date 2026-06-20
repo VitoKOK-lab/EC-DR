@@ -509,7 +509,7 @@ function viewWork(){
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">待剪毛片（先搶先剪・所有剪輯都看得到）</b>
+      <b style="font-size:16px">待剪毛片</b>
       <span class="pill ${pool.length?'ok':'wa'}">待剪 ${pool.length} 支</span>
     </div>
     <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
@@ -714,10 +714,10 @@ function viewDashboard(){
 
   return `<h2>儀表板 <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
 
+  <div class="dgrid">
   <div class="card" style="border-color:var(--gold)">
     <div class="row" style="align-items:baseline;gap:8px">
       <b style="font-size:16px">① 指派交辦給員工</b>
-      <span class="muted" style="font-size:12px">送出＝自動進到該員工今天頁面，需按「收到」</span>
     </div>
     <div class="grid cols2" style="margin-top:12px;align-items:end">
       <div><label>選擇員工</label>
@@ -745,7 +745,8 @@ function viewDashboard(){
       ${teamAssignedOpen?`<div><div class="n warn">${teamAssignedOpen}</div><div class="l">交辦待結</div></div>`:''}
     </div>
   </div>
-  ${cards}
+  </div>
+  <div class="dgrid-ed">${cards}</div>
 
   <div class="card">
     <b style="font-size:16px">③ 未來影片排程</b>

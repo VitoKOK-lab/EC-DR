@@ -227,6 +227,7 @@
     table.responsive td:empty{display:none}
     .grid.cols2{grid-template-columns:1fr !important}
     .workgrid{grid-template-columns:1fr;grid-template-rows:auto;grid-auto-flow:row}
+    .dgrid{grid-template-columns:1fr}
     .grid.cols3{grid-template-columns:1fr !important}
     .grid.cols4{grid-template-columns:1fr 1fr !important}
     .modal .box{padding:18px;border-radius:10px}
@@ -253,6 +254,11 @@
   /* 上班計畫四宮格：2×2 對齊（同一列等高），手機收合單欄並維持工作順序 */
   .workgrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;grid-auto-flow:column;gap:16px}
   .workgrid>.card{margin-bottom:0}
+  /* 儀表板：內容少的卡片兩兩並排，長的（每位剪輯/排程帶/績效）各自整列 */
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:stretch}
+  .dgrid>.card{margin-bottom:0}
+  .dgrid-ed{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;margin-bottom:16px;align-items:start}
+  .dgrid-ed>.card{margin-bottom:0}
   .grid.cols2{grid-template-columns:1fr 1fr}
   .grid.cols3{grid-template-columns:repeat(3,1fr)}
   .grid.cols4{grid-template-columns:repeat(4,1fr)}
@@ -375,7 +381,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=202606200646"></script>
-<script type="module" src="fb.js?v=202606200646"></script>
+<script src="app.js?v=202606200703"></script>
+<script type="module" src="fb.js?v=202606200703"></script>
 </body>
 </html>
