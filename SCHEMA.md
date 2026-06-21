@@ -1,0 +1,147 @@
+# EC-DR 資料庫結構（Schema）— 唯一真相來源
+
+> 這份文件定義資料庫的「不變地基」。**版面、UI、流程可以隨時改，但欄位結構以此為準。**
+> 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
+
+- 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
+- 目前版本：**schemaVersion = 9**
+- 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
+
+---
+
+## 1. `videos/{id}` — 影片任務（一支毛片 → 剪輯 → 上片）
+
+文件 ID = `V001`、`V002`…（系統遞增產生）。
+
+| 欄位 | 型別 | 中文 | 說明 |
+|---|---|---|---|
+| `id` | string | 系統編號 | 與文件 ID 相同，`V001`（遞增） |
+| `code` | string | 影片編號 | 可自訂的編號；空白則取 `id` 數字（V001→001） |
+| `name` | string | 影片貼文文案 | 對外顯示片名以此為主；不填則同 `rawName` |
+| `rawName` | string | 原始片名 | 毛片名稱／素材說明 |
+| `videoCopy` | string | 影片文案 | 新增影片時輸入 |
+| `tags` | string[] | 標籤 | 由 `settings.videoTags` 選；寵粉/代理/流量/帶貨/家庭/理財/投資/教育/個人成長 |
+| `subTag` | string | 子標籤 | = `tags[0]`，相容舊資料用 |
+| `mainType` | string | 主類別 | `流量型`／`帶貨型`／`寵粉`，由標籤推導，**排程分類用** |
+| `source` | string | 片源 | `老闆自拍`／`外部公司`（`settings.sources`） |
+| `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片` |
+| `editor` | string | 剪輯人員 | 成員名字（對應 `users`） |
+| `claimedBy` | string | 認領人 | 拉下來剪的人 |
+| `claimedAt` | string(ISO) | 認領時間 | |
+| `finishedAt` | string(ISO) | 完成時間 | 完成上架的時間（排序、KPI 用） |
+| `updatedAt` | string(ISO) | 最後更新 | 任何欄位異動時間（影片庫「最後更新日」、排序用） |
+| `durationMin` | number\|null | 剪輯耗時 | 分鐘（認領→完成） |
+| `scheduledDate` | string\|null | 預排上片日期 | `YYYY-MM-DD` |
+| `publishTime` | string | 預排上片時間 | `HH:MM`（10:00/12:00/16:00） |
+| `platforms` | string[] | 投放平台 | 對應 `settings.postPlatforms[].name` |
+| `products` | object[] | 商品（最多 4 個） | 每筆 `{name, price}`，單價手動輸入 |
+| `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
+| `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
+| `publishedLink` | string | 上傳連結 | 社群貼文網址 |
+| `socialLink` | string | 社群預排連結 | 排程工具／預約貼文（選填） |
+| `note` | string | 備註 | 補充說明（整併自舊 Google 試算表） |
+| `usageHistory` | object[] | 重播紀錄 | 每筆 `{date, link, drive, time, by, at}` |
+| `totalUsed` | number | 重播次數 | |
+| `locked` | boolean | 鎖定 | 完成上架後鎖定 |
+| `published` | boolean | 已上架 | 完成確認旗標 |
+| `backupDone` | boolean | 已備份 | 完成確認旗標 |
+| `socialScheduled` | boolean | 已預排 | 完成確認旗標 |
+| `reviewStatus` | string | 審核狀態 | 老闆娘選擇性審核：``／`通過`／`退回`（不擋上架） |
+| `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
+| `reviewedBy` | string | 審核人 | |
+| `reviewedAt` | string(ISO) | 審核時間 | |
+
+**衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
+
+---
+
+## 2. `schedule/{YYYY-MM-DD}` — 每日排程
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `slots` | object[] | 當天排的影片，每筆一個 slot |
+
+**slot 結構**：
+```jsonc
+{
+  "videoId": "V001",      // 對應 videos
+  "time": "10:00",         // 上片時段
+  "reused": true,          // 是否為舊片重播（新片自動排入則無此旗標）
+  "by": "test",            // 排片人（重播時）
+  "at": "2026-06-10T...",  // 排入時間
+  "publishedLink": "",      // 上傳連結（重播該次）
+  "driveFolder": "",        // 存檔位置（重播該次，預設帶影片的）
+  "locked": false
+}
+```
+> 某日的影片清單 = `schedule.slots` ∪「`videos` 中 `scheduledDate`=該日且已完成/已上片」（去重）。
+
+---
+
+## 3. `users/{name}` — 成員
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `name` | string | 名字（= 文件 ID） |
+| `role` | string | `boss`（管理員）／`editor`（剪輯） |
+| `isDefault` | boolean | 系統預設旗標 |
+
+> 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。
+
+---
+
+## 3b. `tasks/{id}` — 交辦工作（剪輯以外，每日）
+
+文件 ID = `T<base36 時間戳>`。剪輯在「上班計畫」手動建立；下班匯報依 `done` 顯示已完成／未完成。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 文件 ID |
+| `user` | string | 負責剪輯（= users.name） |
+| `date` | string | `YYYY-MM-DD`，當天計畫 |
+| `title` | string | 工作項目 |
+| `report` | string | 回報狀況（進度） |
+| `done` | boolean | 完成打勾（false=進行中） |
+| `createdAt` | string(ISO) | 建立時間 |
+
+---
+
+## 3c. `shifts/{name__date}` — 上下班打卡（**只給管理員看**）
+
+文件 ID = `名字__YYYY-MM-DD`。登入（上班）寫 `clockIn`；按「下班匯報→確認下班」寫 `clockOut`。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | `名字__日期` |
+| `user` | string | 剪輯名字 |
+| `date` | string | `YYYY-MM-DD` |
+| `clockIn` | string(ISO) | 上班時間 |
+| `clockOut` | string(ISO) | 下班時間（空＝上班中） |
+
+> 單片工時（認領→完成）由 `videos.claimedAt`／`finishedAt`／`durationMin` 衍生，亦只給管理員看（「工時/KPI」頁）。
+
+---
+
+## 4. `meta/settings` — 全域設定（單一文件）
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `schemaVersion` | number | 結構版本（目前 9） |
+| `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
+| `scheduleHorizonDays` | number | 預排天數視窗 |
+| `videoTags` | string[] | 影片標籤清單 |
+| `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
+| `shoplineBase` | string | Shopline 網址（導購連結用） |
+| `sources` | string[] | 片源清單 |
+| `mainTypes` | string[] | 主類別清單 |
+| `reuseWindowDays` | number | 重播熱度視窗 |
+| `adminPassword` | string | 管理員登入密碼（預設 1234，可於設定自改） |
+
+**已淘汰（保留不再使用，勿依賴）**：`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`subTags`、`reuseCap`、`offsiteBackupDir`。
+
+---
+
+## 規則
+1. **寫入一律走 `app.js` 的 `newVideoRecord()`／route**，確保每筆影片都是完整一致的結構。
+2. 讀取時對缺漏欄位以預設值容錯（`v.field || 預設`）。
+3. 改欄位前**先改這份文件**並升 `schemaVersion`；UI／版面改動不影響本結構。

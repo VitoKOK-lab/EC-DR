@@ -1,13 +1,7 @@
-# 執行時資料與備份（不進版控）
-data/db.json
-data/backups/
-
-# Python
-__pycache__/
-*.pyc
-
 # 作業系統
 .DS_Store
+Thumbs.db
 
-# 匯入用的試算表暫存
-*.import.tmp
+# 編輯器
+.vscode/
+.idea/
