@@ -932,7 +932,7 @@ function newSimpleVideo(){
   showModal("新增影片", `
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
     <label>毛片雲端連結</label><input id="sv_link" placeholder="毛片原始檔雲端連結（選填）">
-    <label>影片文案</label><input id="sv_vcopy" placeholder="影片文案">
+    <label>影片文案（影片中 IP 的口播台詞）</label><input id="sv_vcopy" autocomplete="off">
     ${productRows("sv", [])}
   `, async ()=>{
     const name=val("sv_name").trim();
@@ -1104,7 +1104,10 @@ function delVideo(id){
   write("DELETE","/api/videos/"+id,{},"已刪除影片").then(ok=>{ if(ok) closeModal(); });
 }
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
-function editVideo(id){ openVideoModal(id, false); }
+function editVideo(id){ openVideoModal(id, true); }
+// 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
+function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
+function tryExitVideoEdit(){ if(MODAL_DIRTY){ toast("已修改，請按「儲存修改」或「取消編輯」",true); return; } closeModal(); }
 function openVideoModal(id, edit, fromWork){
   const v = vid(id)||{};
   const s=STATE.settings||{};
@@ -1127,7 +1130,7 @@ function openVideoModal(id, edit, fromWork){
       <h3 style="margin:0">影片內容</h3>
       <div style="display:flex;gap:6px;align-items:center">
         ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">編輯</button>`}
-        <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">×</button>
+        <button class="btn sec sm" type="button" onclick="${edit?'tryExitVideoEdit()':'closeModal()'}" title="關閉">×</button>
       </div></div>`;
 
   if(!edit){
@@ -1166,7 +1169,7 @@ function openVideoModal(id, edit, fromWork){
       <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="影片貼文文案">
     </div>
     <label>毛片雲端連結</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="毛片原始檔雲端連結">
-    <label>影片文案</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" placeholder="影片文案">
+    <label>影片文案（影片中 IP 的口播台詞）</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" autocomplete="off">
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -1188,7 +1191,7 @@ function openVideoModal(id, edit, fromWork){
       <span class="muted" style="font-size:12px;margin-left:8px">需二次確認，刪除後無法復原</span>
     </div>`;
   const foot=`<div class="modalFoot">
-      <button class="btn sec" type="button" onclick="openVideoModal('${id}',false)">取消編輯</button>
+      <button class="btn sec" type="button" onclick="cancelVideoEdit()">取消編輯</button>
       <button class="btn" id="vmSave" type="button">${fromWork?'儲存並完成':'儲存修改'}</button></div>`;
   MODAL_DIRTY=false;
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
