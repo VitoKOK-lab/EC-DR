@@ -818,7 +818,7 @@ function viewDashboard(){
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
       <b style="font-size:16px">② 工作進度與交辦回報</b>
-      <div class="row" style="gap:6px;align-items:center">
+      <div class="row" style="gap:6px;align-items:center;flex-wrap:nowrap">
         <button class="btn sec sm" onclick="shiftDateMove(-1)" title="前一天">‹</button>
         <input type="date" max="${today}" value="${D}" onchange="shiftDateSet(this.value)" style="width:auto">
         <button class="btn sec sm" onclick="shiftDateMove(1)" title="後一天" ${D>=today?'disabled style="opacity:.4"':''}>›</button>
