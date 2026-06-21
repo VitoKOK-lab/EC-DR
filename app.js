@@ -274,6 +274,8 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 
 // ===== 小工具 =====
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// 給字串型 onclick="fn('...')" 用：跳脫反斜線與單引號，避免名稱含 ' 時把 JS 字串截斷
+const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 function typeTag(t){ const c=t==="寵粉"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
@@ -1074,7 +1076,7 @@ function viewVideos(){
   const order=videoTags();
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
   const tagBtns=present.length
-    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(t)}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
+    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
       +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>`
     : '<span class="muted" style="font-size:12px">此分頁的影片尚未加標籤</span>';
   return `<h2>影片庫 <span class="muted" style="font-size:13px">點任一列看／改細節</span></h2>
@@ -1230,15 +1232,15 @@ function viewSettings(){
   const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
-    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(u.name)}')">改名</button>
-      <button class="btn sm sec" onclick="resetMemberPw('${esc(u.name)}')">重設密碼</button>
-      <button class="btn sm danger" onclick="delMember('${esc(u.name)}')">刪除</button></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
+      <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
+      <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
   </tr>`).join("");
   const contactList=contactOptions();
   const contactRows=contactList.map(c=>`<tr>
     <td data-label="窗口名稱"><b>${esc(c)}</b></td>
-    <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(c)}')">改名</button>
-      <button class="btn sm danger" onclick="delContact('${esc(c)}')">刪除</button></td>
+    <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(jsEsc(c))}')">改名</button>
+      <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>設定</h2>
   <div class="card"><b>每天上片數量（依星期幾）</b>
@@ -1273,14 +1275,14 @@ function viewSettings(){
 function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
   if(e) e.textContent=v("流量型")+v("寵粉")+v("代理招商"); }
 async function saveSettings(){
-  const weekdayTargets={};
-  for(let d=0;d<7;d++){ weekdayTargets[d]={
+  const wt={};
+  for(let d=0;d<7;d++){ wt[d]={
     "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
     "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0,
     "代理招商":parseInt(val("wt_"+d+"_代理招商"))||0 }; }   // 帶貨已併入寵粉
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
-  const settings={ weekdayTargets, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  const settings={ weekdayTargets:wt, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
   const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
   if(plats.length) settings.postPlatforms=plats;
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
