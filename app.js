@@ -384,7 +384,7 @@ function openDay(ds){
       <input id="od_drive" value="${esc(firstDrive)}" placeholder="這支影片的雲端備份連結">
       <label style="margin:8px 0 2px">上傳連結（這次發佈的社群網址・每次可能不同，手動貼上）</label>
       <input id="od_link" placeholder="貼上這次重播要發佈的連結（可先排、之後再補）">`
-      : `<p class="muted" style="margin-top:6px">沒有可排的舊片（當天能排的都排過了，或尚無舊片）。影片需過了預排上片日（成為舊片）才能重播。</p>`}
+      : `<p class="muted" style="margin-top:6px">目前沒有可排的舊片。</p>`}
   </div>`;
   const b = dayBreakdown(ds);
   const summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
@@ -595,7 +595,6 @@ function viewWork(){
 
   <div class="card">
     <b style="font-size:16px">我的今日交辦工作（剪輯以外）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px;color:var(--gold-dk)">做完請先打勾並填寫回報，主管即時看得到（不用等下班）</div>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
           <b style="font-size:14px">${esc(t.title)}</b>
@@ -642,7 +641,6 @@ function clockOutReport(){
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
   const tasks=myTasks();
   const body=`
-    <p class="muted" style="margin-top:-6px">這是自動整理的今日成果，確認後打卡下班。</p>
     <div class="card" style="background:var(--panel2)"><b>今日完成上架（${doneVids.length}）</b>
       ${doneVids.length?doneVids.map(v=>`<div style="margin-top:6px">• ${esc(vidTitle(v))} <span class="pill ok" style="font-size:10px">已完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)} 天</span></div>`).join("")
         :'<p class="muted" style="margin:6px 0 0">今日尚無完成上架</p>'}
@@ -812,7 +810,7 @@ function viewDashboard(){
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
-    <div style="margin-top:10px"><label>對接窗口（選填・可下拉選或直接輸入新窗口）</label>
+    <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>
@@ -849,7 +847,6 @@ function viewDashboard(){
       <span class="muted"><i class="slg slg-full"></i> 已排滿</span>
       <span class="muted"><i class="slg slg-part"></i> 不足</span>
       <span class="muted"><i class="slg slg-none"></i> 未排（缺片）</span>
-      <span class="muted">・點任一天 → 去月排程補片</span>
     </div>
     <div class="row" style="gap:8px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
       <span class="pill ${gapN?'em':'ok'}">未來 35 天缺 ${gapN} 天</span>
@@ -918,7 +915,7 @@ function unclaimVid(id){ if(!confirm("退回這支毛片到待剪清單？大家
 function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 // 編輯影片視窗：商品頁網址輸入一次，下方各平台用「按鈕」呈現，按一下＝複製該平台 utm 連結
 function editLinksHTML(url){ url=(url||"").trim(); if(!url) return "";
-  return `<div class="card" style="background:var(--panel2)"><b>導購連結（按一下即複製）</b>
+  return `<div class="card" style="background:var(--panel2)"><b>導購連結</b>
     <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
     ${postPlatforms().map(p=>`<button class="btn sm" type="button" onclick="copyStr('${encodeURIComponent(platformUtm(url,p.utm))}')">${esc(p.name)}</button>`).join("")}
     </div></div>`;
@@ -1079,7 +1076,7 @@ function viewVideos(){
     ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
       +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>`
     : '<span class="muted" style="font-size:12px">此分頁的影片尚未加標籤</span>';
-  return `<h2>影片庫 <span class="muted" style="font-size:13px">點任一列看／改細節</span></h2>
+  return `<h2>影片庫</h2>
   <div class="card">
     <div class="vtabs">
       ${tab("raw","毛片待剪",seg.raw)}
@@ -1179,7 +1176,7 @@ function openVideoModal(id, edit, fromWork){
     </div>
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${users.map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     ${productRows("e", v.products)}
-    <label>商品頁網址（導購連結用・輸入一次即可，下方自動帶各平台參數）</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
+    <label>商品頁網址</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <label>預排上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
@@ -1265,7 +1262,6 @@ function viewSettings(){
       <button class="btn" onclick="addMember()">＋ 新增剪輯</button></div>
   </div>
   <div class="card"><b>對接窗口名單（${contactList.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">交辦時可從這份名單下拉選用；員工指派或自建任務時輸入的新窗口，也會自動進這份名單，可在此修改或刪除</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>窗口名稱</th><th></th></tr></thead>
     <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
@@ -1344,7 +1340,7 @@ function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (
 // 商品列：最多 4 個，每個 品名(下拉)+單價(手動)
 function productRows(prefix, products){
   const ps=Array.isArray(products)?products:[];
-  let h=`<label>銷售商品（最多 4 個，品名可下拉、單價手動）</label>`;
+  let h=`<label>銷售商品（最多 4 個）</label>`;
   for(let i=0;i<4;i++){ const p=ps[i]||{};
     h+=`<div class="row" style="gap:8px;margin-bottom:6px">
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
