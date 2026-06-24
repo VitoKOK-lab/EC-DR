@@ -85,8 +85,24 @@
 | `name` | string | 名字（= 文件 ID） |
 | `role` | string | `boss`（管理員）／`editor`（剪輯） |
 | `isDefault` | boolean | 系統預設旗標 |
+| `email` | string | 該成員 Firebase 登入帳號的 email（系統自動產生，登入畫面用名字對應到它） |
+| `uid` | string | 該成員 Firebase 帳號的 uid（對應 `accounts/{uid}`） |
 
-> 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。
+> 公開可讀（登入畫面在尚未登入時需要成員名單）；**只有管理員能寫**。不含密碼——
+> 密碼由 Firebase Auth 在雲端加密保管，不入庫。
+> 管理員以「管理員登入」進入（固定管理員帳號，見 `fb.js` 的 `ADMIN_EMAIL`），不需建 user 文件。
+
+---
+
+## 3a. `accounts/{uid}` — 登入白名單
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `name` | string | 對應的成員名字 |
+| `role` | string | `editor`／`boss` |
+
+> 管理員「新增成員」時自動寫入；安全規則用 `exists(accounts/{uid})` 判定「是不是合法成員」。
+> 只有管理員能寫。刪除成員或重設密碼時一併維護。
 
 ---
 
@@ -135,9 +151,10 @@
 | `sources` | string[] | 片源清單 |
 | `mainTypes` | string[] | 主類別清單 |
 | `reuseWindowDays` | number | 重播熱度視窗 |
-| `adminPassword` | string | 管理員登入密碼（預設 1234，可於設定自改） |
 
-**已淘汰（保留不再使用，勿依賴）**：`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`subTags`、`reuseCap`、`offsiteBackupDir`。
+> 密碼已不在此（改由 Firebase Auth 管理）。
+
+**已淘汰（保留不再使用，勿依賴）**：`adminPassword`、`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`subTags`、`reuseCap`、`offsiteBackupDir`。
 
 ---
 

@@ -1,10 +1,47 @@
 rules_version = '2';
-// 內部小團隊用：只要通過匿名登入即可讀寫。
-// 之後要更嚴格（例如限定 Email 網域、區分角色寫入權限）可再加條件。
+// ===================================================================
+// 安全模型：每位成員都有真正的 Firebase 帳號。
+//   - users     登入畫面需要成員名單 → 公開可讀；只有管理員能寫。
+//   - accounts  uid 白名單（管理員建立成員帳號時寫入）；成員＝uid 在此者。
+//   - 其餘營運資料：成員可讀寫；meta(設定) 只有管理員能寫。
+// 管理員 = 用固定管理員帳號 email 登入者（請與 fb.js 的 ADMIN_EMAIL 一致；
+// 並務必在部署後「立刻」到 Firebase 後台建立此帳號，以免被人搶註冊）。
+// ===================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin()  { return signedIn() && request.auth.token.email == 'admin@ecdr.app'; }
+    function isMember() {
+      return isAdmin() ||
+        (signedIn() && exists(/databases/$(database)/documents/accounts/$(request.auth.uid)));
     }
+
+    // 成員名單：公開可讀（登入畫面用，無密碼等機密），只有管理員能寫
+    match /users/{name} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // uid 白名單：只有管理員能增刪
+    match /accounts/{uid} {
+      allow read:  if isMember();
+      allow write: if isAdmin();
+    }
+
+    // 設定：成員可讀，只有管理員能改
+    match /meta/{doc} {
+      allow read:  if isMember();
+      allow write: if isAdmin();
+    }
+
+    // 營運資料：成員可讀寫
+    match /videos/{id}   { allow read, write: if isMember(); }
+    match /schedule/{id} { allow read, write: if isMember(); }
+    match /tasks/{id}    { allow read, write: if isMember(); }
+    match /shifts/{id}   { allow read, write: if isMember(); }
+
+    // 其餘一律拒絕
+    match /{document=**} { allow read, write: if false; }
   }
 }
