@@ -9,7 +9,7 @@ const ROLE_TABS = {
   editor: [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
-let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
+let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false, AUTHED = false;
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
 const yesterday = new Date(Date.now()+288e5-864e5).toISOString().slice(0,10); // 前一日
 
@@ -106,8 +106,8 @@ async function route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      await window.DB.set("users", name, {name, role, isDefault:false, pw:"0000"}); return; }
-    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
+      await window.DB.set("users", name, {name, role, isDefault:false}); return; }
+    if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role;
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
@@ -191,23 +191,24 @@ function bootLogin(){
   editors.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
-function loginAs(u){
-  const want=String(u.pw==null?"0000":u.pw);
-  const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
-  if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
-  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW); }
-// 員工自行修改密碼（需先輸入舊密碼）
+async function loginAs(u){
+  if(!u.email){ toast("「"+u.name+"」尚未建立登入帳號，請管理員到設定為他建立",true); return; }
+  const pw=prompt("請輸入「"+u.name+"」的密碼："); if(pw===null) return;
+  try{
+    await window.AUTH.signInMember(u.email, String(pw).trim());
+    AUTHED=true; setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW);
+  }catch(e){ toast("密碼錯誤，或登入失敗（忘記密碼請找管理員重設）",true); }
+}
+// 員工自行修改密碼（Firebase Auth；需剛登入過，否則請重新登入再試）
 async function changeMyPw(){
-  const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
-  if(!u){ toast("找不到你的帳號",true); return; }
-  const cur=String(u.pw==null?"0000":u.pw);
-  const old=prompt("請輸入目前密碼（預設 0000）："); if(old===null) return;
-  if(String(old).trim()!==cur){ toast("目前密碼錯誤",true); return; }
-  const n1=prompt("請設定新密碼（至少 4 碼）："); if(n1===null) return;
-  const np=String(n1).trim(); if(np.length<4){ toast("新密碼至少 4 碼",true); return; }
+  if(!window.AUTH || !window.AUTH.email()){ toast("請先登入",true); return; }
+  const n1=prompt("請設定新密碼（至少 6 碼）："); if(n1===null) return;
+  const np=String(n1).trim(); if(np.length<6){ toast("新密碼至少 6 碼",true); return; }
   const n2=prompt("請再輸入一次新密碼："); if(n2===null) return;
   if(String(n2).trim()!==np){ toast("兩次輸入不一致，請重來",true); return; }
-  await write("PUT","/api/users/"+me,{pw:np},"密碼已更新，下次登入請用新密碼"); }
+  try{ await window.AUTH.changePassword(np); toast("密碼已更新，下次登入請用新密碼"); }
+  catch(e){ toast("更新失敗，請先登出再重新登入後再改一次",true); }
+}
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 async function clockIn(name){
@@ -217,13 +218,16 @@ async function clockIn(name){
   }catch(e){}
 }
 function myShift(){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(currentUser(),today)])||null; }
-function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
-  const want=String((STATE.settings&&STATE.settings.adminPassword)||"1234");
+async function ownerLogin(){
+  if(!window.AUTH){ toast("連線中，請稍候再試",true); return; }
   const pw=prompt("請輸入管理員密碼："); if(pw===null) return;
-  if(String(pw).trim()!==want){ toast("密碼錯誤",true); return; }
-  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW); }
-// 登出：跳回登入頁
-function logout(){ showGoodbye(); }
+  try{
+    await window.AUTH.signInAdmin(String(pw).trim());
+    AUTHED=true; setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW);
+  }catch(e){ toast("管理員密碼錯誤（或管理員帳號尚未在 Firebase 後台建立）",true); }
+}
+// 登出：先登出 Firebase 再跳回登入頁
+function logout(){ try{ window.AUTH&&window.AUTH.signOut(); }catch(e){} showGoodbye(); }
 // 登出：簡單說再見 → 跳回登入頁（無動畫）
 function showGoodbye(){
   localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
@@ -249,7 +253,7 @@ function applyState(raw){
   LAST_RAW=raw; decorate(raw);
   const has=(STATE.users||[]).some(u=>u.name===currentUser());
   const isBoss=localStorage.getItem("ecdr_role")==="boss";
-  if(currentUser() && (has||isBoss)){
+  if(AUTHED && currentUser() && (has||isBoss)){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
@@ -264,6 +268,12 @@ function applyState(raw){
   }
 }
 window.__onState = applyState;
+// Firebase 登入狀態變動（fb.js 呼叫）：未登入→回登入頁；已登入→顯示 App
+window.__onAuthState = function(authed, email){
+  AUTHED = !!authed;
+  if(!authed){ localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role"); }
+  applyState(LAST_RAW);
+};
 window.__needSetup = function(){ document.getElementById("setup").classList.remove("hidden"); document.getElementById("login").classList.add("hidden"); };
 window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 
@@ -1209,9 +1219,9 @@ function viewSettings(){
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
   const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const memberRows=members.map(u=>`<tr>
-    <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label="名字"><b>${esc(u.name)}</b>${u.email?"":` <span class="tag" style="background:var(--redbg);color:var(--red)">未建立登入</span>`}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
-      <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
+      <button class="btn sm ${u.email?'sec':'gold'}" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">${u.email?"重設密碼":"建立登入"}</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
   </tr>`).join("");
   const contactList=contactOptions();
@@ -1233,8 +1243,9 @@ function viewSettings(){
     <textarea id="set_plat" style="min-height:88px">${esc(platStr)}</textarea>
     <label style="margin-top:12px">Shopline 網址</label>
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
-    <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
-    <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
+    <label style="margin-top:12px">管理員密碼</label>
+    <div class="row" style="gap:8px"><span class="muted" style="flex:1">密碼由 Firebase 雲端加密保管（不存在資料庫）。</span>
+      <button class="btn sec sm" onclick="changeMyPw()">修改管理員密碼</button></div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>剪輯成員（${members.length}）</b>
@@ -1254,7 +1265,6 @@ async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
-  const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
   if(plats.length) settings.postPlatforms=plats;
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
@@ -1262,14 +1272,46 @@ async function saveSettings(){
 // ===================================================================
 // 成員管理（限管理員・併入設定頁）
 // ===================================================================
-function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
-  write("POST","/api/users",{name,role:"editor"},"已新增剪輯"); }
-function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
-  writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
-// 主管線上重設員工密碼為 0000，員工再自行修改
-function resetMemberPw(name){
-  if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
-  writeAdmin("PUT","/api/users/"+name,{pw:"0000"},"已將「"+name+"」密碼重設為 0000"); }
+// 新增剪輯：同時建立一個真正的 Firebase 登入帳號（密碼不入庫）
+async function addMember(){
+  const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
+  if((STATE.users||[]).some(u=>u.name===name)){ toast("已有同名成員",true); return; }
+  const pw=prompt("設定「"+name+"」的初始密碼（至少 6 碼，請記下來交給他）：","000000"); if(pw===null) return;
+  const p=String(pw).trim(); if(p.length<6){ toast("初始密碼至少 6 碼",true); return; }
+  try{
+    const {email,uid}=await window.AUTH.createAccount(p);
+    await window.DB.set("users", name, {name, role:"editor", isDefault:false, email, uid});
+    await window.DB.accountSet(uid, {name, role:"editor"});
+    const e=document.getElementById("mb_name"); if(e) e.value="";
+    toast("已新增「"+name+"」，初始密碼："+p+"（請通知他登入後自行修改）");
+  }catch(e){ const m=(e&&e.code==="auth/operation-not-allowed")?"請先到 Firebase 後台啟用 Email/密碼 登入":
+      ((e&&e.code==="auth/weak-password")?"密碼太弱（至少 6 碼）":(e&&e.message)||"請重試");
+    toast("建立失敗："+m,true); }
+}
+async function delMember(name){
+  if(!confirm("確定刪除成員「"+name+"」？刪除後他無法再登入。")) return;
+  const u=(STATE.users||[]).find(x=>x.name===name);
+  try{
+    await window.DB.del("users", name);
+    if(u&&u.uid) await window.DB.accountDel(u.uid);
+    toast("已刪除成員「"+name+"」");
+  }catch(e){ toast("刪除失敗："+((e&&e.message)||""),true); }
+}
+// 管理員重設員工密碼：建立一組新登入（舊的即失效），密碼仍不入庫
+async function resetMemberPw(name){
+  const u=(STATE.users||[]).find(x=>x.name===name); if(!u){ toast("找不到成員",true); return; }
+  const pw=prompt("為「"+name+"」設定新的初始密碼（至少 6 碼，請記下來交給他）：","000000"); if(pw===null) return;
+  const p=String(pw).trim(); if(p.length<6){ toast("密碼至少 6 碼",true); return; }
+  if(!confirm("確定重設「"+name+"」的密碼？舊密碼會立即失效。")) return;
+  try{
+    const {email,uid}=await window.AUTH.createAccount(p);
+    const old=u.uid;
+    await window.DB.update("users", name, {email, uid});
+    await window.DB.accountSet(uid, {name, role:u.role||"editor"});
+    if(old && old!==uid) await window.DB.accountDel(old);
+    toast("已重設「"+name+"」密碼："+p+"（請通知他登入後自行修改）");
+  }catch(e){ toast("重設失敗："+((e&&e.message)||""),true); }
+}
 function renameMember(oldName){
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
@@ -1279,6 +1321,7 @@ function renameMember(oldName){
     try{
       const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
       await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
+      if(u.uid){ try{ await window.DB.accountSet(u.uid, {name:nn, role:u.role||"editor"}); }catch(e){} }
       for(const v of (STATE.videos||[])){ const patch={}; let t=false;
         if(v.editor===oldName){ patch.editor=nn; t=true; } if(v.claimedBy===oldName){ patch.claimedBy=nn; t=true; }
         if(t){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} } }
