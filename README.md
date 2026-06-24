@@ -8,10 +8,10 @@
 - **前端**：純 HTML/JS，無打包、無 npm。
   - `index.html` — 頁面結構與樣式
   - `app.js` — 畫面渲染、互動、排程／KPI 運算
-  - `fb.js` — Firebase 連線、匿名登入、Firestore 即時同步
+  - `fb.js` — Firebase 連線、帳號登入、Firestore 即時同步
   - `firebase-config.js` — Firebase 專案設定（可公開）
 - **資料**：Firebase Firestore，多裝置即時同步（`onSnapshot`，任一裝置改資料約 1 秒同步給所有人）。
-- **登入**：Firebase 匿名登入（內部小團隊）。
+- **登入**：每人一個真正的 Firebase Email/密碼帳號（密碼雲端加密保管、不入庫）。管理員在系統內新增成員時自動建立其帳號。
 - **部署**：GitHub Pages，**服務 repo 根目錄**（`main` 分支）。推上 `main` 即上線：
   <https://vitokok-lab.github.io/EC-DR/>
 
@@ -21,10 +21,11 @@
 
 詳見 [`firebase/README.md`](firebase/README.md)，重點：
 
-1. 建 Firebase 專案 → 開 **Firestore Database** → 啟用 **Authentication 匿名登入**。
+1. 建 Firebase 專案 → 開 **Firestore Database** → 啟用 **Authentication「電子郵件/密碼」登入**。
 2. 複製專案的 `firebaseConfig`，貼進根目錄 `firebase-config.js`
    （這些值可公開；安全性由 Firestore 規則控管）。
-3. 部署 Firestore 規則：`cd firebase && firebase deploy --only firestore:rules`。
+3. 在 Authentication 建立**管理員帳號**（email `admin@ecdr.app` + 自設強密碼）。
+4. 部署 Firestore 規則：`cd firebase && firebase deploy --only firestore:rules`。
 
 ## 本機預覽
 
@@ -34,7 +35,7 @@
 python3 -m http.server 5000
 ```
 
-瀏覽器開 <http://localhost:5000>（`localhost` 預設在 Firebase 授權網域內，可直接匿名登入）。
+瀏覽器開 <http://localhost:5000>（`localhost` 預設在 Firebase 授權網域內，可直接登入）。
 
 ## 部署
 
@@ -43,8 +44,9 @@ python3 -m http.server 5000
 
 ## 使用
 
-- 登入頁點自己名字 → 輸入密碼（預設 `0000`）即上班打卡；多人即時同步。
-- 「管理員登入」（預設密碼 `1234`，請先改掉）可管理成員與設定。
+- 登入頁點自己名字 → 輸入自己的密碼即上班打卡；多人即時同步。
+- 「管理員登入」用管理員帳號密碼進入，可管理成員與設定。
+- 管理員在「設定 → 剪輯成員」新增成員時，系統自動幫他建立登入帳號並設定初始密碼（成員登入後可自改）。
 - 操作說明集中在「新手教學」（把游標停在按鈕／欄位上看提示），不印在畫面上。
 
 ## 檔案結構
@@ -53,7 +55,7 @@ python3 -m http.server 5000
 |------|------|
 | `index.html` | 頁面與樣式 |
 | `app.js` | 畫面、互動、排程／KPI 運算 |
-| `fb.js` | Firestore 資料層（連線、匿名登入、即時同步） |
+| `fb.js` | Firestore 資料層（連線、帳號登入、即時同步） |
 | `firebase-config.js` | Firebase 專案設定（可公開） |
 | `firebase/firestore.rules` | Firestore 安全規則 |
 | `firebase/README.md` | Firebase 專案建立與規則部署說明 |
@@ -62,5 +64,7 @@ python3 -m http.server 5000
 
 ## 安全性
 
-目前 Firestore 規則為「通過匿名登入即可讀寫」，適合內部信任的小團隊。
-日後要更嚴（限定 Email 網域、依角色限制寫入）可再升級。
+- 每人一個真正的 Firebase 帳號;沒帳號的人連資料都讀不到。
+- 密碼由 Firebase 雲端加密保管,**不存在資料庫**。
+- 只有管理員(固定管理員帳號)能改設定、增刪成員;一般成員只能讀寫營運資料。
+- 規則見 [`firebase/firestore.rules`](firebase/firestore.rules)。日後要更嚴(限定真實 Email 網域、依角色再細分、加 App Check 擋機器人)可再升級。
