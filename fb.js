@@ -21,7 +21,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 管理員帳號 email（請在 Firebase 後台「Authentication → 新增使用者」建立同一個 email，
 // 並把下面這個值同步到 firestore.rules 的 isAdmin()）。email 不是機密，密碼才是。
-const ADMIN_EMAIL = "admin@ecdr.app";
+const ADMIN_EMAIL = "taiwanstore365@gmail.com";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時，由管理員登入後寫入）— 對應 SCHEMA.md
 // 注意：已不再有 adminPassword／使用者 pw（密碼改由 Firebase Auth 管理）。

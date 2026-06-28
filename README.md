@@ -24,7 +24,7 @@
 1. 建 Firebase 專案 → 開 **Firestore Database** → 啟用 **Authentication「電子郵件/密碼」登入**。
 2. 複製專案的 `firebaseConfig`，貼進根目錄 `firebase-config.js`
    （這些值可公開；安全性由 Firestore 規則控管）。
-3. 在 Authentication 建立**管理員帳號**（email `admin@ecdr.app` + 自設強密碼）。
+3. 在 Authentication 建立**管理員帳號**（email = 管理員的 email，需與 `fb.js` 的 `ADMIN_EMAIL`、`firestore.rules` 的 `isAdmin()` 一致 + 自設強密碼）。
 4. 部署 Firestore 規則：`cd firebase && firebase deploy --only firestore:rules`。
 
 ## 本機預覽

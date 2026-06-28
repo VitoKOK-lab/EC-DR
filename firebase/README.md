@@ -28,7 +28,7 @@ Firebase 這邊負責「資料庫 + 帳號登入 + 安全規則」，不做 Host
 ## 三、建立「管理員帳號」（重要，請最先做）
 
 1. **Authentication → Users → 新增使用者**：
-   - 電子郵件填 **`admin@ecdr.app`**（這個帳號 = 系統的管理員身分）
+   - 電子郵件填**管理員的 email**（這個帳號 = 系統的管理員身分；目前設定為 `taiwanstore365@gmail.com`）
    - 密碼自己設一組**只有你知道**的強密碼（這才是真正的鎖）
 2. 這個 email 已寫死在兩個地方，**必須一致**：
    - `firestore.rules` 的 `isAdmin()`

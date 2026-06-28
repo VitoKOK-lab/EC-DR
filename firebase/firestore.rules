@@ -11,7 +11,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function isAdmin()  { return signedIn() && request.auth.token.email == 'admin@ecdr.app'; }
+    function isAdmin()  { return signedIn() && request.auth.token.email == 'taiwanstore365@gmail.com'; }
     function isMember() {
       return isAdmin() ||
         (signedIn() && exists(/databases/$(database)/documents/accounts/$(request.auth.uid)));
