@@ -314,12 +314,13 @@ function viewCal(){
     const within10 = ds>=today && ds<=d10s;
     const b = dayBreakdown(ds);
     const filled = b.full;
-    const cls = filled ? "filled" : (within10 ? "bad urgent" : "blank");
+    const empty = (b.total||0)===0;                 // 一支都還沒排
+    const cls = filled ? "filled" : (empty ? "empty" : (within10 ? "bad urgent" : "blank"));
     const defTxt=Object.keys(b.deficits).map(k=>(TYPE_SHORT[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:""))}
+      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:(defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:"")))}
     </div>`;
   }
   return `
