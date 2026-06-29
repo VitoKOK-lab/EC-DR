@@ -1033,7 +1033,7 @@ function vidRowsHTML(){
   const all=STATE.videos||[];
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
-  if(q) list=list.filter(v=>String(v.name||v.rawName||'').toLowerCase().includes(q)||String(v.code||'').toLowerCase().includes(q)||String(v.editor||'').toLowerCase().includes(q));
+  if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
   if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
   // 待發在前、依最後更新日新到舊
