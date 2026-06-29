@@ -44,7 +44,7 @@ function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: nextId(STATE.videos,"V"), code:"",
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
-    mainType:(s.mainTypes&&s.mainTypes[0])||"流量型",
+    mainType:"",   // 預設不分類（流量型是多數，不特別標）
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
@@ -273,7 +273,8 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&l
 const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
-function typeTag(t){ const c=t==="寵粉"?"sales":(t==="流量型"?"traffic":""); return `<span class="tag ${c}">${esc(t||"")}</span>`; }
+// 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
+function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`; }
 
 // ===================================================================
 // 畫面路由
@@ -353,7 +354,7 @@ function openDay(ds){
     const sub=[ ed?`剪輯 ${esc(ed)}${reused?'（重播）':''}`:'', tm?esc(tm):'',
       upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">存檔</a>`:'' ].filter(Boolean).join(' ・ ');
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${reused?' <span class="tag" style="background:var(--chip);color:var(--gold-dk)">重播</span>':''}
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:var(--chip);color:var(--gold-dk)">重播</span>':''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="操作"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="只把這支移出這天的排程，影片本身不會刪除，之後可重新再排">移出排程</button></td>
@@ -1192,7 +1193,7 @@ async function saveVideo(id){
   if(productUrl && !hasProd){ toast("有填『商品頁網址』就要至少填一個銷售商品（品名）",true); return false; }
   const tags=[...new Set(collectTags("e").map(renameTag))]; await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
-    :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"流量型");
+    :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
   const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
     products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
