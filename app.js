@@ -271,6 +271,14 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // 給字串型 onclick="fn('...')" 用：跳脫反斜線與單引號，避免名稱含 ' 時把 JS 字串截斷
 const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+// ===== 簡體 → 繁體（OpenCC，只在「顯示」時轉換，不動資料庫）=====
+let __s2t=null; const __s2tCache=new Map();
+function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2tCache.get(s); if(r===undefined){ try{ r=__s2t(s); }catch(e){ r=s; } __s2tCache.set(s,r); } return r; }
+(function loadOpenCC(){
+  function init(){ try{ if(window.OpenCC&&OpenCC.Converter){ __s2t=OpenCC.Converter({from:"cn",to:"tw"}); __s2tCache.clear(); if(typeof render==="function") try{ render(); }catch(e){} } }catch(e){} }
+  if(window.OpenCC) return init();
+  try{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"; s.async=true; s.onload=init; document.head.appendChild(s); }catch(e){}
+})();
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 // 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
@@ -1313,7 +1321,7 @@ function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; 
   else { try{ document.execCommand("copy"); toast("已複製連結"); }catch(_){ toast("已選取，請手動複製",true); } } }
 // 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主
 function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
-function vidTitle(v){ const t=(v&&(v.name||v.rawName))||"(未命名)"; const c=vidCode(v); return c?(c+" "+t):t; }
+function vidTitle(v){ const t=zhTW((v&&(v.name||v.rawName))||"(未命名)"); const c=vidCode(v); return c?(c+" "+t):t; }
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
 // 商品列：最多 4 個，每個 品名(下拉)+單價(手動)
