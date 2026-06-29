@@ -889,7 +889,7 @@ function batchNewFootage(){
     ${blocks}
   `, async ()=>{
     const items=[];
-    for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
+    for(let i=0;i<5;i++){ const name=zhTW((val("bn"+i)||"").trim()); if(!name) continue;
       items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
@@ -932,9 +932,9 @@ function newSimpleVideo(){
     <label>影片文案（影片中 IP 的口播台詞）</label><input id="sv_vcopy" autocomplete="off">
     ${productRows("sv", [])}
   `, async ()=>{
-    const name=val("sv_name").trim();
+    const name=zhTW(val("sv_name").trim());
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:val("sv_vcopy").trim(), products:collectProducts("sv")};
+    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:zhTW(val("sv_vcopy").trim()), products:collectProducts("sv")};
     return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
@@ -1133,9 +1133,9 @@ function openVideoModal(id, edit, fromWork){
     const row=(l,c)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="muted" style="width:100px;flex:none;font-size:13px">${l}</div><div style="flex:1;min-width:0">${c||'<span class="muted">—</span>'}</div></div>`;
     const body=`
       ${row("編號", esc(vidCode(v)))}
-      ${row("原始片名", esc(v.rawName||""))}
-      ${row("影片貼文文案", esc(v.name||""))}
-      ${row("影片文案", v.videoCopy?esc(v.videoCopy).replace(/\n/g,'<br>'):'')}
+      ${row("原始片名", esc(zhTW(v.rawName||"")))}
+      ${row("影片貼文文案", esc(zhTW(v.name||"")))}
+      ${row("影片文案", v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')}
       ${row("標籤", tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
       ${row("片源", esc(v.source||""))}
       ${row("階段", `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(v.stage||"")}</span>`)}
@@ -1204,11 +1204,11 @@ async function saveVideo(id){
   const tags=[...new Set(collectTags("e").map(renameTag))]; await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
-  const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
+  const video={code:val("e_code").trim(), rawName:zhTW(val("e_raw")), name:zhTW(val("e_name").trim()||val("e_raw").trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
     products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:val("e_note").trim()};
+    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:zhTW(val("e_note").trim())};
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
@@ -1260,7 +1260,25 @@ function viewSettings(){
     <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
       <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
+  </div>
+  <div class="card"><b>資料維護</b>
+    <div class="row" style="gap:8px;margin-top:8px"><span class="muted" style="flex:1">把「現有」影片標題與文案裡的簡體字一次轉成繁體存回資料庫（新增/編輯時本來就會自動轉）。</span>
+      <button class="btn sec sm" onclick="convertExistingToTW()" style="white-space:nowrap">現有簡體轉繁體</button></div>
   </div>`;
+}
+// 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
+async function convertExistingToTW(){
+  if(!__s2t){ toast("簡繁轉換尚未就緒（可能網路載入中），請稍候再試",true); return; }
+  const vids=(STATE.videos||[]);
+  if(!confirm("把現有 "+vids.length+" 支影片的標題與文案的簡體字轉成繁體存回？此動作會直接更新資料。")) return;
+  BULK_BUSY=true; let n=0;
+  try{
+    for(const v of vids){ const patch={};
+      ["name","rawName","videoCopy","note"].forEach(k=>{ const o=v[k]||""; const c=zhTW(o); if(c!==o) patch[k]=c; });
+      if(Object.keys(patch).length){ try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} }
+    }
+  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  await delay(300); toast("完成：已把 "+n+" 支影片的簡體字轉為繁體");
 }
 async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
