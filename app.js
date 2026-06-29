@@ -80,19 +80,14 @@ function defaultWeekdayTargets(){ const o={}; for(let d=0;d<7;d++) o[d]={"流量
 function weekdayTargets(){ const w=STATE.settings&&STATE.settings.weekdayTargets; return (w&&typeof w==="object")?w:defaultWeekdayTargets(); }
 function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay(); const w=weekdayTargets(); const t=w[wd]||w[String(wd)]||{};
   return {"流量型":+t["流量型"]||0,"寵粉":(+t["寵粉"]||0)+(+t["帶貨型"]||0),"代理招商":+t["代理招商"]||0}; }   // 舊資料的帶貨型併入寵粉
-function daySum(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["寵粉"]||0)+(t["代理招商"]||0); }
-// 影片歸類：代理招商（代理/招商）＞ 寵粉（含舊「帶貨」「銷售」）＞ 流量型
-function videoTypeOf(v){ if(!v) return "流量型"; const tags=Array.isArray(v.tags)?v.tags:[];
-  if(v.mainType==="代理招商"||tags.some(t=>["代理","招商","代理招商"].includes(t))) return "代理招商";
-  if(v.mainType==="寵粉"||v.mainType==="帶貨型"||tags.some(t=>String(t).includes("寵粉")||["帶貨","銷售"].includes(t))||String(v.subTag||"").includes("寵粉")) return "寵粉";
-  return "流量型"; }
-// 某天已排各類型數量、缺口、是否排滿
-function dayBreakdown(date){ const list=dayVideoList(date); const cnt={"流量型":0,"寵粉":0,"代理招商":0};
-  list.forEach(it=>{ cnt[videoTypeOf(vid(it.videoId))]++; });
-  const tg=dayTargets(date); const deficits={};
-  TYPE_ORDER.forEach(k=>{ const d=Math.max(0,(tg[k]||0)-(cnt[k]||0)); if(d>0) deficits[k]=d; });
+function daySumLegacy(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["寵粉"]||0)+(t["代理招商"]||0); }
+// 每日應上片數（單一數字，不分類型）；未設定則沿用舊的「星期×類型」加總
+function daySum(date){ const v=STATE.settings&&STATE.settings.dailyTarget;
+  return (v!=null&&v!=="")?(+v||0):daySumLegacy(date); }
+// 某天已排數量、缺口、是否排滿（以「總支數」計，不分類型）
+function dayBreakdown(date){ const list=dayVideoList(date);
   const target=daySum(date), total=list.length;
-  return {total, target, byType:cnt, deficits, tg, full:Object.keys(deficits).length===0 && total>=target}; }
+  return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 // 我目前進行中的影片數
 function inProgressCount(name){ return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)).length; }
 function myInProgressCount(){ return inProgressCount(currentUser()); }
@@ -316,11 +311,10 @@ function viewCal(){
     const filled = b.full;
     const empty = (b.total||0)===0;                 // 一支都還沒排
     const cls = filled ? "filled" : (empty ? "empty" : (within10 ? "bad urgent" : "blank"));
-    const defTxt=Object.keys(b.deficits).map(k=>(TYPE_SHORT[k]||k)+"缺"+b.deficits[k]);
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:(defTxt.length?`<div class="pmk" style="color:var(--red)">${defTxt.join("・")}</div>`:(within10?`<div class="pmk" style="color:var(--red)">未排</div>`:"")))}
+      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
     </div>`;
   }
   return `
@@ -389,9 +383,7 @@ function openDay(ds){
   </div>`;
   const b = dayBreakdown(ds);
   const summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
-    TYPE_ORDER.filter(k=>(b.tg[k]||0)>0||(b.byType[k]||0)>0).map(k=>{ const ok=(b.byType[k]||0)>=(b.tg[k]||0);
-      return `<span class="pill ${ok?'ok':'em'}">${k} ${b.byType[k]||0}/${b.tg[k]||0}</span>`; }).join("")+
-    `<span class="pill ${b.total>=b.target?'ok':'em'}">總量 ${b.total}/${b.target}</span></div>`;
+    `<span class="pill ${b.full?'ok':'em'}">已排 ${b.total}/${b.target}${b.full?'':`（還缺 ${b.short}）`}</span></div>`;
   showModal(`${ds}（${weekdayZh(ds)}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
@@ -458,7 +450,7 @@ function scheduleGlance(){
     if(dayBreakdown(ds).full) runway++; else break; }
   const defs=[];
   for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    const b=dayBreakdown(ds); if(!b.full){ const short=Math.max(b.target-b.total, Object.values(b.deficits).reduce((a,n)=>a+n,0)); defs.push({ds,short}); } }
+    const b=dayBreakdown(ds); if(!b.full){ defs.push({ds,short:b.short}); } }
   return {runway, defs, todayTarget:daySum(today)};
 }
 // ===== 交辦工作（剪輯以外）：tasks/{id} =====
@@ -1216,16 +1208,7 @@ async function saveVideo(id){
 // ===================================================================
 function viewSettings(){
   const s=STATE.settings||{};
-  const w=weekdayTargets();
-  const rows=WD_ORDER.map(d=>{ const t=w[d]||w[String(d)]||{};
-    const traffic=+t["流量型"]||0; const pamper=(+t["寵粉"]||0)+(+t["帶貨型"]||0); const agent=+t["代理招商"]||0; // 舊帶貨併入寵粉
-    const inp=(k,v)=>`<input type="number" min="0" id="wt_${d}_${k}" value="${v}" oninput="wtSum(${d})" style="width:58px;text-align:center">`;
-    return `<tr><td data-label="星期"><b>週${WD_LABEL[d]}</b></td>
-      <td data-label="流量片">${inp("流量型",traffic)}</td>
-      <td data-label="寵粉片">${inp("寵粉",pamper)}</td>
-      <td data-label="代理招商片">${inp("代理招商",agent)}</td>
-      <td data-label="小計"><b id="wt_sum_${d}">${traffic+pamper+agent}</b> 支</td></tr>`;
-  }).join("");
+  const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
   const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
   const memberRows=members.map(u=>`<tr>
@@ -1241,9 +1224,10 @@ function viewSettings(){
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>設定</h2>
-  <div class="card"><b>每天上片數量（依星期幾）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>星期</th><th>流量片</th><th>寵粉片</th><th>代理招商片</th><th>小計</th></tr></thead>
-    <tbody>${rows}</tbody></table>
+  <div class="card"><b>每天上片目標</b>
+    <label style="margin-top:6px">每日應上片數</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／天 —— 月排程以此判斷「已排滿／缺幾支」，不分影片類型。</span></div>
   </div>
   <div class="card">
     <label>預排天數視窗</label>
@@ -1269,17 +1253,10 @@ function viewSettings(){
       <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
   </div>`;
 }
-function wtSum(d){ const v=(k)=>parseInt(val("wt_"+d+"_"+k))||0; const e=document.getElementById("wt_sum_"+d);
-  if(e) e.textContent=v("流量型")+v("寵粉")+v("代理招商"); }
 async function saveSettings(){
-  const wt={};
-  for(let d=0;d<7;d++){ wt[d]={
-    "流量型":parseInt(val("wt_"+d+"_流量型"))||0,
-    "寵粉":parseInt(val("wt_"+d+"_寵粉"))||0,
-    "代理招商":parseInt(val("wt_"+d+"_代理招商"))||0 }; }   // 帶貨已併入寵粉
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
-  const settings={ weekdayTargets:wt, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
   const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
   if(plats.length) settings.postPlatforms=plats;
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");

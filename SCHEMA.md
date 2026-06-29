@@ -127,7 +127,8 @@
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `schemaVersion` | number | 結構版本（目前 9） |
-| `weekdayTargets` | map | `{0..6: {流量型, 帶貨型, 寵粉}}`，每星期幾各類型上片數（0=日…6=六） |
+| `dailyTarget` | number | **每日應上片數（單一數字，不分類型）**；月排程以此判斷已排滿／缺幾支。未設定時沿用 `weekdayTargets` 加總 |
+| `weekdayTargets` | map | （舊）`{0..6: {流量型, 帶貨型, 寵粉}}` 每星期幾各類型上片數；已被 `dailyTarget` 取代，僅作未設定時的後備加總 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
