@@ -180,7 +180,7 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ CUR_TAB = id; buildNav(); render(); };
+    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
     nav.appendChild(b);
   });
 }
