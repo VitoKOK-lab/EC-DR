@@ -1051,10 +1051,10 @@ function vidRowsHTML(){
   if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
   // 依「建立先後」排序：先建立的（編號小）在前（V001→V002…）
   list.sort((a,b)=> String(a.id).localeCompare(String(b.id)));
-  return `<table class="vtable responsive">
+  return `<div class="${list.length>8?'vidscroll':''}"><table class="vtable responsive">
     <colgroup><col class="c-vid"><col class="c-tag"><col class="c-upd"><col class="c-sch"><col class="c-prod"><col class="c-ed"><col class="c-st"></colgroup>
     <thead><tr><th>影片</th><th>標籤</th><th>最後更新</th><th>預排上片</th><th>商品</th><th>剪輯師</th><th>狀態</th></tr></thead>
-    <tbody>${list.map(vidTableRow).join("")}</tbody></table>
+    <tbody>${list.map(vidTableRow).join("")}</tbody></table></div>
     <p class="muted" style="margin-top:8px;font-size:12px">共 ${list.length} 支</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }

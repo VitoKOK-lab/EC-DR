@@ -322,6 +322,10 @@
   .vtab.on .vtab-n{background:var(--salesbg);color:var(--accent)}
   .vthumb{flex:none;width:26px;height:26px;border-radius:6px;background:var(--salesbg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px}
   table.vtable{margin-top:4px;table-layout:fixed}
+  /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
+  .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
+  .vidscroll table.vtable{margin-top:0}
+  .vidscroll thead th{position:sticky;top:0;background:var(--panel);z-index:1;box-shadow:0 1px 0 var(--line)}
   table.vtable th{white-space:nowrap}
   table.vtable th,table.vtable td{overflow:hidden}
   table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
@@ -389,7 +393,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1782002600"></script>
+<script src="app.js?v=1782002700"></script>
 <script type="module" src="fb.js?v=1781970924"></script>
 </body>
 </html>
