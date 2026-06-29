@@ -341,7 +341,9 @@ function viewCal(){
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
 
 function openDay(ds){
-  const list = dayVideoList(ds);
+  // 依上片時間排序（早→晚）；沒時間的排最後
+  const odTime = it => ((it.slot&&it.slot.reused)?(it.slot.time||""):(vid(it.videoId)?.publishTime||"")) || "99:99";
+  const list = dayVideoList(ds).slice().sort((a,b)=> odTime(a).localeCompare(odTime(b)));
   const rows = list.map((it)=>{
     const v = vid(it.videoId);
     const reused = it.slot && it.slot.reused;
@@ -531,7 +533,7 @@ function viewWork(){
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
   const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理")
     .sort((a,b)=>String(b.updatedAt||b.id).localeCompare(String(a.updatedAt||a.id)));
-  const POOL_CAP=40; const poolShown=pool.slice(0,POOL_CAP);
+  const poolShown=pool;   // 全部顯示，超過 5 條時改用捲動視窗（見下方 max-height）
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
   const clockedOut = !!(myShift() && myShift().clockOut);
@@ -566,12 +568,13 @@ function viewWork(){
       <b style="font-size:16px">待剪毛片</b>
       <span class="pill ${pool.length?'ok':'wa'}">待剪 ${pool.length} 支</span>
     </div>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
+    <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
+    <table class="responsive"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
         <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="按一下＝認領並開始剪（變剪輯中、進我的工作）">認領開始剪</button></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有待剪毛片，去 影片庫「＋ 新增毛片」建立</td></tr>`}</tbody></table>
-    ${pool.length>POOL_CAP?`<p class="muted" style="font-size:12px;margin:8px 0 0">還有 ${pool.length-POOL_CAP} 支未顯示，可到 影片庫查看。</p>`:''}
+    </div>
     ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">你已有 3 支製作中，先完成幾支再領</span></p>':''}
   </div>
 
@@ -1038,9 +1041,8 @@ function vidRowsHTML(){
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
   if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
-  // 待發在前、依最後更新日新到舊
-  const rank={"待處理":0,"剪輯中":1,"已完成":2,"已上片":3};
-  list.sort((a,b)=> (rank[a.stage]??9)-(rank[b.stage]??9) || String(vidUpdated(b)).localeCompare(String(vidUpdated(a))) || String(b.id).localeCompare(String(a.id)));
+  // 依「建立先後」排序：先建立的（編號小）在前（V001→V002…）
+  list.sort((a,b)=> String(a.id).localeCompare(String(b.id)));
   return `<table class="vtable responsive">
     <colgroup><col class="c-vid"><col class="c-tag"><col class="c-upd"><col class="c-sch"><col class="c-prod"><col class="c-ed"><col class="c-st"></colgroup>
     <thead><tr><th>影片</th><th>標籤</th><th>最後更新</th><th>預排上片</th><th>商品</th><th>剪輯師</th><th>狀態</th></tr></thead>
