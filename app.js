@@ -750,13 +750,15 @@ function viewDashboard(){
   const bestEdit=Math.min(Infinity,...kpi.filter(k=>k.avgDays!=null).map(k=>k.avgDays));
   const bestACount=Math.max(0,...kpi.map(k=>k.aCount));
   const bestATime=Math.min(Infinity,...kpi.filter(k=>k.aAvg!=null).map(k=>k.aAvg));
-  // 綜合之星：剪片完成/剪片速度/交辦完成/交辦速度 四項標準化加總，最高者
+  // 綜合之星：以「產量(剪片完成)」為主，剪片速度次之，交辦完成/速度只當加分
+  // 標準化 0~1；若該項只有一人有值(無差異)就不給分，避免「唯一一人」直接拿滿分而蓋過大量剪片
   let starName=null;
   if(okEditors){
     const norm=(v,arr,low)=>{ const xs=arr.filter(x=>x!=null); if(!xs.length) return 0; const mn=Math.min(...xs),mx=Math.max(...xs);
-      if(v==null) return 0; if(mx===mn) return 1; return low?(mx-v)/(mx-mn):(v-mn)/(mx-mn); };
+      if(v==null) return 0; if(mx===mn) return 0; return low?(mx-v)/(mx-mn):(v-mn)/(mx-mn); };
     const cC=kpi.map(k=>k.count), cD=kpi.map(k=>k.avgDays), cA=kpi.map(k=>k.aCount), cT=kpi.map(k=>k.aAvg);
-    const scored=kpi.map(k=>({name:k.name, s:norm(k.count,cC,false)+norm(k.avgDays,cD,true)+norm(k.aCount,cA,false)+norm(k.aAvg,cT,true), act:(k.count||0)+(k.aCount||0)}))
+    // 權重：剪片完成 3、剪片速度 1.5、交辦完成 1、交辦速度 0.5
+    const scored=kpi.map(k=>({name:k.name, s:3*norm(k.count,cC,false)+1.5*norm(k.avgDays,cD,true)+1*norm(k.aCount,cA,false)+0.5*norm(k.aAvg,cT,true), act:(k.count||0)+(k.aCount||0)}))
       .filter(x=>x.act>0).sort((a,b)=>b.s-a.s);
     if(scored.length && scored[0].s>0) starName=scored[0].name;
   }
@@ -843,7 +845,7 @@ function viewDashboard(){
     ${starName?`<div style="margin-top:10px;padding:10px 14px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px;display:flex;align-items:center;gap:10px">
       <span style="font-size:22px;color:var(--signal)">✦</span>
       <div><div style="font-family:var(--serif);font-size:17px;font-weight:700">綜合表現之星　${esc(starName)}</div>
-      <div class="muted" style="font-size:12px">剪片速度＋產量＋交辦完成與速度，綜合最佳</div></div></div>`:''}
+      <div class="muted" style="font-size:12px">以產量(剪片完成)為主，兼看剪片速度與交辦表現</div></div></div>`:''}
     <div class="muted" style="font-size:12px;margin-top:8px">綠色＝該項表現最佳：剪片最快、交辦完成最多、交辦完成最快</div>
     <table class="responsive" style="margin-top:10px"><thead><tr><th>剪輯</th><th>剪片完成</th><th>剪片速度</th><th>平均工時</th><th>寵粉</th><th>交辦完成</th><th>交辦速度</th></tr></thead>
     <tbody>${kpi.map(k=>`<tr><td data-label="剪輯"><b>${k.name===starName?'<span style="color:var(--signal)">✦</span> ':''}${esc(k.name)}</b></td>
