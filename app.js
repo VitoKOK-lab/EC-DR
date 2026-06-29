@@ -1192,11 +1192,16 @@ function openVideoModal(id, edit, fromWork){
     closeModal(); };
 }
 async function saveVideo(id){
+  // 銷售商品 與 商品頁網址 須一起填或一起空白（只填一邊 → 擋下不存）
+  const products=collectProducts("e"); const productUrl=val("e_url").trim();
+  const hasProd=products.some(p=>p&&p.name);
+  if(hasProd && !productUrl){ toast("有填銷售商品就要一起填『商品頁網址』，否則無法導購",true); return false; }
+  if(productUrl && !hasProd){ toast("有填『商品頁網址』就要至少填一個銷售商品（品名）",true); return false; }
   const tags=[...new Set(collectTags("e").map(renameTag))]; await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"流量型");
   const video={code:val("e_code").trim(), rawName:val("e_raw"), name:val("e_name").trim()||val("e_raw").trim(), videoCopy:val("e_vcopy").trim(), mainType,tags,subTag:tags[0]||"",
-    products:collectProducts("e"), productUrl:val("e_url").trim(),
+    products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
     driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:val("e_note").trim()};
