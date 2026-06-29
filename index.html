@@ -162,9 +162,10 @@
   .day.empty .big{color:#A89E94}
   .day.empty .big span{color:#857C73}
   .day.out{background:transparent;border:none;box-shadow:none;cursor:default}
-  .day.today{box-shadow:0 0 0 2px var(--accent),var(--shadow2);border-color:transparent}
-  .day.today .dnum{color:var(--accent);font-weight:800}
-  .day .todaymk{position:absolute;top:6px;right:7px;font-size:8.5px;font-weight:800;color:#fff;background:var(--accent);padding:2px 7px;border-radius:999px;letter-spacing:1px}
+  .day.today{box-shadow:0 0 0 3px var(--accent),var(--shadow2);border-color:transparent;z-index:1}
+  .day.today::before{background:var(--accent)}
+  .day.today .dnum{color:var(--accent);font-weight:800;font-size:15px}
+  .day .todaymk{position:absolute;top:6px;right:7px;font-size:10px;font-weight:800;color:#fff;background:var(--accent);padding:3px 10px;border-radius:999px;letter-spacing:1.5px;box-shadow:0 2px 8px rgba(138,115,56,.45)}
   .callegend{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin-top:14px;font-size:12px;color:var(--muted);font-weight:600}
   .callegend span{display:inline-flex;align-items:center;gap:5px}
   .callegend i{width:11px;height:11px;border-radius:3px;display:inline-block}
@@ -241,7 +242,7 @@
     .cal{gap:5px}
     .day{min-height:62px;padding:5px;border-radius:6px;align-items:center;justify-content:center;text-align:center}
     .day .dnum{font-size:14px;position:absolute;top:3px;left:5px}
-    .day .todaymk{font-size:8px;padding:1px 4px}
+    .day .todaymk{font-size:9px;padding:2px 7px}
     .day .big{font-size:20px;margin-top:0}
     .day .big span{font-size:10px !important}
     .day .pmk{display:none}            /* 手機隱藏缺口明細，用底色表達狀態，點進去看細節 */
@@ -388,7 +389,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1782002100"></script>
+<script src="app.js?v=1782002200"></script>
 <script type="module" src="fb.js?v=1781970924"></script>
 </body>
 </html>
