@@ -873,11 +873,8 @@ function batchNewFootage(){
   for(let i=0;i<5;i++){
     blocks+=`<fieldset style="border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0 0 10px">
       <legend style="font-size:13px;color:var(--muted);padding:0 6px">第 ${i+1} 支</legend>
-      <label>編號 ／ 原始片名</label>
-      <div class="row" style="gap:8px">
-        <input id="bc${i}" style="flex:none;width:90px;text-align:center" placeholder="編號">
-        <input id="bn${i}" style="flex:1" placeholder="毛片片名（留空＝不建立這支）">
-      </div>
+      <label>原始片名（編號自動產生：民國年＋月日＋當日序號）</label>
+      <input id="bn${i}" placeholder="毛片片名（留空＝不建立這支）">
       <label>毛片雲端連結</label>
       <input id="bl${i}" placeholder="毛片原始檔雲端連結（選填）">
       ${productRows("b"+i, [])}
@@ -889,13 +886,17 @@ function batchNewFootage(){
   `, async ()=>{
     const items=[];
     for(let i=0;i<5;i++){ const name=(val("bn"+i)||"").trim(); if(!name) continue;
-      items.push({code:(val("bc"+i)||"").trim(), name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
+      items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast("請至少輸入一支片名",true); return false; }
     let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
+    // 編號自動產生：民國年＋月日（共 7 碼）＋3 碼當日序號；依現有編號取下一個序號，避免重覆
+    const [Y,M,D]=today.split("-"); const codePrefix=`${(+Y-1911)}${M}${D}`;
+    let seq=0; (STATE.videos||[]).forEach(v=>{ const m=String(v.code||"").match(new RegExp("^"+codePrefix+"(\\d{3})$")); if(m) seq=Math.max(seq,+m[1]); });
     let ok=0; BULK_BUSY=true;
     try{
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code:items[i].code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products}), {id});
+        const code=codePrefix+String(seq+i+1).padStart(3,"0");
+        const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products}), {id});
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
