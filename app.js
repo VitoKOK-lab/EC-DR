@@ -349,13 +349,14 @@ function openDay(ds){
     const drive = reused ? (it.slot.driveFolder||v?.driveFolder||"") : (v?.driveFolder||"");
     const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
+    // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
+    const sub=[ ed?`剪輯 ${esc(ed)}${reused?'（重播）':''}`:'', tm?esc(tm):'',
+      upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">存檔</a>`:'' ].filter(Boolean).join(' ・ ');
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a> ${v?typeTag(v.mainType):""}${reused?' <span class="tag" style="background:var(--chip);color:var(--gold-dk)">重播</span>':''}</td>
-      <td data-label="剪輯">${reused?'<span class="muted">'+esc(it.slot.by||"")+'（重播）</span>':esc(ed)}</td>
-      <td data-label="時間">${tm?esc(tm):'<span class="muted">—</span>'}</td>
-      <td data-label="連結">${[upLink?`<a href="${esc(upLink)}" target="_blank">上傳</a>`:'', drive?`<a href="${esc(drive)}" target="_blank" class="muted">存檔</a>`:''].filter(Boolean).join(' ・ ')||'<span class="muted">—</span>'}</td>
-      <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px" onchange="${onChg}"></td>
-      <td data-label="操作"><button class="btn sec sm" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="只把這支移出這天的排程，影片本身不會刪除，之後可重新再排">移出排程</button></td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${reused?' <span class="tag" style="background:var(--chip);color:var(--gold-dk)">重播</span>':''}
+        <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
+      <td data-label="改上片日"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
+      <td data-label="操作"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="只把這支移出這天的排程，影片本身不會刪除，之後可重新再排">移出排程</button></td>
     </tr>`;
   }).join("");
   // 排舊片到這天：當天已排過的不再出現；時段自動帶 10/12/16，超過 3 個可自選時間
@@ -387,7 +388,7 @@ function openDay(ds){
   showModal(`${ds}（${weekdayZh(ds)}）`, `
     <div class="card"><b>當日影片</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>影片</th><th>剪輯</th><th>時間</th><th>連結</th><th>改上片日</th><th>操作</th></tr></thead>
+      <table class="responsive"><thead><tr><th>影片（剪輯・時間・連結）</th><th>改上片日</th><th>操作</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">當日尚無影片</td></tr>`}</tbody></table>
     </div>
     ${reusePicker}`, null);
