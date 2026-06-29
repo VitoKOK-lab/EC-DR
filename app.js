@@ -614,18 +614,7 @@ function viewWork(){
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>
 
-  </div>
-
-  <details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:8px 0;color:var(--muted)">其他工具（建檔新毛片 / 排舊片）</summary>
-    <div class="card" style="margin-top:8px">
-      <div class="row" style="justify-content:space-between"><b>＋ 建檔新毛片</b><span class="pill ${pool.length?'ok':'wa'}">待剪庫存 ${pool.length} 支</span></div>
-      <div class="row" style="gap:8px;margin-top:8px">
-        <button class="btn sm" onclick="batchNewFootage()">批次建檔</button>
-        <button class="btn sec sm" onclick="newSimpleVideo()">單筆新增</button>
-        <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">去月排程排舊片（安全 ${g.runway} 天）</button>
-      </div>
-    </div>
-  </details>`
+  </div>`
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
