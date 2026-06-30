@@ -287,13 +287,33 @@ function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<sp
 // ===================================================================
 // 畫面路由
 // ===================================================================
+// 每頁新手教學：第一次進到某頁自動顯示一張說明卡，按「知道了」後該頁不再出現（記在這台裝置、依使用者）
+const PAGE_INTRO = {
+  work:{ title:"上班計畫", html:"這是你每天的主畫面。<b>①</b> 上方「待剪毛片」按〈認領開始剪〉把片子拉下來剪（同時最多 3 支，其餘排隊）。<b>②</b> 中間「我的今日工作」剪好按〈完成〉。<b>③</b> 下班前按〈下班匯報〉。" },
+  cal:{ title:"月排程", html:"整月的上片排程。<b>綠</b>＝當天已排滿、<b>紅</b>＝還缺幾支、<b>深灰</b>＝還沒排；今天用金框標起來。點任一天可看當天要上的片、或把舊片排進去重播。" },
+  videos:{ title:"影片庫", html:"所有影片都在這。上方分頁切換〈毛片待剪／新片未排程／已排程／舊片〉；搜尋框可用片名、原始片名、文案、編號找；〈＋ 新增毛片〉建立新片。" },
+  dashboard:{ title:"管理員儀表板", html:"總覽：指派交辦與毛片給員工、看未來排程是否排滿、每位剪輯今日進度與長期績效。" },
+  settings:{ title:"設定", html:"設定每日上片目標、投放平台、成員（新增剪輯會自動建立登入帳號），以及資料維護。" },
+};
+function introKey(tab){ return "ecdr_intro_"+tab+"_"+currentUser(); }
+function pageIntroHTML(tab){
+  const it=PAGE_INTRO[tab]; if(!it) return "";
+  try{ if(localStorage.getItem(introKey(tab))) return ""; }catch(e){}
+  return `<div class="card" style="border:1px solid var(--accent);background:var(--amberbg)">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:nowrap">
+      <div><b style="color:var(--accent)">✦ 新手教學 · ${esc(it.title)}</b>
+        <div style="margin-top:6px;line-height:1.8">${it.html}</div></div>
+      <button class="btn sm" style="white-space:nowrap;flex:none" onclick="dismissIntro('${tab}')">知道了</button>
+    </div></div>`;
+}
+function dismissIntro(tab){ try{ localStorage.setItem(introKey(tab),"1"); }catch(e){} render(); }
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings }[CUR_TAB] || (()=>"");
-  v.innerHTML = banner + fn();
+  v.innerHTML = banner + pageIntroHTML(CUR_TAB) + fn();
 }
 
 // ===================================================================
@@ -1437,7 +1457,12 @@ function toggleTutorial(){
   const b=document.getElementById("tutBtn"), ban=document.getElementById("tutBanner");
   document.body.classList.toggle("tut",TUT_ON);
   if(b) b.classList.toggle("on",TUT_ON);
-  if(TUT_ON){ if(ban){ ban.textContent="教學模式開啟中：把游標停在任何按鈕或欄位上看說明（此模式下點按鈕只會看說明、不會執行）。再按一次「教學」關閉。"; ban.classList.remove("hidden"); } }
+  if(TUT_ON){
+    // 按「教學」同時讓各頁新手教學卡重新出現（重看）
+    try{ Object.keys(PAGE_INTRO).forEach(t=>localStorage.removeItem(introKey(t))); }catch(e){}
+    if(ban){ ban.textContent="教學模式開啟中：各頁上方會再出現「新手教學」說明卡；也可把游標停在任何按鈕或欄位上看說明。再按一次「教學」關閉。"; ban.classList.remove("hidden"); }
+    render();
+  }
   else { if(ban) ban.classList.add("hidden"); tutHide(); }
 }
 function tutHide(){ const tip=document.getElementById("tutTip"); if(tip) tip.classList.add("hidden"); if(TUT_CUR){ TUT_CUR.classList.remove("tut-hl"); TUT_CUR=null; } clearTimeout(TUT_TIMER); }
