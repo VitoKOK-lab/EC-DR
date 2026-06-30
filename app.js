@@ -3,10 +3,11 @@
 // 角色：管理員（Vito）＋ 剪輯。已移除：交辦、KPI、日報、稽核、二創、商品庫。
 // 資料層走 Firestore（fb.js 提供 window.DB）；商業邏輯都在前端。
 // ===================================================================
-const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
+const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],
-  editor: [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
+  boss:    [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"]],   // 經理人：可指派工作/影片，但不能改設定
+  editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -211,10 +212,10 @@ function buildNav(){
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const editors=((STATE?.users)||[]).filter(u=>(u.role||"editor")==="editor").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  if(!editors.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無剪輯成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
-  editors.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
-    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
+  const members=((STATE?.users)||[]).filter(u=>["editor","manager"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  if(!members.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
+  members.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
+    b.innerHTML = esc(u.name)+`<span class="role">${u.role==="manager"?"經理人":""} 點我上班 →</span>`; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
 function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
@@ -283,7 +284,7 @@ function applyState(raw){
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
     document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
-    { const pb=document.getElementById("pwBtn"); if(pb) pb.style.display=(currentRole()==="editor")?"":"none"; }
+    { const pb=document.getElementById("pwBtn"); if(pb) pb.style.display=(currentRole()!=="boss")?"":"none"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
   } else {
@@ -888,9 +889,9 @@ function viewDashboard(){
 
   const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
 
-  return `<h2>儀表板 <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+  return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
 
-  <div class="card" style="border-color:var(--accent)">
+  ${isOwner()?`<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
@@ -898,7 +899,7 @@ function viewDashboard(){
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
-  </div>
+  </div>`:''}
 
   <div class="dgrid">
   <div class="card" style="border-color:var(--gold)">
@@ -1392,9 +1393,13 @@ function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
-  const members=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor");
+  const members=(STATE.users||[]).filter(u=>["editor","manager"].includes(u.role||"editor"));
+  const roleSel=(u)=>`<select onchange="setMemberRole('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
+      <option value="editor" ${(u.role||"editor")==="editor"?"selected":""}>剪輯</option>
+      <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option></select>`;
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label="角色">${roleSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -1422,11 +1427,13 @@ function viewSettings(){
     <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
-  <div class="card"><b>剪輯成員（${members.length}）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th></th></tr></thead>
+  <div class="card"><b>成員（${members.length}）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片。</div>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增剪輯名字" style="flex:1;min-width:150px">
-      <button class="btn" onclick="addMember()">＋ 新增剪輯</button></div>
+    <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
+      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option></select>
+      <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>
   <div class="card"><b>影片標籤</b>
     <div class="muted" style="font-size:12px;margin-top:4px">新增／編輯影片時可勾選的標籤。刪除標籤不影響已套用在影片上的。</div>
@@ -1445,9 +1452,25 @@ function viewSettings(){
   <div class="card"><b>資料維護</b>
     <div class="row" style="gap:8px;margin-top:8px"><span class="muted" style="flex:1">把「現有」影片標題與文案裡的簡體字一次轉成繁體存回資料庫（新增/編輯時本來就會自動轉）。</span>
       <button class="btn sec sm" onclick="convertExistingToTW()" style="white-space:nowrap">現有簡體轉繁體</button></div>
+    <div class="row" style="gap:8px;margin-top:10px"><span class="muted" style="flex:1">把所有影片與標籤清單裡的「每日寵粉」標籤改成「寵粉」。</span>
+      <button class="btn sec sm" onclick="migratePamperTag()" style="white-space:nowrap">每日寵粉 → 寵粉</button></div>
   </div>`;
 }
 // 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
+// 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）
+async function migratePamperTag(){
+  if(!confirm("把所有影片與標籤清單裡的「每日寵粉」改成「寵粉」？")) return;
+  const all=(STATE.videos||[]).concat(STATE.deletedVideos||[]);
+  BULK_BUSY=true; let n=0;
+  try{
+    for(const v of all){ const tags=Array.isArray(v.tags)?v.tags:[];
+      if(tags.includes("每日寵粉")){ const nt=[...new Set(tags.map(t=>t==="每日寵粉"?"寵粉":t))];
+        const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
+        try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} } }
+    const cur=videoTags(); if(cur.includes("每日寵粉")){ try{ await window.DB.setSettings({videoTags:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }catch(e){} }
+  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("整理標籤 每日寵粉→寵粉", n+" 支"); await delay(300); toast("完成：已把 "+n+" 支影片的「每日寵粉」改成「寵粉」");
+}
 async function convertExistingToTW(){
   if(!__s2t){ toast("簡繁轉換尚未就緒（可能網路載入中），請稍候再試",true); return; }
   const vids=(STATE.videos||[]);
@@ -1475,7 +1498,9 @@ async function saveSettings(){
 // 成員管理（限管理員・併入設定頁）
 // ===================================================================
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
-  write("POST","/api/users",{name,role:"editor"},"已新增剪輯"); }
+  const role=val("mb_role")||"editor"; write("POST","/api/users",{name,role},"已新增成員（"+(ROLE_LABEL[role]||role)+"）"); }
+function setMemberRole(name, role){ if(!["editor","manager"].includes(role)) return;
+  writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
 // 主管線上重設員工密碼為 0000，員工再自行修改
