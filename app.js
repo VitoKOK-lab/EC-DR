@@ -10,10 +10,12 @@ const ROLE_TABS = {
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
+let VIEW_AS = null;   // 管理員「員工視角」：暫時以某員工身分檢視（唯讀預覽）
 const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
 const yesterday = new Date(Date.now()+288e5-864e5).toISOString().slice(0,10); // 前一日
 
-function currentUser(){ return localStorage.getItem("ecdr_user") || ""; }
+function realUser(){ return localStorage.getItem("ecdr_user") || ""; }
+function currentUser(){ return VIEW_AS || realUser(); }   // 員工視角啟用時，畫面一律以該員工身分呈現
 function setUser(n){ localStorage.setItem("ecdr_user", n); }
 function currentRole(){
   const u = (STATE?.users||[]).find(x=>x.name===currentUser());
@@ -185,11 +187,17 @@ async function route(method, path, body){
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function write(method, path, body, okMsg){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽，離開後才能操作",true); return false; }
   try{ await route(method, path, body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg) toast(okMsg); return true; }
   catch(e){ toast(e.message, true); return false; }
 }
 async function withAdmin(fn){ return fn(); }  // 已取消密碼，直接執行
-async function writeAdmin(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
+async function writeAdmin(method,path,body,okMsg){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽，離開後才能操作",true); return false; }
+  try{ await route(method,path,body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
+// 員工視角（管理員）：以某員工身分檢視（唯讀），不用切換帳號
+function enterViewAs(name){ if(!name){ toast("請選擇員工",true); return; } VIEW_AS=name; CUR_TAB=null; buildNav(); applyState(LAST_RAW); }
+function exitViewAs(){ VIEW_AS=null; CUR_TAB=null; buildNav(); applyState(LAST_RAW); }
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
@@ -338,10 +346,13 @@ function render(){
   const same=(LAST_RENDER_TAB===CUR_TAB);
   const sy=same?window.scrollY:0;
   const vsOld=v.querySelector(".vidscroll"); const vst=(same&&vsOld)?vsOld.scrollTop:0;
+  const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
+    <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash }[CUR_TAB] || (()=>"");
-  v.innerHTML = banner + pageIntroHTML(CUR_TAB) + fn();
+  v.innerHTML = viewAsBanner + banner + pageIntroHTML(CUR_TAB) + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
@@ -542,7 +553,7 @@ function renameContact(name){ const input=prompt("修改對接窗口名稱：", 
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
   cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
-async function createTask(){ const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
+async function createTask(){ if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; } const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
   const id="T"+Date.now().toString(36);
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
@@ -708,6 +719,7 @@ function viewWork(){
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽，無法代為下班打卡",true); return; }
   const me=currentUser();
   const doneVids=(STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
@@ -875,6 +887,16 @@ function viewDashboard(){
   const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
 
   return `<h2>儀表板 <span class="muted" style="font-size:13px">僅管理員可見</span></h2>
+
+  <div class="card" style="border-color:var(--accent)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
+      <div class="row" style="gap:8px">
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+        <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
+      </div>
+    </div>
+  </div>
 
   <div class="dgrid">
   <div class="card" style="border-color:var(--gold)">
