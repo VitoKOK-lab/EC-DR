@@ -5,8 +5,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
+  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
