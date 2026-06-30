@@ -6,7 +6,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot }
+         getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -48,7 +48,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const auth = getAuth(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
-  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {} };
+  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
   function push() { if (window.__onState) window.__onState(JSON.parse(JSON.stringify(raw))); }
 
   // 暴露給 app.js 的寫入介面
@@ -84,5 +84,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
     onSnapshot(collection(db, "shifts"),   q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.shifts = s; push(); });
+    // 操作紀錄（稽核用）：只訂閱最近 300 筆，避免無限成長
+    onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(300)), q => { raw.logs = q.docs.map(d => d.data()); push(); });
   });
 }

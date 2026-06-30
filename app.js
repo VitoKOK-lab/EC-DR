@@ -5,7 +5,7 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:   [["dashboard","儀表板"]],
+  boss:   [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],
   editor: [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -96,7 +96,20 @@ function myInProgressCount(){ return inProgressCount(currentUser()); }
 function airedPast(v){ const d=String(v.scheduledDate||"").slice(0,10); return !!d && d < today; }
 
 // ---------- 寫入路由（操作 Firestore） ----------
-function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id); }
+function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id) || (STATE.deletedVideos||[]).find(v=>v.id===id); }
+// 操作紀錄（稽核）：記下「誰、何時、做了什麼、對象」
+function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean); // api, videos, V190, finish
+  if(seg[1]==="videos" && seg[2]){ const v=vidLocal(seg[2]); return v?vidTitle(v):seg[2]; }
+  if(seg[1]==="users" && seg[2]) return "成員 "+decodeURIComponent(seg[2]);
+  if(seg[1]==="schedule" && seg[2]) return "排程 "+seg[2];
+  if(seg[1]==="settings") return "系統設定";
+  return path||""; }
+function logA(action, target){
+  try{ if(!window.DB) return; const id="L"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+    window.DB.set("logs", id, {id, at:nowIso(), user:currentUser()||"(未登入)", role:currentRole()||"",
+      action:String(action||"").slice(0,80), target:String(target||"").slice(0,200)}).catch(()=>{});
+  }catch(e){}
+}
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
 async function route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
@@ -151,8 +164,12 @@ async function route(method, path, body){
       await window.DB.update("videos", id, patch);
       return;
     }
+    if(action==="restore"){ await window.DB.update("videos",id,{deleted:false,deletedBy:"",deletedAt:""}); return; }
     if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso(); await window.DB.update("videos",id,patch); return; }
-    if(method==="DELETE"){ await window.DB.del("videos",id); return; }
+    if(method==="DELETE"){
+      if(action==="purge"){ await window.DB.del("videos",id); return; }                       // 永久刪除（管理員）
+      await window.DB.update("videos",id,{deleted:true,deletedBy:user,deletedAt:nowIso()}); return;  // 軟刪除：進回收桶，可復原
+    }
   }
   if(head==="schedule"){
     const date=seg[1], sub=seg[2]; const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
@@ -168,11 +185,11 @@ async function route(method, path, body){
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function write(method, path, body, okMsg){
-  try{ await route(method, path, body||{}); await delay(140); if(okMsg) toast(okMsg); return true; }
+  try{ await route(method, path, body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg) toast(okMsg); return true; }
   catch(e){ toast(e.message, true); return false; }
 }
 async function withAdmin(fn){ return fn(); }  // 已取消密碼，直接執行
-async function writeAdmin(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
+async function writeAdmin(method,path,body,okMsg){ try{ await route(method,path,body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg)toast(okMsg); closeModal(); return true; }catch(e){ toast(e.message,true); return false; } }
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
@@ -195,7 +212,7 @@ function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
   const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
   if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
-  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); applyState(LAST_RAW); }
+  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); logA("登入","上班打卡"); applyState(LAST_RAW); }
 // 員工自行修改密碼（需先輸入舊密碼）
 async function changeMyPw(){
   const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
@@ -221,7 +238,7 @@ function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); re
   const want=String((STATE.settings&&STATE.settings.adminPassword)||"1234");
   const pw=prompt("請輸入管理員密碼："); if(pw===null) return;
   if(String(pw).trim()!==want){ toast("密碼錯誤",true); return; }
-  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; applyState(LAST_RAW); }
+  setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; logA("管理員登入",""); applyState(LAST_RAW); }
 // 登出：跳回登入頁
 function logout(){ showGoodbye(); }
 // 登出：簡單說再見 → 跳回登入頁（無動畫）
@@ -239,6 +256,10 @@ function reLogin(){ location.reload(); }
 // ---------- 狀態套用（Firestore snapshot 進來時呼叫） ----------
 function decorate(raw){
   const st=JSON.parse(JSON.stringify(raw));
+  // 軟刪除：把 deleted 的影片抽到「回收桶」，其餘畫面一律只看到未刪除的
+  const allV=st.videos||[];
+  st.deletedVideos=allV.filter(v=>v.deleted);
+  st.videos=allV.filter(v=>!v.deleted);
   const s=st.settings||{}; const win=s.reuseWindowDays||30;
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
   STATE=st; return st;
@@ -293,6 +314,8 @@ const PAGE_INTRO = {
   cal:{ title:"月排程", html:"整月的上片排程。<b>綠</b>＝當天已排滿、<b>紅</b>＝還缺幾支、<b>深灰</b>＝還沒排；今天用金框標起來。點任一天可看當天要上的片、或把舊片排進去重播。" },
   videos:{ title:"影片庫", html:"所有影片都在這。上方分頁切換〈毛片待剪／新片未排程／已排程／舊片〉；搜尋框可用片名、原始片名、文案、編號找；〈＋ 新增毛片〉建立新片。" },
   dashboard:{ title:"管理員儀表板", html:"總覽：指派交辦與毛片給員工、看未來排程是否排滿、每位剪輯今日進度與長期績效。" },
+  log:{ title:"操作紀錄", html:"每個人的操作（誰・何時・做了什麼）都記在這，最近 300 筆。用來追蹤責任歸屬。" },
+  trash:{ title:"回收桶", html:"被刪除的影片不會真的消失，會先進這裡；可〈復原〉救回，或〈永久刪除〉徹底清掉。防誤刪／惡意刪除。" },
   settings:{ title:"設定", html:"設定每日上片目標、投放平台、成員（新增剪輯會自動建立登入帳號），以及資料維護。" },
 };
 function introKey(tab){ return "ecdr_intro_"+tab+"_"+currentUser(); }
@@ -312,7 +335,7 @@ function render(){
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash }[CUR_TAB] || (()=>"");
   v.innerHTML = banner + pageIntroHTML(CUR_TAB) + fn();
 }
 
@@ -536,6 +559,7 @@ async function assignFootage(){
   BULK_BUSY=true; let n=0;
   try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("指派毛片 "+n+" 支", who);
   await delay(300); toast("已指派 "+n+" 支給「"+who+"」（他認領後才開始計時）");
 }
 // 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
@@ -546,6 +570,7 @@ async function unassignEditor(name){
   BULK_BUSY=true; let n=0;
   try{ for(const v of list){ try{ await window.DB.update("videos",v.id,{assignedTo:""}); n++; }catch(e){} } }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("收回指派毛片 "+n+" 支", name);
   await delay(300); toast("已收回 "+n+" 支到公用池");
 }
 function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
@@ -1157,9 +1182,43 @@ function viewVideos(){
 // 刪除影片：二次確認，無法復原
 function delVideo(id){
   const v=vid(id)||{};
-  if(!confirm("確定要刪除「"+vidTitle(v)+"」？")) return;
-  if(!confirm("再次確認：真的要永久刪除這支影片嗎？刪除後無法復原。")) return;
-  write("DELETE","/api/videos/"+id,{},"已刪除影片").then(ok=>{ if(ok) closeModal(); });
+  if(!confirm("確定要刪除「"+vidTitle(v)+"」？\n\n（會移到「回收桶」，管理員可復原）")) return;
+  write("DELETE","/api/videos/"+id,{},"已刪除影片（移到回收桶，管理員可復原）").then(ok=>{ if(ok) closeModal(); });
+}
+// 回收桶（管理員）：復原 / 永久刪除
+function restoreVideo(id){ const v=vidLocal(id)||{}; write("POST","/api/videos/"+id+"/restore",{},"已復原「"+vidTitle(v)+"」"); }
+function purgeVideo(id){ const v=vidLocal(id)||{};
+  if(!confirm("永久刪除「"+vidTitle(v)+"」？此動作無法復原。")) return;
+  write("DELETE","/api/videos/"+id+"/purge",{},"已永久刪除"); }
+// 操作紀錄（管理員）：誰・何時・做了什麼・對象
+function viewLog(){
+  const logs=((STATE&&STATE.logs)||[]).slice().sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  const rows=logs.map(l=>`<tr>
+    <td data-label="時間">${esc((l.at||"").replace("T"," "))}</td>
+    <td data-label="誰"><b>${esc(l.user||"")}</b> <span class="muted" style="font-size:11px">${esc(ROLE_LABEL[l.role]||l.role||"")}</span></td>
+    <td data-label="動作">${esc(l.action||"")}</td>
+    <td data-label="對象">${esc(l.target||"")}</td></tr>`).join("");
+  return `<h2>操作紀錄 <span class="muted" style="font-size:13px">誰・何時・做了什麼（最近 300 筆）</span></h2>
+    <div class="card"><div class="${logs.length>10?'vidscroll':''}">
+      <table class="responsive"><thead><tr><th>時間</th><th>誰</th><th>動作</th><th>對象</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="4" class="muted">目前沒有紀錄</td></tr>`}</tbody></table>
+    </div></div>`;
+}
+// 回收桶（管理員）：被刪除的影片可復原或永久刪除
+function viewTrash(){
+  const list=((STATE&&STATE.deletedVideos)||[]).slice().sort((a,b)=>String(b.deletedAt||"").localeCompare(String(a.deletedAt||"")));
+  const rows=list.map(v=>`<tr>
+    <td data-label="影片"><b>${esc(vidTitle(v))}</b></td>
+    <td data-label="刪除者">${esc(v.deletedBy||"")}</td>
+    <td data-label="刪除時間">${esc((v.deletedAt||"").replace("T"," "))}</td>
+    <td data-label="操作"><div class="row" style="gap:6px">
+      <button class="btn sm" onclick="restoreVideo('${esc(jsEsc(v.id))}')">復原</button>
+      <button class="btn danger sm" onclick="purgeVideo('${esc(jsEsc(v.id))}')">永久刪除</button></div></td></tr>`).join("");
+  return `<h2>回收桶 <span class="muted" style="font-size:13px">被刪除的影片可在此復原（防誤刪／惡意刪除）</span></h2>
+    <div class="card"><div class="${list.length>10?'vidscroll':''}">
+      <table class="responsive"><thead><tr><th>影片</th><th>刪除者</th><th>刪除時間</th><th>操作</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="4" class="muted">回收桶是空的</td></tr>`}</tbody></table>
+    </div></div>`;
 }
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
 function editVideo(id){ openVideoModal(id, true); }
@@ -1340,6 +1399,7 @@ async function convertExistingToTW(){
       if(Object.keys(patch).length){ try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} }
     }
   } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("簡體轉繁體 "+n+" 支", "影片庫");
   await delay(300); toast("完成：已把 "+n+" 支影片的簡體字轉為繁體");
 }
 async function saveSettings(){
@@ -1376,6 +1436,7 @@ function renameMember(oldName){
         if(t){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} } }
       await window.DB.del("users", oldName);
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    logA("成員改名","「"+oldName+"」→「"+nn+"」");
     await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
   });
 }
@@ -1460,7 +1521,7 @@ const TUT_RULES=[
   {oc:"openDay",         title:"打開這一天", text:"查看這天要上的影片、調整上片日，或安排舊片重播。"},
   {oc:"clockOutReport",  title:"下班匯報", text:"下班前按這裡，會列出今天完成／未完成的工作並打卡下班。"},
   {oc:"reviewVid",       title:"老闆娘審核", text:"通過或退回這支影片；退回會回到剪輯的今日工作。"},
-  {oc:"delVideo",        title:"刪除影片", text:"永久刪除這支影片，需二次確認、無法復原。"},
+  {oc:"delVideo",        title:"刪除影片", text:"把這支影片移到「回收桶」（軟刪除）；管理員可在回收桶復原或永久刪除。"},
   {oc:"createTask",      title:"新增工作項目", text:"把今天要做的事加進上班計畫，做完填回報狀況再打勾完成。"},
   {oc:"calMove",         title:"切換月份", text:"看上個月／下個月的排程。"},
   {oc:"copyStr",         title:"複製導購連結", text:"按一下複製這個平台的帶 UTM 導購連結，貼到貼文就能追成效。"},
