@@ -215,7 +215,7 @@ function bootLogin(){
   const members=((STATE?.users)||[]).filter(u=>["editor","manager"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!members.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   members.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
-    b.innerHTML = esc(u.name)+`<span class="role">${u.role==="manager"?"經理人":""} 點我上班 →</span>`; b.onclick=()=>loginAs(u); g.appendChild(b); });
+    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
 }
 function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
