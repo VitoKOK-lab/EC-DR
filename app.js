@@ -1046,9 +1046,17 @@ function finishWork(id){ const v=vid(id)||{};
   write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},"剪輯完成，已移到影片庫").then(ok=>{ if(ok && myTabs().some(t=>t[0]==="videos")){ CUR_TAB="videos"; buildNav(); render(); } });
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
-function reworkVideo(id){ const v=vid(id)||{}; const who=v.editor||v.claimedBy||"原剪輯";
-  if(!confirm("把「"+vidTitle(v)+"」移回「"+who+"」的今日工作重剪？\n狀態會改回「剪輯中」。")) return;
-  write("PUT","/api/videos/"+id,{video:{stage:"剪輯中",published:false,finishedAt:"",backupDone:false,socialScheduled:false,workStep:1}},"已移回「"+who+"」的今日工作（剪輯中）").then(ok=>{ if(ok) closeModal(); });
+function reworkVideo(id){ const v=vid(id)||{};
+  let who=v.editor||v.claimedBy||"";
+  if(!who){   // 沒有指定剪輯（孤兒影片）→ 讓管理員選一位
+    const eds=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
+    if(!eds.length){ toast("尚無剪輯成員可指派",true); return; }
+    const ans=prompt("這支沒有指定剪輯，要移到哪位的今日工作？輸入編號：\n"+eds.map((n,i)=>(i+1)+". "+n).join("\n"));
+    if(ans===null) return; const idx=parseInt(ans)-1;
+    if(!(idx>=0 && idx<eds.length)){ toast("輸入無效",true); return; } who=eds[idx];
+  }
+  if(!confirm("把「"+vidTitle(v)+"」移到「"+who+"」的今日工作（剪輯中）？")) return;
+  write("PUT","/api/videos/"+id,{video:{stage:"剪輯中",editor:who,claimedBy:who,published:false,finishedAt:"",backupDone:false,socialScheduled:false,workStep:1}},"已移到「"+who+"」的今日工作（剪輯中）").then(ok=>{ if(ok) closeModal(); });
 }
 // 編輯影片視窗：商品頁網址輸入一次，下方各平台用「按鈕」呈現，按一下＝複製該平台 utm 連結
 function editLinksHTML(url){ url=(url||"").trim(); if(!url) return "";
@@ -1377,9 +1385,9 @@ function openVideoModal(id, edit, fromWork){
       <label>完成影片存檔連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="剪輯完成後的成品存檔連結">
     </div>
     ${usageCard}
-    ${(isPublished(v) && (currentRole()==="boss"||currentRole()==="manager"))?`<div class="card" style="border-color:var(--accent)">
-      <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移回剪輯中（重剪）</button>
-      <span class="muted" style="font-size:12px;margin-left:8px">把這支退回「${esc(v.editor||v.claimedBy||"原剪輯")}」的今日工作重剪</span>
+    ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">
+      <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
+      <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>
     </div>`:''}
     <div class="card" style="border-color:var(--red)">
       <button class="btn danger sm" type="button" onclick="delVideo('${id}')">刪除這支影片</button>
