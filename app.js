@@ -6,7 +6,7 @@
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯"};
 const ROLE_TABS = {
   boss:    [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"]],   // 經理人：可指派工作/影片，但不能改設定
+  manager: [["dashboard","儀表板"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -762,10 +762,11 @@ function viewDashboard(){
       .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
     const wip=isToday?(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
     const tasks=allTasks.filter(t=>t.user===name && t.date===D);
-    const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && !t.done)
+    // 我交辦給他的：只看「所選日期當天」的交辦 → 昨天的留在昨天的工作日誌，不會跑到今天
+    const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && t.date===D && !t.done)
       .sort((a,b)=>String(b.createdAt||b.date||"").localeCompare(String(a.createdAt||a.date||"")));
-    const assignedDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.done && t.doneAt && daysBetween(String(t.doneAt).slice(0,10),today)<=7)
-      .sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||""))).slice(0,6);
+    const assignedDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.date===D && t.done)
+      .sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||"")));
     const sales=done.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     const mins=done.map(v=>v.durationMin).filter(x=>typeof x==="number");
     const sumMin=mins.reduce((a,b)=>a+b,0);
@@ -821,8 +822,8 @@ function viewDashboard(){
       </div>`;}).join("");
     const trackHTML=(e.assignedOpen.length||e.assignedDone.length)?`<div style="margin-top:12px;padding:10px 12px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px">
       <b style="font-size:13px;color:var(--gold-dk)">我交辦給他的</b>
-      ${e.assignedOpen.length?`<div style="margin-top:4px"><span class="pill wa" style="font-size:10px">追蹤中 ${e.assignedOpen.length}</span></div>${openHTML}`:''}
-      ${e.assignedDone.length?`<div style="margin-top:10px"><span class="pill ok" style="font-size:10px">近 7 天完成 ${e.assignedDone.length}</span></div>${doneHTMLa}`:''}
+      ${e.assignedOpen.length?`<div style="margin-top:4px"><span class="pill wa" style="font-size:10px">待辦 ${e.assignedOpen.length}</span></div>${openHTML}`:''}
+      ${e.assignedDone.length?`<div style="margin-top:10px"><span class="pill ok" style="font-size:10px">當日完成 ${e.assignedDone.length}</span></div>${doneHTMLa}`:''}
     </div>`:'';
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
@@ -891,7 +892,7 @@ function viewDashboard(){
 
   return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
 
-  ${isOwner()?`<div class="card" style="border-color:var(--accent)">
+  ${(currentRole()==="boss"||currentRole()==="manager")?`<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
