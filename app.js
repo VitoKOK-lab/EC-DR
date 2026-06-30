@@ -570,11 +570,13 @@ async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt"
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
 // 管理員指派毛片給指定員工（只分配、不啟動計時；員工自己認領才開始計時）
+function afpToggleAll(btn){ const boxes=Array.from(document.querySelectorAll('.afp_vid'));
+  const turnOn=boxes.some(b=>!b.checked); boxes.forEach(b=>b.checked=turnOn); if(btn) btn.textContent=turnOn?"全部取消":"全選"; }
 async function assignFootage(){
-  const who=val("afp_who"); const sel=document.getElementById("afp_vids");
+  const who=val("afp_who");
   if(!who){ toast("請先選擇員工",true); return; }
-  const ids=sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean):[];
-  if(!ids.length){ toast("請選擇至少一支毛片",true); return; }
+  const ids=Array.from(document.querySelectorAll('.afp_vid:checked')).map(o=>o.value).filter(Boolean);
+  if(!ids.length){ toast("請勾選至少一支毛片",true); return; }
   BULK_BUSY=true; let n=0;
   try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
@@ -920,8 +922,12 @@ function viewDashboard(){
     <div class="grid cols2" style="margin-top:10px">
       <div><label>選擇員工</label>
         <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
-      <div><label>選擇毛片（可多選：電腦按住 Ctrl/⌘、手機點多個）</label>
-        <select id="afp_vids" multiple size="6">${unassignedPool.map(v=>`<option value="${esc(v.id)}">${esc(vidTitle(v))}</option>`).join("")||'<option disabled>目前沒有未指派的待剪毛片</option>'}</select></div>
+      <div><label>選擇毛片（勾選，可多選）</label>
+        ${unassignedPool.length?`<div style="margin-bottom:6px"><button type="button" class="btn sec sm" onclick="afpToggleAll(this)">全選</button></div>`:''}
+        <div style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
+        ${unassignedPool.map(v=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
+          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none"> <span>${esc(vidTitle(v))}</span></label>`).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
+        </div></div>
     </div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignFootage()">指派給該員工</button>
     ${Object.keys(assignCount).length?`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
