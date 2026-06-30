@@ -1027,7 +1027,8 @@ function batchNewFootage(){
     try{
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
         const code=codePrefix+String(seq+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products}), {id});
+        const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products,
+          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}), {id});   // 有銷售商品 → 自動帶「寵粉」
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
@@ -1061,7 +1062,9 @@ function newSimpleVideo(){
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
     if(!name){ toast("請輸入原始片名",true); return false; }
-    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:zhTW(val("sv_vcopy").trim()), products:collectProducts("sv")};
+    const svProducts=collectProducts("sv");
+    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:zhTW(val("sv_vcopy").trim()), products:svProducts,
+      tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},"已新增影片");
   });
 }
@@ -1091,6 +1094,12 @@ function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
     <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
     <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="新增標籤…" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ 加入</button></div>`; }
 function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
+// 有填銷售商品 → 自動勾「寵粉」標籤
+function autoPamperTag(prefix){
+  let has=false; for(let i=0;i<4;i++){ const e=document.getElementById(prefix+"_pn"+i); if(e&&e.value.trim()){ has=true; break; } }
+  if(!has) return;
+  const cb=document.querySelector('.'+prefix+'_tag[value="寵粉"]'); if(cb && !cb.checked) cb.checked=true;
+}
 function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
   const box=document.getElementById(id+'_box');
   if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
@@ -1376,7 +1385,9 @@ async function saveVideo(id){
   const hasProd=products.some(p=>p&&p.name);
   if(hasProd && !productUrl){ toast("有填銷售商品就要一起填『商品頁網址』，否則無法導購",true); return false; }
   if(productUrl && !hasProd){ toast("有填『商品頁網址』就要至少填一個銷售商品（品名）",true); return false; }
-  const tags=[...new Set(collectTags("e").map(renameTag))]; await persistNewTags(tags);
+  const tags=[...new Set(collectTags("e").map(renameTag))];
+  if(hasProd && !tags.includes("寵粉")) tags.push("寵粉");   // 有銷售商品 → 自動帶「寵粉」標籤
+  await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
   const video={code:val("e_code").trim(), rawName:zhTW(val("e_raw")), name:zhTW(val("e_name").trim()||val("e_raw").trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
@@ -1557,7 +1568,7 @@ function productRows(prefix, products){
   let h=`<label>銷售商品（最多 4 個）</label>`;
   for(let i=0;i<4;i++){ const p=ps[i]||{};
     h+=`<div class="row" style="gap:8px;margin-bottom:6px">
-      <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
+      <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" oninput="autoPamperTag('${prefix}')" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
       <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="單價" style="flex:1;min-width:80px">
     </div>`; }
   h+=`<datalist id="${prefix}_plist">${knownProducts().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
