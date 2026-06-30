@@ -46,7 +46,7 @@ function newVideoRecord(over){
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:"",   // 預設不分類（流量型是多數，不特別標）
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
-    editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null,
+    editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null, assignedTo:"",
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
     products:[], productUrl:"", note:"",
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
@@ -527,6 +527,27 @@ async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt"
     if(contact) rememberContact(contact);
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
+// 管理員指派毛片給指定員工（只分配、不啟動計時；員工自己認領才開始計時）
+async function assignFootage(){
+  const who=val("afp_who"); const sel=document.getElementById("afp_vids");
+  if(!who){ toast("請先選擇員工",true); return; }
+  const ids=sel?Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean):[];
+  if(!ids.length){ toast("請選擇至少一支毛片",true); return; }
+  BULK_BUSY=true; let n=0;
+  try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  await delay(300); toast("已指派 "+n+" 支給「"+who+"」（他認領後才開始計時）");
+}
+// 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
+async function unassignEditor(name){
+  const list=(STATE.videos||[]).filter(v=>v.stage==="待處理" && v.assignedTo===name);
+  if(!list.length){ toast("「"+name+"」沒有待認領的指派毛片",true); return; }
+  if(!confirm("把指派給「"+name+"」但還沒認領的 "+list.length+" 支毛片收回公用池？")) return;
+  BULK_BUSY=true; let n=0;
+  try{ for(const v of list){ try{ await window.DB.update("videos",v.id,{assignedTo:""}); n++; }catch(e){} } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  await delay(300); toast("已收回 "+n+" 支到公用池");
+}
 function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
 function taskDone(id, done){
@@ -559,8 +580,9 @@ function viewWork(){
   const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
-  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理")
-    .sort((a,b)=>String(b.updatedAt||b.id).localeCompare(String(a.updatedAt||a.id)));
+  // 待剪池：指派給我的 ＋ 還沒指派的公用毛片（別人被指派的不顯示）；指派給我的排前面
+  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+    .sort((a,b)=>{ const am=(a.assignedTo===me?0:1), bm=(b.assignedTo===me?0:1); return am-bm || String(a.id).localeCompare(String(b.id)); });
   const poolShown=pool;   // 全部顯示，超過 5 條時改用捲動視窗（見下方 max-height）
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
@@ -599,9 +621,9 @@ function viewWork(){
     <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
-        <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="按一下＝認領並開始剪（變剪輯中、進我的工作）">認領開始剪</button></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有待剪毛片，去 影片庫「＋ 新增毛片」建立</td></tr>`}</tbody></table>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'你已有 3 支在剪，完成一支才能再領（排隊中）':'按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）'}">${atLimit?'排隊中':'認領開始剪'}</button></td>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有指派給你或可認領的毛片</td></tr>`}</tbody></table>
     </div>
     ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">你已有 3 支製作中，先完成幾支再領</span></p>':''}
   </div>
@@ -798,7 +820,10 @@ function viewDashboard(){
 
   // ---- 排程健康/庫存 ----
   const g=scheduleGlance();
-  const poolN=(STATE.videos||[]).filter(v=>v.stage==="待處理").length;
+  const poolAll=(STATE.videos||[]).filter(v=>v.stage==="待處理");
+  const poolN=poolAll.length;
+  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const assignCount={}; poolAll.forEach(v=>{ if(v.assignedTo) assignCount[v.assignedTo]=(assignCount[v.assignedTo]||0)+1; });
   const noSchedN=(STATE.videos||[]).filter(v=>vidSegment(v)==="newNoSched").length;
   const wipN=(STATE.videos||[]).filter(v=>v.stage==="剪輯中").length;
   const runwayCls=g.runway>=7?'ok':(g.runway>=3?'wa':'em');
@@ -830,6 +855,23 @@ function viewDashboard(){
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
+  </div>
+
+  <div class="card" style="border-color:var(--gold)">
+    <b style="font-size:16px">🎬 指派毛片給員工</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）。指派只是分配，員工自己「認領」才開始計時；同時最多領 3 支，其餘排隊。</div>
+    <div class="grid cols2" style="margin-top:10px">
+      <div><label>選擇員工</label>
+        <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
+      <div><label>選擇毛片（可多選：電腦按住 Ctrl/⌘、手機點多個）</label>
+        <select id="afp_vids" multiple size="6">${unassignedPool.map(v=>`<option value="${esc(v.id)}">${esc(vidTitle(v))}</option>`).join("")||'<option disabled>目前沒有未指派的待剪毛片</option>'}</select></div>
+    </div>
+    <button class="btn" style="width:100%;margin-top:10px" onclick="assignFootage()">指派給該員工</button>
+    ${Object.keys(assignCount).length?`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+      ${editors.filter(n=>assignCount[n]).map(n=>`<div class="row" style="justify-content:space-between;gap:8px;margin:4px 0">
+        <span>${esc(n)}：待剪已指派 <b>${assignCount[n]}</b> 支</span>
+        <button class="btn sec sm" onclick="unassignEditor('${esc(jsEsc(n))}')">收回未認領</button></div>`).join("")}
+    </div>`:''}
   </div>
 
   <div class="card">
