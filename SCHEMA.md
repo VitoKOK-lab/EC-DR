@@ -51,6 +51,9 @@
 | `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
+| `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原） |
+| `deletedBy` | string | 刪除者 | 成員名字 |
+| `deletedAt` | string(ISO) | 刪除時間 | |
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
@@ -104,6 +107,21 @@
 | `report` | string | 回報狀況（進度） |
 | `done` | boolean | 完成打勾（false=進行中） |
 | `createdAt` | string(ISO) | 建立時間 |
+
+---
+
+## 3d. `logs/{id}` — 操作紀錄（稽核，**管理員看**）
+
+文件 ID = `L<base36 時間戳>`。每個資料異動動作寫一筆；前端只訂閱最近 300 筆（`orderBy at desc, limit 300`）。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 文件 ID |
+| `at` | string(ISO) | 時間（台灣 UTC+8） |
+| `user` | string | 操作者名字 |
+| `role` | string | `boss`／`editor` |
+| `action` | string | 動作（例：已新增影片／已刪除影片／指派毛片 N 支／登入…） |
+| `target` | string | 對象（影片標題／成員／排程日…） |
 
 ---
 
