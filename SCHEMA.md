@@ -26,6 +26,7 @@
 | `source` | string | 片源 | `老闆自拍`／`外部公司`（`settings.sources`） |
 | `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片` |
 | `editor` | string | 剪輯人員 | 成員名字（對應 `users`） |
+| `assignedTo` | string | 指派對象 | 管理員把待剪毛片指派給的成員名字（只分配、不計時；空＝公用待剪池）。員工認領後才開始計時 |
 | `claimedBy` | string | 認領人 | 拉下來剪的人 |
 | `claimedAt` | string(ISO) | 認領時間 | |
 | `finishedAt` | string(ISO) | 完成時間 | 完成上架的時間（排序、KPI 用） |
