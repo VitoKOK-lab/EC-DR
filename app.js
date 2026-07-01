@@ -913,7 +913,7 @@ function viewDashboard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
-        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${["editor","intl","manager"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
@@ -1233,7 +1233,7 @@ function vidTableRow(v){
   </tr>`;
 }
 function vidRowsHTML(){
-  const all=STATE.videos||[];
+  const all=(STATE.videos||[]).filter(v=>!v.locale);   // 只列台灣源片（不含海外二創版）
   const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
@@ -1252,7 +1252,7 @@ function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.in
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 function viewVideos(){
-  const all=STATE.videos||[];
+  const all=(STATE.videos||[]).filter(v=>!v.locale);   // 台灣影片庫：只放台灣源片，海外二創版走「海外排程」與源片的「各語言版本」卡
   const seg={rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
   const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
   // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
@@ -1607,12 +1607,15 @@ function intlLibRows(){
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
       return `<span class="pill ${done?'ok':'wa'}" style="font-size:11px;cursor:pointer" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''} · ${done?'done':'in progress'}${k.editor?(' · '+esc(k.editor)):''}">${localeShort(k.locale)}${k.account?(' '+esc(k.account)):''} ${done?'✓':'…'}</span>`;
     }).join(" ");
-    // 「＋ Add version」帳號選單（依語言分組）；未設定帳號→提示
+    // 帳號選單只「選取」，再按「Add to To do」才建立（避免誤觸馬上跳走）；未設定帳號→提示
     const addSel = accts.length
-      ? `<select onchange="if(this.value!==''){createLocalFromAcct('${v.id}',this.value);this.selectedIndex=0;}" style="font-size:13px;padding:6px 8px">
-          <option value="">＋ Add version…</option>
-          ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
-        </select>`
+      ? `<div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end;width:100%">
+          <select id="addacct_${v.id}" style="font-size:13px;padding:6px 8px;flex:1;min-width:120px">
+            <option value="">— select account —</option>
+            ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
+          </select>
+          <button class="btn sm" onclick="createLocalPick('${v.id}')" title="Create this version and add it to your To do">＋ Add to To do</button>
+        </div>`
       : `<span class="muted" style="font-size:12px">Ask admin to add accounts in Settings</span>`;
     const preview=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')">▶ Preview</button>`:'';
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
@@ -1726,8 +1729,11 @@ function createLocalVersion(sourceId, locale, account){
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},localeName(locale)+(account?(" · "+account):"")+" version created — see My Work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } });
+  write("POST","/api/videos",{video:rec},localeName(locale)+(account?(" · "+account):"")+" added to To do").then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
 }
+// 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
+function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'+sourceId); const idx=sel?sel.value:'';
+  if(idx===''){ toast("先選一個帳號",true); return; } createLocalFromAcct(sourceId, idx); }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
 
