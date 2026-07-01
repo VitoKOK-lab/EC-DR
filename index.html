@@ -100,14 +100,6 @@
   .btn:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
   a.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;text-decoration:none}
   /* ===== 海外版（Intl）UI ===== */
-  .istudios{background:var(--espresso);color:#F6ECDA;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 8px 20px rgba(34,28,24,.18)}
-  .istudios .seg{position:relative;display:flex;gap:4px;background:rgba(255,255,255,.10);padding:4px;border-radius:999px}
-  .istudios .seg .thumb{position:absolute;top:4px;bottom:4px;left:4px;width:0;background:#F6ECDA;border-radius:999px;z-index:0;transition:left .30s cubic-bezier(.34,1.2,.44,1),width .30s cubic-bezier(.34,1.2,.44,1)}
-  .istudios .seg button{position:relative;z-index:1;border:none;background:transparent;color:#F6ECDA;padding:7px 16px;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:7px;transition:color .2s;font-family:var(--sans);white-space:nowrap}
-  .istudios .seg button:not(.on):hover{color:#fff}
-  .istudios .seg button.on{color:var(--espresso)}
-  .istudios .cnt{background:var(--red);color:#fff;border-radius:999px;font-size:10px;padding:1px 7px;font-weight:800;line-height:1.6}
-  .istudios .seg button.on .cnt{background:var(--espresso);color:#F6ECDA}
   .ilib-card{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;padding:16px 4px;border-bottom:1px solid var(--line)}
   .ilib-card:last-child{border-bottom:none}
   .ilib-zh{font-weight:700;font-size:15px;line-height:1.45}
@@ -126,7 +118,7 @@
   .tricon{display:inline-flex;align-items:center;justify-content:center;height:21px;padding:0 6px;border-radius:6px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:700;color:var(--muted);text-decoration:none;vertical-align:middle;margin-left:7px;line-height:1;transition:.15s}
   .tricon span{font-size:9px;opacity:.85;margin-left:1px}
   .tricon:hover{border-color:var(--gold);background:var(--amberbg);color:var(--gold-dk)}
-  @media(max-width:640px){.ilib-card{flex-direction:column}.ilib-actions{width:100%}.iwork-item{flex-direction:column;align-items:stretch}.istudios span[style]{margin-left:0 !important}}
+  @media(max-width:640px){.ilib-card{flex-direction:column}.ilib-actions{width:100%}.iwork-item{flex-direction:column;align-items:stretch}}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle;overflow-wrap:anywhere;word-break:break-word}
   th{color:var(--faint);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-family:var(--latin)}
@@ -422,7 +414,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1782810000"></script>
+<script src="app.js?v=1782900000"></script>
 <script type="module" src="fb.js?v=1782090000"></script>
 </body>
 </html>
