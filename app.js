@@ -1511,7 +1511,7 @@ async function saveVideo(id){
 // ===================================================================
 let INTL_Q="";
 // 在地化語言（海外二創）：一種角色、建立時選語言；三語都用英文操作介面
-const INTL_LOCALES=["en"];   // 目前只做英文（拿掉泰/馬）；日後要再加語言在此擴充即可
+const INTL_LOCALES=["en","th","ms"];   // 海外二創語言（英/泰/馬）；每支源片每語言最多一支，一起綁回源片
 const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};
 const LOCALE_SHORT={en:"EN",th:"TH",ms:"MS"};
 const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
@@ -1561,23 +1561,25 @@ function intlLibRows(){
     const title=v.nameEn||v.name||v.rawName||"(untitled)";
     const noEnSummary=!v.nameEn;
     const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join(", ")||'<span class="muted">—</span>';
-    const ex=localizedVersionOf(v.id, "en");
-    const action = ex
-      ? `<span class="pill ${(ex.published||ex.stage==='已完成')?'ok':'wa'}" style="font-size:11px">${(ex.published||ex.stage==='已完成')?'English ✓':'English …'}${ex.editor?(' · '+esc(ex.editor)):''}</span>`
-      : `<button class="btn sm" onclick="createLocalVersion('${v.id}')">Create English version</button>`;
+    const slots=INTL_LOCALES.map(loc=>{
+      const ex=localizedVersionOf(v.id, loc);
+      if(ex){ const done=(ex.published||ex.stage==='已完成');
+        return `<span class="pill ${done?'ok':'wa'}" style="font-size:10px" title="${done?'done':'in progress'}${ex.editor?(' · '+esc(ex.editor)):''}">${localeShort(loc)} ${done?'✓':'…'}</span>`; }
+      return `<button class="btn sm sec" style="padding:3px 9px" onclick="createLocalVersion('${v.id}','${loc}')">＋${localeShort(loc)}</button>`;
+    }).join(" ");
     return `<tr>
       <td data-label="Video"><b>${esc(title)}</b>
         ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,'en')}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
         <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.driveFolder?` · <a href="${esc(v.driveFolder)}" target="_blank">source file ↗</a>`:''}</div></td>
       <td data-label="Products">${prod}</td>
-      <td data-label="">${action}</td></tr>`;
+      <td data-label="Versions"><div class="row" style="gap:5px;flex-wrap:wrap">${slots}</div></td></tr>`;
   }).join("");
-  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:200px"></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:220px">Versions (EN / TH / MS)</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
 function viewIntlLibrary(){
   const src=intlSourcePool();
-  return `<h2>Library <span class="muted" style="font-size:13px">Already-uploaded videos — make an English version</span></h2>
+  return `<h2>Library <span class="muted" style="font-size:13px">Already-uploaded videos — make an English / Thai / Malay version</span></h2>
   <div class="card">
     <input id="intl_q" placeholder="Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:340px">
     <div id="intl_list" class="${src.length>10?'vidscroll':''}" style="margin-top:10px">${intlLibRows()}</div>
@@ -1614,8 +1616,8 @@ function viewIntlWork(){
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return s?(s.nameEn||s.name||s.rawName||""):""; };
-  // 單語（英文）不顯示徽章；僅相容期殘留的非英文版本才標語言，避免孤兒資料消失
-  const lb=(v)=> (v.locale && v.locale!=="en") ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span> ` : "";
+  // 每列標語言（EN/TH/MS），多語同時進行時一眼分得出
+  const lb=(v)=> v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span> ` : "";
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done</button>`;
     return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
