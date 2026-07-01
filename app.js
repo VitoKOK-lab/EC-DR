@@ -5,8 +5,8 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
+  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -353,7 +353,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf }[CUR_TAB] || (()=>"");
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
@@ -1302,6 +1302,56 @@ function viewTrash(){
       <table class="responsive"><thead><tr><th>影片</th><th>刪除者</th><th>刪除時間</th><th>操作</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="4" class="muted">回收桶是空的</td></tr>`}</tbody></table>
     </div></div>`;
+}
+// ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
+function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
+function num(n){ return (+n||0).toLocaleString(); }
+function viewPerf(){
+  const vids=STATE.videos||[];
+  const rows=[]; vids.forEach(v=>{ (Array.isArray(v.metrics)?v.metrics:[]).forEach(m=>rows.push(Object.assign({v},m))); });
+  const hasData=rows.length>0;
+  // 平台彙總（累計）
+  const plats={}; rows.forEach(r=>{ const p=r.platform||"其他"; const o=plats[p]||(plats[p]={views:0,likes:0,vids:new Set()}); o.views+=(+r.views||0); o.likes+=(+r.likes||0); o.vids.add(r.v.id); });
+  const platKeys=Object.keys(plats).sort((a,b)=>plats[b].views-plats[a].views);
+  // 影片排行（依選中平台，否則全部）
+  const inScope=r=> !PERF_PLAT || r.platform===PERF_PLAT;
+  const perVid={}; rows.filter(inScope).forEach(r=>{ const o=perVid[r.v.id]||(perVid[r.v.id]={v:r.v,views:0,likes:0}); o.views+=(+r.views||0); o.likes+=(+r.likes||0); });
+  const vRank=Object.values(perVid).sort((a,b)=>b.views-a.views).slice(0,50);
+  // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
+  const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
+    (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
+  const pRank=Object.entries(prod).sort((a,b)=>b[1].views-a[1].views).slice(0,50);
+  const prodCell=(v)=>{ const ps=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)); return ps.length?ps.join("、"):'<span class="muted">—</span>'; };
+
+  const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
+      <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
+      <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
+
+  return `<h2>平台成效 <span class="muted" style="font-size:13px">${PERF_PLAT?`目前只看：${esc(PERF_PLAT)}（點卡片可切換／取消）`:"各平台累計；點平台卡片可只看該平台"}</span></h2>
+  ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
+    <b>尚無平台成效數據</b>
+    <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
+  </div>`:''}
+  ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
+  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
+    <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
+    <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="editVideo('${r.v.id}')">
+      <td data-label="#">${i+1}</td>
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
+      <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="帶貨商品">${prodCell(r.v)}</td>
+      <td data-label="觀看"><b>${num(r.views)}</b></td>
+      <td data-label="讚">${num(r.likes)}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">尚無資料</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
+    <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
+    <tbody>${pRank.map((e,i)=>`<tr><td data-label="#">${i+1}</td><td data-label="商品"><b>${esc(e[0])}</b></td><td data-label="出現影片">${e[1].vids.size} 支</td><td data-label="觀看(觸及)"><b>${num(e[1].views)}</b></td></tr>`).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
+    </div>
+  </div>`;
 }
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
 function editVideo(id){ openVideoModal(id, true); }
