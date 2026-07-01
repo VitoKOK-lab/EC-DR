@@ -35,6 +35,9 @@ const DEFAULT_SETTINGS = {
   scheduleHorizonDays: 30,
   reuseWindowDays: 30,
   shoplineBase: "",
+  // 海外二創：TikTok 帳號清單 {locale,name} 與每帳號每日目標
+  intlAccounts: [],
+  intlDailyTarget: 2,
 };
 
 // 尚未填入設定 → 顯示設定指引

@@ -57,7 +57,8 @@
 | `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
 | `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`／`"ms"`＝英／泰／馬在地化二創版。跨語言二創用 |
-| `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片每語言最多一支） |
+| `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片同語言可有多支＝不同帳號/成片） |
+| `account` | string | 上傳帳號 | 在地化版本上傳的海外 TikTok 帳號名（取自 `settings.intlAccounts`）；每支＝一個帳號一個成片 |
 | `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
 | `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
 
@@ -165,6 +166,8 @@
 | `dailyTarget` | number | **每日應上片數（單一數字，不分類型）**；月排程以此判斷已排滿／缺幾支。未設定時沿用 `weekdayTargets` 加總 |
 | `weekdayTargets` | map | （舊）`{0..6: {流量型, 帶貨型, 寵粉}}` 每星期幾各類型上片數；已被 `dailyTarget` 取代，僅作未設定時的後備加總 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
+| `intlAccounts` | object[] | 海外 TikTok 帳號清單，每筆 `{locale, name}`（en/th/ms ＋ 帳號名）；建立在地化版本時挑帳號用 |
+| `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
 | `shoplineBase` | string | Shopline 網址（導購連結用） |
