@@ -1577,7 +1577,7 @@ function intlLibRows(){
     return `<tr>
       <td data-label="Video"><b>${esc(title)}</b>
         ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
-        <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.driveFolder?` · <a href="${esc(v.driveFolder)}" target="_blank">source file ↗</a>`:''}</div></td>
+        <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.rawLink?` · <a href="${esc(v.rawLink)}" target="_blank">raw footage ↗</a>`:' · <span style="color:var(--red)">no raw file</span>'}</div></td>
       <td data-label="Products">${prod}</td>
       <td data-label=""><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${mine}${others?`<span style="opacity:.6">${others}</span>`:''}</div></td></tr>`;
   }).join("");
@@ -1688,7 +1688,7 @@ function openIntlModal(id){
     ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:6px;white-space:pre-wrap">${esc(srcCopy)}</div>
       ${s.videoCopyEn?'':`<a href="${gtranslate(s.videoCopy,tl)}" target="_blank" class="muted" style="font-size:11px">Translate script ↗</a>`}`:''}
     <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}</div>
-    ${s.driveFolder?`<div style="margin-top:6px"><a href="${esc(s.driveFolder)}" target="_blank">Open source video file ↗</a></div>`:''}
+    ${s.rawLink?`<div style="margin-top:6px"><a href="${esc(s.rawLink)}" target="_blank"><b>⬇ Download raw footage ↗</b></a> <span class="muted" style="font-size:11px">(re-cut from the original raw file, not the finished Chinese cut)</span></div>`:`<div style="margin-top:6px" class="muted" style="font-size:12px"><span style="color:var(--red)">No raw footage link on this source — ask the admin to add it.</span></div>`}
     ${s.productUrl?`<div style="margin-top:4px"><a href="${esc(s.productUrl)}" target="_blank">Product page ↗</a></div>`:''}
   </div>`;
   const body=`
