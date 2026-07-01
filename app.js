@@ -1606,7 +1606,7 @@ function intlLibRows(){
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
     const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="vchip ${done?'done':'prog'}" style="cursor:pointer" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}"><span class="ldot ${k.locale}"></span>${done?'done':'in progress'}</span>`;
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}">${localeShort(k.locale)} · ${done?'done':'in progress'}</span>`;
     }).join(" ");
     // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="Preview finished Chinese">▶</button>`:'';
@@ -1757,7 +1757,7 @@ function viewIntlWork(){
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.nameEn||s.name||s.rawName||""):""); };
   const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(untitled)";
-  const lb=(v)=>`<span class="lbadge ${esc(v.locale)}">${localeShort(v.locale)}</span>`;
+  const lb=(v)=>`<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px">${localeShort(v.locale)}</span>`;
   const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done ✓</button>`;

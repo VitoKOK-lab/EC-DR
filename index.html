@@ -110,15 +110,8 @@
   .ilib-code{font-variant-numeric:tabular-nums;opacity:.7}
   .ilib-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex:none;width:250px}
   .ilib-actions .others{font-size:11px;color:var(--muted);text-align:center}
-  /* 語言色點：EN 藍 / TH 紅 / MS 綠 */
-  .ldot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
-  .ldot.en{background:#3B6FB0} .ldot.th{background:#B0473A} .ldot.ms{background:#2C8077}
-  .lbadge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;color:#fff;margin-right:5px}
-  .lbadge.en{background:#3B6FB0} .lbadge.th{background:#B0473A} .lbadge.ms{background:#2C8077}
+  /* 海外版沿用中文版樣式（品牌金色/pill）；語言以 EN/TH/MS 文字區分，不用彩色 */
   .verrow{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
-  .vchip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--muted)}
-  .vchip.done{border-color:#bfe3dd;color:var(--green);background:var(--greenbg)}
-  .vchip.prog{border-color:#e6d6ac;color:var(--gold-dk);background:var(--amberbg)}
   .ibtn{width:38px;flex:none;padding:0;justify-content:center;font-size:14px;display:inline-flex;align-items:center}
   .iwork-item{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:13px 2px;border-bottom:1px solid var(--line)}
   .iwork-item:last-child{border-bottom:none}
@@ -426,7 +419,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783260000"></script>
+<script src="app.js?v=1783320000"></script>
 <script type="module" src="fb.js?v=1782090000"></script>
 </body>
 </html>
