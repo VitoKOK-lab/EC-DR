@@ -1577,7 +1577,7 @@ function intlLibRows(){
     return `<tr>
       <td data-label="Video"><b>${esc(title)}</b>
         ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
-        <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.rawLink?` · <a href="${esc(v.rawLink)}" target="_blank">raw footage ↗</a>`:' · <span style="color:var(--red)">no raw file</span>'}</div></td>
+        <div class="muted" style="font-size:12px">${esc(vidCode(v))}${(v.driveFolder||v.publishedLink)?` · <a href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">watch finished ↗</a>`:''}${v.rawLink?` · <a href="${esc(v.rawLink)}" target="_blank">raw footage ↗</a>`:' · <span style="color:var(--red)">no raw file</span>'}</div></td>
       <td data-label="Products">${prod}</td>
       <td data-label=""><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${mine}${others?`<span style="opacity:.6">${others}</span>`:''}</div></td></tr>`;
   }).join("");
@@ -1688,8 +1688,21 @@ function openIntlModal(id){
     ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:6px;white-space:pre-wrap">${esc(srcCopy)}</div>
       ${s.videoCopyEn?'':`<a href="${gtranslate(s.videoCopy,tl)}" target="_blank" class="muted" style="font-size:11px">Translate script ↗</a>`}`:''}
     <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}</div>
-    ${s.rawLink?`<div style="margin-top:6px"><a href="${esc(s.rawLink)}" target="_blank"><b>⬇ Download raw footage ↗</b></a> <span class="muted" style="font-size:11px">(re-cut from the original raw file, not the finished Chinese cut)</span></div>`:`<div style="margin-top:6px" class="muted" style="font-size:12px"><span style="color:var(--red)">No raw footage link on this source — ask the admin to add it.</span></div>`}
-    ${s.productUrl?`<div style="margin-top:4px"><a href="${esc(s.productUrl)}" target="_blank">Product page ↗</a></div>`:''}
+    <div style="margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:6px">
+      <div style="font-weight:700;margin-bottom:4px">How to work this video</div>
+      <div style="font-size:13px;line-height:1.7">
+        1. <b>Watch our finished Chinese version first</b> — study the pacing, hooks and editing logic that make it work.<br>
+        2. Then <b>re-cut your own ${esc(lname)} version from the raw footage</b> (not by re-exporting the Chinese cut), following that same logic.
+      </div>
+      <div style="margin-top:8px">
+        ${(s.driveFolder||s.publishedLink)?`<a href="${esc(s.driveFolder||s.publishedLink)}" target="_blank"><b>▶ Watch finished Chinese version ↗</b></a>`:`<span class="muted" style="color:var(--red)">No finished Chinese version linked — ask the admin.</span>`}
+        ${(s.publishedLink&&s.driveFolder)?` · <a href="${esc(s.publishedLink)}" target="_blank" class="muted" style="font-size:11px">posted video ↗</a>`:''}
+      </div>
+      <div style="margin-top:6px">
+        ${s.rawLink?`<a href="${esc(s.rawLink)}" target="_blank"><b>⬇ Download raw footage ↗</b></a> <span class="muted" style="font-size:11px">(what you re-cut from)</span>`:`<span class="muted" style="color:var(--red)">No raw footage link on this source — ask the admin to add it.</span>`}
+      </div>
+    </div>
+    ${s.productUrl?`<div style="margin-top:6px"><a href="${esc(s.productUrl)}" target="_blank">Product page ↗</a></div>`:''}
   </div>`;
   const body=`
     ${sourceCard}
