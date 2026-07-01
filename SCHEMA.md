@@ -56,8 +56,8 @@
 | `deletedAt` | string(ISO) | 刪除時間 | |
 | `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
-| `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`＝英文二創版（未來可 `th`/`ms`）。跨語言二創用 |
-| `sourceVideoId` | string | 來源片 | 英文/海外版指回台灣源片的 `id`；源片本身為 `""` |
+| `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`／`"ms"`＝英／泰／馬在地化二創版。跨語言二創用 |
+| `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片每語言最多一支） |
 | `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
 | `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
 

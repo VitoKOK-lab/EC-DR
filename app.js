@@ -1201,9 +1201,10 @@ function vidTableRow(v){
     :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">× 退回</span>':'');
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   // 語言標示：英文版標「EN」；有英文版的源片標「＋EN」
-  const langBadge = v.locale==="en"
-    ? '<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">EN</span>'
-    : (enVersionOf(v.id)?'<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)">＋EN</span>':'');
+  // 語言標示：在地化版本標自身語言（EN/TH/MS）；源片標已存在的在地化語言（＋EN TH…）
+  const langBadge = v.locale
+    ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span>`
+    : (function(){ const ls=[...new Set(localizedVersionsOfSrc(v.id).map(k=>localeShort(k.locale)))]; return ls.length?`<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)">＋${ls.join(" ")}</span>`:''; })();
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
@@ -1506,103 +1507,113 @@ async function saveVideo(id){
 // 英文版＝一筆 locale:"en" 的影片，sourceVideoId 指回台灣源片；沿用認領/完成流程與影片庫。
 // ===================================================================
 let INTL_Q="";
-function gtranslate(text){ return "https://translate.google.com/?sl=zh-TW&tl=en&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
-// 源片視窗的「各語言版本」卡（中英一起看）＋英文版回連源片
+// 在地化語言（海外二創）：一種角色、建立時選語言；三語都用英文操作介面
+const INTL_LOCALES=["en","th","ms"];
+const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};
+const LOCALE_SHORT={en:"EN",th:"TH",ms:"MS"};
+const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
+function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
+function localeShort(l){ return LOCALE_SHORT[l]||String(l||"").toUpperCase(); }
+function gtranslate(text, tl){ return "https://translate.google.com/?sl=zh-TW&tl="+(tl||"en")+"&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
+function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
+// 某源片某語言是否已有在地化版本
+function localizedVersionOf(sourceId, locale){ return (STATE.videos||[]).find(v=>v.locale===locale && v.sourceVideoId===sourceId); }
+function localizedVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.sourceVideoId===sourceId && v.locale); }
+// 源片視窗的「各語言版本」卡（中／英泰馬一起看）＋在地化版本回連源片
 function localizedVersionsCard(v){
   if(!v||!v.id) return "";
-  if(v.locale==="en"){
+  if(v.locale){   // 這支本身是在地化版本 → 回連源片
     const s=srcOf(v);
     return `<div class="card" style="background:var(--panel2)"><b>來源片（台灣）</b>
-      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:'<span class="muted">來源片已不存在</span>'}</div></div>`;
+      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:'<span class="muted">來源片已不存在</span>'} <span class="muted" style="font-size:12px">・${esc(localeName(v.locale))}</span></div></div>`;
   }
-  const kids=(STATE.videos||[]).filter(x=>x.sourceVideoId===v.id);
+  const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
   if(!kids.length) return "";
-  const langName={en:"英文"};
   const rows=kids.map(k=>{
     const st=(k.published||k.stage==="已完成")?'<span class="pill ok" style="font-size:10px">完成</span>':(k.stage==="剪輯中"?'<span class="pill wa" style="font-size:10px">製作中</span>':'<span class="pill" style="font-size:10px">待製作</span>');
-    const plat=(Array.isArray(k.platforms)?k.platforms:[]).map(esc).join("、")||'<span class="muted">—</span>';
     const link=k.publishedLink?`<a href="${esc(k.publishedLink)}" target="_blank">上傳連結</a>`:'<span class="muted">—</span>';
     const mv=(Array.isArray(k.metrics)?k.metrics:[]).reduce((a,m)=>a+(+m.views||0),0);
     return `<tr>
-      <td data-label="語言">${langName[k.locale]||esc(k.locale||"")}</td>
+      <td data-label="語言">${esc(localeName(k.locale))}</td>
       <td data-label="剪輯">${esc(k.editor||k.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="狀態">${st}</td>
-      <td data-label="上傳帳號">${plat}</td>
-      <td data-label="上傳">${link}</td>
+      <td data-label="上傳連結">${link}</td>
       <td data-label="觀看">${mv?num(mv):'<span class="muted">—</span>'}</td>
       <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">開啟</a></td></tr>`;
   }).join("");
-  return `<div class="card" style="background:var(--panel2)"><b>各語言版本（${kids.length}）</b> <span class="muted" style="font-size:12px">同一支影片的海外二創，中英一起看</span>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>語言</th><th>剪輯</th><th>狀態</th><th>上傳帳號</th><th>上傳</th><th>觀看</th><th></th></tr></thead>
+  return `<div class="card" style="background:var(--panel2)"><b>各語言版本（${kids.length}）</b> <span class="muted" style="font-size:12px">同一支影片的海外二創（英/泰/馬），一起看</span>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>語言</th><th>剪輯</th><th>狀態</th><th>上傳連結</th><th>觀看</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
-// 某源片是否已有英文版（回傳該英文版或 undefined）
-function enVersionOf(sourceId){ return (STATE.videos||[]).find(v=>v.locale==="en" && v.sourceVideoId===sourceId); }
-function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
 
-// ---- Library：可二創的台灣完成片 ----
+// ---- Library：可二創的台灣完成片（每支三個語言槽 EN/TH/MS）----
 function intlLibRows(){
   const all=STATE.videos||[];
   const q=(document.getElementById('intl_q')?.value||'').toLowerCase().trim();
-  let src=all.filter(v=> v.locale!=="en" && isPublished(v));
+  let src=all.filter(v=> !v.locale && isPublished(v));
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return '<p class="muted" style="padding:14px 4px">No finished videos to localize yet.</p>';
   const rows=src.slice(0,200).map(v=>{
-    const en=enVersionOf(v.id);
     const title=v.nameEn||v.name||v.rawName||"(untitled)";
     const noEnSummary=!v.nameEn;
     const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join(", ")||'<span class="muted">—</span>';
-    const action = en
-      ? `<span class="pill ${(en.published||en.stage==='已完成')?'ok':'wa'}" style="font-size:11px">EN ${(en.published||en.stage==='已完成')?'done':'in progress'}${en.editor?(' · '+esc(en.editor)):''}</span>`
-      : `<button class="btn sm" onclick="createLocalVersion('${v.id}')">Create English version</button>`;
+    const slots=INTL_LOCALES.map(loc=>{
+      const ex=localizedVersionOf(v.id, loc);
+      if(ex){ const done=(ex.published||ex.stage==='已完成');
+        return `<span class="pill ${done?'ok':'wa'}" style="font-size:10px" title="${done?'done':'in progress'}${ex.editor?(' · '+esc(ex.editor)):''}">${localeShort(loc)} ${done?'✓':'…'}</span>`; }
+      return `<button class="btn sm sec" style="padding:3px 9px" onclick="createLocalVersion('${v.id}','${loc}')">＋${localeShort(loc)}</button>`;
+    }).join(" ");
     return `<tr>
       <td data-label="Video"><b>${esc(title)}</b>
-        ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName)}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
+        ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,'en')}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
         <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.driveFolder?` · <a href="${esc(v.driveFolder)}" target="_blank">source file ↗</a>`:''}</div></td>
       <td data-label="Products">${prod}</td>
-      <td data-label="">${action}</td></tr>`;
+      <td data-label="Versions"><div class="row" style="gap:5px;flex-wrap:wrap">${slots}</div></td></tr>`;
   }).join("");
-  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:190px"></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:220px">Versions (EN / TH / MS)</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
 function viewIntlLibrary(){
-  const src=(STATE.videos||[]).filter(v=> v.locale!=="en" && isPublished(v));
-  return `<h2>Library <span class="muted" style="font-size:13px">Finished Taiwan videos — pick one to make an English version</span></h2>
+  const src=(STATE.videos||[]).filter(v=> !v.locale && isPublished(v));
+  return `<h2>Library <span class="muted" style="font-size:13px">Finished Taiwan videos — make an English / Thai / Malay version</span></h2>
   <div class="card">
     <input id="intl_q" placeholder="Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:340px">
     <div id="intl_list" class="${src.length>10?'vidscroll':''}" style="margin-top:10px">${intlLibRows()}</div>
   </div>`;
 }
 
-// ---- 建立英文版（衍生影片，指派給自己）----
-function createLocalVersion(sourceId){
+// ---- 建立在地化版本（衍生影片，指派給自己；語言由按鈕帶入）----
+function createLocalVersion(sourceId, locale){
+  locale=locale||"en";
+  if(!INTL_LOCALES.includes(locale)){ toast("Unknown language",true); return; }
   const s=vid(sourceId); if(!s){ toast("Source not found",true); return; }
   if(!isPublished(s)){ toast("Only finished videos can be localized",true); return; }
-  if(enVersionOf(sourceId)){ toast("English version already exists",true); return; }
+  if(localizedVersionOf(sourceId, locale)){ toast(localeName(locale)+" version already exists",true); return; }
   const me=currentUser();
-  const rec=newVideoRecord({ locale:"en", sourceVideoId:sourceId,
+  const rec=newVideoRecord({ locale, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},"English version created — claim it in My Work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } });
+  write("POST","/api/videos",{video:rec},localeName(locale)+" version created — claim it in My Work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } });
 }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
-function intlUnclaim(id){ if(!confirm("Return this English version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
+function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
 
-// ---- My Work（全英文）----
+// ---- My Work（全英文，跨語言）----
 function viewIntlWork(){
   const me=currentUser();
   const all=STATE.videos||[];
-  const inProg=all.filter(v=>v.locale==="en" && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
+  const inProg=all.filter(v=>v.locale && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
   const atLimit=inProg.length>=3;
-  const todo=all.filter(v=>v.locale==="en" && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
-    .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
-  const doneToday=all.filter(v=>v.locale==="en" && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
+  const todo=all.filter(v=>v.locale && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
+    .sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale) || String(a.id).localeCompare(String(b.id)));
+  const doneToday=all.filter(v=>v.locale && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return s?(s.nameEn||s.name||s.rawName||""):""; };
+  const lb=(v)=>`<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span>`;
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done</button>`;
     return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
@@ -1615,12 +1626,12 @@ function viewIntlWork(){
         <b style="font-size:16px">To do</b><span class="pill ${todo.length?'ok':'wa'}">${todo.length}</span>
       </div>
       <div style="margin-top:10px${todo.length>5?';max-height:300px;overflow-y:auto':''}">
-      <table class="responsive"><thead><tr><th>English version (source)</th><th style="width:150px"></th></tr></thead>
+      <table class="responsive"><thead><tr><th>Version (source)</th><th style="width:150px"></th></tr></thead>
       <tbody>${todo.map(v=>`<tr>
-        <td data-label="Video"><b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b>
+        <td data-label="Video">${lb(v)} <b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b>
           <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}</div></td>
         <td data-label=""><button class="btn sm" onclick="intlClaim('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">Nothing to do. Go to <b>Library</b> and create an English version.</td></tr>`}</tbody></table>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">Nothing to do. Go to <b>Library</b> and create a version.</td></tr>`}</tbody></table>
       </div>
       ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">You have 3 in progress — finish some before claiming more.</span></p>':''}
     </div>
@@ -1629,57 +1640,51 @@ function viewIntlWork(){
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">In progress / done today</b><span class="pill ${atLimit?'wa':'ok'}">${inProg.length}/3</span>
       </div>
-      <table class="responsive" style="margin-top:10px"><thead><tr><th>English version</th><th style="width:230px">Status</th></tr></thead>
+      <table class="responsive" style="margin-top:10px"><thead><tr><th>Version</th><th style="width:230px">Status</th></tr></thead>
       <tbody>${work.map(v=>`<tr>
-        <td data-label="Video"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')"><b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b></a>
+        <td data-label="Video">${lb(v)} <a href="javascript:void(0)" onclick="openIntlModal('${v.id}')"><b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b></a>
           <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}</div></td>
         <td data-label="Status"><div class="row" style="gap:6px">${workBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">No English versions in progress. Claim one from “To do”.</td></tr>`}</tbody></table>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">No versions in progress. Claim one from “To do”.</td></tr>`}</tbody></table>
     </div>
   </div>`;
 }
 
-// ---- 英文版編輯視窗（全英文）----
+// ---- 在地化版本編輯視窗（全英文；語言隨版本）----
 function intlFinish(id){ const v=vid(id)||{};
   if(!String(v.publishedLink||"").trim()){ toast("Add the upload URL first (open Edit)",true); return; }
   if(!confirm(`Mark "${(v.name||v.rawName||"this video")}" as done? It will move to the library.`)) return;
-  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",platforms:Array.isArray(v.platforms)?v.platforms:[]},"Done — moved to the library").then(ok=>{ if(ok) render(); });
+  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||""},"Done — moved to the library").then(ok=>{ if(ok) render(); });
 }
 async function intlSaveVideo(id){
-  const platforms=[...document.querySelectorAll('.intl_plat:checked')].map(x=>x.value);
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
-    driveFolder:val("i_drive").trim(), publishedLink:val("i_pub").trim(), platforms };
+    driveFolder:val("i_drive").trim(), publishedLink:val("i_pub").trim() };
   return await write("PUT",`/api/videos/${id}`,{video},"Saved");
 }
 function openIntlModal(id){
   const v=vid(id)||{}; const s=srcOf(v)||{};
-  const plats=postPlatforms(); const sel=new Set(Array.isArray(v.platforms)?v.platforms:[]);
+  const tl=LOCALE_GT[v.locale]||"en"; const lname=localeName(v.locale);
   const srcTitle=s.nameEn||s.name||s.rawName||"";
   const srcCopy=s.videoCopyEn||s.videoCopy||"";
   const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)+(p.price?` ($${esc(p.price)})`:"")).join(", ")||'<span class="muted">—</span>';
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
-      <h3 style="margin:0">English version</h3>
+      <h3 style="margin:0">${esc(lname)} version</h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="Close">×</button></div>`;
   const sourceCard=`<div class="card" style="background:var(--panel2)"><b>Source (Taiwan)</b>
     <div style="margin-top:6px"><b>${esc(srcTitle||"(untitled)")}</b>
-      ${s.nameEn?'':` <a href="${gtranslate(s.name||s.rawName)}" target="_blank" class="muted" style="font-size:11px">Translate title ↗</a>`}</div>
+      ${s.nameEn?'':` <a href="${gtranslate(s.name||s.rawName,tl)}" target="_blank" class="muted" style="font-size:11px">Translate title ↗</a>`}</div>
     ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:6px;white-space:pre-wrap">${esc(srcCopy)}</div>
-      ${s.videoCopyEn?'':`<a href="${gtranslate(s.videoCopy)}" target="_blank" class="muted" style="font-size:11px">Translate script ↗</a>`}`:''}
+      ${s.videoCopyEn?'':`<a href="${gtranslate(s.videoCopy,tl)}" target="_blank" class="muted" style="font-size:11px">Translate script ↗</a>`}`:''}
     <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}</div>
     ${s.driveFolder?`<div style="margin-top:6px"><a href="${esc(s.driveFolder)}" target="_blank">Open source video file ↗</a></div>`:''}
     ${s.productUrl?`<div style="margin-top:4px"><a href="${esc(s.productUrl)}" target="_blank">Product page ↗</a></div>`:''}
   </div>`;
   const body=`
     ${sourceCard}
-    <label>English title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="English title / caption">
-    <label>English script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
-    <label>English version file URL (your re-cut, saved separately)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your English cut">
-    <label>Upload URL (the TikTok post)</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/...">
-    <label>Uploaded to (account / platform)</label>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">
-      ${plats.map(p=>`<label class="tag" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px"><input type="checkbox" class="intl_plat" value="${esc(p.name)}" ${sel.has(p.name)?'checked':''}> ${esc(p.name)}</label>`).join("")}
-    </div>
-    <div class="muted" style="font-size:12px;margin-top:6px">Tip: add overseas TikTok accounts in Settings → 投放平台 if they’re not listed.</div>`;
+    <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
+    <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
+    <label>Video file URL (your re-cut, saved separately)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your ${esc(localeShort(v.locale))} cut">
+    <label>Upload URL (the TikTok post)</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/...">`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">Cancel</button>
       <button class="btn" type="button" onclick="intlSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">Save</button></div>`;
