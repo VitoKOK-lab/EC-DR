@@ -1565,8 +1565,7 @@ function intlLibRows(){
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return '<p class="muted" style="padding:14px 4px">No uploaded videos available to localize yet.</p>';
   const rows=src.slice(0,200).map(v=>{
-    const title=v.nameEn||v.name||v.rawName||"(untitled)";
-    const noEnSummary=!v.nameEn;
+    const zhTitle=v.name||v.rawName||"(untitled)";   // 上：中文原標題
     const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join(", ")||'<span class="muted">—</span>';
     // 帳號綁定語言：只顯示「我的語言」的建立鈕/狀態；其他語言以極簡標示讓我知道有人在做（不可點）
     const ex=localizedVersionOf(v.id, myLoc);
@@ -1574,10 +1573,14 @@ function intlLibRows(){
       ? `<span class="pill ${(ex.published||ex.stage==='已完成')?'ok':'wa'}" style="font-size:11px">${esc(localeName(myLoc))} ${(ex.published||ex.stage==='已完成')?'✓':'…'}${ex.editor&&ex.editor!==currentUser()?(' · '+esc(ex.editor)):''}</span>`
       : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')">Create ${esc(localeName(myLoc))} version</button>`;
     const others=INTL_LOCALES.filter(l=>l!==myLoc).map(l=>{ const e=localizedVersionOf(v.id,l); return e?`<span class="muted" style="font-size:11px">${localeShort(l)} ${(e.published||e.stage==='已完成')?'✓':'…'}</span>`:''; }).filter(Boolean).join(" ");
+    // 下：英文（我的語言）標題——有填 nameEn 直接顯示，沒填給一鍵翻譯讓他看得懂
+    const enLine = v.nameEn
+      ? `<div style="font-size:13px;color:var(--accent)">${esc(v.nameEn)}</div>`
+      : `<div style="font-size:12px"><a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted">Translate title to ${esc(localeName(myLoc))} ↗</a></div>`;
     return `<tr>
-      <td data-label="Video"><b>${esc(title)}</b>
-        ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
-        <div class="muted" style="font-size:12px">${esc(vidCode(v))}${(v.driveFolder||v.publishedLink)?` · <a href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">watch finished ↗</a>`:''}${v.rawLink?` · <a href="${esc(v.rawLink)}" target="_blank">raw footage ↗</a>`:' · <span style="color:var(--red)">no raw file</span>'}</div></td>
+      <td data-label="Video"><b>${esc(zhTitle)}</b>
+        ${enLine}
+        <div class="muted" style="font-size:12px;margin-top:2px">${esc(vidCode(v))}${(v.driveFolder||v.publishedLink)?` · <a href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">watch Chinese preview ↗</a>`:''}</div></td>
       <td data-label="Products">${prod}</td>
       <td data-label=""><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${mine}${others?`<span style="opacity:.6">${others}</span>`:''}</div></td></tr>`;
   }).join("");
@@ -1586,7 +1589,8 @@ function intlLibRows(){
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
 function viewIntlLibrary(){
   const src=intlSourcePool(); const myLoc=currentIntlLocale();
-  return `<h2>Library <span class="muted" style="font-size:13px">Already-uploaded videos — make a ${esc(localeName(myLoc))} version</span></h2>
+  return `<h2>Library <span class="pill" style="font-size:11px;background:var(--accent);color:#fff;vertical-align:middle">${esc(localeName(myLoc))} account</span>
+    <span class="muted" style="font-size:13px">Already-uploaded videos — make your ${esc(localeName(myLoc))} version</span></h2>
   <div class="card">
     <input id="intl_q" placeholder="Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:340px">
     <div id="intl_list" class="${src.length>10?'vidscroll':''}" style="margin-top:10px">${intlLibRows()}</div>
