@@ -1603,32 +1603,33 @@ function intlLibRows(){
   const cards=src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(untitled)";   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
-    // 分開：一支源片可有多支版本（不同帳號/成片）；已建的以 chip 列出（語言·帳號·狀態）
+    // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
     const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="pill ${done?'ok':'wa'}" style="font-size:11px;cursor:pointer" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''} · ${done?'done':'in progress'}${k.editor?(' · '+esc(k.editor)):''}">${localeShort(k.locale)}${k.account?(' '+esc(k.account)):''} ${done?'✓':'…'}</span>`;
+      return `<span class="vchip ${done?'done':'prog'}" style="cursor:pointer" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}"><span class="ldot ${k.locale}"></span>${done?'done':'in progress'}</span>`;
     }).join(" ");
-    // 帳號選單只「選取」，再按「Add to To do」才建立（避免誤觸馬上跳走）；未設定帳號→提示
-    const addSel = accts.length
-      ? `<div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end;width:100%">
-          <select id="addacct_${v.id}" style="font-size:13px;padding:6px 8px;flex:1;min-width:120px">
-            <option value="">— select account —</option>
+    // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
+    const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="Preview finished Chinese">▶</button>`:'';
+    const addRow = accts.length
+      ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
+          ${previewBtn}
+          <select id="addacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
+            <option value="">＋ Add version — pick account</option>
             ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
           </select>
-          <button class="btn sm" onclick="createLocalPick('${v.id}')" title="Create this version and add it to your To do">＋ Add to To do</button>
+          <button class="btn sm" style="flex:none" onclick="createLocalPick('${v.id}')" title="Create this version and add it to your To do">＋ Add</button>
         </div>`
-      : `<span class="muted" style="font-size:12px">Ask admin to add accounts in Settings</span>`;
-    const preview=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')">▶ Preview</button>`:'';
+      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">Ask admin to add accounts in Settings</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
         <div class="ilib-zh">${esc(zhTitle)} <span class="ilib-code">${esc(vidCode(v))}</span></div>
         ${enT?`<div class="ilib-en">${esc(enT)}</div>`:''}
-        ${(chips||prodChips)?`<div class="ilib-meta">${chips}${chips&&prodChips?' ':''}${prodChips}</div>`:''}
+        ${prodChips?`<div class="ilib-meta">${prodChips}</div>`:''}
       </div>
       <div class="ilib-actions">
-        ${addSel}
-        ${preview}
+        ${chips?`<div class="verrow">${chips}</div>`:''}
+        ${addRow}
       </div>
     </div>`;
   }).join("");
@@ -1756,7 +1757,7 @@ function viewIntlWork(){
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.nameEn||s.name||s.rawName||""):""); };
   const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(untitled)";
-  const lb=(v)=>`<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px">${localeShort(v.locale)}</span>`;
+  const lb=(v)=>`<span class="lbadge ${esc(v.locale)}">${localeShort(v.locale)}</span>`;
   const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done ✓</button>`;
