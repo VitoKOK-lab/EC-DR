@@ -1746,33 +1746,24 @@ function openIntlModal(id){
       <h3 style="margin:0">${esc(lname)} version <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="Close">×</button></div>`;
   const warn=[!s.rawLink?'raw footage':'', !(s.driveFolder||s.publishedLink)?'finished Chinese version':''].filter(Boolean).join(' & ');
+  // 翻譯小圖示：放在標題/文案旁邊，點了翻成剪輯自己的語言
+  const trIcon=(text)=>`<a class="tricon" href="${gtranslate(text,tl)}" target="_blank" title="Translate to ${esc(lname)}">文<span>A</span></a>`;
   const sourceCard=`<div class="card" style="background:var(--panel2)">
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">Source · Taiwan</div>
-    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(srcTitle||"(untitled)")}</div>
-    ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(srcCopy)}</div>`:''}
-    <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}</div>
+    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(srcTitle||"(untitled)")}${needTitleTr?trIcon(s.name||s.rawName):''}</div>
+    ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(srcCopy)}${needScriptTr?trIcon(s.videoCopy):''}</div>`:''}
+    <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 page</a>`:''}</div>
     <div class="icallout">
       <div style="font-weight:700;margin-bottom:6px">How to make this ${esc(lname)} version</div>
       <div style="font-size:13px;line-height:1.75">
         <b>1.</b> Watch our finished Chinese version — learn its pacing & hooks.<br>
         <b>2.</b> Re-cut your own ${esc(lname)} version <b>from the raw footage</b> (not the Chinese cut), same logic.
       </div>
-      <div class="igroup">
-        <span class="igroup-l">Watch &amp; download</span>
-        <div class="row" style="gap:8px;flex-wrap:wrap">
-          ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ Watch Chinese</button>`:''}
-          ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ Download original file</a>`:''}
-          ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
-        </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+        ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ Watch Chinese</button>`:''}
+        ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ Download original file</a>`:''}
+        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
       </div>
-      ${(needTitleTr||needScriptTr||s.productUrl)?`<div class="igroup">
-        <span class="igroup-l">Translate to ${esc(lname)} &amp; links</span>
-        <div class="row" style="gap:8px;flex-wrap:wrap">
-          ${needTitleTr?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
-          ${needScriptTr?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
-          ${s.productUrl?`<a class="btn sec sm" href="${esc(s.productUrl)}" target="_blank">🛍 Product page</a>`:''}
-        </div>
-      </div>`:''}
       ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ No ${warn} linked — ask the admin to add it.</div>`:''}
     </div>
   </div>`;
