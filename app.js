@@ -1654,9 +1654,10 @@ function intlDayList(date, acct){ acct=acct!=null?acct:intlCurAcct();
   return (STATE.videos||[]).filter(v=>v.locale && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
 function intlDayBreak(date, acct){ const total=intlDayList(date,acct).length, target=intlDailyTarget();
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
+const MONTHS_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
 function viewCalIntl(){
   const accts=intlAccounts();
-  if(!accts.length) return `<h2 style="margin-top:0">Schedule</h2><div class="card"><p class="muted" style="padding:18px 4px">尚未設定海外 TikTok 帳號。請管理員到<b>設定 → 海外設定</b>新增帳號後，這裡才能依帳號排程。</p></div>`;
+  if(!accts.length) return `<h2 style="margin-top:0">Schedule</h2><div class="card"><p class="muted" style="padding:18px 4px">No overseas TikTok accounts yet. Ask the admin to add them in <b>Settings → Overseas</b>, then you can schedule by account here.</p></div>`;
   const acc=intlCurAcct();
   if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
   const [y,m]=INTL_CAL_YM;
@@ -1666,50 +1667,50 @@ function viewCalIntl(){
   for(let i=0;i<startDow;i++) cells+=`<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">今天</span>`:"";
+    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">Today</span>`:"";
     const within10=ds>=today && ds<=d10s;
     const b=intlDayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
     cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayIntl('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
+      ${filled?`<div class="pmk" style="color:var(--green)">Full</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">None${within10?' (soon)':''}</div>`:`<div class="pmk" style="color:var(--red)">Need ${b.short}</div>`)}
     </div>`;
   }
   const acctSel=`<select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">
     ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option ${a.name===acc?'selected':''}>${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}</select>`;
-  return `<h2 style="margin-top:0">Schedule <span class="muted" style="font-size:13px">每個帳號每天 ${intlDailyTarget()} 支</span></h2>
+  return `<h2 style="margin-top:0">Schedule <span class="muted" style="font-size:13px">${intlDailyTarget()} per account / day</span></h2>
   <div class="card">
     <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>Account</b> ${acctSel}</div>
     <div class="calhead">
-      <button class="calnav" onclick="calMoveIntl(-1)" title="上月">‹</button>
-      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
-      <button class="calnav" onclick="calMoveIntl(1)" title="下月">›</button>
+      <button class="calnav" onclick="calMoveIntl(-1)" title="Previous month">‹</button>
+      <div class="calmonth">${MONTHS_EN[m]} ${y}</div>
+      <button class="calnav" onclick="calMoveIntl(1)" title="Next month">›</button>
     </div>
     <div class="cal">
-      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
+      ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <div class="callegend"><span><i class="lg-g"></i>已排滿</span><span><i class="lg-r"></i>待補</span><span><i class="lg-b"></i>未排</span><span><i class="lg-t"></i>今天</span></div>
+    <div class="callegend"><span><i class="lg-g"></i>Full</span><span><i class="lg-r"></i>Behind</span><span><i class="lg-b"></i>None</span><span><i class="lg-t"></i>Today</span></div>
   </div>`;
 }
 function openDayIntl(ds){
   const acc=intlCurAcct(); const b=intlDayBreak(ds,acc); const list=intlDayList(ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.nameEn||s.name||s.rawName):"")||"(untitled)")}</a>
+      <td data-label="Video"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.nameEn||s.name||s.rawName):"")||"(untitled)")}</a>
         <span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-left:5px">${localeShort(v.locale)}</span></td>
-      <td data-label="狀態"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'完成':(v.stage==='剪輯中'?'製作中':'待製作')}</span></td>
-      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="上傳">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">連結</a>`:'<span class="muted">—</span>'}</td></tr>`;
+      <td data-label="Status"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'Done':(v.stage==='剪輯中'?'In progress':'To do')}</span></td>
+      <td data-label="Editor">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="Upload">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">Link</a>`:'<span class="muted">—</span>'}</td></tr>`;
   }).join("");
-  const wd="日一二三四五六"[new Date(ds+"T00:00:00").getDay()];
+  const wd=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(ds+"T00:00:00").getDay()];
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="margin:0">${esc(ds)}（${wd}）· ${esc(acc)}</h3>
+      <h3 style="margin:0">${esc(ds)} (${wd}) · ${esc(acc)}</h3>
       <button class="btn sec sm" onclick="closeModal()">×</button></div>
-    <div class="muted" style="margin-bottom:8px">已排 ${b.total}/${b.target}${b.short?`（缺 ${b.short}）`:'　已排滿'}</div>
-    ${list.length?`<table class="responsive"><thead><tr><th>影片</th><th>狀態</th><th>剪輯</th><th>上傳</th></tr></thead><tbody>${rows}</tbody></table>`:`<p class="muted" style="padding:10px 2px">這天此帳號還沒排片。到影片版本的編輯視窗設「Scheduled upload date」即可排到某天。</p>`}
+    <div class="muted" style="margin-bottom:8px">Scheduled ${b.total}/${b.target}${b.short?` (need ${b.short})`:' · Full'}</div>
+    ${list.length?`<table class="responsive"><thead><tr><th>Video</th><th>Status</th><th>Editor</th><th>Upload</th></tr></thead><tbody>${rows}</tbody></table>`:`<p class="muted" style="padding:10px 2px">Nothing scheduled for this account on this day. Set the “Scheduled upload date” in a version’s edit window to place it here.</p>`}
   </div></div>`;
 }
 
@@ -1734,7 +1735,7 @@ function createLocalVersion(sourceId, locale, account){
 }
 // 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'+sourceId); const idx=sel?sel.value:'';
-  if(idx===''){ toast("先選一個帳號",true); return; } createLocalFromAcct(sourceId, idx); }
+  if(idx===''){ toast("Pick an account first",true); return; } createLocalFromAcct(sourceId, idx); }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
 // 退回資料庫：把 To do 裡誤加/不做的版本移除（軟刪除→管理員回收桶，可復原）
