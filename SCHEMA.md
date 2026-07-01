@@ -103,6 +103,7 @@
 |---|---|---|
 | `name` | string | 名字（= 文件 ID） |
 | `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面） |
+| `intlLocale` | string | 海外剪輯綁定語言 | `en`／`th`／`ms`（僅 `role=intl` 用；未設定＝`en`）。帳號綁語言：只做/只看該語言 |
 | `isDefault` | boolean | 系統預設旗標 |
 
 > 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。

@@ -25,6 +25,9 @@ function currentRole(){
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
+// 海外剪輯：帳號綁定的語言（en/th/ms），未設定預設英文
+function userIntlLocale(name){ const u=(STATE?.users||[]).find(x=>x.name===name); const l=u&&u.intlLocale; return (l&&["en","th","ms"].includes(l))?l:"en"; }
+function currentIntlLocale(){ return userIntlLocale(currentUser()); }
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
@@ -127,8 +130,11 @@ async function route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      await window.DB.set("users", name, {name, role, isDefault:false, pw:"0000"}); return; }
+      const rec={name, role, isDefault:false, pw:"0000"};
+      if(body.intlLocale!=null) rec.intlLocale=body.intlLocale;   // 海外剪輯：帳號綁定語言（en/th/ms）
+      await window.DB.set("users", name, rec); return; }
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
+      if(body.intlLocale!=null) patch.intlLocale=body.intlLocale;
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
@@ -1552,6 +1558,7 @@ function localizedVersionsCard(v){
 // ---- Library：只列「已上傳的中文舊片」（完整已上傳＝已完成且過了上片日）----
 function intlSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && isPublished(v) && vidIsOld(v)); }
 function intlLibRows(){
+  const myLoc=currentIntlLocale();
   const q=(document.getElementById('intl_q')?.value||'').toLowerCase().trim();
   let src=intlSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
@@ -1561,25 +1568,25 @@ function intlLibRows(){
     const title=v.nameEn||v.name||v.rawName||"(untitled)";
     const noEnSummary=!v.nameEn;
     const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join(", ")||'<span class="muted">—</span>';
-    const slots=INTL_LOCALES.map(loc=>{
-      const ex=localizedVersionOf(v.id, loc);
-      if(ex){ const done=(ex.published||ex.stage==='已完成');
-        return `<span class="pill ${done?'ok':'wa'}" style="font-size:10px" title="${done?'done':'in progress'}${ex.editor?(' · '+esc(ex.editor)):''}">${localeShort(loc)} ${done?'✓':'…'}</span>`; }
-      return `<button class="btn sm sec" style="padding:3px 9px" onclick="createLocalVersion('${v.id}','${loc}')">＋${localeShort(loc)}</button>`;
-    }).join(" ");
+    // 帳號綁定語言：只顯示「我的語言」的建立鈕/狀態；其他語言以極簡標示讓我知道有人在做（不可點）
+    const ex=localizedVersionOf(v.id, myLoc);
+    const mine = ex
+      ? `<span class="pill ${(ex.published||ex.stage==='已完成')?'ok':'wa'}" style="font-size:11px">${esc(localeName(myLoc))} ${(ex.published||ex.stage==='已完成')?'✓':'…'}${ex.editor&&ex.editor!==currentUser()?(' · '+esc(ex.editor)):''}</span>`
+      : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')">Create ${esc(localeName(myLoc))} version</button>`;
+    const others=INTL_LOCALES.filter(l=>l!==myLoc).map(l=>{ const e=localizedVersionOf(v.id,l); return e?`<span class="muted" style="font-size:11px">${localeShort(l)} ${(e.published||e.stage==='已完成')?'✓':'…'}</span>`:''; }).filter(Boolean).join(" ");
     return `<tr>
       <td data-label="Video"><b>${esc(title)}</b>
-        ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,'en')}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
+        ${noEnSummary?` <a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted" style="font-size:11px">Translate ↗</a>`:''}
         <div class="muted" style="font-size:12px">${esc(vidCode(v))}${v.driveFolder?` · <a href="${esc(v.driveFolder)}" target="_blank">source file ↗</a>`:''}</div></td>
       <td data-label="Products">${prod}</td>
-      <td data-label="Versions"><div class="row" style="gap:5px;flex-wrap:wrap">${slots}</div></td></tr>`;
+      <td data-label=""><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${mine}${others?`<span style="opacity:.6">${others}</span>`:''}</div></td></tr>`;
   }).join("");
-  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:220px">Versions (EN / TH / MS)</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:230px"></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
 function viewIntlLibrary(){
-  const src=intlSourcePool();
-  return `<h2>Library <span class="muted" style="font-size:13px">Already-uploaded videos — make an English / Thai / Malay version</span></h2>
+  const src=intlSourcePool(); const myLoc=currentIntlLocale();
+  return `<h2>Library <span class="muted" style="font-size:13px">Already-uploaded videos — make a ${esc(localeName(myLoc))} version</span></h2>
   <div class="card">
     <input id="intl_q" placeholder="Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:340px">
     <div id="intl_list" class="${src.length>10?'vidscroll':''}" style="margin-top:10px">${intlLibRows()}</div>
@@ -1607,23 +1614,24 @@ function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")
 // ---- My Work（全英文，跨語言）----
 function viewIntlWork(){
   const me=currentUser();
+  const myLoc=currentIntlLocale();   // 帳號綁定語言：只看/只做自己語言
   const all=STATE.videos||[];
-  const inProg=all.filter(v=>v.locale && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
+  const inProg=all.filter(v=>v.locale===myLoc && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
   const atLimit=inProg.length>=3;
-  const todo=all.filter(v=>v.locale && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
-    .sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale) || String(a.id).localeCompare(String(b.id)));
-  const doneToday=all.filter(v=>v.locale && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
+  const todo=all.filter(v=>v.locale===myLoc && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
+    .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const doneToday=all.filter(v=>v.locale===myLoc && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return s?(s.nameEn||s.name||s.rawName||""):""; };
-  // 每列標語言（EN/TH/MS），多語同時進行時一眼分得出
-  const lb=(v)=> v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span> ` : "";
+  // 帳號已綁單一語言，逐列不再標語言徽章
+  const lb=(v)=> "";
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done</button>`;
     return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
       <button class="btn sm" onclick="intlFinish('${v.id}')" title="Uploaded & finished">Done ✔</button>
       <button class="btn sec sm" onclick="intlUnclaim('${v.id}')">Return</button>`; };
-  return `<h2>My Work <span class="muted" style="font-size:13px">${esc(me)}</span></h2>
+  return `<h2>My Work <span class="muted" style="font-size:13px">${esc(me)} · ${esc(localeName(myLoc))}</span></h2>
   <div class="workgrid">
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
@@ -1708,9 +1716,12 @@ function viewSettings(){
       <option value="editor" ${(u.role||"editor")==="editor"?"selected":""}>剪輯</option>
       <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option>
       <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option></select>`;
+  // 海外剪輯：帳號綁定語言（英/泰/馬），只做/只看自己語言
+  const localeSel=(u)=> u.role!=="intl" ? "" : `<select onchange="setMemberLocale('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px;margin-left:6px" title="海外剪輯的語言">
+      ${INTL_LOCALES.map(l=>`<option value="${l}" ${userIntlLocale(u.name)===l?"selected":""}>${esc(localeName(l))}</option>`).join("")}</select>`;
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
-    <td data-label="角色">${roleSel(u)}</td>
+    <td data-label="角色">${roleSel(u)}${localeSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -1739,11 +1750,12 @@ function viewSettings(){
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片；<b>海外剪輯</b>＝全英文介面，挑台灣完成片做英文版上傳海外 TikTok。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片；<b>海外剪輯</b>＝全英文介面，帳號綁一種語言(英/泰/馬)，挑台灣舊片做該語言版上傳海外 TikTok。</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
-      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option></select>
+      <select id="mb_role" style="width:auto" onchange="var l=document.getElementById('mb_locale');if(l)l.style.display=this.value==='intl'?'':'none'"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option></select>
+      <select id="mb_locale" style="width:auto;display:none" title="海外剪輯語言">${INTL_LOCALES.map(l=>`<option value="${l}">${esc(localeName(l))}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>
   <div class="card"><b>影片標籤</b>
@@ -1809,9 +1821,15 @@ async function saveSettings(){
 // 成員管理（限管理員・併入設定頁）
 // ===================================================================
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
-  const role=val("mb_role")||"editor"; write("POST","/api/users",{name,role},"已新增成員（"+(ROLE_LABEL[role]||role)+"）"); }
+  const role=val("mb_role")||"editor"; const body={name,role};
+  if(role==="intl"){ body.intlLocale=val("mb_locale")||"en"; }   // 海外剪輯：帳號綁語言
+  const suffix=role==="intl"?("・"+localeName(body.intlLocale)):"";
+  write("POST","/api/users",body,"已新增成員（"+(ROLE_LABEL[role]||role)+suffix+"）"); }
 function setMemberRole(name, role){ if(!["editor","manager","intl"].includes(role)) return;
-  writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
+  const body={role}; if(role==="intl") body.intlLocale=userIntlLocale(name);   // 轉成海外剪輯時帶入現有(或預設英文)語言
+  writeAdmin("PUT","/api/users/"+name,body,"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
+function setMemberLocale(name, loc){ if(!INTL_LOCALES.includes(loc)) return;
+  writeAdmin("PUT","/api/users/"+name,{intlLocale:loc},"已將「"+name+"」的語言設為"+localeName(loc)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
 // 主管線上重設員工密碼為 0000，員工再自行修改
