@@ -211,6 +211,7 @@ function exitViewAs(){ VIEW_AS=null; CUR_TAB=null; buildNav(); applyState(LAST_R
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
+  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "Media Studio" : "剪輯部 · 影音中控台";   // 海外剪輯看英文標題
   const nav = document.getElementById("nav"); nav.innerHTML="";
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
@@ -926,7 +927,7 @@ function viewDashboard(){
     </div>
     <div class="grid cols2" style="margin-top:12px">
       <div><label>選擇員工</label>
-        <select id="asg_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></div>
+        <select id="asg_who"><option value="">— 選擇員工 —</option>${["editor","intl"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select></div>
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
@@ -1736,6 +1737,9 @@ function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'
   if(idx===''){ toast("先選一個帳號",true); return; } createLocalFromAcct(sourceId, idx); }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
+// 退回資料庫：把 To do 裡誤加/不做的版本移除（軟刪除→管理員回收桶，可復原）
+function intlDiscard(id){ const v=vid(id)||{}; if(!confirm(`Remove "${(v.name||v.rawName||"this version")}"?\nIt goes to the admin's recycle bin (restorable).`)) return;
+  write("DELETE","/api/videos/"+id,{},"Removed — moved to recycle bin").then(ok=>{ if(ok) render(); }); }
 
 // ---- My Work（全英文，跨語言）----
 function viewIntlWork(){
@@ -1763,7 +1767,10 @@ function viewIntlWork(){
         <div class="iwork-title">${lb(v)}${esc(vTitle(v))}${acct(v)}</div>
         <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||stripHash(v.rawName))}</div>
       </div>
-      <button class="btn sm" style="flex:none" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
+      <div class="row" style="gap:6px;flex:none">
+        <button class="btn sm" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
+        <button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="Remove this version (goes to the admin's recycle bin)">✕ Remove</button>
+      </div>
     </div>`;
   const workItem=(v)=>`<div class="iwork-item">
       <div style="min-width:0">
@@ -1793,6 +1800,28 @@ function viewIntlWork(){
         ${work.map(workItem).join("")||`<p class="muted" style="padding:16px 2px">Nothing in progress. Claim one from “To do”.</p>`}
       </div>
     </div>
+  </div>
+  ${intlAssignedTasks(me)}`;
+}
+// 交辦給海外剪輯的工作：顯示＋一鍵翻譯(文A)＋收到/回報/完成
+function intlAssignedTasks(me){
+  const list=Object.values((STATE&&STATE.tasks)||{}).filter(t=>t&&t.user===me&&t.assignedBy&&t.date===today)
+    .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+  if(!list.length) return "";
+  return `<div class="card" style="margin-top:14px">
+    <b style="font-size:16px">Assigned tasks <span class="muted" style="font-size:12px">from ${esc(list[0].assignedBy||"")}</span></b>
+    <div style="margin-top:8px">${list.map(t=>`<div class="iwork-item">
+      <div style="min-width:0">
+        <div class="iwork-title">${esc(t.title)} <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a></div>
+        ${t.contact?`<div class="muted" style="font-size:12px">Contact: ${esc(t.contact)}</div>`:''}
+        ${t.ack?'':`<div class="muted" style="font-size:12px;color:var(--gold-dk)">Press “Got it” to start</div>`}
+        <input value="${esc(t.report||"")}" placeholder="Progress note…" style="margin-top:6px;font-size:13px" onchange="taskReport('${t.id}',this.value)">
+      </div>
+      <div class="row" style="gap:6px;flex:none;align-items:center">
+        ${t.ack?'':`<button class="btn sm" onclick="ackTask('${t.id}')">Got it</button>`}
+        <label style="display:inline-flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" ${t.done?'checked':''} onchange="taskDone('${t.id}',this.checked)"> Done</label>
+      </div>
+    </div>`).join("")}</div>
   </div>`;
 }
 
@@ -1845,9 +1874,7 @@ function openIntlModal(id){
   const body=`
     ${sourceCard}
     <div style="font-weight:700;font-size:15px;margin:16px 0 2px">Your ${esc(lname)} version</div>
-    ${(function(){ const opts=intlAccountsFor(v.locale); return opts.length?`<label>Account (which ${esc(localeShort(v.locale))} TikTok)</label>
-      <select id="i_acct"><option value="">— pick account —</option>${opts.map(a=>`<option ${v.account===a.name?'selected':''}>${esc(a.name)}</option>`).join("")}${v.account&&!opts.some(a=>a.name===v.account)?`<option selected>${esc(v.account)}</option>`:''}</select>`
-      :(v.account?`<label>Account</label><input value="${esc(v.account)}" readonly style="background:var(--panel2)">`:''); })()}
+    ${v.account?`<label>Account</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)} <span class="muted" style="font-weight:400;font-size:12px">· ${esc(localeShort(v.locale))} TikTok</span></div>`:''}
     <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
     <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
