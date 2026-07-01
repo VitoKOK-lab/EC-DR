@@ -372,6 +372,7 @@ function render(){
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
+  if(v.querySelector(".istudios")) requestAnimationFrame(intlSyncThumb);   // 工作區切換的滑動指示
 }
 
 // ===================================================================
@@ -1568,12 +1569,36 @@ function intlSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && isP
 // 工作區切換（英/泰/馬）：三間「公司/Studio」，今天哪間有分配就進哪間；按鈕上顯示待做數
 function intlStudioCount(l){ const me=currentUser();
   return (STATE.videos||[]).filter(v=>v.locale===l && ((v.stage==="待處理"&&(v.assignedTo===me||!v.assignedTo)) || (v.stage==="剪輯中"&&(v.claimedBy===me||v.editor===me)))).length; }
+let INTL_THUMB={left:4,width:0};   // 工作區切換滑動指示的上一個位置（跨重繪保留 → 產生滑動動畫）
+function intlSyncThumb(){ const seg=document.querySelector('.istudios .seg'); if(!seg) return;
+  const on=seg.querySelector('button.on'), thumb=seg.querySelector('.thumb'); if(!on||!thumb) return;
+  const left=on.offsetLeft, width=on.offsetWidth;
+  thumb.style.left=left+'px'; thumb.style.width=width+'px'; INTL_THUMB={left,width}; }
 function intlLocTabs(){ const cur=curIntlLoc();
   return `<div class="istudios">
     <b style="font-size:14px;white-space:nowrap">🌐 Studios</b>
-    <div class="seg">${INTL_LOCALES.map(l=>{ const n=intlStudioCount(l); return `<button class="${cur===l?'on':''}" onclick="intlSetLoc('${l}')">${esc(localeName(l))}${n?`<span class="cnt">${n}</span>`:''}</button>`; }).join("")}</div>
+    <div class="seg"><div class="thumb" style="left:${INTL_THUMB.left}px;width:${INTL_THUMB.width}px"></div>${INTL_LOCALES.map(l=>{ const n=intlStudioCount(l); return `<button class="${cur===l?'on':''}" onclick="intlSetLoc('${l}')">${esc(localeName(l))}${n?`<span class="cnt">${n}</span>`:''}</button>`; }).join("")}</div>
     <span style="opacity:.85;font-size:12px;margin-left:auto">Today you're working in the <b>${esc(localeName(cur))}</b> studio — the number shows what's assigned.</span>
   </div>`; }
+// 站內影片預覽播放器：能嵌入就播（Drive 檔案 / YouTube / 直接影片檔），資料夾或受保護貼文則給「開新分頁」
+function playableEmbed(url){ url=String(url||"").trim();
+  let m=url.match(/drive\.google\.com\/file\/d\/([-\w]+)/); if(m) return {t:'iframe',src:'https://drive.google.com/file/d/'+m[1]+'/preview'};
+  if(url.indexOf('drive.google')>=0){ m=url.match(/[?&]id=([-\w]+)/); if(m) return {t:'iframe',src:'https://drive.google.com/file/d/'+m[1]+'/preview'}; }
+  m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([-\w]{11})/); if(m) return {t:'iframe',src:'https://www.youtube.com/embed/'+m[1]};
+  if(/\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(url)) return {t:'video',src:url};
+  return {t:'open',src:url}; }
+function openVidPreview(enc){ const url=decodeURIComponent(enc); const e=playableEmbed(url);
+  let inner = e.t==='iframe' ? `<iframe src="${esc(e.src)}" allow="autoplay;fullscreen" allowfullscreen style="width:100%;aspect-ratio:16/9;max-height:64vh;border:0;border-radius:8px;background:#000"></iframe>`
+    : e.t==='video' ? `<video src="${esc(e.src)}" controls autoplay playsinline style="width:100%;max-height:64vh;border-radius:8px;background:#000"></video>`
+    : `<div class="muted" style="padding:26px 16px;text-align:center;line-height:1.7">This link can't play inside the app<br>(it looks like a cloud folder or a protected post).<br><a class="btn sm" style="margin-top:12px" href="${esc(url)}" target="_blank">Open in new tab ↗</a></div>`;
+  const w=document.createElement('div'); w.className='modal'; w.style.zIndex='9999';
+  w.onclick=function(ev){ if(ev.target===w) w.remove(); };
+  w.innerHTML=`<div class="box" style="max-width:860px" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Preview</b><button class="btn sec sm" onclick="this.closest('.modal').remove()">×</button></div>
+    ${inner}
+    <div style="margin-top:8px;text-align:right"><a class="muted" href="${esc(url)}" target="_blank" style="font-size:12px">Open original ↗</a></div>
+  </div>`;
+  document.body.appendChild(w); }
 function intlLibRows(){
   const myLoc=curIntlLoc();
   const q=(document.getElementById('intl_q')?.value||'').toLowerCase().trim();
@@ -1588,8 +1613,8 @@ function intlLibRows(){
     // 主要動作：建立我的語言版 / 或狀態
     const action = ex
       ? `<span class="pill ${done?'ok':'wa'}" style="justify-content:center;padding:8px">${esc(localeName(myLoc))} ${done?'done ✓':'in progress'}</span>`
-      : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')">Create ${esc(localeName(myLoc))} version</button>`;
-    const preview=(v.driveFolder||v.publishedLink)?`<a class="btn sec sm" href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">▶ Preview</a>`:'';
+      : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')" title="Create the ${esc(localeName(myLoc))} version">＋ Create version</button>`;
+    const preview=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')">▶ Preview</button>`:'';
     // 英文標題：有填直接顯示；沒填 → 一鍵翻譯按鈕
     const en = v.nameEn
       ? `<div class="ilib-en">${esc(v.nameEn)}</div>`
@@ -1728,13 +1753,22 @@ function openIntlModal(id){
         <b>1.</b> Watch our finished Chinese version — learn its pacing & hooks.<br>
         <b>2.</b> Re-cut your own ${esc(lname)} version <b>from the raw footage</b> (not the Chinese cut), same logic.
       </div>
-      <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-        ${(s.driveFolder||s.publishedLink)?`<a class="btn sec sm" href="${esc(s.driveFolder||s.publishedLink)}" target="_blank">▶ Watch Chinese</a>`:''}
-        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
-        ${!s.nameEn?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
-        ${(s.videoCopy&&!s.videoCopyEn)?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
-        ${s.productUrl?`<a class="btn sec sm" href="${esc(s.productUrl)}" target="_blank">Product page</a>`:''}
+      <div class="igroup">
+        <span class="igroup-l">Watch &amp; download</span>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ Watch Chinese</button>`:''}
+          ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ Download original file</a>`:''}
+          ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
+        </div>
       </div>
+      ${(!s.nameEn||(s.videoCopy&&!s.videoCopyEn)||s.productUrl)?`<div class="igroup">
+        <span class="igroup-l">Translate &amp; links</span>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          ${!s.nameEn?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
+          ${(s.videoCopy&&!s.videoCopyEn)?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
+          ${s.productUrl?`<a class="btn sec sm" href="${esc(s.productUrl)}" target="_blank">🛍 Product page</a>`:''}
+        </div>
+      </div>`:''}
       ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ No ${warn} linked — ask the admin to add it.</div>`:''}
     </div>
   </div>`;
