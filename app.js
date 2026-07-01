@@ -1615,10 +1615,11 @@ function intlLibRows(){
       ? `<span class="pill ${done?'ok':'wa'}" style="justify-content:center;padding:8px">${esc(localeName(myLoc))} ${done?'done ✓':'in progress'}</span>`
       : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')" title="Create the ${esc(localeName(myLoc))} version">＋ Create version</button>`;
     const preview=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')">▶ Preview</button>`:'';
-    // 英文標題：有填直接顯示；沒填 → 一鍵翻譯按鈕
-    const en = v.nameEn
+    // 標題：英文語系→顯示英文 nameEn；泰/馬語系→英文只當參考(· EN)，並一律給「翻成自己語言」按鈕
+    const en = (myLoc==="en" && v.nameEn)
       ? `<div class="ilib-en">${esc(v.nameEn)}</div>`
-      : `<div style="margin-top:5px"><a class="btn sec sm" href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank">🌐 Translate to ${esc(localeName(myLoc))}</a></div>`;
+      : `${v.nameEn?`<div class="ilib-en">${esc(v.nameEn)} <span class="muted" style="font-weight:400">· EN</span></div>`:''}
+         <div style="margin-top:5px"><a class="btn sec sm" href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank">🌐 Translate to ${esc(localeName(myLoc))}</a></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     const others=INTL_LOCALES.filter(l=>l!==myLoc).map(l=>{ const e=localizedVersionOf(v.id,l); return e?`${localeShort(l)} ${(e.published||e.stage==='已完成')?'✓':'…'}`:''; }).filter(Boolean).join("  ·  ");
     return `<div class="ilib-card">
@@ -1737,6 +1738,9 @@ function openIntlModal(id){
   const tl=LOCALE_GT[v.locale]||"en"; const lname=localeName(v.locale);
   const srcTitle=s.nameEn||s.name||s.rawName||"";
   const srcCopy=s.videoCopyEn||s.videoCopy||"";
+  // nameEn/videoCopyEn 只是「英文」；非英文語系(泰/馬)一律提供翻譯到自己語言的按鈕
+  const needTitleTr=(v.locale!=="en")||!s.nameEn;
+  const needScriptTr=!!s.videoCopy && ((v.locale!=="en")||!s.videoCopyEn);
   const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)+(p.price?` ($${esc(p.price)})`:"")).join(", ")||'<span class="muted">—</span>';
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">${esc(lname)} version <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
@@ -1761,11 +1765,11 @@ function openIntlModal(id){
           ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
         </div>
       </div>
-      ${(!s.nameEn||(s.videoCopy&&!s.videoCopyEn)||s.productUrl)?`<div class="igroup">
-        <span class="igroup-l">Translate &amp; links</span>
+      ${(needTitleTr||needScriptTr||s.productUrl)?`<div class="igroup">
+        <span class="igroup-l">Translate to ${esc(lname)} &amp; links</span>
         <div class="row" style="gap:8px;flex-wrap:wrap">
-          ${!s.nameEn?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
-          ${(s.videoCopy&&!s.videoCopyEn)?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
+          ${needTitleTr?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
+          ${needScriptTr?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
           ${s.productUrl?`<a class="btn sec sm" href="${esc(s.productUrl)}" target="_blank">🛍 Product page</a>`:''}
         </div>
       </div>`:''}
