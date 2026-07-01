@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 9**
+- 目前版本：**schemaVersion = 10**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -56,10 +56,19 @@
 | `deletedAt` | string(ISO) | 刪除時間 | |
 | `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
+| `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`＝英文二創版（未來可 `th`/`ms`）。跨語言二創用 |
+| `sourceVideoId` | string | 來源片 | 英文/海外版指回台灣源片的 `id`；源片本身為 `""` |
+| `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
+| `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
 
 > **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
 > 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
 > `channelStats/{yyyy-mm-dd}` 或 `channels` 集合（待實作）。前端只讀 Firestore 顯示。
+
+> **跨語言二創（海外英文版）**：海外剪輯（`users.role="intl"`，全英文介面）在影片庫挑台灣**已完成**源片，
+> 建立一筆 `locale:"en"`、`sourceVideoId` 指回源片的**衍生影片**，翻譯重剪後填回 `driveFolder`（英文版存檔）、
+> `publishedLink`（上傳連結）、`platforms`（海外 TikTok 帳號），走既有認領/完成流程。源片視窗「各語言版本」卡
+> 以 `sourceVideoId` 反查，中英一起看；成效（`metrics`）待後端接入後自動並列。本階段**不做成效追蹤**。
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
@@ -93,7 +102,7 @@
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `name` | string | 名字（= 文件 ID） |
-| `role` | string | `boss`（管理員）／`editor`（剪輯） |
+| `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面） |
 | `isDefault` | boolean | 系統預設旗標 |
 
 > 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。
