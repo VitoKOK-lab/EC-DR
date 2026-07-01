@@ -1569,50 +1569,56 @@ function intlSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && isP
 function intlStudioCount(l){ const me=currentUser();
   return (STATE.videos||[]).filter(v=>v.locale===l && ((v.stage==="待處理"&&(v.assignedTo===me||!v.assignedTo)) || (v.stage==="剪輯中"&&(v.claimedBy===me||v.editor===me)))).length; }
 function intlLocTabs(){ const cur=curIntlLoc();
-  return `<div class="card" style="background:var(--espresso);color:#F6ECDA;padding:10px 12px;margin-bottom:10px">
-    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
-      <b style="font-size:13px;white-space:nowrap">🌐 Studios</b>
-      ${INTL_LOCALES.map(l=>{ const n=intlStudioCount(l); return `<button class="btn sm ${cur===l?'':'sec'}" onclick="intlSetLoc('${l}')">${esc(localeName(l))}${n?` <span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${n}</span>`:''}</button>`; }).join("")}
-      <span style="opacity:.85;font-size:12px;margin-left:auto">Go to the studio that has work today — you're in the <b>${esc(localeName(cur))}</b> studio.</span>
-    </div></div>`; }
+  return `<div class="istudios">
+    <b style="font-size:14px;white-space:nowrap">🌐 Studios</b>
+    <div class="seg">${INTL_LOCALES.map(l=>{ const n=intlStudioCount(l); return `<button class="${cur===l?'on':''}" onclick="intlSetLoc('${l}')">${esc(localeName(l))}${n?`<span class="cnt">${n}</span>`:''}</button>`; }).join("")}</div>
+    <span style="opacity:.85;font-size:12px;margin-left:auto">Today you're working in the <b>${esc(localeName(cur))}</b> studio — the number shows what's assigned.</span>
+  </div>`; }
 function intlLibRows(){
   const myLoc=curIntlLoc();
   const q=(document.getElementById('intl_q')?.value||'').toLowerCase().trim();
   let src=intlSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
-  if(!src.length) return '<p class="muted" style="padding:14px 4px">No uploaded videos available to localize yet.</p>';
-  const rows=src.slice(0,200).map(v=>{
-    const zhTitle=v.name||v.rawName||"(untitled)";   // 上：中文原標題
-    const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join(", ")||'<span class="muted">—</span>';
-    // 帳號綁定語言：只顯示「我的語言」的建立鈕/狀態；其他語言以極簡標示讓我知道有人在做（不可點）
+  if(!src.length) return '<p class="muted" style="padding:22px 4px;text-align:center">No uploaded videos available to localize yet.</p>';
+  const cards=src.slice(0,200).map(v=>{
+    const zhTitle=v.name||v.rawName||"(untitled)";
     const ex=localizedVersionOf(v.id, myLoc);
-    const mine = ex
-      ? `<span class="pill ${(ex.published||ex.stage==='已完成')?'ok':'wa'}" style="font-size:11px">${esc(localeName(myLoc))} ${(ex.published||ex.stage==='已完成')?'✓':'…'}${ex.editor&&ex.editor!==currentUser()?(' · '+esc(ex.editor)):''}</span>`
+    const done=ex&&(ex.published||ex.stage==='已完成');
+    // 主要動作：建立我的語言版 / 或狀態
+    const action = ex
+      ? `<span class="pill ${done?'ok':'wa'}" style="justify-content:center;padding:8px">${esc(localeName(myLoc))} ${done?'done ✓':'in progress'}</span>`
       : `<button class="btn sm" onclick="createLocalVersion('${v.id}','${myLoc}')">Create ${esc(localeName(myLoc))} version</button>`;
-    const others=INTL_LOCALES.filter(l=>l!==myLoc).map(l=>{ const e=localizedVersionOf(v.id,l); return e?`<span class="muted" style="font-size:11px">${localeShort(l)} ${(e.published||e.stage==='已完成')?'✓':'…'}</span>`:''; }).filter(Boolean).join(" ");
-    // 下：英文（我的語言）標題——有填 nameEn 直接顯示，沒填給一鍵翻譯讓他看得懂
-    const enLine = v.nameEn
-      ? `<div style="font-size:13px;color:var(--accent)">${esc(v.nameEn)}</div>`
-      : `<div style="font-size:12px"><a href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank" class="muted">Translate title to ${esc(localeName(myLoc))} ↗</a></div>`;
-    return `<tr>
-      <td data-label="Video"><b>${esc(zhTitle)}</b>
-        ${enLine}
-        <div class="muted" style="font-size:12px;margin-top:2px">${esc(vidCode(v))}${(v.driveFolder||v.publishedLink)?` · <a href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">watch Chinese preview ↗</a>`:''}</div></td>
-      <td data-label="Products">${prod}</td>
-      <td data-label=""><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${mine}${others?`<span style="opacity:.6">${others}</span>`:''}</div></td></tr>`;
+    const preview=(v.driveFolder||v.publishedLink)?`<a class="btn sec sm" href="${esc(v.driveFolder||v.publishedLink)}" target="_blank">▶ Preview</a>`:'';
+    // 英文標題：有填直接顯示；沒填 → 一鍵翻譯按鈕
+    const en = v.nameEn
+      ? `<div class="ilib-en">${esc(v.nameEn)}</div>`
+      : `<div style="margin-top:5px"><a class="btn sec sm" href="${gtranslate(v.name||v.rawName,myLoc)}" target="_blank">🌐 Translate to ${esc(localeName(myLoc))}</a></div>`;
+    const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
+    const others=INTL_LOCALES.filter(l=>l!==myLoc).map(l=>{ const e=localizedVersionOf(v.id,l); return e?`${localeShort(l)} ${(e.published||e.stage==='已完成')?'✓':'…'}`:''; }).filter(Boolean).join("  ·  ");
+    return `<div class="ilib-card">
+      <div style="min-width:0;flex:1">
+        <div class="ilib-zh">${esc(zhTitle)}</div>
+        ${en}
+        <div class="ilib-meta"><span class="ilib-code">${esc(vidCode(v))}</span>${prodChips}</div>
+      </div>
+      <div class="ilib-actions">
+        ${action}
+        ${preview}
+        ${others?`<div class="others">Also: ${others}</div>`:''}
+      </div>
+    </div>`;
   }).join("");
-  return `<table class="responsive"><thead><tr><th>Video</th><th>Products</th><th style="width:230px"></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return cards;
 }
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
 function viewIntlLibrary(){
   const src=intlSourcePool(); const myLoc=curIntlLoc();
-  return `<h2>Library <span class="pill" style="font-size:11px;background:var(--accent);color:#fff;vertical-align:middle">${esc(localeName(myLoc))}</span>
-    <span class="muted" style="font-size:13px">Already-uploaded videos — make your ${esc(localeName(myLoc))} version</span></h2>
+  return `${intlLocTabs()}
+  <h2 style="margin-top:0">Library <span class="muted" style="font-size:13px">Already-uploaded videos — make your ${esc(localeName(myLoc))} version</span></h2>
   <div class="card">
-    ${intlLocTabs()}
-    <input id="intl_q" placeholder="Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:340px;margin-top:6px">
-    <div id="intl_list" class="${src.length>10?'vidscroll':''}" style="margin-top:10px">${intlLibRows()}</div>
+    <input id="intl_q" placeholder="🔍  Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px">
+    <div id="intl_list" class="${src.length>8?'vidscroll':''}" style="margin-top:12px">${intlLibRows()}</div>
   </div>`;
 }
 
@@ -1647,41 +1653,45 @@ function viewIntlWork(){
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const work=inProg.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return s?(s.nameEn||s.name||s.rawName||""):""; };
-  // 帳號已綁單一語言，逐列不再標語言徽章
-  const lb=(v)=> "";
   const workBtn=(v)=>{
-    if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done</button>`;
+    if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done ✓</button>`;
     return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
       <button class="btn sm" onclick="intlFinish('${v.id}')" title="Uploaded & finished">Done ✔</button>
       <button class="btn sec sm" onclick="intlUnclaim('${v.id}')">Return</button>`; };
-  return `<h2>My Work <span class="muted" style="font-size:13px">${esc(me)}</span></h2>
-  ${intlLocTabs()}
+  const todoItem=(v)=>`<div class="iwork-item">
+      <div style="min-width:0">
+        <div class="iwork-title">${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</div>
+        <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}</div>
+      </div>
+      <button class="btn sm" style="flex:none" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
+    </div>`;
+  const workItem=(v)=>`<div class="iwork-item">
+      <div style="min-width:0">
+        <div class="iwork-title"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</a></div>
+        <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}${v.scheduledDate?` &nbsp;·&nbsp; 🗓 upload ${esc(v.scheduledDate)}`:''}</div>
+      </div>
+      <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div>
+    </div>`;
+  return `${intlLocTabs()}
+  <h2 style="margin-top:0">My Work <span class="muted" style="font-size:13px">${esc(me)} · ${esc(localeName(myLoc))} studio</span></h2>
   <div class="workgrid">
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">To do</b><span class="pill ${todo.length?'ok':'wa'}">${todo.length}</span>
       </div>
-      <div style="margin-top:10px${todo.length>5?';max-height:300px;overflow-y:auto':''}">
-      <table class="responsive"><thead><tr><th>Version (source)</th><th style="width:150px"></th></tr></thead>
-      <tbody>${todo.map(v=>`<tr>
-        <td data-label="Video">${lb(v)} <b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b>
-          <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}</div></td>
-        <td data-label=""><button class="btn sm" onclick="intlClaim('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">Nothing to do. Go to <b>Library</b> and create a version.</td></tr>`}</tbody></table>
+      <div style="margin-top:6px${todo.length>6?';max-height:340px;overflow-y:auto':''}">
+        ${todo.map(todoItem).join("")||`<p class="muted" style="padding:16px 2px">Nothing to do here. Open <b>Library</b> and create a version.</p>`}
       </div>
-      ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">You have 3 in progress — finish some before claiming more.</span></p>':''}
+      ${atLimit?'<p style="font-size:12px;margin:8px 0 0;color:var(--red)">You have 3 in progress — finish some before claiming more.</p>':''}
     </div>
 
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">In progress / done today</b><span class="pill ${atLimit?'wa':'ok'}">${inProg.length}/3</span>
       </div>
-      <table class="responsive" style="margin-top:10px"><thead><tr><th>Version</th><th style="width:230px">Status</th></tr></thead>
-      <tbody>${work.map(v=>`<tr>
-        <td data-label="Video">${lb(v)} <a href="javascript:void(0)" onclick="openIntlModal('${v.id}')"><b>${esc(v.name||srcTitle(v)||v.rawName||"(untitled)")}</b></a>
-          <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||v.rawName||"")}${v.scheduledDate?` · upload ${esc(v.scheduledDate)}`:''}</div></td>
-        <td data-label="Status"><div class="row" style="gap:6px">${workBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">No versions in progress. Claim one from “To do”.</td></tr>`}</tbody></table>
+      <div style="margin-top:6px">
+        ${work.map(workItem).join("")||`<p class="muted" style="padding:16px 2px">Nothing in progress. Claim one from “To do”.</p>`}
+      </div>
     </div>
   </div>`;
 }
@@ -1704,36 +1714,39 @@ function openIntlModal(id){
   const srcCopy=s.videoCopyEn||s.videoCopy||"";
   const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)+(p.price?` ($${esc(p.price)})`:"")).join(", ")||'<span class="muted">—</span>';
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
-      <h3 style="margin:0">${esc(lname)} version</h3>
+      <h3 style="margin:0">${esc(lname)} version <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="Close">×</button></div>`;
-  const sourceCard=`<div class="card" style="background:var(--panel2)"><b>Source (Taiwan)</b>
-    <div style="margin-top:6px"><b>${esc(srcTitle||"(untitled)")}</b>
-      ${s.nameEn?'':` <a href="${gtranslate(s.name||s.rawName,tl)}" target="_blank" class="muted" style="font-size:11px">Translate title ↗</a>`}</div>
-    ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:6px;white-space:pre-wrap">${esc(srcCopy)}</div>
-      ${s.videoCopyEn?'':`<a href="${gtranslate(s.videoCopy,tl)}" target="_blank" class="muted" style="font-size:11px">Translate script ↗</a>`}`:''}
+  const warn=[!s.rawLink?'raw footage':'', !(s.driveFolder||s.publishedLink)?'finished Chinese version':''].filter(Boolean).join(' & ');
+  const sourceCard=`<div class="card" style="background:var(--panel2)">
+    <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">Source · Taiwan</div>
+    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(srcTitle||"(untitled)")}</div>
+    ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(srcCopy)}</div>`:''}
     <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}</div>
-    <div style="margin-top:10px;padding:10px;border:1px solid var(--accent);border-radius:6px">
-      <div style="font-weight:700;margin-bottom:4px">How to work this video</div>
-      <div style="font-size:13px;line-height:1.7">
-        1. <b>Watch our finished Chinese version first</b> — study the pacing, hooks and editing logic that make it work.<br>
-        2. Then <b>re-cut your own ${esc(lname)} version from the raw footage</b> (not by re-exporting the Chinese cut), following that same logic.
+    <div class="icallout">
+      <div style="font-weight:700;margin-bottom:6px">How to make this ${esc(lname)} version</div>
+      <div style="font-size:13px;line-height:1.75">
+        <b>1.</b> Watch our finished Chinese version — learn its pacing & hooks.<br>
+        <b>2.</b> Re-cut your own ${esc(lname)} version <b>from the raw footage</b> (not the Chinese cut), same logic.
       </div>
-      <div style="margin-top:8px">
-        ${(s.driveFolder||s.publishedLink)?`<a href="${esc(s.driveFolder||s.publishedLink)}" target="_blank"><b>▶ Watch finished Chinese version ↗</b></a>`:`<span class="muted" style="color:var(--red)">No finished Chinese version linked — ask the admin.</span>`}
-        ${(s.publishedLink&&s.driveFolder)?` · <a href="${esc(s.publishedLink)}" target="_blank" class="muted" style="font-size:11px">posted video ↗</a>`:''}
+      <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+        ${(s.driveFolder||s.publishedLink)?`<a class="btn sec sm" href="${esc(s.driveFolder||s.publishedLink)}" target="_blank">▶ Watch Chinese</a>`:''}
+        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ Download raw footage</a>`:''}
+        ${!s.nameEn?`<a class="btn sec sm" href="${gtranslate(s.name||s.rawName,tl)}" target="_blank">🌐 Translate title</a>`:''}
+        ${(s.videoCopy&&!s.videoCopyEn)?`<a class="btn sec sm" href="${gtranslate(s.videoCopy,tl)}" target="_blank">🌐 Translate script</a>`:''}
+        ${s.productUrl?`<a class="btn sec sm" href="${esc(s.productUrl)}" target="_blank">Product page</a>`:''}
       </div>
-      <div style="margin-top:6px">
-        ${s.rawLink?`<a href="${esc(s.rawLink)}" target="_blank"><b>⬇ Download raw footage ↗</b></a> <span class="muted" style="font-size:11px">(what you re-cut from)</span>`:`<span class="muted" style="color:var(--red)">No raw footage link on this source — ask the admin to add it.</span>`}
-      </div>
+      ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ No ${warn} linked — ask the admin to add it.</div>`:''}
     </div>
-    ${s.productUrl?`<div style="margin-top:6px"><a href="${esc(s.productUrl)}" target="_blank">Product page ↗</a></div>`:''}
   </div>`;
   const body=`
     ${sourceCard}
+    <div style="font-weight:700;font-size:15px;margin:16px 0 2px">Your ${esc(lname)} version</div>
     <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
     <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
-    <label>Video file URL (your re-cut, saved separately)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your ${esc(localeShort(v.locale))} cut">
-    <label>Upload URL (the TikTok post)</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/...">
+    <div class="grid cols2">
+      <div><label>Video file URL (your re-cut)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your ${esc(localeShort(v.locale))} cut"></div>
+      <div><label>Upload URL (the TikTok post)</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
+    </div>
     <label>Scheduled upload date (when it will go live)</label><input id="i_date" type="date" value="${esc(v.scheduledDate||"")}">`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">Cancel</button>
