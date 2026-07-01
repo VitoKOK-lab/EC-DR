@@ -5,11 +5,11 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
+  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
-  intl:    [["intlwork","My Work"],["intllib","Library"]],
+  intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -215,7 +215,7 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
+    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; if(id==='intlcal') INTL_CAL_YM=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
     nav.appendChild(b);
   });
 }
@@ -224,7 +224,7 @@ function bootLogin(){
   const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
-    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); return b; };
+    b.innerHTML = esc(u.name); b.onclick=()=>loginAs(u); return b; };
   const section=(title, list)=>{ if(!list.length) return;
     const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
     list.forEach(u=>g.appendChild(mkBtn(u))); };
@@ -368,7 +368,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl }[CUR_TAB] || (()=>"");
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
@@ -1638,6 +1638,75 @@ function viewIntlLibrary(){
     <input id="intl_q" placeholder="🔍  Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px">
     <div id="intl_list" class="${src.length>8?'vidscroll':''}" style="margin-top:12px">${intlLibRows()}</div>
   </div>`;
+}
+
+// ---- 海外月歷（Schedule）：依帳號看每天排幾支、目標＝每帳號 intlDailyTarget（預設 2）----
+let INTL_CAL_YM=null; let INTL_ACCT="";
+function intlCurAcct(){ const list=intlAccounts(); if(!list.length) return ""; if(!INTL_ACCT || !list.some(a=>a.name===INTL_ACCT)){ INTL_ACCT=list[0].name; } return INTL_ACCT; }
+function intlSetAcct(name){ INTL_ACCT=name||""; render(); }
+function calMoveIntl(n){ let [y,m]=INTL_CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} INTL_CAL_YM=[y,m]; render(); }
+// 某日某帳號已排的在地化版本（依上傳預排日 scheduledDate；不分階段＝看整體計畫）
+function intlDayList(date, acct){ acct=acct!=null?acct:intlCurAcct();
+  return (STATE.videos||[]).filter(v=>v.locale && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
+function intlDayBreak(date, acct){ const total=intlDayList(date,acct).length, target=intlDailyTarget();
+  return {total, target, short:Math.max(0,target-total), full: total>=target}; }
+function viewCalIntl(){
+  const accts=intlAccounts();
+  if(!accts.length) return `<h2 style="margin-top:0">Schedule</h2><div class="card"><p class="muted" style="padding:18px 4px">尚未設定海外 TikTok 帳號。請管理員到<b>設定 → 海外設定</b>新增帳號後，這裡才能依帳號排程。</p></div>`;
+  const acc=intlCurAcct();
+  if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
+  const [y,m]=INTL_CAL_YM;
+  const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
+  const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
+  let cells="";
+  for(let i=0;i<startDow;i++) cells+=`<div class="day out"></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">今天</span>`:"";
+    const within10=ds>=today && ds<=d10s;
+    const b=intlDayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
+    const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
+    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayIntl('${ds}')">
+      ${tmk}<div class="dnum">${d}</div>
+      <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
+      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
+    </div>`;
+  }
+  const acctSel=`<select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">
+    ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option ${a.name===acc?'selected':''}>${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  return `<h2 style="margin-top:0">Schedule <span class="muted" style="font-size:13px">每個帳號每天 ${intlDailyTarget()} 支</span></h2>
+  <div class="card">
+    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>Account</b> ${acctSel}</div>
+    <div class="calhead">
+      <button class="calnav" onclick="calMoveIntl(-1)" title="上月">‹</button>
+      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
+      <button class="calnav" onclick="calMoveIntl(1)" title="下月">›</button>
+    </div>
+    <div class="cal">
+      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
+      ${cells}
+    </div>
+    <div class="callegend"><span><i class="lg-g"></i>已排滿</span><span><i class="lg-r"></i>待補</span><span><i class="lg-b"></i>未排</span><span><i class="lg-t"></i>今天</span></div>
+  </div>`;
+}
+function openDayIntl(ds){
+  const acc=intlCurAcct(); const b=intlDayBreak(ds,acc); const list=intlDayList(ds,acc);
+  const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
+    return `<tr>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.nameEn||s.name||s.rawName):"")||"(untitled)")}</a>
+        <span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-left:5px">${localeShort(v.locale)}</span></td>
+      <td data-label="狀態"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'完成':(v.stage==='剪輯中'?'製作中':'待製作')}</span></td>
+      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="上傳">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">連結</a>`:'<span class="muted">—</span>'}</td></tr>`;
+  }).join("");
+  const wd="日一二三四五六"[new Date(ds+"T00:00:00").getDay()];
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0">${esc(ds)}（${wd}）· ${esc(acc)}</h3>
+      <button class="btn sec sm" onclick="closeModal()">×</button></div>
+    <div class="muted" style="margin-bottom:8px">已排 ${b.total}/${b.target}${b.short?`（缺 ${b.short}）`:'　已排滿'}</div>
+    ${list.length?`<table class="responsive"><thead><tr><th>影片</th><th>狀態</th><th>剪輯</th><th>上傳</th></tr></thead><tbody>${rows}</tbody></table>`:`<p class="muted" style="padding:10px 2px">這天此帳號還沒排片。到影片版本的編輯視窗設「Scheduled upload date」即可排到某天。</p>`}
+  </div></div>`;
 }
 
 // ---- 從 Library 的帳號選單建立版本：value = 帳號在 intlAccounts() 的索引 ----
