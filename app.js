@@ -57,7 +57,8 @@ function newVideoRecord(over){
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
     metrics:[], metricsAt:"",   // 平台成效（後端以「影片標題」比對後自動填）：每筆 {platform, account, views, likes, comments, shares, at}
     // 跨語言二創：locale=""＝台灣中文源片、"en"＝英文版；sourceVideoId＝英文版指回源片；nameEn/videoCopyEn＝源片選填英文摘要
-    locale:"", sourceVideoId:"", nameEn:"", videoCopyEn:"",
+    // account＝在地化版本上傳的海外帳號名（同源片同語言可有多支、各自帳號/成片）
+    locale:"", sourceVideoId:"", nameEn:"", videoCopyEn:"", account:"",
     driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
@@ -220,10 +221,17 @@ function buildNav(){
 }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const members=((STATE?.users)||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  if(!members.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
-  members.forEach(u=>{ const b=document.createElement("button"); b.className="userBtn";
-    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); g.appendChild(b); });
+  const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
+  const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
+    b.innerHTML = esc(u.name)+'<span class="role">點我上班 →</span>'; b.onclick=()=>loginAs(u); return b; };
+  const section=(title, list)=>{ if(!list.length) return;
+    const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
+    list.forEach(u=>g.appendChild(mkBtn(u))); };
+  // 分區：Taiwan（剪輯）／海外版（海外剪輯）／管理層（經理人，如 Regina）放最下面，靠近「管理員登入」
+  section("Taiwan", all.filter(u=>(u.role||"editor")==="editor"));
+  section("海外版", all.filter(u=>u.role==="intl"));
+  section("管理層", all.filter(u=>u.role==="manager"));
 }
 function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
@@ -1522,7 +1530,11 @@ function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
 function localeShort(l){ return LOCALE_SHORT[l]||String(l||"").toUpperCase(); }
 function gtranslate(text, tl){ return "https://translate.google.com/?sl=zh-TW&tl="+(tl||"en")+"&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
 function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
-// 某源片某語言是否已有在地化版本
+// 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
+function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
+function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
+function intlDailyTarget(){ const v=STATE.settings&&STATE.settings.intlDailyTarget; return (v!=null&&v!=="")?(+v||0):2; }
+// 某源片某語言是否已有在地化版本（相容用）
 function localizedVersionOf(sourceId, locale){ return (STATE.videos||[]).find(v=>v.locale===locale && v.sourceVideoId===sourceId); }
 function localizedVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.sourceVideoId===sourceId && v.locale); }
 // 源片視窗的「各語言版本」卡（中／英泰馬一起看）＋在地化版本回連源片
@@ -1543,6 +1555,7 @@ function localizedVersionsCard(v){
     const sched=k.scheduledDate?esc(String(k.scheduledDate).slice(0,10)):'<span class="muted">—</span>';
     return `<tr>
       <td data-label="語言">${esc(localeName(k.locale))}</td>
+      <td data-label="帳號">${esc(k.account||"")||'<span class="muted">—</span>'}</td>
       <td data-label="剪輯">${esc(k.editor||k.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="狀態">${st}</td>
       <td data-label="完成日">${doneAt}</td>
@@ -1552,7 +1565,7 @@ function localizedVersionsCard(v){
       <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">開啟</a></td></tr>`;
   }).join("");
   return `<div class="card" style="background:var(--panel2)"><b>各語言版本（${kids.length}）</b> <span class="muted" style="font-size:12px">誰剪的・何時完成・預排何時上片，一起看</span>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>語言</th><th>剪輯</th><th>狀態</th><th>完成日</th><th>預排上片</th><th>上傳連結</th><th>觀看</th><th></th></tr></thead>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>語言</th><th>帳號</th><th>剪輯</th><th>狀態</th><th>完成日</th><th>預排上片</th><th>上傳連結</th><th>觀看</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1585,26 +1598,32 @@ function intlLibRows(){
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return '<p class="muted" style="padding:22px 4px;text-align:center">No uploaded videos available to localize yet.</p>';
+  const accts=intlAccounts();
   const cards=src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(untitled)";   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
-    // 合併：每支源片顯示三語槽（EN/TH/MS）——已建→狀態·剪輯者、未建→建立鈕
-    const slots=INTL_LOCALES.map(l=>{
-      const ex=localizedVersionOf(v.id,l);
-      if(ex){ const done=(ex.published||ex.stage==='已完成');
-        return `<span class="pill ${done?'ok':'wa'}" style="font-size:11px" title="${esc(localeName(l))} · ${done?'done':'in progress'}${ex.editor?(' · '+esc(ex.editor)):''}">${localeShort(l)} ${done?'✓':'…'}</span>`; }
-      return `<button class="btn sm sec" style="padding:5px 10px" onclick="createLocalVersion('${v.id}','${l}')" title="Create ${esc(localeName(l))} version">＋${localeShort(l)}</button>`;
+    // 分開：一支源片可有多支版本（不同帳號/成片）；已建的以 chip 列出（語言·帳號·狀態）
+    const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
+    const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
+      return `<span class="pill ${done?'ok':'wa'}" style="font-size:11px;cursor:pointer" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''} · ${done?'done':'in progress'}${k.editor?(' · '+esc(k.editor)):''}">${localeShort(k.locale)}${k.account?(' '+esc(k.account)):''} ${done?'✓':'…'}</span>`;
     }).join(" ");
+    // 「＋ Add version」帳號選單（依語言分組）；未設定帳號→提示
+    const addSel = accts.length
+      ? `<select onchange="if(this.value!==''){createLocalFromAcct('${v.id}',this.value);this.selectedIndex=0;}" style="font-size:13px;padding:6px 8px">
+          <option value="">＋ Add version…</option>
+          ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
+        </select>`
+      : `<span class="muted" style="font-size:12px">Ask admin to add accounts in Settings</span>`;
     const preview=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')">▶ Preview</button>`:'';
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
         <div class="ilib-zh">${esc(zhTitle)} <span class="ilib-code">${esc(vidCode(v))}</span></div>
         ${enT?`<div class="ilib-en">${esc(enT)}</div>`:''}
-        ${prodChips?`<div class="ilib-meta">${prodChips}</div>`:''}
+        ${(chips||prodChips)?`<div class="ilib-meta">${chips}${chips&&prodChips?' ':''}${prodChips}</div>`:''}
       </div>
       <div class="ilib-actions">
-        <div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">${slots}</div>
+        ${addSel}
         ${preview}
       </div>
     </div>`;
@@ -1621,20 +1640,24 @@ function viewIntlLibrary(){
   </div>`;
 }
 
-// ---- 建立在地化版本（衍生影片，指派給自己；語言由按鈕帶入）----
-function createLocalVersion(sourceId, locale){
-  locale=locale||"en";
+// ---- 從 Library 的帳號選單建立版本：value = 帳號在 intlAccounts() 的索引 ----
+function createLocalFromAcct(sourceId, idx){ const a=intlAccounts()[+idx]; if(!a){ toast("Pick an account",true); return; }
+  createLocalVersion(sourceId, a.locale, a.name); }
+// ---- 建立在地化版本（衍生影片，指派給自己；語言＋帳號帶入；同源片同語言同帳號不重複）----
+function createLocalVersion(sourceId, locale, account){
+  locale=locale||"en"; account=account||"";
   if(!INTL_LOCALES.includes(locale)){ toast("Unknown language",true); return; }
   const s=vid(sourceId); if(!s){ toast("Source not found",true); return; }
   if(!isPublished(s)){ toast("Only finished videos can be localized",true); return; }
-  if(localizedVersionOf(sourceId, locale)){ toast(localeName(locale)+" version already exists",true); return; }
+  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.locale===locale && v.account===account)){
+    toast(localeName(locale)+" version for “"+account+"” already exists",true); return; }
   const me=currentUser();
-  const rec=newVideoRecord({ locale, sourceVideoId:sourceId,
+  const rec=newVideoRecord({ locale, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},localeName(locale)+" version created — claim it in My Work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } });
+  write("POST","/api/videos",{video:rec},localeName(locale)+(account?(" · "+account):"")+" version created — see My Work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } });
 }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
@@ -1654,6 +1677,7 @@ function viewIntlWork(){
   const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.nameEn||s.name||s.rawName||""):""); };
   const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(untitled)";
   const lb=(v)=>`<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px">${localeShort(v.locale)}</span>`;
+  const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done ✓</button>`;
     return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
@@ -1661,14 +1685,14 @@ function viewIntlWork(){
       <button class="btn sec sm" onclick="intlUnclaim('${v.id}')">Return</button>`; };
   const todoItem=(v)=>`<div class="iwork-item">
       <div style="min-width:0">
-        <div class="iwork-title">${lb(v)}${esc(vTitle(v))}</div>
+        <div class="iwork-title">${lb(v)}${esc(vTitle(v))}${acct(v)}</div>
         <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||stripHash(v.rawName))}</div>
       </div>
       <button class="btn sm" style="flex:none" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
     </div>`;
   const workItem=(v)=>`<div class="iwork-item">
       <div style="min-width:0">
-        <div class="iwork-title">${lb(v)}<a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(vTitle(v))}</a></div>
+        <div class="iwork-title">${lb(v)}<a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(vTitle(v))}</a>${acct(v)}</div>
         <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||stripHash(v.rawName))}${v.scheduledDate?` &nbsp;·&nbsp; 🗓 upload ${esc(v.scheduledDate)}`:''}</div>
       </div>
       <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div>
@@ -1706,6 +1730,7 @@ function intlFinish(id){ const v=vid(id)||{};
 async function intlSaveVideo(id){
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
     driveFolder:val("i_drive").trim(), publishedLink:val("i_pub").trim(), scheduledDate:val("i_date")||null };
+  if(document.getElementById("i_acct")) video.account=val("i_acct");
   return await write("PUT",`/api/videos/${id}`,{video},"Saved");
 }
 function openIntlModal(id){
@@ -1745,6 +1770,9 @@ function openIntlModal(id){
   const body=`
     ${sourceCard}
     <div style="font-weight:700;font-size:15px;margin:16px 0 2px">Your ${esc(lname)} version</div>
+    ${(function(){ const opts=intlAccountsFor(v.locale); return opts.length?`<label>Account (which ${esc(localeShort(v.locale))} TikTok)</label>
+      <select id="i_acct"><option value="">— pick account —</option>${opts.map(a=>`<option ${v.account===a.name?'selected':''}>${esc(a.name)}</option>`).join("")}${v.account&&!opts.some(a=>a.name===v.account)?`<option selected>${esc(v.account)}</option>`:''}</select>`
+      :(v.account?`<label>Account</label><input value="${esc(v.account)}" readonly style="background:var(--panel2)">`:''); })()}
     <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
     <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
@@ -1784,6 +1812,8 @@ function viewSettings(){
     <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(jsEsc(c))}')">改名</button>
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
+  const intlAcctStr=(Array.isArray(s.intlAccounts)?s.intlAccounts:[]).map(a=>a.locale+"="+a.name).join("\n");
+  const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
   return `<h2>設定</h2>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
@@ -1799,6 +1829,14 @@ function viewSettings(){
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
     <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
     <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>海外設定</b>
+    <label style="margin-top:8px">海外 TikTok 帳號（一行一個，格式 <code>語言=帳號名</code>，語言用 en／th／ms）</label>
+    <textarea id="set_intlacct" style="min-height:96px" placeholder="en=TikTok US（@zana_us）&#10;th=TikTok TH（@zana_th）&#10;ms=TikTok MY（@zana_my）">${esc(intlAcctStr)}</textarea>
+    <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>成員（${members.length}）</b>
@@ -1865,6 +1903,13 @@ async function saveSettings(){
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
   const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
   if(plats.length) settings.postPlatforms=plats;
+  // 海外設定：帳號清單（語言=帳號名）＋每帳號每日目標
+  if(document.getElementById("set_intlacct")){
+    settings.intlAccounts=(val("set_intlacct")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
+      const i=line.indexOf("="); const loc=(i>=0?line.slice(0,i):"en").trim().toLowerCase(); const name=(i>=0?line.slice(i+1):line).trim();
+      return {locale:["en","th","ms"].includes(loc)?loc:"en", name}; }).filter(a=>a.name);
+    settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
+  }
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
 
