@@ -53,6 +53,7 @@ function newVideoRecord(over){
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
     products:[], productUrl:"", note:"",
     reviewStatus:"", reviewNote:"", reviewedBy:"", reviewedAt:"",
+    metrics:[], metricsAt:"",   // 平台成效（後端以「影片標題」比對後自動填）：每筆 {platform, account, views, likes, comments, shares, at}
     driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
@@ -1321,6 +1322,15 @@ function openVideoModal(id, edit, fromWork){
         <button class="btn sm danger" type="button" onclick="reviewVid('${id}','退回')">× 退回</button>
         <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
       </div></div>`:'';
+  const mx=Array.isArray(v.metrics)?v.metrics:[];
+  const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
+  const metricsCard = `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
+      <b>平台成效</b>${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</div>
+    ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
+      ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
+      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
+      :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
+  </div>`;
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -1349,6 +1359,7 @@ function openVideoModal(id, edit, fromWork){
       ${row("毛片雲端連結", v.rawLink?`<a href="${esc(v.rawLink)}" target="_blank">開啟</a>`:'')}
       ${row("完成影片存檔連結", v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">開啟</a>`:'')}
       ${editLinksHTML(v.productUrl)}
+      ${metricsCard}
       ${reviewCard}
       ${usageCard}`;
     MODAL_DIRTY=false;
@@ -1384,6 +1395,7 @@ function openVideoModal(id, edit, fromWork){
     <div class="card" style="background:var(--panel2)"><b>完成影片存檔連結</b>
       <label>完成影片存檔連結</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="剪輯完成後的成品存檔連結">
     </div>
+    ${metricsCard}
     ${usageCard}
     ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>

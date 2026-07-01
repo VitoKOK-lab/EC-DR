@@ -54,6 +54,12 @@
 | `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原） |
 | `deletedBy` | string | 刪除者 | 成員名字 |
 | `deletedAt` | string(ISO) | 刪除時間 | |
+| `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
+| `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
+
+> **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
+> 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
+> `channelStats/{yyyy-mm-dd}` 或 `channels` 集合（待實作）。前端只讀 Firestore 顯示。
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
