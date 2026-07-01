@@ -1324,13 +1324,13 @@ function openVideoModal(id, edit, fromWork){
       </div></div>`:'';
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
-  const metricsCard = `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
+  const metricsCard = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
       <b>平台成效</b>${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</div>
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
       </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
-  </div>`;
+  </div>` : "";
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
