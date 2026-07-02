@@ -220,6 +220,15 @@ function buildNav(){
     nav.appendChild(b);
   });
 }
+// 頂列齒輪選單（收納新手教學／改密碼）：點齒輪開關、點外面自動關閉
+function toggleHeaderMenu(e){ if(e) e.stopPropagation();
+  const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
+  const open=pop.classList.contains("hidden");
+  pop.classList.toggle("hidden", !open); if(gear) gear.classList.toggle("on", open); }
+function closeHeaderMenu(){
+  const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
+  pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
+document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
   const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
