@@ -1830,7 +1830,7 @@ function viewIntlWork(){
   return `
   <h2 style="margin-top:0">My Work <span class="muted" style="font-size:13px">${esc(me)}</span></h2>
   ${focusBar}
-  <div class="workgrid">
+  <div class="workgrid2">
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">To do</b><span class="pill ${todo.length?'ok':'wa'}">${todo.length}</span>
