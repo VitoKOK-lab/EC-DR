@@ -115,12 +115,25 @@
   header .brand .mk{color:var(--signal);font-size:15px;animation:starGlow 3.2s ease-in-out infinite;display:inline-block}
   header .brand .zh{font-family:var(--sans);letter-spacing:.12em;font-weight:500;font-size:13px;color:#CBB9C2;text-transform:none}
   header .spacer{flex:1}
-  .whoami{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#3A2F25,#221C18);color:#F3E9D6;padding:7px 15px;border-radius:999px;font-weight:600;border:1px solid rgba(197,179,130,.35);box-shadow:0 4px 14px rgba(34,28,24,.20)}
-  .whoami .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px rgba(197,179,130,.9)}
-  .whoami .rb{font-size:11px;opacity:.9}
+  /* 齒輪選單：收納「新手教學／改密碼」，方形微圓角（非膠囊） */
+  .hmenu{position:relative;flex:none}
+  .hgear{width:34px;height:34px;border-radius:6px;background:rgba(255,255,255,.08);border:1px solid rgba(246,236,218,.22);
+    color:#F6ECDA;font-size:16px;display:inline-flex;align-items:center;justify-content:center;transition:.15s;flex:none}
+  .hgear:hover,.hgear.on{background:rgba(255,255,255,.16);border-color:rgba(197,179,130,.55);transform:rotate(35deg)}
+  .hmenuPop{position:absolute;top:calc(100% + 8px);right:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:6px;box-shadow:var(--shadow2);min-width:160px;overflow:hidden;z-index:31}
+  .hmenuPop button{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);
+    padding:12px 14px;font-size:13px;color:var(--txt);font-weight:600;transition:.12s}
+  .hmenuPop button:last-child{border-bottom:none}
+  .hmenuPop button:hover{background:var(--panel2);color:var(--accent)}
+  /* 姓名：純文字、無框，與登出並排在頁尾右側 */
+  .hwho{display:flex;align-items:center;gap:6px;color:#F3E9D6;font-size:13px;font-weight:600;white-space:nowrap;flex:none}
+  .hwho .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px rgba(197,179,130,.9);flex:none}
+  .hwho .rb{font-size:11px;opacity:.8;font-weight:500;color:#CBB9C2}
   .offline{background:var(--red)!important}
-  header .btn.sec{background:rgba(255,255,255,.08);color:#F6ECDA;border:1px solid rgba(246,236,218,.22)}
-  header .btn.sec:hover{background:rgba(255,255,255,.16)}
+  .hlogout{background:none;border:none;color:#CBB9C2;font-size:13px;font-weight:600;letter-spacing:.02em;
+    padding:2px 0;border-bottom:1px solid transparent;transition:.15s;flex:none}
+  .hlogout:hover{color:#F6ECDA;border-bottom-color:rgba(197,179,130,.6)}
 
   nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);padding:0 12px;position:sticky;top:55px;z-index:29;box-shadow:var(--shadow)}
   /* 分頁底線：從中央「長出」的金線 */
@@ -303,10 +316,13 @@
     header .brand .wm{display:none}                 /* 手機隱藏英文字標，保留 ✦ + 中文 */
     header .brand .zh{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     header .spacer{flex:1 1 auto;min-width:4px}
-    /* 頂列三個操作（管理員/新手教學/登出）統一成膠囊、不換行、不被切掉 */
-    header .btn.sm{padding:6px 12px;font-size:12px;letter-spacing:0;min-height:32px;white-space:nowrap;border-radius:999px}
-    .whoami{padding:6px 12px;font-size:12px;min-height:32px;max-width:30vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-    .whoami .rb{display:none}                        /* 角色字省略，節省空間 */
+    .hgear{width:36px;height:36px;font-size:15px}
+    .hwho{font-size:12px;max-width:30vw;overflow:hidden}
+    .hwho span:not(.dot){overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .hwho .rb{display:none}                        /* 角色字省略，節省空間 */
+    .hlogout{font-size:12px}
+    .hmenuPop{min-width:150px}
+    .hmenuPop button{padding:13px 14px;font-size:13px}
     nav{top:53px;padding:0 6px}
     nav button{padding:13px 14px;font-size:14px}
     .card{padding:15px;border-radius:var(--r)}
@@ -358,8 +374,8 @@
   @media (max-width:380px){
     .grid.cols4{grid-template-columns:1fr 1fr !important}
     header{gap:4px;padding:9px 9px}
-    header .btn.sm{padding:6px 9px}
-    .whoami{padding:6px 9px;max-width:26vw}
+    .hgear{width:32px;height:32px}
+    .hwho{max-width:24vw}
     nav button{padding:11px 9px;font-size:12px}
     .day{min-height:52px}.day .big{font-size:15px}
     .day .tbar{display:none}
@@ -484,10 +500,15 @@
   <header>
     <span class="brand"><span class="mk">✦</span> <span class="wm">TAHIR ZAINAB</span> <span class="zh" id="brandZh">剪輯部 · 影音中控台</span></span>
     <span class="spacer"></span>
-    <span class="whoami" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
-    <button class="btn sm sec" id="tutBtn" onclick="toggleTutorial()" title="新手教學：開啟後把游標停在按鈕或欄位上就會出現說明">新手教學</button>
-    <button class="btn sm sec" id="pwBtn" style="display:none" onclick="changeMyPw()" title="修改自己的登入密碼">改密碼</button>
-    <button class="btn sm sec" onclick="logout()">登出</button>
+    <div class="hmenu">
+      <button class="hgear" id="hgearBtn" onclick="toggleHeaderMenu(event)" title="更多設定">⚙</button>
+      <div class="hmenuPop hidden" id="hmenuPop">
+        <button id="tutBtn" onclick="toggleTutorial();closeHeaderMenu()" title="開啟後把游標停在按鈕或欄位上就會出現說明">✦ 新手教學</button>
+        <button id="pwBtn" style="display:none" onclick="changeMyPw();closeHeaderMenu()" title="修改自己的登入密碼">🔒 改密碼</button>
+      </div>
+    </div>
+    <span class="hwho" id="whoami"><span class="dot"></span><span id="whoName"></span><span class="rb" id="whoRole"></span></span>
+    <button class="hlogout" onclick="logout()">登出</button>
   </header>
   <nav id="nav"></nav>
   <main id="view"></main>
@@ -506,7 +527,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783350000"></script>
+<script src="app.js?v=1783360000"></script>
 <script type="module" src="fb.js?v=1782090000"></script>
 </body>
 </html>
