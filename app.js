@@ -586,13 +586,15 @@ function renameContact(name){ const input=prompt("修改對接窗口名稱：", 
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
   cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
-async function createTask(){ if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; } const t=val("wp_newtask").trim(); if(!t){ toast("請輸入工作項目",true); return; }
+async function createTask(){ const isIntl=currentRole()==="intl";
+  if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
+  const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
   const id="T"+Date.now().toString(36);
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
-  catch(e){ toast("新增失敗，請稍後再試",true); } }
+  catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
 async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
@@ -627,16 +629,18 @@ async function unassignEditor(name){
   logA("收回指派毛片 "+n+" 支", name);
   await delay(300); toast("已收回 "+n+" 支到公用池");
 }
-function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
+function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast(currentRole()==="intl"?"Update failed":"更新失敗",true)); }
 function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
-function taskDone(id, done){
+function taskDone(id, done){ const isIntl=currentRole()==="intl";
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
-    if(t && t.assignedBy && !t.ack){ toast("請先按「收到」再回報完成",true);
+    if(t && t.assignedBy && !t.ack){ toast(isIntl?"Press “Got it” first before marking done":"請先按「收到」再回報完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; }
-    if(t && (t.report||'').trim().length<12){ toast("請填寫完整處理狀況及後續才能打勾完成",true);
+    if(t && (t.report||'').trim().length<12){ toast(isIntl?"Write a full progress note before marking done":"請填寫完整處理狀況及後續才能打勾完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; } }
-  window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast("更新失敗",true)); }
-function delTask(id){ if(!confirm("刪除這項交辦工作？")) return; window.DB.del("tasks", id).catch(()=>toast("刪除失敗",true)); }
+  window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast(isIntl?"Update failed":"更新失敗",true)); }
+function delTask(id){ const isIntl=currentRole()==="intl";
+  if(!confirm(isIntl?"Delete this task?":"刪除這項交辦工作？")) return;
+  window.DB.del("tasks", id).catch(()=>toast(isIntl?"Delete failed":"刪除失敗",true)); }
 // 管理員：把交辦工作轉移給其他員工（原員工會消失，新員工需重新按「收到」）
 function transferTask(id){
   const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -1853,24 +1857,31 @@ function viewIntlWork(){
   ${intlAssignedTasks(me)}`;
 }
 // 交辦給海外剪輯的工作：顯示＋一鍵翻譯(文A)＋收到/回報/完成
+// 交辦工作卡（英文版；全平行台灣版 我的今日交辦工作）：老闆指派的 ＋ 自己新增的，永遠顯示（沒有交辦時顯示空狀態）
 function intlAssignedTasks(me){
-  const list=Object.values((STATE&&STATE.tasks)||{}).filter(t=>t&&t.user===me&&t.assignedBy&&t.date===today)
-    .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
-  if(!list.length) return "";
+  const list=myTasks();  // 跨角色共用：currentUser() 今天的所有交辦（自建＋被指派）
+  const rows=list.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
+    const trIcon=assigned?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:'';
+    const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+        <b style="font-size:14px">${esc(t.title)}${trIcon}</b>
+        ${assigned?`<span class="pill em" style="font-size:10px;flex:none">Assigned</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">✕</button>`}
+      </div>`;
+    const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">Contact:</span> <b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
+    if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
+      ${head}${contactLine}
+      <div class="muted" style="font-size:12px;margin:6px 0 8px">Assigned by ${esc(t.assignedBy)} · <b style="color:var(--gold-dk)">Press “Got it” to start</b></div>
+      <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">Got it</button></div>`;
+    return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
+      ${head}${contactLine}
+      ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">Received (assigned by ${esc(t.assignedBy)})</div>`:''}
+      <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="Progress note (at least 12 characters)…">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
+        <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'Done':'In progress'}</label>
+    </div>`;}).join("")||`<div class="emptyState"><span class="es-mk">✦</span>No tasks assigned today.</div>`;
   return `<div class="card" style="margin-top:14px">
-    <b style="font-size:16px">Assigned tasks <span class="muted" style="font-size:12px">from ${esc(list[0].assignedBy||"")}</span></b>
-    <div style="margin-top:8px">${list.map(t=>`<div class="iwork-item">
-      <div style="min-width:0">
-        <div class="iwork-title">${esc(t.title)} <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a></div>
-        ${t.contact?`<div class="muted" style="font-size:12px">Contact: ${esc(t.contact)}</div>`:''}
-        ${t.ack?'':`<div class="muted" style="font-size:12px;color:var(--gold-dk)">Press “Got it” to start</div>`}
-        <input value="${esc(t.report||"")}" placeholder="Progress note…" style="margin-top:6px;font-size:13px" onchange="taskReport('${t.id}',this.value)">
-      </div>
-      <div class="row" style="gap:6px;flex:none;align-items:center">
-        ${t.ack?'':`<button class="btn sm" onclick="ackTask('${t.id}')">Got it</button>`}
-        <label style="display:inline-flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" ${t.done?'checked':''} onchange="taskDone('${t.id}',this.checked)"> Done</label>
-      </div>
-    </div>`).join("")}</div>
+    <b style="font-size:16px">Assigned tasks <span class="muted" style="font-size:12px">(beyond editing)</span></b>
+    <div style="margin-top:10px">${rows}</div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="Add your own task…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="Contact (optional)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ Add</button></div>
   </div>`;
 }
 
