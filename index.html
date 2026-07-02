@@ -350,6 +350,13 @@
     table.responsive td.cv-name::before{display:none}
     table.responsive td.cv-name>span{flex:1;min-width:0}
     table.responsive .vt-title{white-space:normal !important;overflow:visible !important;text-overflow:clip !important;font-weight:700}
+    /* 影片庫手機卡片：只留片名（標籤／預排／商品／剪輯師／狀態太空洞，點進去再看） */
+    table.vtable.responsive td:not(.cv-name){display:none}
+    table.vtable.responsive tr{padding:12px 14px}
+    /* 影片庫分頁籤：改左右滑一排，不再換行成兩排 */
+    .vtabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none}
+    .vtabs::-webkit-scrollbar{display:none}
+    .vtab{flex:0 0 auto;min-width:auto;white-space:nowrap;padding:9px 14px}
     .grid.cols2{grid-template-columns:1fr !important}
     .workgrid{grid-template-columns:1fr !important;grid-template-rows:auto;grid-auto-flow:row}
     .dgrid{grid-template-columns:1fr !important}
@@ -527,7 +534,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783360000"></script>
+<script src="app.js?v=1783370000"></script>
 <script type="module" src="fb.js?v=1782090000"></script>
 </body>
 </html>
