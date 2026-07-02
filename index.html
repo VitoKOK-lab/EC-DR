@@ -159,6 +159,12 @@
   input,select,textarea{width:100%;padding:11px 12px;border-radius:var(--rs);border:1.5px solid var(--line);background:#fff;color:var(--txt);font-size:14px;font-family:var(--sans);transition:.15s}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(138,115,56,.16)}
   textarea{min-height:60px}
+  /* 日期欄：加日曆圖示，讓「這是可以點的日期選擇器」在 iOS Safari 上也看得出來（空值時原生欄位完全看不出可點） */
+  .dateField{display:flex;align-items:center;gap:9px;border:1.5px solid var(--line);border-radius:var(--rs);background:#fff;padding:0 12px;transition:.15s}
+  .dateField:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(138,115,56,.16)}
+  .dateField .dateIco{flex:none;font-size:15px;opacity:.7}
+  .dateField input[type=date]{border:none;padding:11px 0;background:transparent;box-shadow:none;min-height:auto}
+  .dateField input[type=date]:focus{box-shadow:none;border:none}
   /* 主按鈕：hover 一道光澤掃過（像燈光掃過金屬） */
   .btn{position:relative;overflow:hidden;background:var(--txt);border:none;color:#fff;padding:11px 20px;border-radius:2px;font-weight:600;letter-spacing:.1em;font-family:var(--sans);transition:.18s;box-shadow:0 5px 14px rgba(34,28,24,.22)}
   .btn::after{content:"";position:absolute;top:0;left:-80%;width:50%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,246,222,.22),transparent);transform:skewX(-18deg);transition:left .45s ease;pointer-events:none}
@@ -534,7 +540,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783370000"></script>
+<script src="app.js?v=1783380000"></script>
 <script type="module" src="fb.js?v=1782090000"></script>
 </body>
 </html>
