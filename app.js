@@ -6,7 +6,7 @@
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
   boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["videos","影片庫"]],   // 經理人（Regina）：只看儀表板（含下指令）＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
+  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"]],   // 經理人（Regina）：儀表板（含下指令）＋月排程＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
   intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
