@@ -1495,7 +1495,9 @@ function openVideoModal(id, edit, fromWork){
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     ${productRows("e", v.products)}
     <label>商品頁網址</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
-    <label>預排上片日期</label><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}">
+    <label>預排上片日期</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支片就會顯示在「月排程」的那一天</div>
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
     ${reviewCard}
@@ -1928,7 +1930,9 @@ function openIntlModal(id){
       <div><label>Video file URL (your re-cut)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your ${esc(localeShort(v.locale))} cut"></div>
       <div><label>Upload URL (the TikTok post)</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
     </div>
-    <label>Scheduled upload date (when it will go live)</label><input id="i_date" type="date" value="${esc(v.scheduledDate||"")}">`;
+    <label>Scheduled upload date (when it will go live)</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="i_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    <div class="muted" style="font-size:11px;margin:5px 0 0">Pick a date here and this version will show up on that day in <b>Schedule</b>${v.account?` for ${esc(v.account)}`:''}.</div>`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">Cancel</button>
       <button class="btn" type="button" onclick="intlSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">Save</button></div>`;
