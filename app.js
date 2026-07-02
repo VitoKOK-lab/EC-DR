@@ -370,6 +370,7 @@ function render(){
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl }[CUR_TAB] || (()=>"");
+  v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
@@ -389,6 +390,9 @@ function viewCal(){
   const [y,m] = CAL_YM;
   const first = new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
+  // 剪輯視角：標出「這天有排到我剪的片」的日子（金色 ✦），一眼看到自己的死線
+  const me=currentUser(), isEd=currentRole()==="editor";
+  const dayIsMine=(ds)=> isEd && dayVideoList(ds).some(it=>{ const v0=vid(it.videoId); return v0 && (v0.editor===me||v0.claimedBy===me||v0.assignedTo===me); });
   let cells = "";
   for(let i=0;i<startDow;i++) cells += `<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
@@ -404,6 +408,7 @@ function viewCal(){
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
+      ${dayIsMine(ds)?'<span class="mymk" title="這天有你剪的片">✦</span>':''}
     </div>`;
   }
   return `
@@ -423,6 +428,7 @@ function viewCal(){
       <span><i class="lg-r"></i>待補</span>
       <span><i class="lg-b"></i>未排</span>
       <span><i class="lg-t"></i>今天</span>
+      ${isEd?'<span style="color:var(--accent)">✦ 有你剪的片</span>':''}
     </div>
   </div>`;
 }
@@ -674,8 +680,17 @@ function viewWork(){
     ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
       <a href="javascript:void(0)" onclick="editVideo('${v.id}')"><b>${esc(vidTitle(v))}</b></a>
       ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">退回原因：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
+  // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
+  const nTaskDone=tasks.filter(t=>t.done).length;
+  const focusBar=`<div class="focusbar">
+    <div><span class="fn ${atLimit?'warn':''}">${inProg}<i>/3</i></span><span class="fl">製作中</span></div>
+    <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
+    <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">交辦完成</span></div>
+    <div><span class="fn">${pool.length}</span><span class="fl">待剪毛片</span></div>
+  </div>`;
   return `
   <h2>本日上班計畫（${esc(me)}）</h2>
+  ${focusBar}
   ${rejCard}
 
   <div class="workgrid">
@@ -1212,14 +1227,15 @@ function vidTableRow(v){
   const rev=v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">已審</span>'
     :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">× 退回</span>':'');
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
-  // 語言標示：英文版標「EN」；有英文版的源片標「＋EN」
-  // 標示：在地化版本標自身語言（EN）；源片給後台一眼看出「翻了幾種語言 🌐N、重播用了幾次 ↻M」
+  // 標示：在地化版本標自身語言（EN）；源片的管理指標「翻了幾種語言 🌐N、重播 ↻M」
+  // 只給管理員／經理人看 — 剪輯不需要這些資訊，隱藏讓畫面更乾淨
+  const isAdminView=["boss","manager"].includes(currentRole());
   const langBadge = v.locale
     ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span>`
-    : (function(){ const nLang=localizedVersionsOfSrc(v.id).length, nUse=+v.totalUsed||0; let o="";
+    : (!isAdminView ? "" : (function(){ const nLang=localizedVersionsOfSrc(v.id).length, nUse=+v.totalUsed||0; let o="";
         if(nLang) o+=`<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已翻譯 ${nLang} 種語言">🌐 ${nLang}</span>`;
         if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
-        return o; })();
+        return o; })());
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
@@ -1239,7 +1255,7 @@ function vidRowsHTML(){
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
-  if(!list.length) return '<p class="muted" style="padding:14px 4px">沒有符合的影片</p>';
+  if(!list.length) return '<div class="emptyState"><span class="es-mk">✦</span>沒有符合的影片</div>';
   // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
   // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
   list.sort((a,b)=> vidOrderRank(a)-vidOrderRank(b) || vidSortVal(a).localeCompare(vidSortVal(b)) || String(a.id).localeCompare(String(b.id)));
@@ -1598,7 +1614,7 @@ function intlLibRows(){
   let src=intlSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
-  if(!src.length) return '<p class="muted" style="padding:22px 4px;text-align:center">No uploaded videos available to localize yet.</p>';
+  if(!src.length) return '<div class="emptyState"><span class="es-mk">✦</span>No uploaded videos available to localize yet — new videos appear here once fully published.</div>';
   const accts=intlAccounts();
   const cards=src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(untitled)";   // 去掉 # 標籤
@@ -1781,15 +1797,22 @@ function viewIntlWork(){
       </div>
       <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div>
     </div>`;
+  // Focus strip: one-glance status for the day
+  const focusBar=`<div class="focusbar">
+    <div><span class="fn">${todo.length}</span><span class="fl">To do</span></div>
+    <div><span class="fn ${atLimit?'warn':''}">${inProg.length}<i>/3</i></span><span class="fl">In progress</span></div>
+    <div><span class="fn">${doneToday.length}</span><span class="fl">Done today</span></div>
+  </div>`;
   return `
   <h2 style="margin-top:0">My Work <span class="muted" style="font-size:13px">${esc(me)}</span></h2>
+  ${focusBar}
   <div class="workgrid">
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">To do</b><span class="pill ${todo.length?'ok':'wa'}">${todo.length}</span>
       </div>
       <div style="margin-top:6px${todo.length>6?';max-height:340px;overflow-y:auto':''}">
-        ${todo.map(todoItem).join("")||`<p class="muted" style="padding:16px 2px">Nothing to do here. Open <b>Library</b> and create a version.</p>`}
+        ${todo.map(todoItem).join("")||`<div class="emptyState"><span class="es-mk">✦</span>Nothing to do here. Open <b>Library</b> and add a version.</div>`}
       </div>
       ${atLimit?'<p style="font-size:12px;margin:8px 0 0;color:var(--red)">You have 3 in progress — finish some before claiming more.</p>':''}
     </div>
@@ -1799,7 +1822,7 @@ function viewIntlWork(){
         <b style="font-size:16px">In progress / done today</b><span class="pill ${atLimit?'wa':'ok'}">${inProg.length}/3</span>
       </div>
       <div style="margin-top:6px">
-        ${work.map(workItem).join("")||`<p class="muted" style="padding:16px 2px">Nothing in progress. Claim one from “To do”.</p>`}
+        ${work.map(workItem).join("")||`<div class="emptyState"><span class="es-mk">✦</span>Nothing in progress. Claim one from “To do”.</div>`}
       </div>
     </div>
   </div>
