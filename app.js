@@ -6,7 +6,7 @@
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
   boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["log","操作紀錄"],["trash","回收桶"]],   // 經理人：權限同管理員，只差不能進設定
+  manager: [["dashboard","儀表板"],["videos","影片庫"]],   // 經理人（Regina）：只看儀表板（含下指令）＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
   editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
   intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
@@ -925,7 +925,7 @@ function viewDashboard(){
 
   return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
 
-  ${(currentRole()==="boss"||currentRole()==="manager")?`<div class="card" style="border-color:var(--accent)">
+  ${currentRole()==="boss"?`<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
@@ -1236,14 +1236,15 @@ function vidTableRow(v){
         if(nLang) o+=`<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已翻譯 ${nLang} 種語言">🌐 ${nLang}</span>`;
         if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
         return o; })());
+  // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${langBadge}</span></td>
-    <td data-label="標籤">${tagHTML}</td>
-    <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}" style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
-    <td data-label="商品">${prodHTML}</td>
-    <td data-label="剪輯師">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${langBadge}</span></td>
+    <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
+    <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
+    <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
+    <td data-label="剪輯師"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
     <td data-label="狀態"><span class="ststack">
       <span class="pill" style="font-size:11px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
       ${rev}</span></td>
@@ -1719,7 +1720,9 @@ function openDayIntl(ds){
         <span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-left:5px">${localeShort(v.locale)}</span></td>
       <td data-label="Status"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'Done':(v.stage==='剪輯中'?'In progress':'To do')}</span></td>
       <td data-label="Editor">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="Upload">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">Link</a>`:'<span class="muted">—</span>'}</td></tr>`;
+      <td data-label="Upload">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">Link</a>`:'<span class="muted">—</span>'}</td>
+      <td data-label="Move to"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="intlReschedule('${v.id}',this.value,'${ds}')"></td>
+      <td data-label="Action"><button class="btn sec sm" style="white-space:nowrap" onclick="intlUnschedule('${v.id}','${ds}')" title="Remove from this day only — the video itself stays in My Work / the library">Unschedule</button></td></tr>`;
   }).join("");
   const wd=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(ds+"T00:00:00").getDay()];
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
@@ -1727,9 +1730,15 @@ function openDayIntl(ds){
       <h3 style="margin:0">${esc(ds)} (${wd}) · ${esc(acc)}</h3>
       <button class="btn sec sm" onclick="closeModal()">×</button></div>
     <div class="muted" style="margin-bottom:8px">Scheduled ${b.total}/${b.target}${b.short?` (need ${b.short})`:' · Full'}</div>
-    ${list.length?`<table class="responsive"><thead><tr><th>Video</th><th>Status</th><th>Editor</th><th>Upload</th></tr></thead><tbody>${rows}</tbody></table>`:`<p class="muted" style="padding:10px 2px">Nothing scheduled for this account on this day. Set the “Scheduled upload date” in a version’s edit window to place it here.</p>`}
+    ${list.length?`<table class="responsive"><thead><tr><th>Video</th><th>Status</th><th>Editor</th><th>Upload</th><th>Move to</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>Nothing scheduled for this account on this day.<br>Set the “Scheduled upload date” in a version’s edit window to place it here.</div>`}
   </div></div>`;
 }
+// 海外排程調整（比照中文版月曆）：改上片日／移出這一天 — 只動排程日期，影片本身不動
+function intlReschedule(id,nd,ds){ if(!nd||nd===ds) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},"Moved to "+nd).then(ok=>{ if(ok) openDayIntl(ds); }); }
+function intlUnschedule(id,ds){
+  if(!confirm("Remove from "+ds+"? Only the schedule changes — the video itself stays in My Work / the library.")) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"Removed from this day").then(ok=>{ if(ok) openDayIntl(ds); }); }
 
 // ---- 從 Library 的帳號選單建立版本：value = 帳號在 intlAccounts() 的索引 ----
 function createLocalFromAcct(sourceId, idx){ const a=intlAccounts()[+idx]; if(!a){ toast("Pick an account",true); return; }
@@ -1755,9 +1764,13 @@ function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'
   if(idx===''){ toast("Pick an account first",true); return; } createLocalFromAcct(sourceId, idx); }
 function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
-// 退回資料庫：把 To do 裡誤加/不做的版本移除（軟刪除→管理員回收桶，可復原）
-function intlDiscard(id){ const v=vid(id)||{}; if(!confirm(`Remove "${(v.name||v.rawName||"this version")}"?\nIt goes to the admin's recycle bin (restorable).`)) return;
-  write("DELETE","/api/videos/"+id,{},"Removed — moved to recycle bin").then(ok=>{ if(ok) render(); }); }
+// 退回資料庫：只移除 To do 裡「還沒開始做」的版本殼（無任何內容），源片立即回到 Library 可重選。
+// 不動源片、不進回收桶 — 海外版全是二創，絕不能刪到原始檔。
+function intlDiscard(id){ const v=vid(id)||{};
+  if(!(v.locale && v.stage==="待處理")){ toast("Only unstarted To-do items can be returned",true); return; }
+  const s=srcOf(v); const t=stripHash(v.name)||stripHash(s?(s.nameEn||s.name||s.rawName):"")||v.rawName||"this version";
+  if(!confirm(`Return "${t}" to the library?\nNothing is deleted — the original video stays in the library and can be picked again.`)) return;
+  write("DELETE","/api/videos/"+id+"/purge",{},"Returned to the library — no video was deleted").then(ok=>{ if(ok) render(); }); }
 
 // ---- My Work（全英文，跨語言）----
 function viewIntlWork(){
@@ -1787,7 +1800,7 @@ function viewIntlWork(){
       </div>
       <div class="row" style="gap:6px;flex:none">
         <button class="btn sm" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
-        <button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="Remove this version (goes to the admin's recycle bin)">✕ Remove</button>
+        <button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="Return to the library — nothing gets deleted; the source video stays">✕ Remove</button>
       </div>
     </div>`;
   const workItem=(v)=>`<div class="iwork-item">
