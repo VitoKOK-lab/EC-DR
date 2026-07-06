@@ -1499,10 +1499,6 @@ function openVideoModal(id, edit, fromWork){
     </div>
     <label>毛片雲端連結</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="毛片原始檔雲端連結">
     <label>影片文案（影片中 IP 的口播台詞）</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" autocomplete="off">
-    ${v.locale==="en"?"":`<div class="card" style="background:var(--panel2)"><b>海外二創英文摘要</b> <span class="muted" style="font-size:12px">給海外剪輯看懂用（選填）</span>
-      <label>英文片名</label><input id="e_nameen" value="${esc(v.nameEn||"")}" placeholder="English title for overseas editor">
-      <label>英文文案</label><textarea id="e_vcopyen" style="min-height:60px" placeholder="English summary / script">${esc(v.videoCopyEn||"")}</textarea>
-    </div>`}
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -1556,8 +1552,6 @@ async function saveVideo(id){
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
     driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:zhTW(val("e_note").trim())};
-  // 海外二創英文摘要（僅源片編輯畫面才有這兩個欄位）
-  if(document.getElementById("e_nameen")){ video.nameEn=val("e_nameen").trim(); video.videoCopyEn=val("e_vcopyen").trim(); }
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 
