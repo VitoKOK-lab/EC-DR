@@ -148,12 +148,12 @@ async function route(method, path, body){
       const v=newVideoRecord(inc); v.updatedAt=nowIso(); await window.DB.set("videos", v.id, v); return;
     }
     const id=seg[1], v=vidLocal(id), action=seg[2];
-    if(!v && method!=="DELETE") throw new Error("找不到影片");
+    if(!v && method!=="DELETE") throw new Error(currentRole()==="intl"?"Video not found":"找不到影片");
     if(action==="claim"){
       // 3 支上限：台灣一般片＋蝦皮二創合併算同一份（跟「我的工作」清單合併顯示一致）；海外二創(不分語言)獨立算，互不佔用
       const bucket = v.locale ? (x=>!!x.locale) : (x=>!x.locale);
       const cnt=(STATE.videos||[]).filter(x=>x.stage==="剪輯中" && (x.claimedBy===user||x.editor===user) && bucket(x)).length;
-      if(cnt>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
+      if(cnt>=3) throw new Error(currentRole()==="intl"?"You already have 3 in progress — finish some first":"你手上已有 3 支進行中，先完成幾支再拉新片");
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",workStep:0,updatedAt:nowIso()}); return; }
     if(action==="unclaim"){
       await window.DB.update("videos",id,{stage:"待處理",claimedBy:"",claimedAt:"",editor:"",workStep:0,updatedAt:nowIso()}); return; }
@@ -260,15 +260,16 @@ function loginAs(u){
 // 員工自行修改密碼（需先輸入舊密碼）
 async function changeMyPw(){
   const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
-  if(!u){ toast("找不到你的帳號",true); return; }
+  const T=(zh,en)=>currentRole()==="intl"?en:zh;   // 海外剪輯看英文提示
+  if(!u){ toast(T("找不到你的帳號","Account not found"),true); return; }
   const cur=String(u.pw==null?"0000":u.pw);
-  const old=prompt("請輸入目前密碼（預設 0000）："); if(old===null) return;
-  if(String(old).trim()!==cur){ toast("目前密碼錯誤",true); return; }
-  const n1=prompt("請設定新密碼（至少 4 碼）："); if(n1===null) return;
-  const np=String(n1).trim(); if(np.length<4){ toast("新密碼至少 4 碼",true); return; }
-  const n2=prompt("請再輸入一次新密碼："); if(n2===null) return;
-  if(String(n2).trim()!==np){ toast("兩次輸入不一致，請重來",true); return; }
-  await write("PUT","/api/users/"+me,{pw:np},"密碼已更新，下次登入請用新密碼"); }
+  const old=prompt(T("請輸入目前密碼（預設 0000）：","Current password (default 0000):")); if(old===null) return;
+  if(String(old).trim()!==cur){ toast(T("目前密碼錯誤","Wrong current password"),true); return; }
+  const n1=prompt(T("請設定新密碼（至少 4 碼）：","New password (at least 4 characters):")); if(n1===null) return;
+  const np=String(n1).trim(); if(np.length<4){ toast(T("新密碼至少 4 碼","New password needs at least 4 characters"),true); return; }
+  const n2=prompt(T("請再輸入一次新密碼：","Repeat the new password:")); if(n2===null) return;
+  if(String(n2).trim()!==np){ toast(T("兩次輸入不一致，請重來","Passwords don't match, try again"),true); return; }
+  await write("PUT","/api/users/"+me,{pw:np},T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 async function clockIn(name){
@@ -287,7 +288,10 @@ function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); re
 function logout(){ showGoodbye(); }
 // 登出：簡單說再見 → 跳回登入頁（無動畫）
 function showGoodbye(){
+  const wasIntl=currentRole()==="intl";   // 清除登入資訊前先記住角色，再見畫面才知道用哪個語言
   localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
+  try{ const gt=document.querySelector("#goodbye .gtitle"); if(gt) gt.textContent=wasIntl?"Goodbye!":"再見！";
+       const gs=document.querySelector("#goodbye .gsub"); if(gs) gs.textContent=wasIntl?"See you tomorrow":"明天見"; }catch(e){}
   CUR_TAB=null; try{ closeModal(); }catch(e){}
   const st=document.getElementById("gstage"); if(st) st.innerHTML=`<span style="font-size:64px"></span>`;
   document.getElementById("app")?.classList.add("hidden");
@@ -318,8 +322,13 @@ function applyState(raw){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
     document.getElementById("whoName").textContent=currentUser();
-    document.getElementById("whoRole").textContent="・"+(ROLE_LABEL[currentRole()]||"");
-    { const pb=document.getElementById("pwBtn"); if(pb) pb.style.display=(currentRole()!=="boss")?"":"none"; }
+    const isIntl=currentRole()==="intl";
+    document.getElementById("whoRole").textContent="・"+(isIntl?"Intl Editor":(ROLE_LABEL[currentRole()]||""));
+    { const pb=document.getElementById("pwBtn"); if(pb){ pb.style.display=(currentRole()!=="boss")?"":"none"; pb.textContent=isIntl?"🔒 Change password":"🔒 改密碼"; } }
+    // 海外剪輯：頂列全英文；新手教學內容是中文，對海外剪輯直接隱藏
+    { const tb=document.getElementById("tutBtn"); if(tb){ tb.style.display=isIntl?"none":""; } }
+    { const lb=document.getElementById("logoutBtn"); if(lb) lb.textContent=isIntl?"Log out":"登出"; }
+    { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
   } else {
@@ -352,28 +361,7 @@ function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<sp
 // ===================================================================
 // 畫面路由
 // ===================================================================
-// 每頁新手教學：第一次進到某頁自動顯示一張說明卡，按「知道了」後該頁不再出現（記在這台裝置、依使用者）
-const PAGE_INTRO = {
-  work:{ title:"上班計畫", html:"這是你每天的主畫面。<b>①</b> 上方「待剪毛片」按〈認領開始剪〉把片子拉下來剪（同時最多 3 支，其餘排隊）。<b>②</b> 中間「我的今日工作」剪好按〈完成〉。<b>③</b> 下班前按〈下班匯報〉。" },
-  cal:{ title:"社群媒體月排程", html:"整月的上片排程。<b>綠</b>＝當天已排滿、<b>紅</b>＝還缺幾支、<b>深灰</b>＝還沒排；今天用金框標起來。點任一天可看當天要上的片、或把舊片排進去重播。" },
-  videos:{ title:"影片庫", html:"所有影片都在這。上方分頁切換〈毛片待剪／新片未排程／已排程／舊片〉；搜尋框可用片名、原始片名、文案、編號找；〈＋ 新增毛片〉建立新片。" },
-  dashboard:{ title:"管理員儀表板", html:"總覽：指派交辦與毛片給員工、看未來排程是否排滿、每位剪輯今日進度與長期績效。" },
-  log:{ title:"操作紀錄", html:"每個人的操作（誰・何時・做了什麼）都記在這，最近 300 筆。用來追蹤責任歸屬。" },
-  trash:{ title:"回收桶", html:"被刪除的影片不會真的消失，會先進這裡；可〈復原〉救回，或〈永久刪除〉徹底清掉。防誤刪／惡意刪除。" },
-  settings:{ title:"設定", html:"設定每日上片目標、投放平台、成員（新增剪輯會自動建立登入帳號），以及資料維護。" },
-};
-function introKey(tab){ return "ecdr_intro_"+tab+"_"+currentUser(); }
-function pageIntroHTML(tab){
-  const it=PAGE_INTRO[tab]; if(!it) return "";
-  try{ if(localStorage.getItem(introKey(tab))) return ""; }catch(e){}
-  return `<div class="card" style="border:1px solid var(--accent);background:var(--amberbg)">
-    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:nowrap">
-      <div><b style="color:var(--accent)">✦ 新手教學 · ${esc(it.title)}</b>
-        <div style="margin-top:6px;line-height:1.8">${it.html}</div></div>
-      <button class="btn sm" style="white-space:nowrap;flex:none" onclick="dismissIntro('${tab}')">知道了</button>
-    </div></div>`;
-}
-function dismissIntro(tab){ try{ localStorage.setItem(introKey(tab),"1"); }catch(e){} render(); }
+// （每頁自動說明卡已於 PR #33 移除，改用頂列「新手教學」hover 模式；此處不再保留死程式）
 let LAST_RENDER_TAB=null;
 function render(){
   if(!STATE) return;
@@ -628,8 +616,9 @@ async function assignFootage(){
   await delay(300); toast("已指派 "+n+" 支給「"+who+"」（他認領後才開始計時）");
 }
 // 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
+// 防呆：只收回台灣毛片；海外/蝦皮二創殼的 assignedTo＝建立者本人，收回會讓它跑進所有人的清單
 async function unassignEditor(name){
-  const list=(STATE.videos||[]).filter(v=>v.stage==="待處理" && v.assignedTo===name);
+  const list=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理" && v.assignedTo===name);
   if(!list.length){ toast("「"+name+"」沒有待認領的指派毛片",true); return; }
   if(!confirm("把指派給「"+name+"」但還沒認領的 "+list.length+" 支毛片收回公用池？")) return;
   BULK_BUSY=true; let n=0;
@@ -654,7 +643,8 @@ function delTask(id){ const isIntl=currentRole()==="intl";
 function transferTask(id){
   const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
   if(!t){ toast("找不到這項交辦",true); return; }
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor" && u.name!==t.user).map(u=>u.name);
+  // 交辦可指派給台灣剪輯或海外剪輯，轉移對象也一致
+  const editors=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor") && u.name!==t.user).map(u=>u.name);
   if(!editors.length){ toast("沒有其他員工可轉移",true); return; }
   const menu=editors.map((n,i)=>`${i+1}. ${n}`).join("\n");
   const ans=prompt("把「"+t.title+"」轉移給哪位員工？輸入編號：\n"+menu); if(ans===null) return;
@@ -932,13 +922,14 @@ function viewDashboard(){
   }
 
   // ---- 排程健康/庫存 ----
+  // 防呆：指派毛片只針對台灣毛片，海外(locale)/蝦皮(channel)二創殼不列入計數與可指派清單
   const g=scheduleGlance();
-  const poolAll=(STATE.videos||[]).filter(v=>v.stage==="待處理");
+  const poolAll=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
   const poolN=poolAll.length;
   const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const assignCount={}; poolAll.forEach(v=>{ if(v.assignedTo) assignCount[v.assignedTo]=(assignCount[v.assignedTo]||0)+1; });
-  const noSchedN=(STATE.videos||[]).filter(v=>vidSegment(v)==="newNoSched").length;
-  const wipN=(STATE.videos||[]).filter(v=>v.stage==="剪輯中").length;
+  const noSchedN=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && vidSegment(v)==="newNoSched").length;
+  const wipN=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="剪輯中").length;
   const runwayCls=g.runway>=7?'ok':(g.runway>=3?'wa':'em');
   // ---- 未來 35 天排程視覺帶 ----
   const STRIP_N=35; const strip=[];
@@ -1109,8 +1100,9 @@ function finishWork(id){ const v=vid(id)||{};
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
 function reworkVideo(id){ const v=vid(id)||{};
   let who=v.editor||v.claimedBy||"";
-  if(!who){   // 沒有指定剪輯（孤兒影片）→ 讓管理員選一位
-    const eds=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
+  if(!who){   // 沒有指定剪輯（孤兒影片）→ 讓管理員選一位；海外二創版列海外剪輯、其餘列台灣剪輯
+    const wantRole=v.locale?"intl":"editor";
+    const eds=(STATE.users||[]).filter(u=>(u.role||"editor")===wantRole).map(u=>u.name);
     if(!eds.length){ toast("尚無剪輯成員可指派",true); return; }
     const ans=prompt("這支沒有指定剪輯，要移到哪位的今日工作？輸入編號：\n"+eds.map((n,i)=>(i+1)+". "+n).join("\n"));
     if(ans===null) return; const idx=parseInt(ans)-1;
@@ -1244,6 +1236,7 @@ function reviewVid(id, status){
 }
 let VID_VIEW="rawNoSched";   // 影片庫分頁：rawNoSched/rawSched/newNoSched/newSched/old（五類）
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
+let VID_Q="";   // 搜尋字存全域：資料同步重繪時還原，打到一半不會被清掉
 // 一列 = 一支影片
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
@@ -1284,7 +1277,7 @@ function vidTableRow(v){
 }
 function vidRowsHTML(){
   const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 只列台灣源片（不含海外／蝦皮二創版）
-  const q=(document.getElementById('vid_q')?.value||'').toLowerCase().trim();
+  const q=String(VID_Q||'').toLowerCase().trim();
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
@@ -1324,7 +1317,7 @@ function viewVideos(){
       ${tab("old","舊片",seg.old)}
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
-      <input id="vid_q" placeholder="搜尋編號／片名／剪輯" oninput="vidFilter()" style="flex:1;min-width:150px">
+      <input id="vid_q" placeholder="搜尋編號／片名／剪輯" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
       <button class="btn sm" onclick="newSimpleVideo()">＋ 新增一支</button>
       <button class="btn sec sm" onclick="batchNewFootage()">批次新增</button>
     </div>
@@ -1587,11 +1580,12 @@ function productPriceLine(products, locale){
   const list=(products||[]).filter(p=>p&&p.name); if(!list.length) return '<span class="muted">—</span>';
   const rate=locale?exchangeRateOf(locale):1;
   const sym=CURRENCY_SYMBOL[locale?currencyCodeOf(locale):"TWD"]||"";
+  const saleLabel=locale?"Fan price":"寵粉價";   // 海外畫面全英文
   return list.map(p=>{
     const orig=+p.price||0, sale=+p.salePrice||0;
-    const priceTxt=`${sym}${Math.round(orig*rate).toLocaleString()}`;
-    const saleTxt=sale?` <span style="color:var(--red)">寵粉價 ${sym}${Math.round(sale*rate).toLocaleString()}</span>`:'';
-    return `${esc(p.name)} ${priceTxt}${saleTxt}`;
+    const priceTxt=orig?` ${sym}${Math.round(orig*rate).toLocaleString()}`:'';   // 沒填原價就不顯示 0
+    const saleTxt=sale?` <span style="color:var(--red)">${saleLabel} ${sym}${Math.round(sale*rate).toLocaleString()}</span>`:'';
+    return `${esc(p.name)}${priceTxt}${saleTxt}`;
   }).join('、');
 }
 function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
@@ -1599,8 +1593,6 @@ function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
 function intlDailyTarget(){ const v=STATE.settings&&STATE.settings.intlDailyTarget; return (v!=null&&v!=="")?(+v||0):2; }
-// 某源片某語言是否已有在地化版本（相容用）
-function localizedVersionOf(sourceId, locale){ return (STATE.videos||[]).find(v=>v.locale===locale && v.sourceVideoId===sourceId); }
 function localizedVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.sourceVideoId===sourceId && v.locale); }
 // 源片視窗的「各語言版本」卡（中／英泰馬一起看）＋在地化版本回連源片
 function localizedVersionsCard(v){
@@ -1658,7 +1650,7 @@ function openVidPreview(enc){ const url=decodeURIComponent(enc); const e=playabl
   </div>`;
   document.body.appendChild(w); }
 function intlLibRows(){
-  const q=(document.getElementById('intl_q')?.value||'').toLowerCase().trim();
+  const q=String(INTL_Q||'').toLowerCase().trim();
   let src=intlSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
@@ -1704,7 +1696,7 @@ function viewIntlLibrary(){
   const src=intlSourcePool();
   return `<h2 style="margin-top:0">Library <span class="muted" style="font-size:13px">Already-uploaded videos — create EN / TH / MS versions</span></h2>
   <div class="card">
-    <input id="intl_q" placeholder="🔍  Search title / products / code" oninput="intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px">
+    <input id="intl_q" placeholder="🔍  Search title / products / code" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px">
     <div id="intl_list" class="${src.length>8?'vidscroll':''}" style="margin-top:12px">${intlLibRows()}</div>
   </div>`;
 }
@@ -2081,8 +2073,9 @@ function openShopeeModal(id){
 }
 
 // ---- 蝦皮專區頁（可製作清單 ＋ 我的蝦皮工作，合併一頁；比照上班計畫風格）----
+let SHP_Q="";   // 搜尋字存全域：資料同步重繪時還原
 function shopeeLibRows(){
-  const q=(document.getElementById('shp_q')?.value||'').toLowerCase().trim();
+  const q=String(SHP_Q||'').toLowerCase().trim();
   let src=shopeeSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
@@ -2169,7 +2162,7 @@ function viewShopeeLib(){
   <div class="workgrid2">
     <div class="card">
       <b style="font-size:16px">可製作蝦皮版本</b>
-      <input id="shp_q" placeholder="🔍 搜尋片名／編號" oninput="shopeeFilter()" style="width:100%;margin:10px 0">
+      <input id="shp_q" placeholder="🔍 搜尋片名／編號" value="${esc(SHP_Q)}" oninput="SHP_Q=this.value;shopeeFilter()" style="width:100%;margin:10px 0">
       <div id="shp_list" class="${shopeeSourcePool().length>8?'vidscroll':''}">${shopeeLibRows()}</div>
     </div>
     ${shopeeMyWorkCard()}
