@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 11**
+- 目前版本：**schemaVersion = 12**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -35,7 +35,7 @@
 | `scheduledDate` | string\|null | 預排上片日期 | `YYYY-MM-DD` |
 | `publishTime` | string | 預排上片時間 | `HH:MM`（10:00/12:00/16:00） |
 | `platforms` | string[] | 投放平台 | 對應 `settings.postPlatforms[].name` |
-| `products` | object[] | 商品（最多 4 個） | 每筆 `{name, price}`，單價手動輸入 |
+| `products` | object[] | 商品（最多 4 個） | 每筆 `{name, price, salePrice}`；`price`＝原價、`salePrice`＝售價（寵粉價，選填），皆手動輸入。只有源片（台灣中文版）可編輯；海外/蝦皮二創版的編輯畫面只唯讀顯示（依 `settings.exchangeRates` 即時換算幣別），不能改 |
 | `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
@@ -179,6 +179,7 @@
 | `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
 | `shopeeAccounts` | string[] | 蝦皮帳號清單（純名稱，無語言分組）；建立蝦皮版本時挑帳號用 |
 | `shopeeDailyTarget` | number | 蝦皮每日目標（**每個帳號**每天幾支），預設 2；蝦皮排程月曆以此判斷已排滿／缺幾支 |
+| `exchangeRates` | map | 海外二創商品價格換算：`{en:{code,rate}, th:{code,rate}, ms:{code,rate}}`；`rate`＝1 台幣可換多少該幣別（預設 1＝未設定，尚未換算）。海外版編輯畫面即時用源片 `products[].price`／`salePrice` × `rate` 顯示（唯讀）；蝦皮版本同幣別（台幣）不換算 |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
 | `shoplineBase` | string | Shopline 網址（導購連結用） |
