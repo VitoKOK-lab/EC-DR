@@ -5,10 +5,10 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["cal","社群媒體月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","社群媒體月排程"],["videos","影片庫"]],   // 經理人（Regina）：儀表板（含下指令）＋月排程＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
-  // 蝦皮專區：國內二創（同語言、換平台），掛在剪輯角色下——任何國內剪輯都能進去，不開新角色/新登入
-  editor:  [["work","上班計畫"],["cal","社群媒體月排程"],["videos","影片庫"],["shopeelib","影片蝦皮二創區"],["shopeecal","蝦皮排程"]],
+  boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","社群媒體月排程"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["videos","影片庫"],["cal","社群媒體月排程"]],   // 經理人（Regina）：儀表板（含下指令）＋影片庫＋月排程；設定/員工視角等管理功能只給管理員
+  // 蝦皮專區：國內二創（同語言、換平台），掛在剪輯角色下——任何國內剪輯都能進去，不開新角色/新登入；蝦皮工作一樣整合進上班計畫（見 shopeeMyWorkCard）
+  editor:  [["work","上班計畫"],["videos","影片庫"],["cal","社群媒體月排程"],["shopeelib","影片蝦皮二創區"],["shopeecal","蝦皮排程"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
   intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
 };
@@ -773,7 +773,8 @@ function viewWork(){
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>
 
-  </div>`
+  </div>
+  ${shopeeMyWorkCard()}`
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
@@ -2094,7 +2095,8 @@ function shopeeLibRows(){
   }).join("");
 }
 function shopeeFilter(){ const el=document.getElementById('shp_list'); if(el) el.innerHTML=shopeeLibRows(); }
-function viewShopeeLib(){
+// 「我的蝦皮工作」卡：影片蝦皮二創區、上班計畫都會用到（蝦皮工作也整合進每位剪輯的上班計畫）
+function shopeeMyWorkCard(){
   const me=currentUser();
   const inProg=myInProgressCount(x=>x.channel==="shopee"); const atLimit=inProg>=3;
   const todo=(STATE.videos||[]).filter(v=>v.channel==="shopee" && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
@@ -2111,15 +2113,7 @@ function viewShopeeLib(){
     return `<button class="btn sec sm" onclick="openShopeeModal('${v.id}')">編輯</button>
       <button class="btn sm" onclick="shopeeFinish('${v.id}')">完成 ✔</button>
       <button class="btn sec sm" onclick="shopeeUnclaim('${v.id}')">退回</button>`; };
-  return `
-  <h2 style="margin-top:0">影片蝦皮二創區</h2>
-  <div class="workgrid2">
-    <div class="card">
-      <b style="font-size:16px">可製作蝦皮版本</b>
-      <input id="shp_q" placeholder="🔍 搜尋片名／編號" oninput="shopeeFilter()" style="width:100%;margin:10px 0">
-      <div id="shp_list" class="${shopeeSourcePool().length>8?'vidscroll':''}">${shopeeLibRows()}</div>
-    </div>
-    <div class="card">
+  return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
         <b style="font-size:16px">我的蝦皮工作</b><span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
       </div>
@@ -2131,7 +2125,7 @@ function viewShopeeLib(){
             <div class="row" style="gap:6px;flex:none">
               <button class="btn sm" onclick="shopeeClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'你已有 3 支蝦皮版本在做，先完成一支再領':'認領並開始剪'}">${atLimit?'排隊中':'認領開始剪'}</button>
               <button class="btn sec sm" onclick="shopeeDiscard('${v.id}')" title="退回資料庫（不會刪除任何影片）">✕ 退回</button>
-            </div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有待處理的蝦皮版本，從左邊挑一支加入。</div>`}
+            </div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有待處理的蝦皮版本，到「影片蝦皮二創區」挑一支加入。</div>`}
       </div>
       <div class="igroup">
         <span class="igroup-l">製作中／今日完成（${work.length}）</span>
@@ -2140,7 +2134,18 @@ function viewShopeeLib(){
               <div class="muted" style="font-size:12px">來源：${esc(srcTitle(v)||stripHash(v.rawName))}</div></div>
             <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有製作中的蝦皮版本。</div>`}
       </div>
+    </div>`;
+}
+function viewShopeeLib(){
+  return `
+  <h2 style="margin-top:0">影片蝦皮二創區</h2>
+  <div class="workgrid2">
+    <div class="card">
+      <b style="font-size:16px">可製作蝦皮版本</b>
+      <input id="shp_q" placeholder="🔍 搜尋片名／編號" oninput="shopeeFilter()" style="width:100%;margin:10px 0">
+      <div id="shp_list" class="${shopeeSourcePool().length>8?'vidscroll':''}">${shopeeLibRows()}</div>
     </div>
+    ${shopeeMyWorkCard()}
   </div>`;
 }
 
