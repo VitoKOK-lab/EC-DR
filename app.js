@@ -103,7 +103,7 @@ function dayBreakdown(date){ const list=dayVideoList(date);
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 // 我目前進行中的影片數
 // 每條內容線各自 3 支上限，互不佔用彼此名額；bucket 預設＝台灣一般片（不含海外/蝦皮二創）
-function inProgressCount(name, bucket){ bucket=bucket||(x=>!x.locale && !x.channel);
+function inProgressCount(name, bucket){ bucket=bucket||(x=>!x.locale);   // 預設＝台灣一般片＋蝦皮二創合併（跟「我的工作」清單合併顯示一致）
   return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)&&bucket(v)).length; }
 function myInProgressCount(bucket){ return inProgressCount(currentUser(), bucket); }
 // 新片＝剪好還沒上傳（預排上片日尚未到）；舊片＝過了預排上片日（已上傳，可重播）
@@ -150,8 +150,8 @@ async function route(method, path, body){
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error("找不到影片");
     if(action==="claim"){
-      // 每條內容線各自獨立 3 支上限：台灣一般片／海外二創(不分語言)／蝦皮二創，互不佔用彼此名額
-      const bucket = v.channel==="shopee" ? (x=>x.channel==="shopee") : (v.locale ? (x=>!!x.locale) : (x=>!x.locale && !x.channel));
+      // 3 支上限：台灣一般片＋蝦皮二創合併算同一份（跟「我的工作」清單合併顯示一致）；海外二創(不分語言)獨立算，互不佔用
+      const bucket = v.locale ? (x=>!!x.locale) : (x=>!x.locale);
       const cnt=(STATE.videos||[]).filter(x=>x.stage==="剪輯中" && (x.claimedBy===user||x.editor===user) && bucket(x)).length;
       if(cnt>=3) throw new Error("你手上已有 3 支進行中，先完成幾支再拉新片");
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",workStep:0,updatedAt:nowIso()}); return; }
@@ -669,19 +669,20 @@ function transferTask(id){
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
   const me = currentUser();
-  const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中
-  const mine = (STATE.videos||[]).filter(v=>!v.locale && !v.channel && (v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
+  const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 最多同時 3 支進行中（蝦皮版本合併計入，海外二創仍獨立）
+  // 蝦皮版本(channel="shopee")合併進「我的工作」同一份清單，只用小圖「蝦」分辨；海外二創(locale)仍是獨立角色/頁面，不合併
+  const mine = (STATE.videos||[]).filter(v=>!v.locale && (v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
   // 待剪池：指派給我的 ＋ 還沒指派的公用毛片（別人被指派的不顯示）；指派給我的排前面
   // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
-  const pool = (STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+  const pool = (STATE.videos||[]).filter(v=>!v.locale && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
   const poolShown=pool;   // 全部顯示，超過 5 條時改用捲動視窗（見下方 max-height）
-  const doneToday = (STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  const doneToday = (STATE.videos||[]).filter(v=>!v.locale && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
   const clockedOut = !!(myShift() && myShift().clockOut);
-  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
+  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>!v.locale && v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const myWork = mine.concat(myDoneToday);
   const tasks = myTasks();
@@ -689,14 +690,20 @@ function viewWork(){
   // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
   const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
     return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
-  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）
+  // 蝦皮版本小圖示：跟一般影片合併同一份清單顯示，靠這個小圖分辨
+  const shpBadge=(v)=> v.channel==="shopee" ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="蝦皮版本">蝦</span>` : '';
+  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；蝦皮版本走蝦皮專屬的編輯視窗/完成流程
   const workBtn=(v)=>{
     if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">剪輯完成</button>`;
+    if(v.channel==="shopee") return `<button class="btn sec sm" onclick="openShopeeModal('${v.id}')">編輯內容</button>
+      <button class="btn sm" onclick="shopeeFinish('${v.id}')" title="剪好了→標記完成並移到影片庫">完成 ✔</button>`;
     // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
     return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="編輯內容（按「儲存修改」只存、留在這頁）">編輯內容</button>
       <button class="btn sm" onclick="finishWork('${v.id}')" title="剪好了→標記「剪輯完成」並移到影片庫">完成 ✔</button>`; };
   // 退回鍵：把認領的毛片放回待剪清單重選（一人最多 3 支）
-  const undoBtn=(v)=> v.stage==="剪輯中" ? `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="後悔了？退回給大家重選">退回</button>` : '';
+  const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : v.channel==="shopee"
+    ? `<button class="btn sec sm" onclick="shopeeUnclaim('${v.id}')" title="後悔了？退回蝦皮待處理清單重選">退回</button>`
+    : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="後悔了？退回給大家重選">退回</button>`;
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
   const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">老闆娘退回待修（${rejected.length}）</b>
     ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
@@ -725,7 +732,7 @@ function viewWork(){
     <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="${v.channel==='shopee'?`openShopeeModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'你已有 3 支在剪，完成一支才能再領（排隊中）':'按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）'}">${atLimit?'排隊中':'認領開始剪'}</button></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有指派給你或可認領的毛片</td></tr>`}</tbody></table>
     </div>
@@ -740,7 +747,7 @@ function viewWork(){
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
         <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="${v.channel==='shopee'?`openShopeeModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="狀態"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
@@ -773,15 +780,14 @@ function viewWork(){
     <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>
 
-  </div>
-  ${shopeeMyWorkCard()}`
+  </div>`
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，無法代為下班打卡",true); return; }
   const me=currentUser();
-  const doneVids=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
-  const wip=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && (v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
+  const doneVids=(STATE.videos||[]).filter(v=>!v.locale && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  const wip=(STATE.videos||[]).filter(v=>!v.locale && (v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
   const tasks=myTasks();
   const body=`
     <div class="card" style="background:var(--panel2)"><b>今日完成上架（${doneVids.length}）</b>
@@ -809,14 +815,14 @@ function viewDashboard(){
   const hm=iso=>String(iso||"").slice(11,16);
   const dur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
   const minLabel=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
-  const fin=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && isPublished(v)&&v.finishedAt&&v.editor);
+  const fin=(STATE.videos||[]).filter(v=>!v.locale && isPublished(v)&&v.finishedAt&&v.editor);
 
-  // ---- 每位剪輯：所選日期的當日明細 ----
+  // ---- 每位剪輯：所選日期的當日明細（蝦皮版本合併計入，跟該剪輯自己的「上班計畫」一致）----
   const perEditor=editors.map(name=>{
     const s=shifts.find(x=>x.user===name && x.date===D);
-    const done=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.editor===name && isPublished(v) && String(v.finishedAt||"").slice(0,10)===D)
+    const done=(STATE.videos||[]).filter(v=>!v.locale && v.editor===name && isPublished(v) && String(v.finishedAt||"").slice(0,10)===D)
       .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-    const wip=isToday?(STATE.videos||[]).filter(v=>!v.locale && !v.channel && (v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
+    const wip=isToday?(STATE.videos||[]).filter(v=>!v.locale && (v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
     const tasks=allTasks.filter(t=>t.user===name && t.date===D);
     // 我交辦給他的：只看「所選日期當天」的交辦 → 昨天的留在昨天的工作日誌，不會跑到今天
     const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && t.date===D && !t.done)
