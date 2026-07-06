@@ -2067,7 +2067,8 @@ function shopeeLibRows(){
       return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openShopeeModal('${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}">${esc(k.account||'蝦皮')} · ${done?'完成':(k.stage==='剪輯中'?'製作中':'待處理')}</span>`;
     }).join(" ");
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="預覽中文成片">▶</button>`:'';
-    const addRow = accts.length
+    // 只有一個蝦皮帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
+    const addRow = accts.length>1
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
           <select id="shpacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
@@ -2076,7 +2077,9 @@ function shopeeLibRows(){
           </select>
           <button class="btn sm" style="flex:none" onclick="createShopeePick('${v.id}')">＋ 加入</button>
         </div>`
-      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">請管理員先到設定新增蝦皮帳號</span></div>`;
+      : accts.length===1
+        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createShopeeVersion('${v.id}','${esc(jsEsc(accts[0]))}')">＋ 加蝦皮版本</button></div>`
+        : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">請管理員先到設定新增蝦皮帳號</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
