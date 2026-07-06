@@ -5,10 +5,10 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["cal","月排程"],["videos","影片庫"]],   // 經理人（Regina）：儀表板（含下指令）＋月排程＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
+  boss:    [["dashboard","儀表板"],["cal","社群媒體月排程"],["videos","影片庫"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["dashboard","儀表板"],["cal","社群媒體月排程"],["videos","影片庫"]],   // 經理人（Regina）：儀表板（含下指令）＋月排程＋影片庫（查資料庫）；設定/員工視角等管理功能只給管理員
   // 蝦皮專區：國內二創（同語言、換平台），掛在剪輯角色下——任何國內剪輯都能進去，不開新角色/新登入
-  editor:  [["work","上班計畫"],["cal","月排程"],["videos","影片庫"],["shopeelib","蝦皮專區"],["shopeecal","蝦皮排程"]],
+  editor:  [["work","上班計畫"],["cal","社群媒體月排程"],["videos","影片庫"],["shopeelib","影片蝦皮二創區"],["shopeecal","蝦皮排程"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
   intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
 };
@@ -355,7 +355,7 @@ function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<sp
 // 每頁新手教學：第一次進到某頁自動顯示一張說明卡，按「知道了」後該頁不再出現（記在這台裝置、依使用者）
 const PAGE_INTRO = {
   work:{ title:"上班計畫", html:"這是你每天的主畫面。<b>①</b> 上方「待剪毛片」按〈認領開始剪〉把片子拉下來剪（同時最多 3 支，其餘排隊）。<b>②</b> 中間「我的今日工作」剪好按〈完成〉。<b>③</b> 下班前按〈下班匯報〉。" },
-  cal:{ title:"月排程", html:"整月的上片排程。<b>綠</b>＝當天已排滿、<b>紅</b>＝還缺幾支、<b>深灰</b>＝還沒排；今天用金框標起來。點任一天可看當天要上的片、或把舊片排進去重播。" },
+  cal:{ title:"社群媒體月排程", html:"整月的上片排程。<b>綠</b>＝當天已排滿、<b>紅</b>＝還缺幾支、<b>深灰</b>＝還沒排；今天用金框標起來。點任一天可看當天要上的片、或把舊片排進去重播。" },
   videos:{ title:"影片庫", html:"所有影片都在這。上方分頁切換〈毛片待剪／新片未排程／已排程／舊片〉；搜尋框可用片名、原始片名、文案、編號找；〈＋ 新增毛片〉建立新片。" },
   dashboard:{ title:"管理員儀表板", html:"總覽：指派交辦與毛片給員工、看未來排程是否排滿、每位剪輯今日進度與長期績效。" },
   log:{ title:"操作紀錄", html:"每個人的操作（誰・何時・做了什麼）都記在這，最近 300 筆。用來追蹤責任歸屬。" },
@@ -430,7 +430,7 @@ function viewCal(){
     </div>`;
   }
   return `
-  <h2>月排程</h2>
+  <h2>社群媒體月排程</h2>
   <div class="card">
     <div class="calhead">
       <button class="calnav" onclick="calMove(-1)" title="上月">‹</button>
@@ -1509,7 +1509,7 @@ function openVideoModal(id, edit, fromWork){
     <label>商品頁網址</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <label>預排上片日期</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支片就會顯示在「月排程」的那一天</div>
+    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支片就會顯示在「社群媒體月排程」的那一天</div>
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>備註</label><input id="e_note" value="${esc(v.note||"")}" placeholder="補充說明（選填）">
     ${reviewCard}
@@ -2109,7 +2109,7 @@ function viewShopeeLib(){
       <button class="btn sm" onclick="shopeeFinish('${v.id}')">完成 ✔</button>
       <button class="btn sec sm" onclick="shopeeUnclaim('${v.id}')">退回</button>`; };
   return `
-  <h2 style="margin-top:0">蝦皮專區</h2>
+  <h2 style="margin-top:0">影片蝦皮二創區</h2>
   <div class="workgrid2">
     <div class="card">
       <b style="font-size:16px">可製作蝦皮版本</b>
@@ -2281,7 +2281,7 @@ function viewSettings(){
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">
-      <span class="muted">支／天 —— 月排程以此判斷「已排滿／缺幾支」，不分影片類型。</span></div>
+      <span class="muted">支／天 —— 社群媒體月排程以此判斷「已排滿／缺幾支」，不分影片類型。</span></div>
   </div>
   <div class="card">
     <label>預排天數視窗</label>
@@ -2507,7 +2507,7 @@ const TUT_RULES=[
   {oc:"createTask",      title:"新增工作項目", text:"把今天要做的事加進上班計畫，做完填回報狀況再打勾完成。"},
   {oc:"calMove",         title:"切換月份", text:"看上個月／下個月的排程。"},
   {oc:"copyStr",         title:"複製導購連結", text:"按一下複製這個平台的帶 UTM 導購連結，貼到貼文就能追成效。"},
-  {sel:"#nav button",    title:"功能分頁", text:"切換主要畫面：上班計畫、月排程、影片庫等。"},
+  {sel:"#nav button",    title:"功能分頁", text:"切換主要畫面：上班計畫、社群媒體月排程、影片庫等。"},
   {sel:"#vid_q",         title:"搜尋影片", text:"輸入編號、片名或剪輯師名字，即時篩選下面清單。"},
   {sel:"#tutBtn",        title:"新手教學", text:"目前在教學模式：把游標停在任何按鈕或欄位上看說明；再按一次即可關閉。"},
   {sel:'input[type="date"]', title:"改上片日", text:"選日期即更新這支影片的預排上片日。"},
