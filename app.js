@@ -1941,7 +1941,6 @@ function openIntlModal(id){
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">Source · Taiwan</div>
     <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(srcTitle||"(untitled)")}${needTitleTr?trIcon(s.name||s.rawName):''}</div>
     ${srcCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(srcCopy)}${needScriptTr?trIcon(s.videoCopy):''}</div>`:''}
-    <div class="muted" style="font-size:12px;margin-top:8px">Products: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 page</a>`:''}</div>
     <div class="icallout">
       <div style="font-weight:700;margin-bottom:6px">How to make this ${esc(lname)} version</div>
       <div style="font-size:13px;line-height:1.75">
@@ -1961,6 +1960,7 @@ function openIntlModal(id){
     <div style="font-weight:700;font-size:15px;margin:16px 0 2px">Your ${esc(lname)} version</div>
     ${v.account?`<label>Account</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)} <span class="muted" style="font-weight:400;font-size:12px">· ${esc(localeShort(v.locale))} TikTok</span></div>`:''}
     <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
+    <div class="muted" style="font-size:12px;margin:8px 0 0">Products: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 page</a>`:''}</div>
     <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
       <div><label>Video file URL (your re-cut)</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="Cloud link to your ${esc(localeShort(v.locale))} cut"></div>
@@ -2037,7 +2037,6 @@ function openShopeeModal(id){
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">來源 · 中文版</div>
     <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||"(未命名)")}</div>
     ${s.videoCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(s.videoCopy)}</div>`:''}
-    <div class="muted" style="font-size:12px;margin-top:8px">商品：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 商品頁</a>`:''}</div>
     <div class="icallout">
       <div style="font-weight:700;margin-bottom:6px">怎麼剪這支蝦皮版本</div>
       <div style="font-size:13px;line-height:1.75">
@@ -2057,6 +2056,7 @@ function openShopeeModal(id){
     <div style="font-weight:700;font-size:15px;margin:16px 0 2px">你的蝦皮版本</div>
     ${v.account?`<label>帳號</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)}</div>`:''}
     <label>片名／貼文標題</label><input id="shp_name" value="${esc(v.name||"")}" placeholder="蝦皮版本標題">
+    <div class="muted" style="font-size:12px;margin:8px 0 0">商品：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 商品頁</a>`:''}</div>
     <label>文案</label><textarea id="shp_vcopy" style="min-height:80px" placeholder="蝦皮版本文案（可跟中文版不同）">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
       <div><label>影片檔存檔網址（你剪好的檔案）</label><input id="shp_drive" value="${esc(v.driveFolder||"")}" placeholder="雲端連結"></div>
