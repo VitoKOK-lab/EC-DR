@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 12**
+- 目前版本：**schemaVersion = 13**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -179,7 +179,7 @@
 | `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
 | `shopeeAccounts` | string[] | 蝦皮帳號清單（純名稱，無語言分組）；建立蝦皮版本時挑帳號用 |
 | `shopeeDailyTarget` | number | 蝦皮每日目標（**每個帳號**每天幾支），預設 2；蝦皮排程月曆以此判斷已排滿／缺幾支 |
-| `exchangeRates` | map | 海外二創商品價格換算：`{en:{code,rate}, th:{code,rate}, ms:{code,rate}}`；`rate`＝1 台幣可換多少該幣別（預設 1＝未設定，尚未換算）。海外版編輯畫面即時用源片 `products[].price`／`salePrice` × `rate` 顯示（唯讀）；蝦皮版本同幣別（台幣）不換算 |
+| `exchangeRates` | map | 各平台商品價格換算：`{en/th/ms/shopee:{code,rate,mult}}`；`rate`＝1 台幣可換多少該幣別（蝦皮固定 1＝台幣不換匯）、`mult`＝該平台售價**加乘倍數**（例 1.2＝加價 2 成，預設 1）。各平台編輯畫面即時以源片 `products[].price`／`salePrice` × `rate` × `mult` 顯示（唯讀） |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
 | `shoplineBase` | string | Shopline 網址（導購連結用） |

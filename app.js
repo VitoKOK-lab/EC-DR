@@ -1568,23 +1568,28 @@ const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
 function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
 function localeShort(l){ return LOCALE_SHORT[l]||String(l||"").toUpperCase(); }
 function gtranslate(text, tl){ return "https://translate.google.com/?sl=zh-TW&tl="+(tl||"en")+"&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
-// 商品原價／售價（寵粉價）匯率換算：海外二創依「源片」商品價格即時換算成對應幣別顯示（唯讀，只有源片能編輯）
-const DEFAULT_CURRENCY={en:"USD",th:"THB",ms:"MYR"};
+// 商品原價／售價（寵粉價）換算：海外二創依「源片」商品價格即時換算成對應幣別顯示（唯讀，只有源片能編輯）
+// 每個平台（含蝦皮）另有「加乘」倍數：顯示價 = 源片價 × 匯率 × 加乘（蝦皮同幣別，匯率固定 1、只吃加乘）
+const DEFAULT_CURRENCY={en:"USD",th:"THB",ms:"MYR",shopee:"TWD"};
 const CURRENCY_SYMBOL={USD:"$",THB:"฿",MYR:"RM",TWD:"NT$"};
-function exchangeRateOf(locale){ const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[locale];
+function exchangeRateOf(key){ if(key==="shopee") return 1;   // 蝦皮＝台幣，不換匯
+  const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[key];
   return (r&&+r.rate>0)?+r.rate:1; }
-function currencyCodeOf(locale){ const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[locale];
-  return (r&&r.code)||DEFAULT_CURRENCY[locale]||"TWD"; }
-// products＝來源片商品陣列；locale＝""（蝦皮，台幣不換算）或 en/th/ms（依 exchangeRates 換算）
-function productPriceLine(products, locale){
+function priceMultOf(key){ const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[key];
+  return (r&&+r.mult>0)?+r.mult:1; }
+function currencyCodeOf(key){ if(key==="shopee") return "TWD";
+  const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[key];
+  return (r&&r.code)||DEFAULT_CURRENCY[key]||"TWD"; }
+// products＝來源片商品陣列；key＝"shopee"（台幣×加乘）或 en/th/ms（匯率×加乘）
+function productPriceLine(products, key){
   const list=(products||[]).filter(p=>p&&p.name); if(!list.length) return '<span class="muted">—</span>';
-  const rate=locale?exchangeRateOf(locale):1;
-  const sym=CURRENCY_SYMBOL[locale?currencyCodeOf(locale):"TWD"]||"";
-  const saleLabel=locale?"Fan price":"寵粉價";   // 海外畫面全英文
+  const f=exchangeRateOf(key)*priceMultOf(key);
+  const sym=CURRENCY_SYMBOL[currencyCodeOf(key)]||"";
+  const saleLabel=(key&&key!=="shopee")?"Fan price":"寵粉價";   // 海外畫面全英文
   return list.map(p=>{
     const orig=+p.price||0, sale=+p.salePrice||0;
-    const priceTxt=orig?` ${sym}${Math.round(orig*rate).toLocaleString()}`:'';   // 沒填原價就不顯示 0
-    const saleTxt=sale?` <span style="color:var(--red)">${saleLabel} ${sym}${Math.round(sale*rate).toLocaleString()}</span>`:'';
+    const priceTxt=orig?` ${sym}${Math.round(orig*f).toLocaleString()}`:'';   // 沒填原價就不顯示 0
+    const saleTxt=sale?` <span style="color:var(--red)">${saleLabel} ${sym}${Math.round(sale*f).toLocaleString()}</span>`:'';
     return `${esc(p.name)}${priceTxt}${saleTxt}`;
   }).join('、');
 }
@@ -2027,8 +2032,8 @@ async function shopeeSaveVideo(id){
 }
 function openShopeeModal(id){
   const v=vid(id)||{}; const s=srcOf(v)||{};
-  // 商品價格即時從源片取得（唯讀，不能改；蝦皮同幣別台幣，不換算）
-  const prod=productPriceLine(s.products, "");
+  // 商品價格即時從源片取得（唯讀，不能改；蝦皮同幣別台幣，不換匯、只吃蝦皮加乘）
+  const prod=productPriceLine(s.products, "shopee");
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">蝦皮版本 <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">×</button></div>`;
@@ -2305,8 +2310,14 @@ function viewSettings(){
   const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
   const shopeeAccountStr=(Array.isArray(s.shopeeAccounts)?s.shopeeAccounts:[]).join("\n");
   const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
-  const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc]; const rate=(r.rate!=null&&r.rate!=="")?r.rate:1;
-    return `<div><label>${label}（${code}）</label><input type="number" min="0" step="0.001" id="set_rate_${loc}" value="${esc(rate)}" placeholder="1 台幣＝? ${code}"></div>`; };
+  const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
+    const rate=(r.rate!=null&&r.rate!=="")?r.rate:1; const mult=(r.mult!=null&&r.mult!=="")?r.mult:1;
+    return `<div><label>${label}（${code}）</label>
+      <div class="row" style="gap:6px;flex-wrap:nowrap">
+        ${loc==="shopee"?'<span class="muted" style="font-size:12px;flex:1">台幣，不換匯</span>':`<input type="number" min="0" step="0.001" id="set_rate_${loc}" value="${esc(rate)}" placeholder="1 台幣＝? ${code}" title="匯率：1 台幣可換多少 ${code}" style="flex:1">`}
+        <span class="muted" style="flex:none">×</span>
+        <input type="number" min="0" step="0.01" id="set_mult_${loc}" value="${esc(mult)}" placeholder="加乘" title="加乘倍數：該平台售價＝原價×匯率×加乘" style="flex:1">
+      </div></div>`; };
   return `<h2>設定</h2>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
@@ -2330,12 +2341,13 @@ function viewSettings(){
     <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
-    <label style="margin-top:12px">商品價格匯率換算</label>
-    <div class="muted" style="font-size:12px;margin:2px 0 8px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；海外編輯畫面依這裡的匯率即時換算成當地幣別顯示，唯讀不能改。1＝尚未設定（會直接顯示台幣數字）。</div>
-    <div class="grid cols3">
-      ${rateRow("en","English 匯率")}
-      ${rateRow("th","Thai 匯率")}
-      ${rateRow("ms","Malay 匯率")}
+    <label style="margin-top:12px">商品價格換算（匯率 × 加乘）</label>
+    <div class="muted" style="font-size:12px;margin:2px 0 8px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；各平台編輯畫面依「匯率 × 加乘」即時換算顯示，唯讀不能改。加乘＝該平台的售價倍數（例 1.2＝加價 2 成），1＝不加乘。</div>
+    <div class="grid cols2">
+      ${rateRow("en","English 匯率×加乘")}
+      ${rateRow("th","Thai 匯率×加乘")}
+      ${rateRow("ms","Malay 匯率×加乘")}
+      ${rateRow("shopee","蝦皮 加乘")}
     </div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
@@ -2419,7 +2431,10 @@ async function saveSettings(){
       return {locale:["en","th","ms"].includes(loc)?loc:"en", name}; }).filter(a=>a.name);
     settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
     settings.exchangeRates={};
-    ["en","th","ms"].forEach(loc=>{ const rate=parseFloat(val("set_rate_"+loc)); settings.exchangeRates[loc]={code:DEFAULT_CURRENCY[loc], rate:(rate>0?rate:1)}; });
+    ["en","th","ms","shopee"].forEach(loc=>{
+      const rate=(loc==="shopee")?1:parseFloat(val("set_rate_"+loc));   // 蝦皮＝台幣，匯率固定 1
+      const mult=parseFloat(val("set_mult_"+loc));
+      settings.exchangeRates[loc]={code:DEFAULT_CURRENCY[loc], rate:(rate>0?rate:1), mult:(mult>0?mult:1)}; });
   }
   // 蝦皮設定：帳號清單（一行一個）＋每帳號每日目標
   if(document.getElementById("set_shpacct")){
