@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 10**
+- 目前版本：**schemaVersion = 11**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -61,6 +61,7 @@
 | `account` | string | 上傳帳號 | 在地化版本上傳的海外 TikTok 帳號名（取自 `settings.intlAccounts`）；每支＝一個帳號一個成片 |
 | `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
 | `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
+| `channel` | string | 二創平台別 | `""`＝一般（台灣源片本身）；`"shopee"`＝蝦皮二創版（國內、同語言、換平台重剪）。跟 `locale` 是平行的兩種衍生方式，源片可同時有海外版與蝦皮版 |
 
 > **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
 > 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
@@ -70,6 +71,14 @@
 > 建立一筆 `locale:"en"`、`sourceVideoId` 指回源片的**衍生影片**，翻譯重剪後填回 `driveFolder`（英文版存檔）、
 > `publishedLink`（上傳連結）、`platforms`（海外 TikTok 帳號），走既有認領/完成流程。源片視窗「各語言版本」卡
 > 以 `sourceVideoId` 反查，中英一起看；成效（`metrics`）待後端接入後自動並列。本階段**不做成效追蹤**。
+
+> **蝦皮二創（國內）**：跟海外二創同一套邏輯，差別是**同語言、換平台**——不開新角色，掛在既有
+> `users.role="editor"`（剪輯）下，任何國內剪輯登入都能進「蝦皮專區」。挑台灣**已完成**源片，建立一筆
+> `channel:"shopee"`、`sourceVideoId` 指回源片、`account`＝蝦皮帳號名（取自 `settings.shopeeAccounts`）的
+> **衍生影片**，走既有認領/完成流程；`scheduledDate` 對應「蝦皮排程」月曆（依帳號、`settings.shopeeDailyTarget`
+> 判斷已排滿／缺幾支）。因為跟一般台灣影片共用同一個 `editor` 身分，所有「今日完成／製作中／3 支上限」的統計
+> 都已排除 `channel="shopee"`（與 `locale` 二創版）避免混入台灣本業的每日產量。源片視窗「蝦皮版本」卡
+> 以 `sourceVideoId` 反查各帳號版本。
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
@@ -168,6 +177,8 @@
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `intlAccounts` | object[] | 海外 TikTok 帳號清單，每筆 `{locale, name}`（en/th/ms ＋ 帳號名）；建立在地化版本時挑帳號用 |
 | `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
+| `shopeeAccounts` | string[] | 蝦皮帳號清單（純名稱，無語言分組）；建立蝦皮版本時挑帳號用 |
+| `shopeeDailyTarget` | number | 蝦皮每日目標（**每個帳號**每天幾支），預設 2；蝦皮排程月曆以此判斷已排滿／缺幾支 |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
 | `shoplineBase` | string | Shopline 網址（導購連結用） |

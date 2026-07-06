@@ -12,7 +12,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["新片","舊片","每日寵粉","招商","銷售"],
@@ -38,6 +38,9 @@ const DEFAULT_SETTINGS = {
   // 海外二創：TikTok 帳號清單 {locale,name} 與每帳號每日目標
   intlAccounts: [],
   intlDailyTarget: 2,
+  // 蝦皮二創（國內、換平台重剪）：帳號清單（純名稱字串）與每帳號每日目標
+  shopeeAccounts: [],
+  shopeeDailyTarget: 2,
 };
 
 // 尚未填入設定 → 顯示設定指引
@@ -76,7 +79,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       if (!Array.isArray(cur.videoTags) || !cur.videoTags.length) patch.videoTags = DEFAULT_SETTINGS.videoTags;
       if (!cur.weekdayTargets || typeof cur.weekdayTargets !== "object") patch.weekdayTargets = DEFAULT_SETTINGS.weekdayTargets;
       if (!Array.isArray(cur.postPlatforms) || !cur.postPlatforms.length) patch.postPlatforms = DEFAULT_SETTINGS.postPlatforms;
-      if (cur.schemaVersion == null || cur.schemaVersion < 10) patch.schemaVersion = 10;
+      if (!Array.isArray(cur.shopeeAccounts)) patch.shopeeAccounts = DEFAULT_SETTINGS.shopeeAccounts;
+      if (cur.shopeeDailyTarget == null) patch.shopeeDailyTarget = DEFAULT_SETTINGS.shopeeDailyTarget;
+      if (cur.schemaVersion == null || cur.schemaVersion < 11) patch.schemaVersion = 11;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 
