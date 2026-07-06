@@ -1478,7 +1478,7 @@ function openVideoModal(id, edit, fromWork){
       ${row("片源", esc(v.source||""))}
       ${row("階段", `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(stageLabel(v.stage))}</span>`)}
       ${row("剪輯人員", esc(v.editor||""))}
-      ${row("商品", prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（$${esc(p.price)}）`:"")).join("、"):'')}
+      ${row("商品", prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（NT$${esc(p.price)}${p.salePrice?`／寵粉價 NT$${esc(p.salePrice)}`:''}）`:"")).join("、"):'')}
       ${row("商品頁網址", v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row("預排上片日", esc(v.scheduledDate||""))}
       ${row("毛片雲端連結", v.rawLink?`<a href="${esc(v.rawLink)}" target="_blank">開啟</a>`:'')}
@@ -1575,6 +1575,25 @@ const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
 function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
 function localeShort(l){ return LOCALE_SHORT[l]||String(l||"").toUpperCase(); }
 function gtranslate(text, tl){ return "https://translate.google.com/?sl=zh-TW&tl="+(tl||"en")+"&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
+// 商品原價／售價（寵粉價）匯率換算：海外二創依「源片」商品價格即時換算成對應幣別顯示（唯讀，只有源片能編輯）
+const DEFAULT_CURRENCY={en:"USD",th:"THB",ms:"MYR"};
+const CURRENCY_SYMBOL={USD:"$",THB:"฿",MYR:"RM",TWD:"NT$"};
+function exchangeRateOf(locale){ const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[locale];
+  return (r&&+r.rate>0)?+r.rate:1; }
+function currencyCodeOf(locale){ const r=STATE.settings&&STATE.settings.exchangeRates&&STATE.settings.exchangeRates[locale];
+  return (r&&r.code)||DEFAULT_CURRENCY[locale]||"TWD"; }
+// products＝來源片商品陣列；locale＝""（蝦皮，台幣不換算）或 en/th/ms（依 exchangeRates 換算）
+function productPriceLine(products, locale){
+  const list=(products||[]).filter(p=>p&&p.name); if(!list.length) return '<span class="muted">—</span>';
+  const rate=locale?exchangeRateOf(locale):1;
+  const sym=CURRENCY_SYMBOL[locale?currencyCodeOf(locale):"TWD"]||"";
+  return list.map(p=>{
+    const orig=+p.price||0, sale=+p.salePrice||0;
+    const priceTxt=`${sym}${Math.round(orig*rate).toLocaleString()}`;
+    const saleTxt=sale?` <span style="color:var(--red)">寵粉價 ${sym}${Math.round(sale*rate).toLocaleString()}</span>`:'';
+    return `${esc(p.name)} ${priceTxt}${saleTxt}`;
+  }).join('、');
+}
 function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
@@ -1782,7 +1801,7 @@ function createLocalVersion(sourceId, locale, account){
   const me=currentUser();
   const rec=newVideoRecord({ locale, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||""})),
+    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
   write("POST","/api/videos",{video:rec},localeName(locale)+(account?(" · "+account):"")+" added to To do").then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
@@ -1918,7 +1937,8 @@ function openIntlModal(id){
   // nameEn/videoCopyEn 只是「英文」；非英文語系(泰/馬)一律提供翻譯到自己語言的按鈕
   const needTitleTr=(v.locale!=="en")||!s.nameEn;
   const needScriptTr=!!s.videoCopy && ((v.locale!=="en")||!s.videoCopyEn);
-  const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)+(p.price?` ($${esc(p.price)})`:"")).join(", ")||'<span class="muted">—</span>';
+  // 商品價格即時從源片換算（唯讀，不能改；源片改價這裡自動跟著變）
+  const prod=productPriceLine(s.products, v.locale);
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">${esc(lname)} version <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="Close">×</button></div>`;
@@ -1985,7 +2005,7 @@ function createShopeeVersion(sourceId, account){
   const me=currentUser();
   const rec=newVideoRecord({ channel:"shopee", account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||""})),
+    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
   write("POST","/api/videos",{video:rec},((account?("「"+account+"」"):"")+"蝦皮版本已加入待處理")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
@@ -2015,7 +2035,8 @@ async function shopeeSaveVideo(id){
 }
 function openShopeeModal(id){
   const v=vid(id)||{}; const s=srcOf(v)||{};
-  const prod=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)+(p.price?`（$${esc(p.price)}）`:"")).join("、")||'<span class="muted">—</span>';
+  // 商品價格即時從源片取得（唯讀，不能改；蝦皮同幣別台幣，不換算）
+  const prod=productPriceLine(s.products, "");
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">蝦皮版本 <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">×</button></div>`;
@@ -2291,6 +2312,8 @@ function viewSettings(){
   const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
   const shopeeAccountStr=(Array.isArray(s.shopeeAccounts)?s.shopeeAccounts:[]).join("\n");
   const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
+  const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc]; const rate=(r.rate!=null&&r.rate!=="")?r.rate:1;
+    return `<div><label>${label}（${code}）</label><input type="number" min="0" step="0.001" id="set_rate_${loc}" value="${esc(rate)}" placeholder="1 台幣＝? ${code}"></div>`; };
   return `<h2>設定</h2>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
@@ -2314,6 +2337,13 @@ function viewSettings(){
     <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
+    <label style="margin-top:12px">商品價格匯率換算</label>
+    <div class="muted" style="font-size:12px;margin:2px 0 8px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；海外編輯畫面依這裡的匯率即時換算成當地幣別顯示，唯讀不能改。1＝尚未設定（會直接顯示台幣數字）。</div>
+    <div class="grid cols3">
+      ${rateRow("en","English 匯率")}
+      ${rateRow("th","Thai 匯率")}
+      ${rateRow("ms","Malay 匯率")}
+    </div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>蝦皮設定</b>
@@ -2395,6 +2425,8 @@ async function saveSettings(){
       const i=line.indexOf("="); const loc=(i>=0?line.slice(0,i):"en").trim().toLowerCase(); const name=(i>=0?line.slice(i+1):line).trim();
       return {locale:["en","th","ms"].includes(loc)?loc:"en", name}; }).filter(a=>a.name);
     settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
+    settings.exchangeRates={};
+    ["en","th","ms"].forEach(loc=>{ const rate=parseFloat(val("set_rate_"+loc)); settings.exchangeRates[loc]={code:DEFAULT_CURRENCY[loc], rate:(rate>0?rate:1)}; });
   }
   // 蝦皮設定：帳號清單（一行一個）＋每帳號每日目標
   if(document.getElementById("set_shpacct")){
@@ -2468,14 +2500,15 @@ function productRows(prefix, products){
   for(let i=0;i<4;i++){ const p=ps[i]||{};
     h+=`<div class="row" style="gap:8px;margin-bottom:6px">
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" oninput="autoPamperTag('${prefix}')" placeholder="商品 ${i+1}（品名）" style="flex:2;min-width:130px">
-      <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="單價" style="flex:1;min-width:80px">
+      <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="原價" style="flex:1;min-width:80px">
+      <input id="${prefix}_ps${i}" type="number" min="0" value="${(p.salePrice!=null&&p.salePrice!=="")?esc(p.salePrice):''}" placeholder="售價(寵粉價)" style="flex:1;min-width:100px">
     </div>`; }
   h+=`<datalist id="${prefix}_plist">${knownProducts().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
   return h;
 }
 function collectProducts(prefix){ const out=[];
   for(let i=0;i<4;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
-    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0}); }
+    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0}); }
   return out;
 }
 

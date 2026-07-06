@@ -12,7 +12,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 11,
+  schemaVersion: 12,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["新片","舊片","每日寵粉","招商","銷售"],
@@ -41,6 +41,8 @@ const DEFAULT_SETTINGS = {
   // 蝦皮二創（國內、換平台重剪）：帳號清單（純名稱字串）與每帳號每日目標
   shopeeAccounts: [],
   shopeeDailyTarget: 2,
+  // 海外商品價格匯率換算：{locale:{code,rate}}；rate=1 台幣可換多少該幣別，1＝尚未設定
+  exchangeRates: { en:{code:"USD",rate:1}, th:{code:"THB",rate:1}, ms:{code:"MYR",rate:1} },
 };
 
 // 尚未填入設定 → 顯示設定指引
@@ -81,7 +83,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       if (!Array.isArray(cur.postPlatforms) || !cur.postPlatforms.length) patch.postPlatforms = DEFAULT_SETTINGS.postPlatforms;
       if (!Array.isArray(cur.shopeeAccounts)) patch.shopeeAccounts = DEFAULT_SETTINGS.shopeeAccounts;
       if (cur.shopeeDailyTarget == null) patch.shopeeDailyTarget = DEFAULT_SETTINGS.shopeeDailyTarget;
-      if (cur.schemaVersion == null || cur.schemaVersion < 11) patch.schemaVersion = 11;
+      if (!cur.exchangeRates || typeof cur.exchangeRates !== "object") patch.exchangeRates = DEFAULT_SETTINGS.exchangeRates;
+      if (cur.schemaVersion == null || cur.schemaVersion < 12) patch.schemaVersion = 12;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 
