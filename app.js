@@ -1796,8 +1796,10 @@ function createLocalVersion(sourceId, locale, account){
   if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.locale===locale && v.account===account)){
     toast(localeName(locale)+" version for “"+account+"” already exists",true); return; }
   const me=currentUser();
+  // 英文版：建立時直接帶入源片的英文片名（nameEn，去掉 # 標籤）當標題草稿；泰/馬由剪輯用 文A 自行翻譯
+  const draftName = locale==="en" ? stripHash(s.nameEn||"") : "";
   const rec=newVideoRecord({ locale, account, sourceVideoId:sourceId,
-    rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
+    rawName:(s.name||s.rawName||""), name:draftName, videoCopy:"",
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
@@ -1915,9 +1917,9 @@ function intlAssignedTasks(me){
 }
 
 // ---- 在地化版本編輯視窗（全英文；語言隨版本）----
+// 完成不強制先填上傳連結：實務上是先排日期、到日子上傳後才有連結，之後再回來補
 function intlFinish(id){ const v=vid(id)||{};
-  if(!String(v.publishedLink||"").trim()){ toast("Add the upload URL first (open Edit)",true); return; }
-  if(!confirm(`Mark "${(v.name||v.rawName||"this video")}" as done? It will move to the library.`)) return;
+  if(!confirm(`Mark "${(v.name||v.rawName||"this video")}" as done? It will move to the library.${String(v.publishedLink||"").trim()?"":"\n(No upload URL yet — you can add it later via Edit.)"}`)) return;
   write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},"Done — moved to the library").then(ok=>{ if(ok) render(); });
 }
 async function intlSaveVideo(id){
@@ -1964,7 +1966,7 @@ function openIntlModal(id){
     ${sourceCard}
     <div style="font-weight:700;font-size:15px;margin:16px 0 2px">Your ${esc(lname)} version</div>
     ${v.account?`<label>Account</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)} <span class="muted" style="font-weight:400;font-size:12px">· ${esc(localeShort(v.locale))} TikTok</span></div>`:''}
-    <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||"")}" placeholder="${esc(lname)} title / caption">
+    <label>Title (post caption)</label><input id="i_name" value="${esc(v.name||(v.locale==="en"?stripHash(s.nameEn||""):""))}" placeholder="${esc(lname)} title / caption">
     <div class="muted" style="font-size:12px;margin:8px 0 0">Products: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 page</a>`:''}</div>
     <label>Script / copy</label><textarea id="i_vcopy" style="min-height:80px" placeholder="Translated / adapted script">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
@@ -2013,9 +2015,9 @@ function createShopeePick(sourceId){ const sel=document.getElementById('shpacct_
 
 function shopeeClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的蝦皮工作").then(ok=>{ if(ok) render(); }); }
 function shopeeUnclaim(id){ if(!confirm("退回這支蝦皮版本，重新排隊給大家選？")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待處理"); }
+// 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
 function shopeeFinish(id){ const v=vid(id)||{};
-  if(!String(v.publishedLink||"").trim()){ toast("請先按「編輯」填上傳連結",true); return; }
-  if(!confirm(`確定「${(v.name||v.rawName||"這支蝦皮版本")}」已完成？會移到「蝦皮版本」明細。`)) return;
+  if(!confirm(`確定「${(v.name||v.rawName||"這支蝦皮版本")}」已完成？會移到「蝦皮版本」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`)) return;
   write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},"已完成").then(ok=>{ if(ok) render(); });
 }
 // 退回資料庫：只移除「還沒開始做」的版本殼，不動源片、不進回收桶
