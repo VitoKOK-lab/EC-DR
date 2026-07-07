@@ -2387,12 +2387,14 @@ function viewSettings(){
     <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
-    <label style="margin-top:12px">商品價格換算（匯率 × 加乘）</label>
-    <div class="muted" style="font-size:12px;margin:2px 0 8px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；各平台編輯畫面依「匯率 × 加乘」即時換算顯示，唯讀不能改。加乘＝該平台的售價倍數（例 1.2＝加價 2 成），1＝不加乘。</div>
-    <div class="grid cols2">
-      ${rateRow("en","English 匯率×加乘")}
-      ${rateRow("th","Thai 匯率×加乘")}
-      ${rateRow("ms","Malay 匯率×加乘")}
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>商品價格換算（四個平台）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；各平台編輯畫面依「匯率 × 加乘」即時換算顯示，唯讀不能改。加乘＝該平台的售價倍數（例 1.2＝加價 2 成），1＝不加乘；蝦皮是台幣、只有加乘。</div>
+    <div class="grid cols2" style="margin-top:10px">
+      ${rateRow("en","英文 匯率×加乘")}
+      ${rateRow("th","泰文 匯率×加乘")}
+      ${rateRow("ms","馬來 匯率×加乘")}
       ${rateRow("shopee","蝦皮 加乘")}
     </div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
@@ -2407,7 +2409,7 @@ function viewSettings(){
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>馬來設定</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">馬來西亞已移到台灣區（比照蝦皮）：由國內剪輯在「影片馬來二創區」挑片、翻成馬來文重剪上傳；價格依「海外設定」的 Malay 匯率×加乘換算成 MYR 顯示。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">馬來西亞已移到台灣區（比照蝦皮）：由國內剪輯在「影片馬來二創區」挑片、翻成馬來文重剪上傳；價格依「商品價格換算」的馬來 匯率×加乘換算成 MYR 顯示。</div>
     <label style="margin-top:8px">馬來帳號（一行一個）</label>
     <textarea id="set_msacct" style="min-height:88px" placeholder="tiktok-Malaysia（@zana_my）">${esc(msAccountStr)}</textarea>
     <label style="margin-top:12px">馬來每日目標（每個帳號每天幾支）</label>
