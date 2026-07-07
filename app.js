@@ -8,9 +8,9 @@ const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：儀表板（含下指令）＋影片庫＋月排程；設定/員工視角等管理功能只給管理員
-  // 海內外權限相同：每位剪輯都看得到所有工作區、自己挑要剪的（各工作區維持原本的介面語言）
+  // 不分海內外：所有剪輯（editor＋intl）分頁完全相同，大家都可以新增/更改、自己挑要剪的
   editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"],["shopeelib","影片蝦皮二創區"],["mslib","影片馬來二創區"],["intllib","海外二創區"]],
-  intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"],["shopeelib","Shopee Zone"],["mslib","Malay Zone"]],
+  intl:    [["work","上班計畫"],["videos","影片庫"],["cal","月排程"],["shopeelib","影片蝦皮二創區"],["mslib","影片馬來二創區"],["intllib","海外二創區"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -62,6 +62,8 @@ function newVideoRecord(over){
     locale:"", sourceVideoId:"", nameEn:"", videoCopyEn:"", account:"",
     // 國內二創：channel="shopee"＝蝦皮版本（同語言、不同平台再剪一次）；沿用 sourceVideoId／account（蝦皮帳號名）
     channel:"",
+    // 一創語言（原本影片是什麼語言拍的）：""＝中文（預設）、"th"泰、"en"英、"my"馬來
+    origLang:"",
     driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
@@ -442,8 +444,12 @@ function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++
 let CAL_PLAT="tw";
 function calSetPlat(p){ CAL_PLAT=p; render(); }
 function viewCal(){
-  const pills=[["tw","社群媒體"],["intl","海外 TikTok"],["shopee","蝦皮"],["ms","馬來"]];
-  const sel=`<div class="vtabs" style="margin-bottom:14px">${pills.map(([k,l])=>`<button class="vtab ${CAL_PLAT===k?'on':''}" onclick="calSetPlat('${k}')">${esc(l)}</button>`).join("")}</div>`;
+  const plats=[["tw","社群媒體"],["intl","海外 TikTok"],["shopee","蝦皮"],["ms","馬來"]];
+  const sel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:14px">
+    <label style="margin:0">平台</label>
+    <select onchange="calSetPlat(this.value)" style="width:auto;min-width:170px">
+      ${plats.map(([k,l])=>`<option value="${k}" ${CAL_PLAT===k?'selected':''}>${esc(l)}</option>`).join("")}
+    </select></div>`;
   const body= CAL_PLAT==="intl" ? calIntlBody() : (CAL_PLAT==="shopee"||CAL_PLAT==="ms") ? calChBody(CAL_PLAT) : calTWBody();
   return `<h2>月排程</h2>${sel}${body}`;
 }
@@ -1080,8 +1086,11 @@ function batchNewFootage(){
   }
   showModal("新增毛片（一次最多 5 支，可帶商品）", `
     <style>.modal .box{max-width:760px}</style>
+    <label>原本語言（這批影片是什麼語言拍的，五支共用）</label>
+    <select id="b_lang" style="margin-bottom:10px">${ORIG_LANGS.map(([k,l])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${l}</option>`).join("")}</select>
     ${blocks}
   `, async ()=>{
+    const bLang=val("b_lang")||"";
     const items=[];
     for(let i=0;i<5;i++){ const name=zhTW((val("bn"+i)||"").trim()); if(!name) continue;
       items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
@@ -1095,6 +1104,7 @@ function batchNewFootage(){
       for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
         const code=codePrefix+String(seq+i+1).padStart(3,"0");
         const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products,
+          origLang:bLang,
           tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}), {id});   // 有銷售商品 → 自動帶「寵粉」
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
@@ -1141,6 +1151,8 @@ function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.v
 // 新增影片：原始片名 ＋ 影片文案 ＋ 商品
 function newSimpleVideo(){
   showModal("新增影片", `
+    <label>原本語言（這支影片是什麼語言拍的）</label>
+    <select id="sv_lang">${ORIG_LANGS.map(([k,l])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${l}</option>`).join("")}</select>
     <label>原始片名</label><input id="sv_name" placeholder="毛片名稱">
     <label>毛片雲端連結</label><input id="sv_link" placeholder="毛片原始檔雲端連結（選填）">
     <label>影片文案（影片中 IP 的口播台詞）</label><input id="sv_vcopy" autocomplete="off">
@@ -1150,6 +1162,7 @@ function newSimpleVideo(){
     if(!name){ toast("請輸入原始片名",true); return false; }
     const svProducts=collectProducts("sv");
     const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:zhTW(val("sv_vcopy").trim()), products:svProducts,
+      origLang:val("sv_lang")||"",
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},"已新增影片");
   });
@@ -1251,6 +1264,13 @@ function reviewVid(id, status){
 let VID_VIEW="rawNoSched";   // 影片庫分頁：rawNoSched/rawSched/newNoSched/newSched/old（五類）
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
 let VID_Q="";   // 搜尋字存全域：資料同步重繪時還原，打到一半不會被清掉
+// 一創語言（原本影片的語言）：影片庫用選單切換、每支原本標小圖示分辨
+const ORIG_LANGS=[["","中文"],["th","泰文"],["en","英文"],["my","馬來文"]];
+const ORIG_BADGE={"":"中",th:"TH",en:"EN",my:"MY"};
+let VID_LANG="";   // 影片庫目前檢視的一創語言（""＝中文）
+function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_BADGE[l]!=null?l:""; }
+function origBadge(v){ const l=origLangOf(v);
+  return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="原本語言：${esc((ORIG_LANGS.find(x=>x[0]===l)||[])[1]||"中文")}">${ORIG_BADGE[l]}</span>`; }
 // 一列 = 一支影片
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
@@ -1280,7 +1300,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${langBadge}</span></td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span></td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -1291,7 +1311,7 @@ function vidTableRow(v){
   </tr>`;
 }
 function vidRowsHTML(){
-  const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 只列台灣源片（不含海外／蝦皮二創版）
+  const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && origLangOf(v)===VID_LANG);   // 只列一創原本（依選單語言），不含二創版
   const q=String(VID_Q||'').toLowerCase().trim();
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
@@ -1309,8 +1329,16 @@ function vidRowsHTML(){
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
+function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
 function viewVideos(){
-  const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 台灣影片庫：只放台灣源片，海外／蝦皮二創版走各自排程與源片的版本卡
+  const allSrc=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 影片庫：只放一創原本，二創版走各自排程與源片的版本卡
+  const langCount={}; allSrc.forEach(v=>{ const l=origLangOf(v); langCount[l]=(langCount[l]||0)+1; });
+  const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
+    <label style="margin:0">原本語言</label>
+    <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
+      ${ORIG_LANGS.map(([k,l])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${l}（${langCount[k]||0}）</option>`).join("")}
+    </select></div>`;
+  const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
   const seg={rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
   const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
   // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
@@ -1324,6 +1352,7 @@ function viewVideos(){
     : '<span class="muted" style="font-size:12px">此分頁的影片尚未加標籤</span>';
   return `<h2>影片庫</h2>
   <div class="card">
+    ${langSel}
     <div class="vtabs">
       ${tab("rawNoSched","待剪・未排程",seg.rawNoSched)}
       ${tab("rawSched","待剪・已排程",seg.rawSched)}
@@ -1483,6 +1512,7 @@ function openVideoModal(id, edit, fromWork){
       ${row("影片貼文文案", esc(zhTW(v.name||"")))}
       ${row("影片文案", v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')}
       ${row("標籤", tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
+      ${(!v.locale&&!v.channel)?row("原本語言", `${origBadge(v)} ${esc((ORIG_LANGS.find(x=>x[0]===origLangOf(v))||[])[1]||"中文")}`):''}
       ${row("片源", esc(v.source||""))}
       ${row("階段", `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(stageLabel(v.stage))}</span>`)}
       ${row("剪輯人員", esc(v.editor||""))}
@@ -1519,6 +1549,8 @@ function openVideoModal(id, edit, fromWork){
       <div><label>片源</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
       <div><label>階段</label><select id="e_stage">${stages.map(c=>`<option ${v.stage===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
     </div>
+    ${(!v.locale&&!v.channel)?`<label>原本語言（這支影片是什麼語言拍的）</label>
+    <select id="e_lang">${ORIG_LANGS.map(([k,l])=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${l}</option>`).join("")}</select>`:''}
     <label>剪輯人員</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     ${productRows("e", v.products)}
     <label>商品頁網址</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
@@ -1567,6 +1599,7 @@ async function saveVideo(id){
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
     driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:zhTW(val("e_note").trim())};
+  if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
   return await write("PUT",`/api/videos/${id}`,{video},"已更新影片");
 }
 

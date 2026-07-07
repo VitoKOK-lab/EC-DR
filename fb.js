@@ -12,7 +12,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 14,
+  schemaVersion: 15,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["新片","舊片","每日寵粉","招商","銷售"],
@@ -95,7 +95,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
           up[k] = { code: old.code || DEFAULT_SETTINGS.exchangeRates[k].code, rate: (+old.rate > 0 ? +old.rate : 1), mult: (+old.mult > 0 ? +old.mult : 1) }; });
         patch.exchangeRates = up;
       }
-      if (cur.schemaVersion == null || cur.schemaVersion < 14) patch.schemaVersion = 14;
+      if (cur.schemaVersion == null || cur.schemaVersion < 15) patch.schemaVersion = 15;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 

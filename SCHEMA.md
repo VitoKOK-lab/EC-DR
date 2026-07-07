@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 14**
+- 目前版本：**schemaVersion = 15**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -61,7 +61,8 @@
 | `account` | string | 上傳帳號 | 在地化版本上傳的海外 TikTok 帳號名（取自 `settings.intlAccounts`）；每支＝一個帳號一個成片 |
 | `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
 | `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
-| `channel` | string | 二創平台別 | `""`＝一般（台灣源片本身）；`"shopee"`＝蝦皮二創版（同語言、換平台）；`"ms"`＝馬來西亞二創版（台灣剪輯翻馬來文重剪，比照蝦皮流程、價格換 MYR）。跟 `locale` 是平行的兩種衍生方式 |
+| `channel` | string | 二創平台別 | `""`＝一般（源片本身）；`"shopee"`＝蝦皮二創版（同語言、換平台）；`"ms"`＝馬來西亞二創版（翻馬來文重剪，比照蝦皮流程、價格換 MYR）。跟 `locale` 是平行的兩種衍生方式 |
+| `origLang` | string | 一創語言（原本） | 只對一創原本（`locale=""` 且 `channel=""`）有意義：`""`＝中文（預設）、`"th"`泰、`"en"`英、`"my"`馬來。影片庫用「原本語言」選單分庫檢視，每支原本標小圖示 中/TH/EN/MY（schemaVersion 15 起） |
 
 > **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
 > 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
