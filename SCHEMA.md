@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 13**
+- 目前版本：**schemaVersion = 14**
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -56,12 +56,12 @@
 | `deletedAt` | string(ISO) | 刪除時間 | |
 | `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
-| `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`／`"ms"`＝英／泰／馬在地化二創版。跨語言二創用 |
+| `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`＝英／泰在地化二創版（海外剪輯做）。馬來西亞已改走 `channel:"ms"`（台灣區，schemaVersion 14 起；既有 `locale:"ms"` 資料已遷移） |
 | `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片同語言可有多支＝不同帳號/成片） |
 | `account` | string | 上傳帳號 | 在地化版本上傳的海外 TikTok 帳號名（取自 `settings.intlAccounts`）；每支＝一個帳號一個成片 |
 | `nameEn` | string | 英文片名（源片） | 選填；給海外剪輯看懂源片用（管理員/經理人填） |
 | `videoCopyEn` | string | 英文文案（源片） | 選填；源片內容的英文摘要，給海外剪輯參考 |
-| `channel` | string | 二創平台別 | `""`＝一般（台灣源片本身）；`"shopee"`＝蝦皮二創版（國內、同語言、換平台重剪）。跟 `locale` 是平行的兩種衍生方式，源片可同時有海外版與蝦皮版 |
+| `channel` | string | 二創平台別 | `""`＝一般（台灣源片本身）；`"shopee"`＝蝦皮二創版（同語言、換平台）；`"ms"`＝馬來西亞二創版（台灣剪輯翻馬來文重剪，比照蝦皮流程、價格換 MYR）。跟 `locale` 是平行的兩種衍生方式 |
 
 > **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
 > 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
@@ -179,6 +179,8 @@
 | `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
 | `shopeeAccounts` | string[] | 蝦皮帳號清單（純名稱，無語言分組）；建立蝦皮版本時挑帳號用 |
 | `shopeeDailyTarget` | number | 蝦皮每日目標（**每個帳號**每天幾支），預設 2；蝦皮排程月曆以此判斷已排滿／缺幾支 |
+| `msAccounts` | string[] | 馬來帳號清單（純名稱）；建立馬來版本時挑帳號用（台灣區，比照蝦皮） |
+| `msDailyTarget` | number | 馬來每日目標（**每個帳號**每天幾支），預設 2；馬來排程月曆用 |
 | `exchangeRates` | map | 各平台商品價格換算：`{en/th/ms/shopee:{code,rate,mult}}`；`rate`＝1 台幣可換多少該幣別（蝦皮固定 1＝台幣不換匯）、`mult`＝該平台售價**加乘倍數**（例 1.2＝加價 2 成，預設 1）。各平台編輯畫面即時以源片 `products[].price`／`salePrice` × `rate` × `mult` 顯示（唯讀） |
 | `videoTags` | string[] | 影片標籤清單 |
 | `postPlatforms` | object[] | 投放平台 `{name, utm}`，UTM 用 `utm_source` 分平台 |
