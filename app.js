@@ -685,7 +685,10 @@ function viewWork(){
   const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
-  const poolShown=pool;   // 全部顯示，超過 5 條時改用捲動視窗（見下方 max-height）
+  // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
+  const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
+  const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
+  const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
   const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
   const clockedOut = !!(myShift() && myShift().clockOut);
@@ -740,14 +743,15 @@ function viewWork(){
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">${T("待認領（毛片＋二創版本）","To claim (raw + versions)")}</b>
-      <span class="pill ${pool.length?'ok':'wa'}">${pool.length}</span>
+      <span class="pill ${pool.length?'ok':'wa'}">${POOL_FILTER==="all"?pool.length:poolShown.length+"/"+pool.length}</span>
     </div>
-    <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
+    <div class="vtabs" style="margin-top:10px">${poolCats.map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')">${l} <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join("")}</div>
+    <div style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
         <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${(v.locale||v.channel)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">${T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim")}</td></tr>`}</tbody></table>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest")}</td></tr>`}</tbody></table>
     </div>
     ${atLimit?`<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">${T("你已有 3 支製作中，先完成幾支再領","You have 3 in progress — finish some before claiming more")}</span></p>`:''}
   </div>
@@ -799,6 +803,10 @@ function viewWork(){
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
 function setWorkZone(z){ WORK_ZONE=z; render(); }
+// 待認領快選：all=全部、tw=台灣毛片/原本、shopee/ms=平台殼、en/th=語言殼
+let POOL_FILTER="all";
+function setPoolFilter(k){ POOL_FILTER=k; render(); }
+function poolCat(v){ return (v.channel&&CHANNELS[v.channel])?v.channel:(v.locale||"tw"); }
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
   const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]];
