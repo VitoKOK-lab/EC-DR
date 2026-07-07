@@ -675,13 +675,15 @@ function transferTask(id){
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
   const me = currentUser();
+  const isIntl = currentRole()==="intl";
   const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 全域 3 支上限：不分平台/語言
-  // 海內外權限相同：台灣毛片＋蝦皮/馬來/海外(英/泰)版本全部合併同一份清單，用小圖（蝦/馬/EN/TH）分辨
+  // 工作線分流：海外同仁＝泰／英二創版本；國內＝台灣毛片＋蝦皮／馬來西亞版本（馬來版由國內剪）
+  const lineOK = (v)=> isIntl ? !!v.locale : !v.locale;
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
   // 待剪池：指派給我的 ＋ 還沒指派的公用毛片/版本（別人被指派的不顯示）；指派給我的排前面
   // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
-  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+  const pool = (STATE.videos||[]).filter(v=>lineOK(v) && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
   const poolShown=pool;   // 全部顯示，超過 5 條時改用捲動視窗（見下方 max-height）
@@ -744,8 +746,8 @@ function viewWork(){
     <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
-        <td data-label="${T("動作","Action")}"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button></td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${enSubLine(v)}</td>
+        <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim")}</td></tr>`}</tbody></table>
     </div>
     ${atLimit?`<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">${T("你已有 3 支製作中，先完成幾支再領","You have 3 in progress — finish some before claiming more")}</span></p>`:''}
@@ -759,7 +761,7 @@ function viewWork(){
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">${T("天數","Days")}</th><th>${T("影片","Video")}</th><th style="width:200px">${T("狀態","Status")}</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
         <td data-label="${T("天數","Days")}">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${enSubLine(v)}</td>
         <td data-label="${T("狀態","Status")}"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>
@@ -799,7 +801,11 @@ function viewWork(){
 let WORK_ZONE="shopee";
 function setWorkZone(z){ WORK_ZONE=z; render(); }
 function createZoneCard(){
-  const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["intl",T("海外 TikTok（英/泰）","Overseas TikTok (EN/TH)")]];
+  // 工作線分流：海外＝英文／泰文各自一區（帳號只列該語言）；國內＝蝦皮＋馬來西亞（馬來版由國內剪）
+  const zones= currentRole()==="intl"
+    ? [["en","English (TikTok)"],["th","Thai (TikTok)"]]
+    : [["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")]];
+  if(!zones.some(z=>z[0]===WORK_ZONE)) WORK_ZONE=zones[0][0];
   const sel=`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
     <b style="font-size:16px">${T("建立二創版本","Create a version")}</b>
     <select onchange="setWorkZone(this.value)" style="width:auto;min-width:190px">
@@ -807,9 +813,9 @@ function createZoneCard(){
     </select>
     <span class="muted" style="font-size:12px">${T("挑一支已完整上傳的原本，建立該平台/語言的二創版本，會進到「待認領」","Pick a fully-published original and create a version — it lands in the claim pool")}</span></div>`;
   let body="";
-  if(WORK_ZONE==="intl"){
+  if(WORK_ZONE==="en"||WORK_ZONE==="th"){
     body=`<input id="intl_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px;margin:10px 0">
-      <div id="intl_list" class="${intlSourcePool().length>8?'vidscroll':''}">${intlLibRows()}</div>`;
+      <div id="intl_list" class="${intlSourcePool().length>8?'vidscroll':''}">${intlLibRows(WORK_ZONE)}</div>`;
   } else {
     const C=CHANNELS[WORK_ZONE];
     body=`<input id="${C.pfx}_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" value="${esc(CH_Q[WORK_ZONE])}" oninput="CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')" style="width:100%;max-width:360px;margin:10px 0">
@@ -1297,6 +1303,16 @@ let VID_LANG="";   // 影片庫目前檢視的一創語言（""＝中文）
 function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_BADGE[l]!=null?l:""; }
 function origBadge(v){ const l=origLangOf(v);
   return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="${T("原本語言","Original language")}: ${esc((ORIG_LANGS.find(x=>x[0]===l)||[])[1]||"中文")}">${ORIG_BADGE[l]}</span>`; }
+// 海外視角：中文標題下加一行小字英文（資料庫已翻好的 nameEn）；中文同仁不顯示
+function enSubLine(v){ if(currentRole()!=="intl"||!v||v.locale) return "";
+  const en=stripHash(v.nameEn||""); if(!en) return "";
+  return `<div class="vt-en">${esc(en)}</div>`; }
+// 待剪池的「退回資料庫」：只有從資料庫拉出來的二創版本殼可退（台灣毛片不適用）；purge 殼、絕不動源片
+function poolDiscardBtn(v){ if(!v||v.stage!=="待處理") return "";
+  const tip=T("退回資料庫（不會刪除任何影片，源片可重選）","Return to the library — nothing is deleted; the source can be picked again");
+  if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="chDiscard('${v.channel}','${v.id}')" title="${tip}">✕ ${T("退回","Remove")}</button>`;
+  if(v.locale) return `<button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="${tip}">✕ ${T("退回","Remove")}</button>`;
+  return ""; }
 // 一列 = 一支影片
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
@@ -1326,7 +1342,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
       <span class="vthumb">▶</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span></td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -1535,8 +1551,8 @@ function openVideoModal(id, edit, fromWork){
     const body=`
       ${row(T("編號","Code"), esc(vidCode(v)))}
       ${row(T("原始片名","Raw title"), esc(zhTW(v.rawName||"")))}
-      ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||"")))}
-      ${row(T("影片文案","Script"), v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')}
+      ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||""))+enSubLine(v))}
+      ${row(T("影片文案","Script"), (v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')+((currentRole()==="intl"&&!v.locale&&v.videoCopyEn)?`<div class="vt-en">${esc(v.videoCopyEn).replace(/\n/g,'<br>')}</div>`:''))}
       ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
       ${(!v.locale&&!v.channel)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc((ORIG_LANGS.find(x=>x[0]===origLangOf(v))||[])[1]||"中文")}`):''}
       ${row(T("片源","Source"), esc(v.source||""))}
@@ -1733,33 +1749,36 @@ function openVidPreview(enc){ const url=decodeURIComponent(enc); const e=playabl
     <div style="margin-top:8px;text-align:right"><a class="muted" href="${esc(url)}" target="_blank" style="font-size:12px">Open original ↗</a></div>
   </div>`;
   document.body.appendChild(w); }
-function intlLibRows(){
+function intlLibRows(loc){
+  loc = INTL_LOCALES.includes(loc) ? loc : "";
   const q=String(INTL_Q||'').toLowerCase().trim();
   let src=intlSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.nameEn,v.videoCopyEn,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return '<div class="emptyState"><span class="es-mk">✦</span>No uploaded videos available to localize yet — new videos appear here once fully published.</div>';
-  const accts=intlAccounts();
+  const accts=intlAccounts();                                        // 全清單：option 的 value 用這裡的索引（createLocalFromAcct 依此取帳號）
+  const locs = loc ? [loc] : INTL_LOCALES;                            // 指定語言時只列該語言的帳號／版本
+  const shownAccts = loc ? intlAccountsFor(loc) : accts;
   const cards=src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(untitled)";   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
-    const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
+    const kids=localizedVersionsOfSrc(v.id).filter(k=>!loc||k.locale===loc).sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
       return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}">${localeShort(k.locale)} · ${done?'done':'in progress'}</span>`;
     }).join(" ");
     // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="Preview finished Chinese">▶</button>`:'';
-    const addRow = accts.length
+    const addRow = shownAccts.length
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
           <select id="addacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
             <option value="">＋ Add version — pick account</option>
-            ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
+            ${locs.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
           </select>
           <button class="btn sm" style="flex:none" onclick="createLocalPick('${v.id}')" title="Create this version and add it to your To do">＋ Add</button>
         </div>`
-      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">Ask admin to add accounts in Settings</span></div>`;
+      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">${loc?`No ${localeName(loc)} accounts yet — ask the admin to add them in Settings`:`Ask admin to add accounts in Settings`}</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
@@ -1775,7 +1794,7 @@ function intlLibRows(){
   }).join("");
   return cards;
 }
-function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows(); }
+function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows((WORK_ZONE==="en"||WORK_ZONE==="th")?WORK_ZONE:""); }
 function viewIntlLibrary(){
   const src=intlSourcePool();
   return `<h2 style="margin-top:0">Library <span class="muted" style="font-size:13px">Already-uploaded videos — create EN / TH / MS versions</span></h2>
