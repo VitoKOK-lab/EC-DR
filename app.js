@@ -8,9 +8,9 @@ const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：儀表板（含下指令）＋影片庫＋月排程；設定/員工視角等管理功能只給管理員
-  // 不分海內外：所有剪輯（editor＋intl）分頁完全相同，大家都可以新增/更改、自己挑要剪的
-  editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"],["shopeelib","影片蝦皮二創區"],["mslib","影片馬來二創區"],["intllib","海外二創區"]],
-  intl:    [["work","上班計畫"],["videos","影片庫"],["cal","月排程"],["shopeelib","影片蝦皮二創區"],["mslib","影片馬來二創區"],["intllib","海外二創區"]],
+  // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
+  editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"]],
+  intl:    [["work","Work Plan"],["videos","Library"],["cal","Schedule"]],
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -26,6 +26,8 @@ function currentRole(){
   return (u && u.role) || localStorage.getItem("ecdr_role") || "editor";
 }
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
+// 雙語：海外剪輯(intl)看英文、其他角色看中文（海外員工看到的畫面都要是英文）
+function T(zh,en){ return currentRole()==="intl" ? en : zh; }
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
@@ -406,7 +408,7 @@ function calTWBody(){
   for(let d=1;d<=days;d++){
     const ds = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const isToday = ds===today;
-    const tmk = isToday?`<span class="todaymk">今天</span>`:"";
+    const tmk = isToday?`<span class="todaymk">${T("今天","Today")}</span>`:"";
     const within10 = ds>=today && ds<=d10s;
     const b = dayBreakdown(ds);
     const filled = b.full;
@@ -415,27 +417,27 @@ function calTWBody(){
     cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
-      ${dayIsMine(ds)?'<span class="mymk" title="這天有你剪的片">✦</span>':''}
+      ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
+      ${dayIsMine(ds)?`<span class="mymk" title="${T("這天有你剪的片","You have work this day")}">✦</span>`:''}
     </div>`;
   }
   return `
   <div class="card">
     <div class="calhead">
-      <button class="calnav" onclick="calMove(-1)" title="上月">‹</button>
-      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
-      <button class="calnav" onclick="calMove(1)" title="下月">›</button>
+      <button class="calnav" onclick="calMove(-1)" title="${T("上月","Previous month")}">‹</button>
+      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
+      <button class="calnav" onclick="calMove(1)" title="${T("下月","Next month")}">›</button>
     </div>
     <div class="cal">
-      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
+      ${(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]:["日","一","二","三","四","五","六"]).map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
     <div class="callegend">
-      <span><i class="lg-g"></i>已排滿</span>
-      <span><i class="lg-r"></i>待補</span>
-      <span><i class="lg-b"></i>未排</span>
-      <span><i class="lg-t"></i>今天</span>
-      ${isEd?'<span style="color:var(--accent)">✦ 有你剪的片</span>':''}
+      <span><i class="lg-g"></i>${T("已排滿","Full")}</span>
+      <span><i class="lg-r"></i>${T("待補","Behind")}</span>
+      <span><i class="lg-b"></i>${T("未排","None")}</span>
+      <span><i class="lg-t"></i>${T("今天","Today")}</span>
+      ${isEd?`<span style="color:var(--accent)">✦ ${T("有你剪的片","Your work")}</span>`:''}
     </div>
   </div>`;
 }
@@ -444,14 +446,14 @@ function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++
 let CAL_PLAT="tw";
 function calSetPlat(p){ CAL_PLAT=p; render(); }
 function viewCal(){
-  const plats=[["tw","社群媒體"],["intl","海外 TikTok"],["shopee","蝦皮"],["ms","馬來"]];
+  const plats=[["tw",T("中文","Chinese")],["th",T("泰文","Thai")],["shopee",T("蝦皮","Shopee")],["en",T("英文","English")],["ms",T("馬來西亞","Malaysia")]];
   const sel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:14px">
-    <label style="margin:0">平台</label>
+    <label style="margin:0">${T("平台","Platform")}</label>
     <select onchange="calSetPlat(this.value)" style="width:auto;min-width:170px">
       ${plats.map(([k,l])=>`<option value="${k}" ${CAL_PLAT===k?'selected':''}>${esc(l)}</option>`).join("")}
     </select></div>`;
-  const body= CAL_PLAT==="intl" ? calIntlBody() : (CAL_PLAT==="shopee"||CAL_PLAT==="ms") ? calChBody(CAL_PLAT) : calTWBody();
-  return `<h2>月排程</h2>${sel}${body}`;
+  const body= (CAL_PLAT==="en"||CAL_PLAT==="th") ? calIntlBody(CAL_PLAT) : (CAL_PLAT==="shopee"||CAL_PLAT==="ms") ? calChBody(CAL_PLAT) : calTWBody();
+  return `<h2>${T("月排程","Schedule")}</h2>${sel}${body}`;
 }
 
 function openDay(ds){
@@ -700,35 +702,35 @@ function viewWork(){
     : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : '';
   // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台/海外二創版走各自專屬編輯視窗/完成流程
   const workBtn=(v)=>{
-    if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">剪輯完成</button>`;
-    if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">編輯內容</button>
-      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="剪好了→標記完成並移到影片庫">完成 ✔</button>`;
-    if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">編輯內容</button>
-      <button class="btn sm" onclick="intlFinish('${v.id}')" title="剪好了→標記完成並移到影片庫">完成 ✔</button>`;
+    if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
+    if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
+    if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="intlFinish('${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
     // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
-    return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="編輯內容（按「儲存修改」只存、留在這頁）">編輯內容</button>
-      <button class="btn sm" onclick="finishWork('${v.id}')" title="剪好了→標記「剪輯完成」並移到影片庫">完成 ✔</button>`; };
+    return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="${T("編輯內容（按「儲存修改」只存、留在這頁）","Edit content (Save keeps you here)")}">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`; };
   // 退回鍵：把認領的毛片/版本放回待剪清單重選（全域最多 3 支）
   const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
-    ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="後悔了？退回${CHANNELS[v.channel].label}待處理清單重選">退回</button>`
+    ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="${T("後悔了？退回待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
     : v.locale
-      ? `<button class="btn sec sm" onclick="intlUnclaim('${v.id}')" title="後悔了？退回海外待處理清單重選">退回</button>`
-      : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="後悔了？退回給大家重選">退回</button>`;
+      ? `<button class="btn sec sm" onclick="intlUnclaim('${v.id}')" title="${T("後悔了？退回海外待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
+      : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="${T("後悔了？退回給大家重選","Return to the shared pool")}">${T("退回","Return")}</button>`;
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
-  const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">老闆娘退回待修（${rejected.length}）</b>
+  const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">${T("老闆娘退回待修","Sent back for fixes")}（${rejected.length}）</b>
     ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
       <a href="javascript:void(0)" onclick="editVideo('${v.id}')"><b>${esc(vidTitle(v))}</b></a>
-      ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">退回原因：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
+      ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
   // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
   const nTaskDone=tasks.filter(t=>t.done).length;
   const focusBar=`<div class="focusbar">
-    <div><span class="fn ${atLimit?'warn':''}">${inProg}<i>/3</i></span><span class="fl">製作中</span></div>
-    <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
-    <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">交辦完成</span></div>
-    <div><span class="fn">${pool.length}</span><span class="fl">待剪毛片</span></div>
+    <div><span class="fn ${atLimit?'warn':''}">${inProg}<i>/3</i></span><span class="fl">${T("製作中","In progress")}</span></div>
+    <div><span class="fn">${doneToday.length}</span><span class="fl">${T("今日完成","Done today")}</span></div>
+    <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
+    <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
   </div>`;
   return `
-  <h2>本日上班計畫（${esc(me)}）</h2>
+  <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
   ${focusBar}
   ${rejCard}
 
@@ -736,61 +738,84 @@ function viewWork(){
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">待剪毛片</b>
-      <span class="pill ${pool.length?'ok':'wa'}">待剪 ${pool.length} 支</span>
+      <b style="font-size:16px">${T("待認領（毛片＋二創版本）","To claim (raw + versions)")}</b>
+      <span class="pill ${pool.length?'ok':'wa'}">${pool.length}</span>
     </div>
     <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
-    <table class="responsive"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
+    <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
-        <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'你已有 3 支在剪，完成一支才能再領（排隊中）':'按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）'}">${atLimit?'排隊中':'認領開始剪'}</button></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有指派給你或可認領的毛片</td></tr>`}</tbody></table>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="${T("動作","Action")}"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button></td>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim")}</td></tr>`}</tbody></table>
     </div>
-    ${atLimit?'<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">你已有 3 支製作中，先完成幾支再領</span></p>':''}
+    ${atLimit?`<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">${T("你已有 3 支製作中，先完成幾支再領","You have 3 in progress — finish some before claiming more")}</span></p>`:''}
   </div>
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">我的今日工作</b>
-      <span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
+      <b style="font-size:16px">${T("我的今日工作","My work today")}</b>
+      <span class="pill ${atLimit?'wa':'ok'}">${T("製作中","In progress")} ${inProg}/3</span>
     </div>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
+    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">${T("天數","Days")}</th><th>${T("影片","Video")}</th><th style="width:200px">${T("狀態","Status")}</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
-        <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
-        <td data-label="狀態"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
+        <td data-label="${T("天數","Days")}">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="${T("狀態","Status")}"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
+      </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>
 
   <div class="card">
-    <b style="font-size:16px">我的今日交辦工作（剪輯以外）</b>
+    <b style="font-size:16px">${T("我的今日交辦工作（剪輯以外）","My assigned tasks (beyond editing)")}</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-          <b style="font-size:14px">${esc(t.title)}</b>
-          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">老闆指派</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">刪</button>`}
+          <b style="font-size:14px">${esc(t.title)}${(assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:''}</b>
+          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">${T("老闆指派","Assigned")}</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">${T("刪","✕")}</button>`}
         </div>`;
-      const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
+      const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">${T("對接窗口","Contact")}：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
       if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
-        <div class="muted" style="font-size:12px;margin:6px 0 8px">老闆 ${esc(t.assignedBy)} 指派・<b style="color:var(--gold-dk)">按下收到開始執行</b></div>
-        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">我收到了</button></div>`;
+        <div class="muted" style="font-size:12px;margin:6px 0 8px">${T("老闆","Assigned by")} ${esc(t.assignedBy)} ${T("指派・","·")}<b style="color:var(--gold-dk)">${T("按下收到開始執行","Press Got it to start")}</b></div>
+        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">${T("我收到了","Got it")}</button></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
-        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">已收到（老闆 ${esc(t.assignedBy)} 指派）</div>`:''}
-        <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="填寫完整處理狀況及後續…">
+        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（老闆","Received (assigned by")} ${esc(t.assignedBy)}${T(" 指派）",")")}</div>`:''}
+        <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="${T("填寫完整處理狀況及後續…","Progress note (at least 12 characters)…")}">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
-          <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'已完成':'進行中'}</label>
-      </div>`;}).join("")||`<div class="muted">尚無交辦工作</div>`}</div>
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="自己新增工作項目…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="對接窗口（選填）" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ 加入</button></div>
+          <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
+      </div>`;}).join("")||`<div class="muted">${T("尚無交辦工作","No tasks yet")}</div>`}</div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ ${T("加入","Add")}</button></div>
   </div>
 
   <div class="card" style="text-align:center">
-    <span class="pill ok">今日已完成上架 ${doneToday.length} 支</span>
-    <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">交辦完成 ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
-    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
+    <span class="pill ok">${T("今日已完成上架","Done today")} ${doneToday.length}</span>
+    <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">${T("交辦完成","Tasks")} ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
+    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
   </div>
 
-  </div>`
+  </div>
+  ${createZoneCard()}`
+}
+// 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
+let WORK_ZONE="shopee";
+function setWorkZone(z){ WORK_ZONE=z; render(); }
+function createZoneCard(){
+  const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來","Malay")],["intl",T("海外 TikTok（英/泰）","Overseas TikTok (EN/TH)")]];
+  const sel=`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+    <b style="font-size:16px">${T("建立二創版本","Create a version")}</b>
+    <select onchange="setWorkZone(this.value)" style="width:auto;min-width:190px">
+      ${zones.map(([k,l])=>`<option value="${k}" ${WORK_ZONE===k?'selected':''}>${esc(l)}</option>`).join("")}
+    </select>
+    <span class="muted" style="font-size:12px">${T("挑一支已完整上傳的原本，建立該平台/語言的二創版本，會進到「待認領」","Pick a fully-published original and create a version — it lands in the claim pool")}</span></div>`;
+  let body="";
+  if(WORK_ZONE==="intl"){
+    body=`<input id="intl_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px;margin:10px 0">
+      <div id="intl_list" class="${intlSourcePool().length>8?'vidscroll':''}">${intlLibRows()}</div>`;
+  } else {
+    const C=CHANNELS[WORK_ZONE];
+    body=`<input id="${C.pfx}_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" value="${esc(CH_Q[WORK_ZONE])}" oninput="CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')" style="width:100%;max-width:360px;margin:10px 0">
+      <div id="${C.pfx}_list" class="${chSourcePool().length>8?'vidscroll':''}">${chLibRows(WORK_ZONE)}</div>`;
+  }
+  return `<div class="card" style="margin-top:16px">${sel}${body}</div>`;
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
@@ -800,16 +825,16 @@ function clockOutReport(){
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
   const tasks=myTasks();
   const body=`
-    <div class="card" style="background:var(--panel2)"><b>今日完成上架（${doneVids.length}）</b>
-      ${doneVids.length?doneVids.map(v=>`<div style="margin-top:6px">• ${esc(vidTitle(v))} <span class="pill ok" style="font-size:10px">已完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)} 天</span></div>`).join("")
-        :'<p class="muted" style="margin:6px 0 0">今日尚無完成上架</p>'}
-      ${wip.length?`<p class="muted" style="font-size:12px;margin:8px 0 0">尚有 ${wip.length} 支製作中（未完成，保留至明天）</p>`:''}
+    <div class="card" style="background:var(--panel2)"><b>${T("今日完成上架","Done today")}（${doneVids.length}）</b>
+      ${doneVids.length?doneVids.map(v=>`<div style="margin-top:6px">• ${esc(vidTitle(v))} <span class="pill ok" style="font-size:10px">${T("已完成","Done")}</span> <span class="muted" style="font-size:12px">${T("剪 "+editDaysLabel(v)+" 天",editDaysLabel(v)?editDaysLabel(v)+" day(s)":"")}</span></div>`).join("")
+        :`<p class="muted" style="margin:6px 0 0">${T("今日尚無完成上架","Nothing finished today")}</p>`}
+      ${wip.length?`<p class="muted" style="font-size:12px;margin:8px 0 0">${T("尚有 "+wip.length+" 支製作中（未完成，保留至明天）",wip.length+" still in progress (kept for tomorrow)")}</p>`:''}
     </div>
-    <div class="card" style="background:var(--panel2)"><b>交辦工作（${tasks.filter(t=>t.done).length}/${tasks.length} 完成）</b>
-      ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?'<span class="pill ok" style="font-size:10px">已完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
-        :'<p class="muted" style="margin:6px 0 0">今日無交辦工作</p>'}
+    <div class="card" style="background:var(--panel2)"><b>${T("交辦工作","Tasks")}（${tasks.filter(t=>t.done).length}/${tasks.length}）</b>
+      ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?`<span class="pill ok" style="font-size:10px">${T("已完成","Done")}</span>`:`<span class="pill em" style="font-size:10px">${T("未完成","Not done")}</span>`}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
+        :`<p class="muted" style="margin:6px 0 0">${T("今日無交辦工作","No tasks today")}</p>`}
     </div>`;
-  showModal("下班匯報", body, async ()=>{ await doClockOut(); closeModal(); toast("辛苦了，已下班 "); setTimeout(showGoodbye,300); return true; }, "確認下班");
+  showModal(T("下班匯報","Clock-out report"), body, async ()=>{ await doClockOut(); closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true; }, T("確認下班","Confirm clock-out"));
 }
 async function doClockOut(){
   const id=shiftId(currentUser(),today);
@@ -1111,15 +1136,15 @@ function batchNewFootage(){
     await delay(300); toast("已新增 "+ok+" 支毛片"); return true;
   });
 }
-function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的工作"); }
+function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")); }
 // 退回：把已認領的毛片放回共用「待剪毛片」清單，重新給大家選（一人最多 3 支）
-function unclaimVid(id){ if(!confirm("退回這支毛片到待剪清單？大家就能重新認領。")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待剪毛片清單"); }
+function unclaimVid(id){ if(!confirm(T("退回這支毛片到待剪清單？大家就能重新認領。","Return this to the shared pool so others can claim it?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待剪毛片清單","Returned to the pool")); }
 // 我的剪輯工作：作業中 →（按一下）編輯內容
 function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 // 完成：剪輯按了才標「剪輯完成」並移到影片庫（編輯時的「儲存修改」只存內容、不完成）
 function finishWork(id){ const v=vid(id)||{};
-  if(!confirm("把「"+vidTitle(v)+"」標記為「剪輯完成」？\n完成後會移到影片庫。")) return;
-  write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},"剪輯完成，已移到影片庫").then(ok=>{ if(ok && myTabs().some(t=>t[0]==="videos")){ CUR_TAB="videos"; buildNav(); render(); } });
+  if(!confirm(T("把「"+vidTitle(v)+"」標記為「剪輯完成」？\n完成後會移到影片庫。","Mark \""+vidTitle(v)+"\" as done? It moves to the library."))) return;
+  write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},T("剪輯完成，已移到影片庫","Done — moved to the library")).then(ok=>{ if(ok && myTabs().some(t=>t[0]==="videos")){ CUR_TAB="videos"; buildNav(); render(); } });
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
 function reworkVideo(id){ const v=vid(id)||{};
@@ -1270,7 +1295,7 @@ const ORIG_BADGE={"":"中",th:"TH",en:"EN",my:"MY"};
 let VID_LANG="";   // 影片庫目前檢視的一創語言（""＝中文）
 function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_BADGE[l]!=null?l:""; }
 function origBadge(v){ const l=origLangOf(v);
-  return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="原本語言：${esc((ORIG_LANGS.find(x=>x[0]===l)||[])[1]||"中文")}">${ORIG_BADGE[l]}</span>`; }
+  return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="${T("原本語言","Original language")}: ${esc((ORIG_LANGS.find(x=>x[0]===l)||[])[1]||"中文")}">${ORIG_BADGE[l]}</span>`; }
 // 一列 = 一支影片
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
@@ -1316,15 +1341,15 @@ function vidRowsHTML(){
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
-  if(!list.length) return '<div class="emptyState"><span class="es-mk">✦</span>沒有符合的影片</div>';
+  if(!list.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("沒有符合的影片","No matching videos")}</div>`;
   // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
   // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
   list.sort((a,b)=> vidOrderRank(a)-vidOrderRank(b) || vidSortVal(a).localeCompare(vidSortVal(b)) || String(a.id).localeCompare(String(b.id)));
   return `<div class="${list.length>8?'vidscroll':''}"><table class="vtable responsive">
     <colgroup><col class="c-vid"><col class="c-tag"><col class="c-sch"><col class="c-prod"><col class="c-ed"><col class="c-st"></colgroup>
-    <thead><tr><th>影片</th><th>標籤</th><th>${VID_VIEW==="old"?"上片日期":"預排上片"}</th><th>商品</th><th>剪輯師</th><th>狀態</th></tr></thead>
+    <thead><tr><th>${T("影片","Video")}</th><th>${T("標籤","Tags")}</th><th>${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}</th><th>${T("商品","Products")}</th><th>${T("剪輯師","Editor")}</th><th>${T("狀態","Status")}</th></tr></thead>
     <tbody>${list.map(vidTableRow).join("")}</tbody></table></div>
-    <p class="muted" style="margin-top:8px;font-size:12px">共 ${list.length} 支</p>`;
+    <p class="muted" style="margin-top:8px;font-size:12px">${T("共","Total")} ${list.length} ${T("支","videos")}</p>`;
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
@@ -1334,9 +1359,9 @@ function viewVideos(){
   const allSrc=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 影片庫：只放一創原本，二創版走各自排程與源片的版本卡
   const langCount={}; allSrc.forEach(v=>{ const l=origLangOf(v); langCount[l]=(langCount[l]||0)+1; });
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
-    <label style="margin:0">原本語言</label>
+    <label style="margin:0">${T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
-      ${ORIG_LANGS.map(([k,l])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${l}（${langCount[k]||0}）</option>`).join("")}
+      ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malay"][i])}（${langCount[k]||0}）</option>`).join("")}
     </select></div>`;
   const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
   const seg={rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
@@ -1348,25 +1373,25 @@ function viewVideos(){
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
   const tagBtns=present.length
     ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
-      +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">清除篩選</a>`
-    : '<span class="muted" style="font-size:12px">此分頁的影片尚未加標籤</span>';
-  return `<h2>影片庫</h2>
+      +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">${T("清除篩選","Clear")}</a>`
+    : `<span class="muted" style="font-size:12px">${T("此分頁的影片尚未加標籤","No tags on this tab yet")}</span>`;
+  return `<h2>${T("影片庫","Library")}</h2>
   <div class="card">
     ${langSel}
     <div class="vtabs">
-      ${tab("rawNoSched","待剪・未排程",seg.rawNoSched)}
-      ${tab("rawSched","待剪・已排程",seg.rawSched)}
-      ${tab("newNoSched","剪完・未排程",seg.newNoSched)}
-      ${tab("newSched","剪完・已排程",seg.newSched)}
-      ${tab("old","舊片",seg.old)}
+      ${tab("rawNoSched",T("待剪・未排程","Raw · unscheduled"),seg.rawNoSched)}
+      ${tab("rawSched",T("待剪・已排程","Raw · scheduled"),seg.rawSched)}
+      ${tab("newNoSched",T("剪完・未排程","Done · unscheduled"),seg.newNoSched)}
+      ${tab("newSched",T("剪完・已排程","Done · scheduled"),seg.newSched)}
+      ${tab("old",T("舊片","Old"),seg.old)}
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
-      <input id="vid_q" placeholder="搜尋編號／片名／剪輯" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
-      <button class="btn sm" onclick="newSimpleVideo()">＋ 新增一支</button>
-      <button class="btn sec sm" onclick="batchNewFootage()">批次新增</button>
+      <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
+      <button class="btn sm" onclick="newSimpleVideo()">＋ ${T("新增一支","Add one")}</button>
+      <button class="btn sec sm" onclick="batchNewFootage()">${T("批次新增","Batch add")}</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <span class="muted" style="font-size:12px">標籤：</span>
+      <span class="muted" style="font-size:12px">${T("標籤","Tags")}：</span>
       ${tagBtns}
     </div>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
@@ -1570,10 +1595,13 @@ function openVideoModal(id, edit, fromWork){
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>
     </div>`:''}
-    <div class="card" style="border-color:var(--red)">
+    ${(currentRole()==="boss"||currentRole()==="manager")?`<div class="card" style="border-color:var(--red)">
       <button class="btn danger sm" type="button" onclick="delVideo('${id}')">刪除這支影片</button>
-      <span class="muted" style="font-size:12px;margin-left:8px">需二次確認，刪除後無法復原</span>
-    </div>`;
+      <span class="muted" style="font-size:12px;margin-left:8px">需二次確認（移到回收桶，可復原）・管理功能</span>
+    </div>`:(v.stage==="剪輯中"?`<div class="card">
+      <button class="btn sec sm" type="button" onclick="closeModal();unclaimVid('${id}')">${T("退回（放回待剪清單）","Return to the pool")}</button>
+      <span class="muted" style="font-size:12px;margin-left:8px">${T("不會刪除影片，只是退回給大家重選","Nothing is deleted — it goes back to the shared pool")}</span>
+    </div>`:'')}`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="cancelVideoEdit()">取消編輯</button>
       <button class="btn" id="vmSave" type="button">${fromWork?'儲存並完成':'儲存修改'}</button></div>`;
@@ -1767,11 +1795,13 @@ function intlDayList(date, acct){ acct=acct!=null?acct:intlCurAcct();
 function intlDayBreak(date, acct){ const total=intlDayList(date,acct).length, target=intlDailyTarget();
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 const MONTHS_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
-// 海外月曆內容體：intl 角色的 Schedule 分頁與（中文角色的）月排程 hub 共用
-function calIntlBody(){
-  const accts=intlAccounts();
-  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">No overseas TikTok accounts yet. Ask the admin to add them in <b>Settings → Overseas</b>, then you can schedule by account here.</p></div>`;
-  const acc=intlCurAcct();
+// 海外月曆內容體（依語言：en／th 各自的 TikTok 帳號）：月排程 hub 用
+function calIntlBody(loc){
+  loc=INTL_LOCALES.includes(loc)?loc:"en";
+  const accts=intlAccountsFor(loc);
+  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("這個語言還沒有 TikTok 帳號。請管理員到「設定 → 海外設定」新增（格式 "+loc+"=帳號名）。","No "+loc.toUpperCase()+" TikTok accounts yet. Ask the admin to add them in Settings → Overseas.")}</p></div>`;
+  if(!INTL_ACCT || !accts.some(a=>a.name===INTL_ACCT)) INTL_ACCT=accts[0].name;   // 目前帳號要屬於這個語言
+  const acc=INTL_ACCT;
   if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
   const [y,m]=INTL_CAL_YM;
   const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
@@ -1780,31 +1810,31 @@ function calIntlBody(){
   for(let i=0;i<startDow;i++) cells+=`<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">Today</span>`:"";
+    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">${T("今天","Today")}</span>`:"";
     const within10=ds>=today && ds<=d10s;
     const b=intlDayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
     cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayIntl('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">Full</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">None${within10?' (soon)':''}</div>`:`<div class="pmk" style="color:var(--red)">Need ${b.short}</div>`)}
+      ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
     </div>`;
   }
   const acctSel=`<select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">
-    ${INTL_LOCALES.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option ${a.name===acc?'selected':''}>${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+    ${accts.map(a=>`<option ${a.name===acc?'selected':''}>${esc(a.name)}</option>`).join("")}</select>`;
   return `
   <div class="card">
-    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>Account</b> ${acctSel} <span class="muted" style="font-size:12px">${intlDailyTarget()} per account / day</span></div>
+    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b> ${acctSel} <span class="muted" style="font-size:12px">${intlDailyTarget()} ${T("支／帳號／天","per account / day")}</span></div>
     <div class="calhead">
-      <button class="calnav" onclick="calMoveIntl(-1)" title="Previous month">‹</button>
-      <div class="calmonth">${MONTHS_EN[m]} ${y}</div>
-      <button class="calnav" onclick="calMoveIntl(1)" title="Next month">›</button>
+      <button class="calnav" onclick="calMoveIntl(-1)" title="${T("上月","Previous month")}">‹</button>
+      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
+      <button class="calnav" onclick="calMoveIntl(1)" title="${T("下月","Next month")}">›</button>
     </div>
     <div class="cal">
-      ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>`<div class="dow">${x}</div>`).join("")}
+      ${(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]:["日","一","二","三","四","五","六"]).map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
-    <div class="callegend"><span><i class="lg-g"></i>Full</span><span><i class="lg-r"></i>Behind</span><span><i class="lg-b"></i>None</span><span><i class="lg-t"></i>Today</span></div>
+    <div class="callegend"><span><i class="lg-g"></i>${T("已排滿","Full")}</span><span><i class="lg-r"></i>${T("待補","Behind")}</span><span><i class="lg-b"></i>${T("未排","None")}</span><span><i class="lg-t"></i>${T("今天","Today")}</span></div>
   </div>`;
 }
 function viewCalIntl(){ return `<h2 style="margin-top:0">Schedule</h2>`+calIntlBody(); }
@@ -1860,7 +1890,7 @@ function createLocalVersion(sourceId, locale, account){
 // 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'+sourceId); const idx=sel?sel.value:'';
   if(idx===''){ toast("Pick an account first",true); return; } createLocalFromAcct(sourceId, idx); }
-function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"Claimed — added to your work").then(ok=>{ if(ok){ CUR_TAB="intlwork"; buildNav(); render(); } }); }
+function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")).then(ok=>{ if(ok) render(); }); }
 function intlUnclaim(id){ if(!confirm("Return this version to your to-do list?")) return; write("POST",`/api/videos/${id}/unclaim`,{},"Returned to your to-do list"); }
 // 退回資料庫：只移除 To do 裡「還沒開始做」的版本殼（無任何內容），源片立即回到 Library 可重選。
 // 不動源片、不進回收桶 — 海外版全是二創，絕不能刪到原始檔。
@@ -2041,10 +2071,10 @@ function openIntlModal(id){
 // （不開新角色/新登入；任何國內剪輯登入都看得到，比照海外的帳號＋每日目標模式）
 // ===================================================================
 const CHANNELS={
-  shopee:{ label:"蝦皮", short:"蝦", pfx:"shp", zoneName:"影片蝦皮二創區", calName:"蝦皮排程", verName:"蝦皮版本",
+  shopee:{ label:"蝦皮", labelEn:"Shopee", short:"蝦", pfx:"shp", zoneName:"影片蝦皮二創區", calName:"蝦皮排程", verName:"蝦皮版本", verNameEn:"Shopee version",
     setName:"蝦皮設定", acctKey:"shopeeAccounts", targetKey:"shopeeDailyTarget", priceKey:"shopee",
     upLabel:"上傳連結（蝦皮貼文）", upPh:"https://shopee.tw/...", srcBadge:"🛍️", gt:"" },
-  ms:{ label:"馬來", short:"馬", pfx:"mys", zoneName:"影片馬來二創區", calName:"馬來排程", verName:"馬來版本",
+  ms:{ label:"馬來", labelEn:"Malay", short:"馬", pfx:"mys", zoneName:"影片馬來二創區", calName:"馬來排程", verName:"馬來版本", verNameEn:"Malay version",
     setName:"馬來設定", acctKey:"msAccounts", targetKey:"msDailyTarget", priceKey:"ms",
     upLabel:"上傳連結（TikTok 貼文）", upPh:"https://www.tiktok.com/@.../video/...", srcBadge:"🇲🇾", gt:"ms" },   // 馬來版要翻成馬來文 → 文A
 };
@@ -2059,39 +2089,41 @@ function createChVersion(ch, sourceId, account){
   const C=CHANNELS[ch]; if(!C){ toast("未知的平台",true); return; }
   account=account||"";
   const s=vid(sourceId); if(!s){ toast("找不到源片",true); return; }
-  if(!isPublished(s)){ toast("只有已完成上片的影片可以做"+C.verName,true); return; }
+  if(!isPublished(s)){ toast(T("只有已完成上片的影片可以做"+C.verName,"Only fully-published videos can be localized"),true); return; }
   if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.channel===ch && v.account===account)){
-    toast("「"+account+"」的"+C.verName+"已存在",true); return; }
+    toast(T("「"+account+"」的"+C.verName+"已存在",C.verNameEn+" for "+account+" already exists"),true); return; }
   const me=currentUser();
   const rec=newVideoRecord({ channel:ch, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},((account?("「"+account+"」"):"")+C.verName+"已加入待處理")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
+  write("POST","/api/videos",{video:rec},T((account?("「"+account+"」"):"")+C.verName+"已加入待處理",C.verNameEn+(account?(" ("+account+")"):"")+" added to the pool")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
 }
 // 從清單的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createChPick(ch, sourceId){ const sel=document.getElementById(CHANNELS[ch].pfx+'acct_'+sourceId); const acct=sel?sel.value:'';
-  if(!acct){ toast("請先選擇"+CHANNELS[ch].label+"帳號",true); return; } createChVersion(ch, sourceId, acct); }
+  if(!acct){ toast(T("請先選擇"+CHANNELS[ch].label+"帳號","Pick a "+CHANNELS[ch].labelEn+" account first"),true); return; } createChVersion(ch, sourceId, acct); }
 
-function chClaim(ch,id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的"+CHANNELS[ch].label+"工作").then(ok=>{ if(ok) render(); }); }
-function chUnclaim(ch,id){ if(!confirm("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待處理"); }
+function chClaim(ch,id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")).then(ok=>{ if(ok) render(); }); }
+function chUnclaim(ch,id){ if(!confirm(T("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？","Return this "+CHANNELS[ch].verNameEn+" to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
 // 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
 function chFinish(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
-  if(!confirm(`確定「${(v.name||v.rawName||"這支"+C.verName)}」已完成？會移到「${C.verName}」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`)) return;
-  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},"已完成").then(ok=>{ if(ok) render(); });
+  const msg=T(`確定「${(v.name||v.rawName||"這支"+C.verName)}」已完成？會移到「${C.verName}」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`,
+    `Mark "${(v.name||v.rawName||"this "+C.verNameEn)}" as done?${String(v.publishedLink||"").trim()?"":"\n(No upload URL yet — add it later via Edit.)"}`);
+  if(!confirm(msg)) return;
+  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},T("已完成","Done")).then(ok=>{ if(ok) render(); });
 }
 // 退回資料庫：只移除「還沒開始做」的版本殼，不動源片、不進回收桶
 function chDiscard(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
-  if(!(v.channel===ch && v.stage==="待處理")){ toast("只有還沒開始的項目可以退回",true); return; }
-  const t=v.name||v.rawName||"這支"+C.verName;
-  if(!confirm(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`)) return;
-  write("DELETE","/api/videos/"+id+"/purge",{},"已退回資料庫 — 沒有刪除任何影片").then(ok=>{ if(ok) render(); });
+  if(!(v.channel===ch && v.stage==="待處理")){ toast(T("只有還沒開始的項目可以退回","Only unstarted items can be returned"),true); return; }
+  const t=v.name||v.rawName||T("這支"+C.verName,"this "+C.verNameEn);
+  if(!confirm(T(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${t}" to the library?\nNothing is deleted — the original stays and can be picked again.`))) return;
+  write("DELETE","/api/videos/"+id+"/purge",{},T("已退回資料庫 — 沒有刪除任何影片","Returned to the library — nothing deleted")).then(ok=>{ if(ok) render(); });
 }
 async function chSaveVideo(ch,id){ const p=CHANNELS[ch].pfx;
   const video={ name:val(p+"_name").trim(), videoCopy:val(p+"_vcopy").trim(),
     driveFolder:val(p+"_drive").trim(), publishedLink:val(p+"_pub").trim(), scheduledDate:val(p+"_date")||null };
-  return await write("PUT",`/api/videos/${id}`,{video},"已儲存");
+  return await write("PUT",`/api/videos/${id}`,{video},T("已儲存","Saved"));
 }
 function openChModal(ch,id){
   const C=CHANNELS[ch]; const p=C.pfx;
@@ -2099,46 +2131,46 @@ function openChModal(ch,id){
   // 商品價格即時從源片取得（唯讀，不能改）：蝦皮＝台幣×加乘；馬來＝MYR 匯率×加乘
   const prod=productPriceLine(s.products, C.priceKey);
   // 馬來版要翻成馬來文 → 標題/文案旁給 文A 翻譯小圖示
-  const trIcon=(text)=> C.gt?`<a class="tricon" href="${gtranslate(text,C.gt)}" target="_blank" title="翻譯成${C.label}文">文<span>A</span></a>`:'';
+  const trIcon=(text)=> C.gt?`<a class="tricon" href="${gtranslate(text,C.gt)}" target="_blank" title="${T("翻譯成"+C.label+"文","Translate to "+C.labelEn)}">文<span>A</span></a>`:'';
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
-      <h3 style="margin:0">${C.verName} <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
-      <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">×</button></div>`;
-  const warn=[!s.rawLink?'毛片':'', !(s.driveFolder||s.publishedLink)?'中文完成片':''].filter(Boolean).join('、');
+      <h3 style="margin:0">${T(C.verName,C.verNameEn)} <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
+      <button class="btn sec sm" type="button" onclick="closeModal()" title="${T("關閉","Close")}">×</button></div>`;
+  const warn=[!s.rawLink?T('毛片','raw footage'):'', !(s.driveFolder||s.publishedLink)?T('中文完成片','finished cut'):''].filter(Boolean).join(T('、',' & '));
   const sourceCard=`<div class="card" style="background:var(--panel2)">
-    <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">來源 · 中文版</div>
-    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||"(未命名)")}${trIcon(s.name||s.rawName)}</div>
+    <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">${T("來源 · 中文版","Source · Original")}</div>
+    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||T("(未命名)","(untitled)"))}${trIcon(s.name||s.rawName)}</div>
     ${s.videoCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(s.videoCopy)}${trIcon(s.videoCopy)}</div>`:''}
     <div class="icallout">
-      <div style="font-weight:700;margin-bottom:6px">怎麼剪這支${C.verName}</div>
+      <div style="font-weight:700;margin-bottom:6px">${T("怎麼剪這支"+C.verName,"How to make this "+C.verNameEn)}</div>
       <div style="font-size:13px;line-height:1.75">
-        <b>1.</b> 先看過中文完成片，抓一下節奏跟賣點。<br>
-        <b>2.</b> 用<b>毛片</b>（不是中文成片）重新剪成${C.verName}，符合${C.label}平台的規格。
+        <b>1.</b> ${T("先看過中文完成片，抓一下節奏跟賣點。","Watch the finished original — learn its pacing & hooks.")}<br>
+        <b>2.</b> ${T("用<b>毛片</b>（不是中文成片）重新剪成"+C.verName+"，符合"+C.label+"平台的規格。","Re-cut from the <b>raw footage</b> (not the finished cut) to fit "+C.labelEn+".")}
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
-        ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ 看中文成片</button>`:''}
-        ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ 下載完成片存檔</a>`:''}
-        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ 下載毛片</a>`:''}
+        ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ ${T("看中文成片","Watch original")}</button>`:''}
+        ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ ${T("下載完成片存檔","Download finished cut")}</a>`:''}
+        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
       </div>
-      ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ 缺${warn}連結，請請管理員補上。</div>`:''}
+      ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ ${T("缺"+warn+"連結，請請管理員補上。","No "+warn+" linked — ask the admin to add it.")}</div>`:''}
     </div>
   </div>`;
   const body=`
     ${sourceCard}
-    <div style="font-weight:700;font-size:15px;margin:16px 0 2px">你的${C.verName}</div>
-    ${v.account?`<label>帳號</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)}</div>`:''}
-    <label>片名／貼文標題</label><input id="${p}_name" value="${esc(v.name||"")}" placeholder="${C.verName}標題${C.gt?`（${C.label}文）`:''}">
-    <div class="muted" style="font-size:12px;margin:8px 0 0">商品：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 商品頁</a>`:''}</div>
-    <label>文案</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${C.verName}文案（可跟中文版不同）">${esc(v.videoCopy||"")}</textarea>
+    <div style="font-weight:700;font-size:15px;margin:16px 0 2px">${T("你的"+C.verName,"Your "+C.verNameEn)}</div>
+    ${v.account?`<label>${T("帳號","Account")}</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)}</div>`:''}
+    <label>${T("片名／貼文標題","Title (post caption)")}</label><input id="${p}_name" value="${esc(v.name||"")}" placeholder="${T(C.verName+"標題"+(C.gt?`（${C.label}文）`:''),C.verNameEn+" title")}">
+    <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
+    <label>${T("文案","Script / copy")}</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${T(C.verName+"文案（可跟中文版不同）","Adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>影片檔存檔網址（你剪好的檔案）</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="雲端連結"></div>
-      <div><label>${C.upLabel}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
+      <div><label>${T("影片檔存檔網址（你剪好的檔案）","Video file URL (your re-cut)")}</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("雲端連結","Cloud link")}"></div>
+      <div><label>${T(C.upLabel,"Upload URL")}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
-    <label>預排上片日期</label>
+    <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="${p}_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支版本就會出現在「${C.calName}」對應的那一天${v.account?`（${esc(v.account)}）`:''}。</div>`;
+    <div class="muted" style="font-size:11px;margin:5px 0 0">${T("選了這天，這支版本就會出現在「月排程」對應的那一天","Pick a date and this version shows on that day in Schedule")}${v.account?`（${esc(v.account)}）`:''}。</div>`;
   const foot=`<div class="modalFoot">
-      <button class="btn sec" type="button" onclick="closeModal()">取消</button>
-      <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">儲存</button></div>`;
+      <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
+      <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
   MODAL_DIRTY=false;
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${foot}</div></div>`;
 }
@@ -2151,28 +2183,28 @@ function chLibRows(ch){
   let src=chSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
-  if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>目前沒有可製作${C.verName}的影片（要是完整已上傳的舊片）。</div>`;
+  if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("目前沒有可製作"+C.verName+"的影片（要是完整已上傳的舊片）。","No videos available yet — they must be fully published.")}</div>`;
   const accts=chAccounts(ch);
   return src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
     const kids=chVersionsOfSrc(ch, v.id);
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}">${esc(k.account||C.label)} · ${done?'完成':(k.stage==='剪輯中'?'製作中':'待處理')}</span>`;
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}">${esc(k.account||C.label)} · ${done?T('完成','done'):(k.stage==='剪輯中'?T('製作中','in progress'):T('待處理','to do'))}</span>`;
     }).join(" ");
-    const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="預覽中文成片">▶</button>`:'';
+    const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽成片","Preview the finished cut")}">▶</button>`:'';
     // 只有一個帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
     const addRow = accts.length>1
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
           <select id="${C.pfx}acct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
-            <option value="">＋ 加${C.verName} — 選帳號</option>
+            <option value="">＋ ${T("加"+C.verName+" — 選帳號","Add "+C.verNameEn+" — pick account")}</option>
             ${accts.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}
           </select>
-          <button class="btn sm" style="flex:none" onclick="createChPick('${ch}','${v.id}')">＋ 加入</button>
+          <button class="btn sm" style="flex:none" onclick="createChPick('${ch}','${v.id}')">＋ ${T("加入","Add")}</button>
         </div>`
       : accts.length===1
-        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createChVersion('${ch}','${v.id}','${esc(jsEsc(accts[0]))}')">＋ 加${C.verName}</button></div>`
-        : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">請管理員先到設定新增${C.label}帳號</span></div>`;
+        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createChVersion('${ch}','${v.id}','${esc(jsEsc(accts[0]))}')">＋ ${T("加"+C.verName,"Add "+C.verNameEn)}</button></div>`
+        : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">${T("請管理員先到設定新增"+C.label+"帳號","Ask the admin to add "+C.labelEn+" accounts in Settings")}</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
@@ -2256,7 +2288,7 @@ function chDayBreak(ch, date, acct){ const total=chDayList(ch,date,acct).length,
 function calChBody(ch){
   const C=CHANNELS[ch];
   const accts=chAccounts(ch);
-  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">還沒有${C.label}帳號。請管理員到<b>設定 → ${C.setName}</b>新增，之後就能依帳號排程。</p></div>`;
+  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("還沒有"+C.label+"帳號。請管理員到「設定 → "+C.setName+"」新增，之後就能依帳號排程。","No "+C.labelEn+" accounts yet. Ask the admin to add them in Settings.")}</p></div>`;
   const acc=chCurAcct(ch);
   const st=CH_CAL[ch];
   if(!st.ym){ const t=new Date(); st.ym=[t.getFullYear(), t.getMonth()]; }
@@ -2267,34 +2299,34 @@ function calChBody(ch){
   for(let i=0;i<startDow;i++) cells+=`<div class="day out"></div>`;
   for(let d=1;d<=days;d++){
     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">今天</span>`:"";
+    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">${T("今天","Today")}</span>`:"";
     const within10=ds>=today && ds<=d10s;
     const b=chDayBreak(ch,ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
     cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayCh('${ch}','${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
+      ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
     </div>`;
   }
   const acctSel=`<select onchange="chSetAcct('${ch}',this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select>`;
   return `
   <div class="card">
-    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>帳號</b> ${acctSel} <span class="muted" style="font-size:12px">每帳號每天 ${chDailyTarget(ch)} 支</span></div>
+    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b> ${acctSel} <span class="muted" style="font-size:12px">${T("每帳號每天","per account / day:")} ${chDailyTarget(ch)} ${T("支","")}</span></div>
     <div class="calhead">
-      <button class="calnav" onclick="calMoveCh('${ch}',-1)" title="上月">‹</button>
-      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
-      <button class="calnav" onclick="calMoveCh('${ch}',1)" title="下月">›</button>
+      <button class="calnav" onclick="calMoveCh('${ch}',-1)" title="${T("上月","Previous month")}">‹</button>
+      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
+      <button class="calnav" onclick="calMoveCh('${ch}',1)" title="${T("下月","Next month")}">›</button>
     </div>
     <div class="cal">
-      ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
+      ${(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]:["日","一","二","三","四","五","六"]).map(x=>`<div class="dow">${x}</div>`).join("")}
       ${cells}
     </div>
     <div class="callegend">
-      <span><i class="lg-g"></i>已排滿</span>
-      <span><i class="lg-r"></i>待補</span>
-      <span><i class="lg-b"></i>未排</span>
-      <span><i class="lg-t"></i>今天</span>
+      <span><i class="lg-g"></i>${T("已排滿","Full")}</span>
+      <span><i class="lg-r"></i>${T("待補","Behind")}</span>
+      <span><i class="lg-b"></i>${T("未排","None")}</span>
+      <span><i class="lg-t"></i>${T("今天","Today")}</span>
     </div>
   </div>`;
 }
@@ -2303,27 +2335,27 @@ function openDayCh(ch,ds){
   const acc=chCurAcct(ch); const b=chDayBreak(ch,ds,acc); const list=chDayList(ch,ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.name||s.rawName):"")||"(未命名)")}</a></td>
-      <td data-label="狀態"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'已完成':(v.stage==='剪輯中'?'製作中':'待處理')}</span></td>
-      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="上傳連結">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
-      <td data-label="改期"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="chReschedule('${ch}','${v.id}',this.value,'${ds}')"></td>
-      <td data-label="操作"><button class="btn sec sm" style="white-space:nowrap" onclick="chUnschedule('${ch}','${v.id}','${ds}')" title="只移出這天，影片本身不會刪除">移出排程</button></td></tr>`;
+      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.name||s.rawName):"")||T("(未命名)","(untitled)"))}</a></td>
+      <td data-label="${T("狀態","Status")}"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?T('已完成','Done'):(v.stage==='剪輯中'?T('製作中','In progress'):T('待處理','To do'))}</span></td>
+      <td data-label="${T("剪輯","Editor")}">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="${T("上傳連結","Upload")}">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">${T("開啟","Open")}</a>`:'<span class="muted">—</span>'}</td>
+      <td data-label="${T("改期","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="chReschedule('${ch}','${v.id}',this.value,'${ds}')"></td>
+      <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="chUnschedule('${ch}','${v.id}','${ds}')" title="${T("只移出這天，影片本身不會刪除","Removes from this day only")}">${T("移出排程","Unschedule")}</button></td></tr>`;
   }).join("");
-  const wd="日一二三四五六"[new Date(ds+"T00:00:00").getDay()];
+  const wd=(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(ds+"T00:00:00").getDay()]:"日一二三四五六"[new Date(ds+"T00:00:00").getDay()]);
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3 style="margin:0">${esc(ds)}（${wd}）· ${esc(acc)}</h3>
       <button class="btn sec sm" onclick="closeModal()">×</button></div>
-    <div class="muted" style="margin-bottom:8px">已排 ${b.total}/${b.target}${b.short?`（缺 ${b.short}）`:'・已排滿'}</div>
-    ${list.length?`<table class="responsive"><thead><tr><th>影片</th><th>狀態</th><th>剪輯</th><th>上傳連結</th><th>改期</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。</div>`}
+    <div class="muted" style="margin-bottom:8px">${T("已排","Scheduled")} ${b.total}/${b.target}${b.short?T(`（缺 ${b.short}）`,` (need ${b.short})`):T('・已排滿',' · Full')}</div>
+    ${list.length?`<table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
   </div></div>`;
 }
 function chReschedule(ch,id,nd,ds){ if(!nd||nd===ds) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},"已改期至 "+nd).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},T("已改期至 ","Moved to ")+nd).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
 function chUnschedule(ch,id,ds){
-  if(!confirm("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。")) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出排程").then(ok=>{ if(ok) openDayCh(ch,ds); }); }
+  if(!confirm(T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video stays."))) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},T("已移出排程","Removed from schedule")).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
 
 // ---- 源片視窗的「○○版本」卡（誰剪的・何時完成・預排何時上片）＋ 版本回連源片 ----
 function chVersionsCard(ch,v){
