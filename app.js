@@ -1590,8 +1590,9 @@ function productPriceLine(products, key){
   const saleLabel=(key==="en"||key==="th")?"Fan price":"寵粉價";   // 海外畫面英文；蝦皮/馬來（台灣區）中文
   return list.map(p=>{
     const orig=+p.price||0, sale=+p.salePrice||0;
-    const priceTxt=orig?` ${sym}${Math.round(orig*f).toLocaleString()}`:'';   // 沒填原價就不顯示 0
-    const saleTxt=sale?` <span style="color:var(--red)">${saleLabel} ${sym}${Math.round(sale*f).toLocaleString()}</span>`:'';
+    // 換算後無條件進位到整數（有小數就往上進，不讓匯率吃掉利潤）
+    const priceTxt=orig?` ${sym}${Math.ceil(orig*f).toLocaleString()}`:'';   // 沒填原價就不顯示 0
+    const saleTxt=sale?` <span style="color:var(--red)">${saleLabel} ${sym}${Math.ceil(sale*f).toLocaleString()}</span>`:'';
     return `${esc(p.name)}${priceTxt}${saleTxt}`;
   }).join('、');
 }
