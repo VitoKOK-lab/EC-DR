@@ -5,10 +5,10 @@
 // ===================================================================
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
-  boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","社群媒體月排程"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["log","操作紀錄"],["trash","回收桶"]],
+  boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","社群媒體月排程"],["perf","平台成效"],["intlcal","海外排程"],["shopeecal","蝦皮排程"],["mscal","馬來排程"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["dashboard","儀表板"],["videos","影片庫"],["cal","社群媒體月排程"]],   // 經理人（Regina）：儀表板（含下指令）＋影片庫＋月排程；設定/員工視角等管理功能只給管理員
-  // 蝦皮專區：國內二創（同語言、換平台），掛在剪輯角色下——任何國內剪輯都能進去，不開新角色/新登入；蝦皮工作一樣整合進上班計畫（見 shopeeMyWorkCard）
-  editor:  [["work","上班計畫"],["videos","影片庫"],["cal","社群媒體月排程"],["shopeelib","影片蝦皮二創區"],["shopeecal","蝦皮排程"]],
+  // 台灣區換平台二創（蝦皮＋馬來）：掛在剪輯角色下——任何國內剪輯都能進去，不開新角色/新登入；工作一樣整合進上班計畫（小圖 蝦/馬 分辨）
+  editor:  [["work","上班計畫"],["videos","影片庫"],["cal","社群媒體月排程"],["shopeelib","影片蝦皮二創區"],["shopeecal","蝦皮排程"],["mslib","影片馬來二創區"],["mscal","馬來排程"]],
   // 海外剪輯（Intl Editor）：全英文介面。挑台灣完成片 → 建英文版 → 翻譯重剪 → 上傳
   intl:    [["intlwork","My Work"],["intllib","Library"],["intlcal","Schedule"]],
 };
@@ -225,7 +225,7 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; if(id==='intlcal') INTL_CAL_YM=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
+    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; if(id==='intlcal') INTL_CAL_YM=null; if(id==='shopeecal') CH_CAL.shopee.ym=null; if(id==='mscal') CH_CAL.ms.ym=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
     nav.appendChild(b);
   });
 }
@@ -375,7 +375,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl, shopeelib:viewShopeeLib, shopeecal:viewCalShopee }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl, shopeelib:viewShopeeLib, shopeecal:viewCalShopee, mslib:viewMsLib, mscal:viewCalMs }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
@@ -680,19 +680,19 @@ function viewWork(){
   // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
   const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
     return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b}</span>`; };
-  // 蝦皮版本小圖示：跟一般影片合併同一份清單顯示，靠這個小圖分辨
-  const shpBadge=(v)=> v.channel==="shopee" ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="蝦皮版本">蝦</span>` : '';
-  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；蝦皮版本走蝦皮專屬的編輯視窗/完成流程
+  // 平台二創小圖示（蝦/馬）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
+  const shpBadge=(v)=> (v.channel&&CHANNELS[v.channel]) ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${CHANNELS[v.channel].verName}">${CHANNELS[v.channel].short}</span>` : '';
+  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台二創版走專屬編輯視窗/完成流程
   const workBtn=(v)=>{
     if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">剪輯完成</button>`;
-    if(v.channel==="shopee") return `<button class="btn sec sm" onclick="openShopeeModal('${v.id}')">編輯內容</button>
-      <button class="btn sm" onclick="shopeeFinish('${v.id}')" title="剪好了→標記完成並移到影片庫">完成 ✔</button>`;
+    if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">編輯內容</button>
+      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="剪好了→標記完成並移到影片庫">完成 ✔</button>`;
     // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
     return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="編輯內容（按「儲存修改」只存、留在這頁）">編輯內容</button>
       <button class="btn sm" onclick="finishWork('${v.id}')" title="剪好了→標記「剪輯完成」並移到影片庫">完成 ✔</button>`; };
   // 退回鍵：把認領的毛片放回待剪清單重選（一人最多 3 支）
-  const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : v.channel==="shopee"
-    ? `<button class="btn sec sm" onclick="shopeeUnclaim('${v.id}')" title="後悔了？退回蝦皮待處理清單重選">退回</button>`
+  const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
+    ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="後悔了？退回${CHANNELS[v.channel].label}待處理清單重選">退回</button>`
     : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="後悔了？退回給大家重選">退回</button>`;
   const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
   const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">老闆娘退回待修（${rejected.length}）</b>
@@ -722,7 +722,7 @@ function viewWork(){
     <div style="margin-top:10px${pool.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>影片</th><th style="width:150px">動作</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="${v.channel==='shopee'?`openShopeeModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?'<span class="tag" style="background:var(--amberbg);color:var(--accent)">指派給你</span>':''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="動作"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?'你已有 3 支在剪，完成一支才能再領（排隊中）':'按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）'}">${atLimit?'排隊中':'認領開始剪'}</button></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">目前沒有指派給你或可認領的毛片</td></tr>`}</tbody></table>
     </div>
@@ -737,7 +737,7 @@ function viewWork(){
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">天數</th><th>影片</th><th style="width:200px">狀態</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
         <td data-label="天數">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="影片"><a href="javascript:void(0)" onclick="${v.channel==='shopee'?`openShopeeModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
+        <td data-label="影片"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span></td>
         <td data-label="狀態"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">目前沒有進行中的影片，從上面「待剪毛片」認領一支開始</td></tr>`}</tbody></table>
   </div>
@@ -1254,11 +1254,12 @@ function vidTableRow(v){
   const isAdminView=["boss","manager"].includes(currentRole());
   const langBadge = v.locale
     ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span>`
-    : v.channel==="shopee"
-      ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">蝦皮</span>`
-      : (!isAdminView ? "" : (function(){ const nLang=localizedVersionsOfSrc(v.id).length, nShp=shopeeVersionsOfSrc(v.id).length, nUse=+v.totalUsed||0; let o="";
+    : (v.channel&&CHANNELS[v.channel])
+      ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${CHANNELS[v.channel].label}</span>`
+      : (!isAdminView ? "" : (function(){ const nLang=localizedVersionsOfSrc(v.id).length, nUse=+v.totalUsed||0; let o="";
           if(nLang) o+=`<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已翻譯 ${nLang} 種語言">🌐 ${nLang}</span>`;
-          if(nShp) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已建立 ${nShp} 個蝦皮版本">🛍️ ${nShp}</span>`;
+          Object.keys(CHANNELS).forEach(ch=>{ const n=chVersionsOfSrc(ch,v.id).length;
+            if(n) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已建立 ${n} 個${CHANNELS[ch].verName}">${CHANNELS[ch].srcBadge} ${n}</span>`; });
           if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
           return o; })());
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
@@ -1448,7 +1449,7 @@ function openVideoModal(id, edit, fromWork){
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
   </div>` : "";
   // 跨語言：源片列出各語言版本（中英一起看）；英文版顯示回連源片
-  const localizedCard = localizedVersionsCard(v) + shopeeVersionsCard(v);
+  const localizedCard = localizedVersionsCard(v) + shopeeVersionsCard(v) + msVersionsCard(v);
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -1560,9 +1561,10 @@ async function saveVideo(id){
 // 英文版＝一筆 locale:"en" 的影片，sourceVideoId 指回台灣源片；沿用認領/完成流程與影片庫。
 // ===================================================================
 let INTL_Q="";
-// 在地化語言（海外二創）：一種角色、建立時選語言；三語都用英文操作介面
-const INTL_LOCALES=["en","th","ms"];   // 海外二創語言（英/泰/馬）；每支源片每語言最多一支，一起綁回源片
-const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};
+// 在地化語言（海外二創）：一種角色、建立時選語言；皆用英文操作介面
+// 馬來西亞已移到台灣區（channel:"ms"，比照蝦皮由台灣剪輯做），海外只剩 英/泰
+const INTL_LOCALES=["en","th"];
+const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};   // ms 保留給顯示/翻譯用
 const LOCALE_SHORT={en:"EN",th:"TH",ms:"MS"};
 const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
 function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
@@ -1585,7 +1587,7 @@ function productPriceLine(products, key){
   const list=(products||[]).filter(p=>p&&p.name); if(!list.length) return '<span class="muted">—</span>';
   const f=exchangeRateOf(key)*priceMultOf(key);
   const sym=CURRENCY_SYMBOL[currencyCodeOf(key)]||"";
-  const saleLabel=(key&&key!=="shopee")?"Fan price":"寵粉價";   // 海外畫面全英文
+  const saleLabel=(key==="en"||key==="th")?"Fan price":"寵粉價";   // 海外畫面英文；蝦皮/馬來（台灣區）中文
   return list.map(p=>{
     const orig=+p.price||0, sale=+p.salePrice||0;
     const priceTxt=orig?` ${sym}${Math.round(orig*f).toLocaleString()}`:'';   // 沒填原價就不顯示 0
@@ -1984,71 +1986,83 @@ function openIntlModal(id){
 }
 
 // ===================================================================
-// 蝦皮專區（國內二創）：跟海外二創同一套邏輯——同一支已上傳中文舊片，
-// 換一個平台（蝦皮）重新剪一次上傳。同語言、不用翻譯，掛在既有「剪輯」角色下
+// 台灣區「換平台二創」通用模組：蝦皮(shopee)＋馬來西亞(ms) 共用同一套流程——
+// 同一支已上傳中文舊片，換一個平台重新剪一次上傳。掛在既有「剪輯」角色下
 // （不開新角色/新登入；任何國內剪輯登入都看得到，比照海外的帳號＋每日目標模式）
 // ===================================================================
-function shopeeAccounts(){ const a=STATE.settings&&STATE.settings.shopeeAccounts; return Array.isArray(a)?a.filter(x=>String(x||"").trim()):[]; }
-function shopeeDailyTarget(){ const v=STATE.settings&&STATE.settings.shopeeDailyTarget; return (v!=null&&v!=="")?(+v||0):2; }
-// 來源片池：跟海外共用「已完整上傳的中文舊片」定義，但互相排除彼此的衍生版本
-function shopeeSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && !v.channel && isPublished(v) && vidIsOld(v)); }
-function shopeeVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.channel==="shopee" && v.sourceVideoId===sourceId); }
+const CHANNELS={
+  shopee:{ label:"蝦皮", short:"蝦", pfx:"shp", zoneName:"影片蝦皮二創區", calName:"蝦皮排程", verName:"蝦皮版本",
+    setName:"蝦皮設定", acctKey:"shopeeAccounts", targetKey:"shopeeDailyTarget", priceKey:"shopee",
+    upLabel:"上傳連結（蝦皮貼文）", upPh:"https://shopee.tw/...", srcBadge:"🛍️", gt:"" },
+  ms:{ label:"馬來", short:"馬", pfx:"mys", zoneName:"影片馬來二創區", calName:"馬來排程", verName:"馬來版本",
+    setName:"馬來設定", acctKey:"msAccounts", targetKey:"msDailyTarget", priceKey:"ms",
+    upLabel:"上傳連結（TikTok 貼文）", upPh:"https://www.tiktok.com/@.../video/...", srcBadge:"🇲🇾", gt:"ms" },   // 馬來版要翻成馬來文 → 文A
+};
+function chAccounts(ch){ const a=STATE.settings&&STATE.settings[CHANNELS[ch].acctKey]; return Array.isArray(a)?a.filter(x=>String(x||"").trim()):[]; }
+function chDailyTarget(ch){ const v=STATE.settings&&STATE.settings[CHANNELS[ch].targetKey]; return (v!=null&&v!=="")?(+v||0):2; }
+// 來源片池：跟海外共用「已完整上傳的中文舊片」定義，互相排除彼此的衍生版本
+function chSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && !v.channel && isPublished(v) && vidIsOld(v)); }
+function chVersionsOfSrc(ch, sourceId){ return (STATE.videos||[]).filter(v=>v.channel===ch && v.sourceVideoId===sourceId); }
 
-// ---- 建立蝦皮版本（衍生影片，指派給自己；帳號帶入；同源片同帳號不重複）----
-function createShopeeVersion(sourceId, account){
+// ---- 建立版本（衍生影片，指派給自己；帳號帶入；同源片同帳號不重複）----
+function createChVersion(ch, sourceId, account){
+  const C=CHANNELS[ch]; if(!C){ toast("未知的平台",true); return; }
   account=account||"";
   const s=vid(sourceId); if(!s){ toast("找不到源片",true); return; }
-  if(!isPublished(s)){ toast("只有已完成上片的影片可以做蝦皮版本",true); return; }
-  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.channel==="shopee" && v.account===account)){
-    toast("「"+account+"」的蝦皮版本已存在",true); return; }
+  if(!isPublished(s)){ toast("只有已完成上片的影片可以做"+C.verName,true); return; }
+  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.channel===ch && v.account===account)){
+    toast("「"+account+"」的"+C.verName+"已存在",true); return; }
   const me=currentUser();
-  const rec=newVideoRecord({ channel:"shopee", account, sourceVideoId:sourceId,
+  const rec=newVideoRecord({ channel:ch, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},((account?("「"+account+"」"):"")+"蝦皮版本已加入待處理")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
+  write("POST","/api/videos",{video:rec},((account?("「"+account+"」"):"")+C.verName+"已加入待處理")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
 }
-// 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
-function createShopeePick(sourceId){ const sel=document.getElementById('shpacct_'+sourceId); const acct=sel?sel.value:'';
-  if(!acct){ toast("請先選擇蝦皮帳號",true); return; } createShopeeVersion(sourceId, acct); }
+// 從清單的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
+function createChPick(ch, sourceId){ const sel=document.getElementById(CHANNELS[ch].pfx+'acct_'+sourceId); const acct=sel?sel.value:'';
+  if(!acct){ toast("請先選擇"+CHANNELS[ch].label+"帳號",true); return; } createChVersion(ch, sourceId, acct); }
 
-function shopeeClaim(id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的蝦皮工作").then(ok=>{ if(ok) render(); }); }
-function shopeeUnclaim(id){ if(!confirm("退回這支蝦皮版本，重新排隊給大家選？")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待處理"); }
+function chClaim(ch,id){ write("POST",`/api/videos/${id}/claim`,{},"已認領，加入我的"+CHANNELS[ch].label+"工作").then(ok=>{ if(ok) render(); }); }
+function chUnclaim(ch,id){ if(!confirm("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？")) return; write("POST",`/api/videos/${id}/unclaim`,{},"已退回待處理"); }
 // 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
-function shopeeFinish(id){ const v=vid(id)||{};
-  if(!confirm(`確定「${(v.name||v.rawName||"這支蝦皮版本")}」已完成？會移到「蝦皮版本」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`)) return;
+function chFinish(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
+  if(!confirm(`確定「${(v.name||v.rawName||"這支"+C.verName)}」已完成？會移到「${C.verName}」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`)) return;
   write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},"已完成").then(ok=>{ if(ok) render(); });
 }
 // 退回資料庫：只移除「還沒開始做」的版本殼，不動源片、不進回收桶
-function shopeeDiscard(id){ const v=vid(id)||{};
-  if(!(v.channel==="shopee" && v.stage==="待處理")){ toast("只有還沒開始的項目可以退回",true); return; }
-  const t=v.name||v.rawName||"這支蝦皮版本";
+function chDiscard(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
+  if(!(v.channel===ch && v.stage==="待處理")){ toast("只有還沒開始的項目可以退回",true); return; }
+  const t=v.name||v.rawName||"這支"+C.verName;
   if(!confirm(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`)) return;
   write("DELETE","/api/videos/"+id+"/purge",{},"已退回資料庫 — 沒有刪除任何影片").then(ok=>{ if(ok) render(); });
 }
-async function shopeeSaveVideo(id){
-  const video={ name:val("shp_name").trim(), videoCopy:val("shp_vcopy").trim(),
-    driveFolder:val("shp_drive").trim(), publishedLink:val("shp_pub").trim(), scheduledDate:val("shp_date")||null };
+async function chSaveVideo(ch,id){ const p=CHANNELS[ch].pfx;
+  const video={ name:val(p+"_name").trim(), videoCopy:val(p+"_vcopy").trim(),
+    driveFolder:val(p+"_drive").trim(), publishedLink:val(p+"_pub").trim(), scheduledDate:val(p+"_date")||null };
   return await write("PUT",`/api/videos/${id}`,{video},"已儲存");
 }
-function openShopeeModal(id){
+function openChModal(ch,id){
+  const C=CHANNELS[ch]; const p=C.pfx;
   const v=vid(id)||{}; const s=srcOf(v)||{};
-  // 商品價格即時從源片取得（唯讀，不能改；蝦皮同幣別台幣，不換匯、只吃蝦皮加乘）
-  const prod=productPriceLine(s.products, "shopee");
+  // 商品價格即時從源片取得（唯讀，不能改）：蝦皮＝台幣×加乘；馬來＝MYR 匯率×加乘
+  const prod=productPriceLine(s.products, C.priceKey);
+  // 馬來版要翻成馬來文 → 標題/文案旁給 文A 翻譯小圖示
+  const trIcon=(text)=> C.gt?`<a class="tricon" href="${gtranslate(text,C.gt)}" target="_blank" title="翻譯成${C.label}文">文<span>A</span></a>`:'';
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
-      <h3 style="margin:0">蝦皮版本 <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
+      <h3 style="margin:0">${C.verName} <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="關閉">×</button></div>`;
   const warn=[!s.rawLink?'毛片':'', !(s.driveFolder||s.publishedLink)?'中文完成片':''].filter(Boolean).join('、');
   const sourceCard=`<div class="card" style="background:var(--panel2)">
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">來源 · 中文版</div>
-    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||"(未命名)")}</div>
-    ${s.videoCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(s.videoCopy)}</div>`:''}
+    <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||"(未命名)")}${trIcon(s.name||s.rawName)}</div>
+    ${s.videoCopy?`<div class="muted" style="font-size:13px;margin-top:8px;white-space:pre-wrap;max-height:110px;overflow:auto;line-height:1.6">${esc(s.videoCopy)}${trIcon(s.videoCopy)}</div>`:''}
     <div class="icallout">
-      <div style="font-weight:700;margin-bottom:6px">怎麼剪這支蝦皮版本</div>
+      <div style="font-weight:700;margin-bottom:6px">怎麼剪這支${C.verName}</div>
       <div style="font-size:13px;line-height:1.75">
         <b>1.</b> 先看過中文完成片，抓一下節奏跟賣點。<br>
-        <b>2.</b> 用<b>毛片</b>（不是中文成片）重新剪成蝦皮版本，符合蝦皮的規格。
+        <b>2.</b> 用<b>毛片</b>（不是中文成片）重新剪成${C.verName}，符合${C.label}平台的規格。
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
         ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ 看中文成片</button>`:''}
@@ -2060,54 +2074,55 @@ function openShopeeModal(id){
   </div>`;
   const body=`
     ${sourceCard}
-    <div style="font-weight:700;font-size:15px;margin:16px 0 2px">你的蝦皮版本</div>
+    <div style="font-weight:700;font-size:15px;margin:16px 0 2px">你的${C.verName}</div>
     ${v.account?`<label>帳號</label><div style="padding:6px 0 2px;font-weight:600">${esc(v.account)}</div>`:''}
-    <label>片名／貼文標題</label><input id="shp_name" value="${esc(v.name||"")}" placeholder="蝦皮版本標題">
+    <label>片名／貼文標題</label><input id="${p}_name" value="${esc(v.name||"")}" placeholder="${C.verName}標題${C.gt?`（${C.label}文）`:''}">
     <div class="muted" style="font-size:12px;margin:8px 0 0">商品：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 商品頁</a>`:''}</div>
-    <label>文案</label><textarea id="shp_vcopy" style="min-height:80px" placeholder="蝦皮版本文案（可跟中文版不同）">${esc(v.videoCopy||"")}</textarea>
+    <label>文案</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${C.verName}文案（可跟中文版不同）">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>影片檔存檔網址（你剪好的檔案）</label><input id="shp_drive" value="${esc(v.driveFolder||"")}" placeholder="雲端連結"></div>
-      <div><label>上傳連結（蝦皮貼文）</label><input id="shp_pub" value="${esc(v.publishedLink||"")}" placeholder="https://shopee.tw/..."></div>
+      <div><label>影片檔存檔網址（你剪好的檔案）</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="雲端連結"></div>
+      <div><label>${C.upLabel}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
     <label>預排上片日期</label>
-    <div class="dateField"><span class="dateIco">🗓</span><input id="shp_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支版本就會出現在「蝦皮排程」對應的那一天${v.account?`（${esc(v.account)}）`:''}。</div>`;
+    <div class="dateField"><span class="dateIco">🗓</span><input id="${p}_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    <div class="muted" style="font-size:11px;margin:5px 0 0">選了這天，這支版本就會出現在「${C.calName}」對應的那一天${v.account?`（${esc(v.account)}）`:''}。</div>`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">取消</button>
-      <button class="btn" type="button" onclick="shopeeSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">儲存</button></div>`;
+      <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">儲存</button></div>`;
   MODAL_DIRTY=false;
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${foot}</div></div>`;
 }
 
-// ---- 蝦皮專區頁（可製作清單 ＋ 我的蝦皮工作，合併一頁；比照上班計畫風格）----
-let SHP_Q="";   // 搜尋字存全域：資料同步重繪時還原
-function shopeeLibRows(){
-  const q=String(SHP_Q||'').toLowerCase().trim();
-  let src=shopeeSourcePool();
+// ---- 二創區頁（可製作清單 ＋ 我的工作，合併一頁；比照上班計畫風格）----
+let CH_Q={shopee:"",ms:""};   // 搜尋字存全域：資料同步重繪時還原
+function chLibRows(ch){
+  const C=CHANNELS[ch];
+  const q=String(CH_Q[ch]||'').toLowerCase().trim();
+  let src=chSourcePool();
   if(q) src=src.filter(v=>[v.name,v.rawName,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
-  if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>目前沒有可製作蝦皮版本的影片（要是完整已上傳的舊片）。</div>`;
-  const accts=shopeeAccounts();
+  if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>目前沒有可製作${C.verName}的影片（要是完整已上傳的舊片）。</div>`;
+  const accts=chAccounts(ch);
   return src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
-    const kids=shopeeVersionsOfSrc(v.id);
+    const kids=chVersionsOfSrc(ch, v.id);
     const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openShopeeModal('${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}">${esc(k.account||'蝦皮')} · ${done?'完成':(k.stage==='剪輯中'?'製作中':'待處理')}</span>`;
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}">${esc(k.account||C.label)} · ${done?'完成':(k.stage==='剪輯中'?'製作中':'待處理')}</span>`;
     }).join(" ");
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="預覽中文成片">▶</button>`:'';
-    // 只有一個蝦皮帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
+    // 只有一個帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
     const addRow = accts.length>1
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
-          <select id="shpacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
-            <option value="">＋ 加蝦皮版本 — 選帳號</option>
+          <select id="${C.pfx}acct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
+            <option value="">＋ 加${C.verName} — 選帳號</option>
             ${accts.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}
           </select>
-          <button class="btn sm" style="flex:none" onclick="createShopeePick('${v.id}')">＋ 加入</button>
+          <button class="btn sm" style="flex:none" onclick="createChPick('${ch}','${v.id}')">＋ 加入</button>
         </div>`
       : accts.length===1
-        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createShopeeVersion('${v.id}','${esc(jsEsc(accts[0]))}')">＋ 加蝦皮版本</button></div>`
-        : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">請管理員先到設定新增蝦皮帳號</span></div>`;
+        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createChVersion('${ch}','${v.id}','${esc(jsEsc(accts[0]))}')">＋ 加${C.verName}</button></div>`
+        : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">請管理員先到設定新增${C.label}帳號</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
@@ -2121,28 +2136,29 @@ function shopeeLibRows(){
     </div>`;
   }).join("");
 }
-function shopeeFilter(){ const el=document.getElementById('shp_list'); if(el) el.innerHTML=shopeeLibRows(); }
-// 「我的蝦皮工作」卡：影片蝦皮二創區、上班計畫都會用到（蝦皮工作也整合進每位剪輯的上班計畫）
-function shopeeMyWorkCard(){
+function chFilter(ch){ const el=document.getElementById(CHANNELS[ch].pfx+'_list'); if(el) el.innerHTML=chLibRows(ch); }
+// 「我的○○工作」卡：二創區頁用（上班計畫已把各平台版本合併進「我的工作」清單，用小圖分辨）
+function chMyWorkCard(ch){
+  const C=CHANNELS[ch];
   const me=currentUser();
-  const inProg=myInProgressCount(x=>x.channel==="shopee"); const atLimit=inProg>=3;
-  const todo=(STATE.videos||[]).filter(v=>v.channel==="shopee" && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+  const inProg=myInProgressCount(x=>x.channel===ch); const atLimit=myInProgressCount()>=3;   // 3 支上限＝台灣線合併計（含各平台二創）
+  const todo=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
-  const mine=(STATE.videos||[]).filter(v=>v.channel==="shopee" && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me))
+  const mine=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me))
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
-  const doneToday=(STATE.videos||[]).filter(v=>v.channel==="shopee" && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  const doneToday=(STATE.videos||[]).filter(v=>v.channel===ch && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const work=mine.concat(doneToday);
   const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.name||s.rawName||""):""); };
   const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(未命名)";
   const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
   const workBtn=(v)=>{
     if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">已完成</button>`;
-    return `<button class="btn sec sm" onclick="openShopeeModal('${v.id}')">編輯</button>
-      <button class="btn sm" onclick="shopeeFinish('${v.id}')">完成 ✔</button>
-      <button class="btn sec sm" onclick="shopeeUnclaim('${v.id}')">退回</button>`; };
+    return `<button class="btn sec sm" onclick="openChModal('${ch}','${v.id}')">編輯</button>
+      <button class="btn sm" onclick="chFinish('${ch}','${v.id}')">完成 ✔</button>
+      <button class="btn sec sm" onclick="chUnclaim('${ch}','${v.id}')">退回</button>`; };
   return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:16px">我的蝦皮工作</b><span class="pill ${atLimit?'wa':'ok'}">製作中 ${inProg}/3</span>
+        <b style="font-size:16px">我的${C.label}工作</b><span class="pill ${atLimit?'wa':'ok'}">${C.label}製作中 ${inProg}</span>
       </div>
       <div class="igroup" style="border-top:none;padding-top:0">
         <span class="igroup-l">待處理（${todo.length}）</span>
@@ -2150,47 +2166,50 @@ function shopeeMyWorkCard(){
             <div style="min-width:0"><div class="iwork-title">${esc(vTitle(v))}${acct(v)}</div>
               <div class="muted" style="font-size:12px">來源：${esc(srcTitle(v)||stripHash(v.rawName))}</div></div>
             <div class="row" style="gap:6px;flex:none">
-              <button class="btn sm" onclick="shopeeClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'你已有 3 支蝦皮版本在做，先完成一支再領':'認領並開始剪'}">${atLimit?'排隊中':'認領開始剪'}</button>
-              <button class="btn sec sm" onclick="shopeeDiscard('${v.id}')" title="退回資料庫（不會刪除任何影片）">✕ 退回</button>
-            </div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有待處理的蝦皮版本，到「影片蝦皮二創區」挑一支加入。</div>`}
+              <button class="btn sm" onclick="chClaim('${ch}','${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'你已有 3 支在做，先完成一支再領':'認領並開始剪'}">${atLimit?'排隊中':'認領開始剪'}</button>
+              <button class="btn sec sm" onclick="chDiscard('${ch}','${v.id}')" title="退回資料庫（不會刪除任何影片）">✕ 退回</button>
+            </div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有待處理的${C.verName}，從左邊挑一支加入。</div>`}
       </div>
       <div class="igroup">
         <span class="igroup-l">製作中／今日完成（${work.length}）</span>
         ${work.length?work.map(v=>`<div class="iwork-item">
-            <div style="min-width:0"><div class="iwork-title"><a href="javascript:void(0)" onclick="openShopeeModal('${v.id}')">${esc(vTitle(v))}</a>${acct(v)}</div>
+            <div style="min-width:0"><div class="iwork-title"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(vTitle(v))}</a>${acct(v)}</div>
               <div class="muted" style="font-size:12px">來源：${esc(srcTitle(v)||stripHash(v.rawName))}</div></div>
-            <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有製作中的蝦皮版本。</div>`}
+            <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有製作中的${C.verName}。</div>`}
       </div>
     </div>`;
 }
-function viewShopeeLib(){
+function viewChLib(ch){
+  const C=CHANNELS[ch];
   return `
-  <h2 style="margin-top:0">影片蝦皮二創區</h2>
+  <h2 style="margin-top:0">${C.zoneName}</h2>
   <div class="workgrid2">
     <div class="card">
-      <b style="font-size:16px">可製作蝦皮版本</b>
-      <input id="shp_q" placeholder="🔍 搜尋片名／編號" value="${esc(SHP_Q)}" oninput="SHP_Q=this.value;shopeeFilter()" style="width:100%;margin:10px 0">
-      <div id="shp_list" class="${shopeeSourcePool().length>8?'vidscroll':''}">${shopeeLibRows()}</div>
+      <b style="font-size:16px">可製作${C.verName}</b>
+      <input id="${C.pfx}_q" placeholder="🔍 搜尋片名／編號" value="${esc(CH_Q[ch])}" oninput="CH_Q['${ch}']=this.value;chFilter('${ch}')" style="width:100%;margin:10px 0">
+      <div id="${C.pfx}_list" class="${chSourcePool().length>8?'vidscroll':''}">${chLibRows(ch)}</div>
     </div>
-    ${shopeeMyWorkCard()}
+    ${chMyWorkCard(ch)}
   </div>`;
 }
 
-// ---- 蝦皮排程（月曆）：依帳號看每天排幾支，目標＝每帳號 shopeeDailyTarget（預設 2）----
-let SHOPEE_CAL_YM=null; let SHOPEE_ACCT="";
-function shopeeCurAcct(){ const list=shopeeAccounts(); if(!list.length) return ""; if(!SHOPEE_ACCT || !list.includes(SHOPEE_ACCT)){ SHOPEE_ACCT=list[0]; } return SHOPEE_ACCT; }
-function shopeeSetAcct(name){ SHOPEE_ACCT=name||""; render(); }
-function calMoveShopee(n){ let [y,m]=SHOPEE_CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} SHOPEE_CAL_YM=[y,m]; render(); }
-function shopeeDayList(date, acct){ acct=acct!=null?acct:shopeeCurAcct();
-  return (STATE.videos||[]).filter(v=>v.channel==="shopee" && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
-function shopeeDayBreak(date, acct){ const total=shopeeDayList(date,acct).length, target=shopeeDailyTarget();
+// ---- 排程（月曆）：依帳號看每天排幾支，目標＝每帳號 chDailyTarget（預設 2）----
+let CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
+function chCurAcct(ch){ const list=chAccounts(ch); if(!list.length) return ""; const st=CH_CAL[ch]; if(!st.acct || !list.includes(st.acct)){ st.acct=list[0]; } return st.acct; }
+function chSetAcct(ch,name){ CH_CAL[ch].acct=name||""; render(); }
+function calMoveCh(ch,n){ const st=CH_CAL[ch]; let [y,m]=st.ym; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} st.ym=[y,m]; render(); }
+function chDayList(ch, date, acct){ acct=acct!=null?acct:chCurAcct(ch);
+  return (STATE.videos||[]).filter(v=>v.channel===ch && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
+function chDayBreak(ch, date, acct){ const total=chDayList(ch,date,acct).length, target=chDailyTarget(ch);
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
-function viewCalShopee(){
-  const accts=shopeeAccounts();
-  if(!accts.length) return `<h2 style="margin-top:0">蝦皮排程</h2><div class="card"><p class="muted" style="padding:18px 4px">還沒有蝦皮帳號。請管理員到<b>設定 → 蝦皮設定</b>新增，之後就能依帳號排程。</p></div>`;
-  const acc=shopeeCurAcct();
-  if(!SHOPEE_CAL_YM){ const t=new Date(); SHOPEE_CAL_YM=[t.getFullYear(), t.getMonth()]; }
-  const [y,m]=SHOPEE_CAL_YM;
+function viewCalCh(ch){
+  const C=CHANNELS[ch];
+  const accts=chAccounts(ch);
+  if(!accts.length) return `<h2 style="margin-top:0">${C.calName}</h2><div class="card"><p class="muted" style="padding:18px 4px">還沒有${C.label}帳號。請管理員到<b>設定 → ${C.setName}</b>新增，之後就能依帳號排程。</p></div>`;
+  const acc=chCurAcct(ch);
+  const st=CH_CAL[ch];
+  if(!st.ym){ const t=new Date(); st.ym=[t.getFullYear(), t.getMonth()]; }
+  const [y,m]=st.ym;
   const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells="";
@@ -2199,22 +2218,22 @@ function viewCalShopee(){
     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const isToday=ds===today; const tmk=isToday?`<span class="todaymk">今天</span>`:"";
     const within10=ds>=today && ds<=d10s;
-    const b=shopeeDayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
+    const b=chDayBreak(ch,ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
-    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayShopee('${ds}')">
+    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayCh('${ch}','${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">已排滿</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">未排${within10?'（近期）':''}</div>`:`<div class="pmk" style="color:var(--red)">缺${b.short}</div>`)}
     </div>`;
   }
-  const acctSel=`<select onchange="shopeeSetAcct(this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select>`;
-  return `<h2 style="margin-top:0">蝦皮排程 <span class="muted" style="font-size:13px">每帳號每天 ${shopeeDailyTarget()} 支</span></h2>
+  const acctSel=`<select onchange="chSetAcct('${ch}',this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select>`;
+  return `<h2 style="margin-top:0">${C.calName} <span class="muted" style="font-size:13px">每帳號每天 ${chDailyTarget(ch)} 支</span></h2>
   <div class="card">
     <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>帳號</b> ${acctSel}</div>
     <div class="calhead">
-      <button class="calnav" onclick="calMoveShopee(-1)" title="上月">‹</button>
+      <button class="calnav" onclick="calMoveCh('${ch}',-1)" title="上月">‹</button>
       <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
-      <button class="calnav" onclick="calMoveShopee(1)" title="下月">›</button>
+      <button class="calnav" onclick="calMoveCh('${ch}',1)" title="下月">›</button>
     </div>
     <div class="cal">
       ${["日","一","二","三","四","五","六"].map(x=>`<div class="dow">${x}</div>`).join("")}
@@ -2228,16 +2247,17 @@ function viewCalShopee(){
     </div>
   </div>`;
 }
-function openDayShopee(ds){
-  const acc=shopeeCurAcct(); const b=shopeeDayBreak(ds,acc); const list=shopeeDayList(ds,acc);
+function openDayCh(ch,ds){
+  const C=CHANNELS[ch];
+  const acc=chCurAcct(ch); const b=chDayBreak(ch,ds,acc); const list=chDayList(ch,ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
     return `<tr>
-      <td data-label="影片"><a href="javascript:void(0)" onclick="openShopeeModal('${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.name||s.rawName):"")||"(未命名)")}</a></td>
+      <td data-label="影片"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.name||s.rawName):"")||"(未命名)")}</a></td>
       <td data-label="狀態"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?'已完成':(v.stage==='剪輯中'?'製作中':'待處理')}</span></td>
       <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="上傳連結">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td>
-      <td data-label="改期"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="shopeeReschedule('${v.id}',this.value,'${ds}')"></td>
-      <td data-label="操作"><button class="btn sec sm" style="white-space:nowrap" onclick="shopeeUnschedule('${v.id}','${ds}')" title="只移出這天，影片本身不會刪除">移出排程</button></td></tr>`;
+      <td data-label="改期"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="chReschedule('${ch}','${v.id}',this.value,'${ds}')"></td>
+      <td data-label="操作"><button class="btn sec sm" style="white-space:nowrap" onclick="chUnschedule('${ch}','${v.id}','${ds}')" title="只移出這天，影片本身不會刪除">移出排程</button></td></tr>`;
   }).join("");
   const wd="日一二三四五六"[new Date(ds+"T00:00:00").getDay()];
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
@@ -2248,21 +2268,23 @@ function openDayShopee(ds){
     ${list.length?`<table class="responsive"><thead><tr><th>影片</th><th>狀態</th><th>剪輯</th><th>上傳連結</th><th>改期</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。</div>`}
   </div></div>`;
 }
-function shopeeReschedule(id,nd,ds){ if(!nd||nd===ds) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},"已改期至 "+nd).then(ok=>{ if(ok) openDayShopee(ds); }); }
-function shopeeUnschedule(id,ds){
+function chReschedule(ch,id,nd,ds){ if(!nd||nd===ds) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},"已改期至 "+nd).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
+function chUnschedule(ch,id,ds){
   if(!confirm("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。")) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出排程").then(ok=>{ if(ok) openDayShopee(ds); }); }
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},"已移出排程").then(ok=>{ if(ok) openDayCh(ch,ds); }); }
 
-// ---- 源片視窗的「蝦皮版本」卡（誰剪的・何時完成・預排何時上片）＋ 蝦皮版本回連源片 ----
-function shopeeVersionsCard(v){
+// ---- 源片視窗的「○○版本」卡（誰剪的・何時完成・預排何時上片）＋ 版本回連源片 ----
+function chVersionsCard(ch,v){
+  const C=CHANNELS[ch];
   if(!v||!v.id) return "";
-  if(v.channel==="shopee"){
+  if(v.channel===ch){
     const s=srcOf(v);
     return `<div class="card" style="background:var(--panel2)"><b>來源片（中文版）</b>
-      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:'<span class="muted">來源片已不存在</span>'} <span class="muted" style="font-size:12px">・蝦皮版本</span></div></div>`;
+      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:'<span class="muted">來源片已不存在</span>'} <span class="muted" style="font-size:12px">・${C.verName}</span></div></div>`;
   }
-  const kids=shopeeVersionsOfSrc(v.id);
+  if(v.channel) return "";   // 其他平台的衍生版本 → 由該平台的卡處理
+  const kids=chVersionsOfSrc(ch,v.id);
   if(!kids.length) return "";
   const rows=kids.map(k=>{
     const st=(k.published||k.stage==="已完成")?'<span class="pill ok" style="font-size:10px">完成</span>':(k.stage==="剪輯中"?'<span class="pill wa" style="font-size:10px">製作中</span>':'<span class="pill" style="font-size:10px">待製作</span>');
@@ -2278,10 +2300,30 @@ function shopeeVersionsCard(v){
       <td data-label="上傳連結">${link}</td>
       <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">開啟</a></td></tr>`;
   }).join("");
-  return `<div class="card" style="background:var(--panel2)"><b>蝦皮版本（${kids.length}）</b> <span class="muted" style="font-size:12px">誰剪的・何時完成・預排何時上片，一起看</span>
+  return `<div class="card" style="background:var(--panel2)"><b>${C.verName}（${kids.length}）</b> <span class="muted" style="font-size:12px">誰剪的・何時完成・預排何時上片，一起看</span>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>帳號</th><th>剪輯</th><th>狀態</th><th>完成日</th><th>預排上片</th><th>上傳連結</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
+
+// ---- 相容包裝（既有引用/測試沿用的名稱）----
+function shopeeVersionsOfSrc(id){ return chVersionsOfSrc("shopee",id); }
+function msVersionsOfSrc(id){ return chVersionsOfSrc("ms",id); }
+function openShopeeModal(id){ openChModal("shopee",id); }
+function openMsModal(id){ openChModal("ms",id); }
+function shopeeFinish(id){ chFinish("shopee",id); }
+function shopeeUnclaim(id){ chUnclaim("shopee",id); }
+function shopeeDiscard(id){ chDiscard("shopee",id); }
+function shopeeClaim(id){ chClaim("shopee",id); }
+function createShopeeVersion(sourceId,account){ createChVersion("shopee",sourceId,account); }
+function viewShopeeLib(){ return viewChLib("shopee"); }
+function viewMsLib(){ return viewChLib("ms"); }
+function viewCalShopee(){ return viewCalCh("shopee"); }
+function viewCalMs(){ return viewCalCh("ms"); }
+function shopeeVersionsCard(v){ return chVersionsCard("shopee",v); }
+function msVersionsCard(v){ return chVersionsCard("ms",v); }
+function shopeeSourcePool(){ return chSourcePool(); }
+function shopeeAccounts(){ return chAccounts("shopee"); }
+function msAccounts(){ return chAccounts("ms"); }
 
 // ===================================================================
 // 設定（管理員）
@@ -2312,6 +2354,8 @@ function viewSettings(){
   const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
   const shopeeAccountStr=(Array.isArray(s.shopeeAccounts)?s.shopeeAccounts:[]).join("\n");
   const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
+  const msAccountStr=(Array.isArray(s.msAccounts)?s.msAccounts:[]).join("\n");
+  const msTargetVal=(s.msDailyTarget!=null&&s.msDailyTarget!=="")?s.msDailyTarget:2;
   const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
     const rate=(r.rate!=null&&r.rate!=="")?r.rate:1; const mult=(r.mult!=null&&r.mult!=="")?r.mult:1;
     return `<div><label>${label}（${code}）</label>
@@ -2338,8 +2382,8 @@ function viewSettings(){
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>海外設定</b>
-    <label style="margin-top:8px">海外 TikTok 帳號（一行一個，格式 <code>語言=帳號名</code>，語言用 en／th／ms）</label>
-    <textarea id="set_intlacct" style="min-height:96px" placeholder="en=TikTok US（@zana_us）&#10;th=TikTok TH（@zana_th）&#10;ms=TikTok MY（@zana_my）">${esc(intlAcctStr)}</textarea>
+    <label style="margin-top:8px">海外 TikTok 帳號（一行一個，格式 <code>語言=帳號名</code>，語言用 en／th；馬來西亞已移到台灣區的「馬來設定」）</label>
+    <textarea id="set_intlacct" style="min-height:96px" placeholder="en=TikTok US（@zana_us）&#10;th=TikTok TH（@zana_th）">${esc(intlAcctStr)}</textarea>
     <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
@@ -2362,8 +2406,17 @@ function viewSettings(){
       <span class="muted">支／帳號／天 —— 蝦皮排程以此判斷「已排滿／缺幾支」。</span></div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
+  <div class="card"><b>馬來設定</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">馬來西亞已移到台灣區（比照蝦皮）：由國內剪輯在「影片馬來二創區」挑片、翻成馬來文重剪上傳；價格依「海外設定」的 Malay 匯率×加乘換算成 MYR 顯示。</div>
+    <label style="margin-top:8px">馬來帳號（一行一個）</label>
+    <textarea id="set_msacct" style="min-height:88px" placeholder="tiktok-Malaysia（@zana_my）">${esc(msAccountStr)}</textarea>
+    <label style="margin-top:12px">馬來每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_mstarget" value="${msTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— 馬來排程以此判斷「已排滿／缺幾支」。</span></div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
   <div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰/馬版上傳海外 TikTok（三語共用同一畫面協作）。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok（共用同一畫面協作）。</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
@@ -2430,7 +2483,7 @@ async function saveSettings(){
   if(document.getElementById("set_intlacct")){
     settings.intlAccounts=(val("set_intlacct")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
       const i=line.indexOf("="); const loc=(i>=0?line.slice(0,i):"en").trim().toLowerCase(); const name=(i>=0?line.slice(i+1):line).trim();
-      return {locale:["en","th","ms"].includes(loc)?loc:"en", name}; }).filter(a=>a.name);
+      return {locale:loc, name}; }).filter(a=>a.name && ["en","th"].includes(a.locale));   // 只收 en/th；馬來帳號請填在「馬來設定」
     settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
     settings.exchangeRates={};
     ["en","th","ms","shopee"].forEach(loc=>{
@@ -2442,6 +2495,11 @@ async function saveSettings(){
   if(document.getElementById("set_shpacct")){
     settings.shopeeAccounts=(val("set_shpacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
     settings.shopeeDailyTarget=parseInt(val("set_shptarget"))||0;
+  }
+  // 馬來設定：帳號清單（一行一個）＋每帳號每日目標
+  if(document.getElementById("set_msacct")){
+    settings.msAccounts=(val("set_msacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
+    settings.msDailyTarget=parseInt(val("set_mstarget"))||0;
   }
   await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
 }
