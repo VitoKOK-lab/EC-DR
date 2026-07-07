@@ -72,13 +72,15 @@
 > `publishedLink`（上傳連結）、`platforms`（海外 TikTok 帳號），走既有認領/完成流程。源片視窗「各語言版本」卡
 > 以 `sourceVideoId` 反查，中英一起看；成效（`metrics`）待後端接入後自動並列。本階段**不做成效追蹤**。
 
-> **蝦皮二創（國內）**：跟海外二創同一套邏輯，差別是**同語言、換平台**——不開新角色，掛在既有
-> `users.role="editor"`（剪輯）下，任何國內剪輯登入都能進「蝦皮專區」。挑台灣**已完成**源片，建立一筆
-> `channel:"shopee"`、`sourceVideoId` 指回源片、`account`＝蝦皮帳號名（取自 `settings.shopeeAccounts`）的
-> **衍生影片**，走既有認領/完成流程；`scheduledDate` 對應「蝦皮排程」月曆（依帳號、`settings.shopeeDailyTarget`
-> 判斷已排滿／缺幾支）。因為跟一般台灣影片共用同一個 `editor` 身分，所有「今日完成／製作中／3 支上限」的統計
-> 都已排除 `channel="shopee"`（與 `locale` 二創版）避免混入台灣本業的每日產量。源片視窗「蝦皮版本」卡
-> 以 `sourceVideoId` 反查各帳號版本。
+> **蝦皮／馬來二創（台灣區換平台）**：跟海外二創同一套邏輯，差別是**換平台**——不開新角色，掛在既有
+> `users.role="editor"`（剪輯）下。挑台灣**已完成**源片，建立一筆 `channel:"shopee"／"ms"`、`sourceVideoId`
+> 指回源片、`account`＝平台帳號名的**衍生影片**，走既有認領/完成流程；`scheduledDate` 對應「月排程」hub
+> 內對應平台的月曆（依帳號、各自 dailyTarget 判斷已排滿／缺幾支）。
+>
+> **海內外權限一致（schemaVersion 14 後的行為）**：每位剪輯（editor＋intl）都看得到所有工作區、自己挑要剪的；
+> 「上班計畫」的待剪池／我的工作把台灣毛片與 蝦/馬/EN/TH 衍生版本合併同一份清單（小圖分辨）；
+> 「同時 3 支上限」為**全域**（不分平台/語言）；今日完成／下班匯報／管理員每日回報也是全線合計。
+> 源片視窗以 `sourceVideoId` 反查各平台/語言版本卡。
 
 **衍生（不存資料庫，前端即時算）**：`last30dUsed`、`light`（重播熱度）、新／舊片（`scheduledDate` 預排上片日未到＝新片，已過＝舊片，可重播；亦可手選 `tags` 覆寫）。
 
