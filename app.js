@@ -6,8 +6,8 @@
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
-  boss:    [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["dashboard","儀表板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：儀表板（含下指令）＋影片庫＋月排程；設定/員工視角等管理功能只給管理員
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["flow","流程中控"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["videos","Library"],["cal","Schedule"]],
@@ -379,7 +379,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl, shopeelib:viewShopeeLib, shopeecal:viewCalShopee, mslib:viewMsLib, mscal:viewCalMs }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl, shopeelib:viewShopeeLib, shopeecal:viewCalShopee, mslib:viewMsLib, mscal:viewCalMs }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
@@ -852,6 +852,129 @@ async function doClockOut(){
   try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso()});
        else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso()}); }catch(e){}
 }
+// ===================================================================
+// 流程中控（Regina 首頁；管理員也看得到）— 手機優先、單欄
+// 她的三件事：①盯「排程有沒有排到兩個月後」→ 不夠就去準備腳本拍毛片
+//            ②指派毛片給剪輯 ③逐一交辦工作、看每個人的回報
+// ===================================================================
+const RUNWAY_TARGET=60;   // 目標：排程隨時排滿到 60 天（兩個月）後
+function fmtMD(ds){ const p=String(ds||"").split("-"); return p.length===3?`${+p[1]}/${+p[2]}`:ds; }
+// 逐一交辦：每位員工卡片上的快速指派（比照 assignTaskSel，只是對象固定）
+async function flowAssign(idx, name){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
+  const t=val("fa_"+idx).trim(); if(!t){ toast("請輸入要交辦的內容",true); return; }
+  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact:"", report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
+    const inp=document.getElementById("fa_"+idx); if(inp) inp.value="";
+    toast("已交辦給 "+name+"（等他按「收到」）"); }
+  catch(e){ toast("交辦失敗，請稍後再試",true); }
+}
+function viewFlow(){
+  const staff=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor"));
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const g=scheduleGlance();
+  const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
+  const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const doneToday=(STATE.videos||[]).filter(v=>isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
+  const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
+  const daily=Math.max(1,+daySum(today)||4);
+  const stockDays=Math.floor(pool.length/daily);
+  const okRunway=g.runway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+
+  // ---- ① 兩個月備片警報 ----
+  const gapChips=(g.defs||[]).slice(0,6).map(d=>`<span class="pill em" style="font-size:11px">${fmtMD(d.ds)} 缺${d.short}</span>`).join(" ");
+  // 各平台排到哪天（二創殼的最遠預排日）
+  const platMax=(pred)=>{ const ds=(STATE.videos||[]).filter(v=>!v.deleted&&pred(v)).map(v=>String(v.scheduledDate||"").slice(0,10)).filter(Boolean).sort().pop(); return ds?fmtMD(ds):"未排"; };
+  const platChips=[["蝦皮",v=>v.channel==="shopee"],["馬來",v=>v.channel==="ms"],["英文",v=>v.locale==="en"],["泰文",v=>v.locale==="th"]]
+    .map(([l,p])=>`<span class="tag" style="font-size:11px">${l}排到 ${platMax(p)}</span>`).join(" ");
+  const runwayCard=`<div class="card" style="border-color:${okRunway?'var(--green)':'var(--red)'}">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">📅 備片存量（目標：排滿到兩個月後）</b>
+      <span class="pill ${okRunway?'ok':'em'}">${okRunway?'✓ 安心':'⚠ 要拍片了'}</span></div>
+    <div style="font-size:15px;margin-top:10px">社群排程連續排滿 <b style="font-size:22px;color:${okRunway?'var(--green)':'var(--red)'}">${g.runway}</b> 天${okRunway?'':`，距離兩個月還缺 <b style="color:var(--red)">${RUNWAY_TARGET-g.runway}</b> 天`}</div>
+    <div class="flowbar" style="margin-top:8px"><i style="width:${pct}%;${okRunway?'':'background:linear-gradient(90deg,#B0473A,#D98A5F)'}"></i></div>
+    ${okRunway?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13px;line-height:1.7">
+      <b style="color:var(--red)">下一步：</b>準備腳本 → 拍毛片 → 「＋新增毛片」進資料庫 → 指派給剪輯開工。</div>`}
+    ${gapChips?`<div style="margin-top:10px;font-size:12px" class="muted">近 14 天缺口：</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">${gapChips}</div>`:''}
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">${platChips}</div>
+    <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn sm" onclick="batchNewFootage()">＋ 批次新增毛片</button>
+      <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">看月排程</button></div>
+  </div>`;
+
+  // ---- ② 毛片庫存＋指派 ----
+  const afpRows=unassigned.slice(0,20).map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);font-weight:400">
+      <input type="checkbox" class="afp_vid" value="${v.id}" style="width:auto;margin:0;flex:none"> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></label>`).join("");
+  const stockCard=`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🎬 毛片庫存＆指派</b>
+      <span class="pill ${stockDays>=7?'ok':'em'}">${pool.length} 支・約可剪 ${stockDays} 天</span></div>
+    ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
+    ${unassigned.length?`
+    <div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <select id="afp_who" style="width:auto;min-width:130px"><option value="">指派給誰…</option>${staff.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
+      <button class="btn sec sm" type="button" onclick="afpToggleAll(this)">全選</button>
+      <button class="btn sm" onclick="assignFootage()">指派勾選的毛片</button></div>
+    <div style="margin-top:6px${unassigned.length>6?';max-height:260px;overflow-y:auto':''}">${afpRows}</div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支（指派只是分配，員工自己「認領」才開始計時）</p>`
+    :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
+  </div>`;
+
+  // ---- ③ 每位剪輯：狀態＋交辦＋回報 ----
+  const staffCards=staff.map((u,idx)=>{
+    const name=u.name;
+    const sh=(STATE.shifts||{})[shiftId(name,today)];
+    const on=sh&&sh.clockIn, off=sh&&sh.clockOut;
+    const dot=off?`<span class="pill" style="font-size:10px">已下班 ${String(sh.clockOut).slice(11,16)}</span>`
+      : on?`<span class="pill ok" style="font-size:10px">上班中</span>`
+      : `<span class="pill wa" style="font-size:10px">今天還沒上線</span>`;
+    const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name)&&v.stage==="剪輯中");
+    const done=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
+    const late=wip.filter(v=>{ const b=claimDayBadge(v); return b!=="新"&&+b>=4; });
+    const wipRows=wip.slice(0,4).map(v=>{ const b=claimDayBadge(v); const slow=b!=="新"&&+b>=4;
+      return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
+        <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></div>`; }).join("");
+    const tasks=allTasks.filter(t=>t&&t.user===name&&t.date===today).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+    const taskRows=tasks.map(t=>{
+      const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
+        :(t.assignedBy&&!t.ack)?'<span class="pill em" style="font-size:10px">未讀</span>'
+        :'<span class="pill wa" style="font-size:10px">進行中</span>';
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;gap:6px;align-items:center;justify-content:space-between">
+          <span style="font-size:13px;font-weight:600;min-width:0">${esc(t.title)}</span><span style="flex:none">${st}</span></div>
+        ${(t.report||'').trim()?`<div class="muted" style="font-size:12px;margin-top:3px">回報：${esc(t.report)}</div>`:(t.done?'':`<div class="muted" style="font-size:12px;margin-top:3px">（還沒回報）</div>`)}
+      </div>`; }).join("");
+    return `<div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':''}</b>${dot}</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+        <span class="pill ${wip.length?'wa':''}" style="font-size:11px">進行中 ${wip.length}/3</span>
+        <span class="pill ${done.length?'ok':''}" style="font-size:11px">今日完成 ${done.length}</span>
+        ${late.length?`<span class="pill em" style="font-size:11px">⚠ ${late.length} 支拖太久</span>`:''}
+        <span class="pill" style="font-size:11px">交辦 ${tasks.filter(t=>t.done).length}/${tasks.length}</span></div>
+      ${wipRows?`<div style="margin-top:8px">${wipRows}</div>`:''}
+      ${taskRows?`<div style="margin-top:8px">${taskRows}</div>`:`<p class="muted" style="font-size:12px;margin:8px 0 0">今天還沒有交辦事項</p>`}
+      <div class="row" style="gap:6px;margin-top:10px">
+        <input id="fa_${idx}" placeholder="交辦 ${esc(name)} 一件事…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')flowAssign(${idx},'${esc(jsEsc(name))}')">
+        <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>
+    </div>`; }).join("");
+
+  // ---- 頂部焦點列 ----
+  const focus=`<div class="focusbar">
+    <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
+    <div><span class="fn ${stockDays>=7?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
+    <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
+    <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
+  </div>`;
+
+  return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
+  ${focus}${runwayCard}${stockCard}
+  <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
+  ${staffCards||'<p class="muted">還沒有剪輯人員</p>'}`;
+}
+
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
