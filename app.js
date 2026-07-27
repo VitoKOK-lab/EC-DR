@@ -1339,8 +1339,19 @@ let HR_YM=null;            // 目前檢視的年月 [y,m]；null＝不限月份
 let HR_TAB="pending";      // pending＝等待審查、done＝已完成
 let HR_WHO="";             // 篩選同仁（空＝全部）
 function hrStaff(){ return (STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")).map(u=>u.name); }
-// 人資已檢查＝鎖定：鎖定後審核狀態與階段都不能再改（避免同一支片反覆送審、灌工作量），只有管理員能解鎖
-function hrLocked(v){ return !!(v && v.hrCheckedAt); }
+// 人資的檢查紀錄放在自己的 hrchecks 集合（不寫進影片、不影響剪輯流程）
+// {id:videoId, count, lastBy, lastAt, history:[{by,at,stage}]}
+function hrCheck(id){ return (STATE&&STATE.hrchecks&&STATE.hrchecks[id])||null; }
+function hrChecked(v){ return !!hrCheck(v&&v.id); }
+// 重工偵測：幫人資標出「這支是不是又送一次／被退回重做」
+function hrRework(v){
+  const c=hrCheck(v.id); const flags=[];
+  if(c && c.count>1) flags.push(`人資已檢查過 ${c.count} 次`);
+  if(c && needsReview(v)) flags.push("檢查過後又出現在待審查");
+  if(v.reviewStatus==="退回" || (v.reviewNote||"").trim()) flags.push("曾被退回重修");
+  if(v.stage==="剪輯中" && v.finishedAt) flags.push("完成後又回到剪輯中");
+  return flags;
+}
 function hrMonthMove(n){ if(!HR_YM) return; let [y,m]=HR_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} HR_YM=[y,m]; render(); }
 function hrSetTab(t){ HR_TAB=t; render(); }
 function hrSetWho(n){ HR_WHO=n||""; render(); }
@@ -1358,10 +1369,10 @@ function hrVideoList(tab){
 function viewHR(){
   const list=hrVideoList(HR_TAB);
   const nPend=hrVideoList("pending").length, nDone=hrVideoList("done").length;
-  const nChecked=list.filter(hrLocked).length;
+  const nChecked=list.filter(hrChecked).length;
   const staff=hrStaff();
   const row=(v)=>{
-    const locked=hrLocked(v);
+    const c=hrCheck(v.id); const done=!!c; const flags=hrRework(v);
     const who=esc(v.editor||v.claimedBy||"—");
     const fin=String(v.finishedAt||"").slice(0,10);
     const st=dispStage(v)==="待審核" ? '<span class="pill wa" style="font-size:10px">待審核</span>'
@@ -1370,16 +1381,18 @@ function viewHR(){
       : `<span class="pill" style="font-size:10px">${esc(stageLabel(dispStage(v)))}</span>`));
     const links=[v.driveFolder?'<span class="muted" style="font-size:11px">存檔✓</span>':'',
                  v.publishedLink?'<span class="muted" style="font-size:11px">上傳✓</span>':''].filter(Boolean).join(" ");
-    return `<div class="card" style="padding:12px 14px;margin-bottom:8px;${locked?'background:var(--greenbg);border-color:var(--green)':''}">
+    return `<div class="card" style="padding:12px 14px;margin-bottom:8px;${flags.length?'border-color:var(--red)':(done?'background:var(--greenbg);border-color:var(--green)':'')}">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div style="min-width:0;flex:1">
           <a href="javascript:void(0)" onclick="openVideoModal('${v.id}',false)" style="font-weight:700;font-size:15px">${esc(vidTitle(v))}</a>
           <div class="muted" style="font-size:12px;margin-top:3px">${who}${fin?("・完成 "+esc(fin)):""} ${st} ${links}</div>
-          ${locked?`<div style="font-size:12px;margin-top:4px;color:var(--green);font-weight:700">✓ 已檢查（${esc(v.hrCheckedBy||"HR")}・${esc(String(v.hrCheckedAt||"").slice(5,16).replace("T"," "))}）</div>`:''}
+          ${done?`<div style="font-size:12px;margin-top:4px;color:var(--green);font-weight:700">✓ 你已檢查（${esc(String(c.lastAt||"").slice(5,16).replace("T"," "))}${c.count>1?`・第 ${c.count} 次`:''}）</div>`:''}
+          ${flags.length?`<div style="font-size:12px;margin-top:4px;color:var(--red);font-weight:700">⚠ 重工提醒：${flags.map(esc).join("、")}</div>`:''}
         </div>
         <div class="row" style="gap:6px;flex:none">
           <button class="btn sec sm" onclick="openVideoModal('${v.id}',false)">看內容</button>
-          ${locked?'':`<button class="btn sm" onclick="hrCheckVideo('${v.id}')">✓ 檢查完成</button>`}
+          <button class="btn ${done?'sec':''} sm" onclick="hrCheckVideo('${v.id}')">${done?"再記一次":"✓ 檢查完成"}</button>
+          ${done?`<button class="btn sec sm" onclick="hrClearCheck('${v.id}')" title="清掉我的檢查紀錄">✕</button>`:''}
         </div>
       </div></div>`; };
   const tabs=`<div class="vtabs">
@@ -1395,32 +1408,38 @@ function viewHR(){
       <b style="font-size:14px">${HR_YM[0]} 年 ${HR_YM[1]+1} 月</b>
       <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="hrMonthMove(1)">›</button></span>`:''}
     <span class="pill ${nChecked===list.length&&list.length?'ok':'wa'}">已檢查 ${nChecked}/${list.length}</span>
+    ${nFlagInline(list)}
   </div>`;
-  return `<h2>影片審查 <span class="muted" style="font-size:13px">點片名看完整內容（文案、商品、連結）</span></h2>
+  const nFlag=list.filter(v=>hrRework(v).length).length;
+  return `<h2>影片審查 <span class="muted" style="font-size:13px">你自己的檢查紀錄（不會動到影片、不影響剪輯）</span></h2>
   ${tabs}${filters}
   <p class="muted" style="font-size:12px;margin:0 0 10px">${HR_TAB==="pending"
-    ? "剪輯完成、還在等審的片。看完內容後按「✓ 檢查完成」。"
-    : "已經審過或已上片的成品。"}　按下檢查完成會<b>鎖定這支片</b>：不能再重複送審或改審核狀態（要更動請找管理員解鎖）。</p>
+    ? "剪輯完成、還在等審的片。點片名看內容，看完按「✓ 檢查完成」記錄下來。"
+    : "已經審過或已上片的成品。"}　這只是<b>你自己的紀錄</b>，不會改到影片，剪輯那邊完全不受影響。${nFlag?`<b style="color:var(--red)">目前有 ${nFlag} 支標了重工提醒。</b>`:""}</p>
   ${list.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}`;
 }
-// 人資按「檢查完成」→ 鎖定（不可自行取消，避免反覆切換灌工作量）
+// 重工提醒的小計（放在篩選列）
+function nFlagInline(list){ const n=list.filter(v=>hrRework(v).length).length;
+  return n?`<span class="pill em">⚠ 重工提醒 ${n}</span>`:''; }
+// 人資按「檢查完成」：只寫自己的 hrchecks，不動影片。再按一次＝累計次數（看得出重覆送）
 function hrCheckVideo(id){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
-  const v=vid(id)||{};
-  if(hrLocked(v)){ toast("這支已經檢查過了",true); return; }
-  if(!confirm(`確認已看過「${vidTitle(v)}」的內容？\n\n按下後這支片會鎖定，不能再重複送審或改審核狀態（要更動請找管理員解鎖）。`)) return;
-  window.DB.update("videos", id, {hrCheckedBy:currentUser(), hrCheckedAt:nowIso(), updatedAt:nowIso()})
-    .then(()=>{ logA("人資檢查完成（鎖定）", vidTitle(v)); toast("已標記檢查完成並鎖定"); })
+  const v=vid(id)||{}; const c=hrCheck(id);
+  const n=(c&&+c.count||0)+1;
+  if(n>1 && !confirm(`「${vidTitle(v)}」你先前已經檢查過 ${c.count} 次。\n要再記錄一次嗎？（會標成重工提醒）`)) return;
+  const hist=((c&&c.history)||[]).concat([{by:currentUser(), at:nowIso(), stage:dispStage(v)}]).slice(-20);
+  window.DB.set("hrchecks", id, {id, count:n, lastBy:currentUser(), lastAt:nowIso(), title:vidTitle(v), history:hist})
+    .then(()=>{ logA(n>1?("人資再次檢查（第 "+n+" 次）"):"人資檢查完成", vidTitle(v)); toast(n>1?("已記錄第 "+n+" 次檢查"):"已記錄檢查完成"); })
     .catch(()=>toast("更新失敗，請稍後再試",true));
 }
-// 解鎖只有管理員能做（留紀錄）
-function hrUnlockVideo(id){
-  if(currentRole()!=="boss"){ toast("只有管理員可以解鎖",true); return; }
+// 清掉自己的檢查紀錄（純個人紀錄，隨時可刪）
+function hrClearCheck(id){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
   const v=vid(id)||{};
-  if(!confirm(`解除「${vidTitle(v)}」的人資檢查鎖定？\n解鎖後才能再修改審核狀態。`)) return;
-  window.DB.update("videos", id, {hrCheckedBy:"", hrCheckedAt:"", updatedAt:nowIso()})
-    .then(()=>{ logA("管理員解除人資鎖定", vidTitle(v)); toast("已解鎖"); closeModal(); })
-    .catch(()=>toast("更新失敗，請稍後再試",true));
+  if(!confirm(`清掉「${vidTitle(v)}」的檢查紀錄？（只是你自己的紀錄，不影響影片）`)) return;
+  window.DB.del("hrchecks", id)
+    .then(()=>{ logA("人資清除檢查紀錄", vidTitle(v)); toast("已清除"); })
+    .catch(()=>toast("刪除失敗，請稍後再試",true));
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
@@ -1515,7 +1534,6 @@ function finishWork(id){ const v=vid(id)||{};
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
 function reworkVideo(id){ const v=vid(id)||{};
-  if(hrLocked(v)){ toast("這支已由人資檢查鎖定，要退回重剪請先由管理員解鎖",true); return; }
   let who=v.editor||v.claimedBy||"";
   if(!who){   // 沒有指定剪輯（孤兒影片）→ 讓管理員選一位；海外二創版列海外剪輯、其餘列台灣剪輯
     const wantRole=v.locale?"intl":"editor";
@@ -1670,7 +1688,6 @@ function reviewCardHTML(v){
 function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
 // 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
 function editorMarkReviewed(id){ const v=vid(id)||{};
-  if(hrLocked(v)){ toast(T("這支已由人資檢查鎖定，不能再改審核狀態","Locked by HR — the review status can no longer be changed"),true); return; }
   if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
     `Has Regina approved "${vidTitle(v)}"?\nNext step: upload to the cloud & add the links.`))) return;
   write("PUT",`/api/videos/${id}`,{video:{reviewStatus:"通過",reviewedBy:currentUser(),reviewedAt:nowIso()}},
@@ -1678,8 +1695,6 @@ function editorMarkReviewed(id){ const v=vid(id)||{};
 }
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
 function reviewVid(id, status){
-  const v0=vid(id)||{};
-  if(hrLocked(v0)){ toast("這支已由人資檢查鎖定，要更動請先由管理員解鎖",true); return; }
   let note="";
   if(status==="退回"){ note=prompt("退回原因（給剪輯修正）："); if(note===null) return; if(!note.trim()){ toast("請填退回原因",true); return; } }
   window.DB.update("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso(), updatedAt:nowIso()})
@@ -1934,7 +1949,6 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("片源","Source"), esc(v.source||""))}
       ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}
-      ${row(T("人資檢查","HR check"), v.hrCheckedAt?`<span style="color:var(--green);font-weight:700">✓ ${esc(v.hrCheckedBy||"HR")}・${esc(String(v.hrCheckedAt).slice(0,10))}</span>${currentRole()==="boss"?` <button class="btn sec sm" style="margin-left:8px;padding:3px 10px" onclick="hrUnlockVideo('${v.id}')">解鎖</button>`:''}`:'')}
       ${row(T("建立者","Created by"), v.createdBy?`${esc(v.createdBy)}${v.createdAt?` <span class="muted" style="font-size:12px">${esc(String(v.createdAt).slice(0,10))}</span>`:''}`:'')}
       ${row(T("商品","Products"), prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（NT$${esc(p.price)}${p.salePrice?T(`／寵粉價 NT$${esc(p.salePrice)}`,` / Fan price NT$${esc(p.salePrice)}`):''}）`:"")).join("、"):'')}
       ${row(T("商品頁網址","Product page"), v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
