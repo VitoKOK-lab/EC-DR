@@ -53,6 +53,8 @@
 | `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
+| `hrCheckedBy` | string | 人資檢查完成：操作者（空＝未檢查）。**設值＝鎖定**：審核狀態與退回重剪都會被擋，只有管理員能解鎖 |
+| `hrCheckedAt` | string(ISO) | 人資檢查時間 |
 | `reviewAck` | boolean | 已審過通知收起 | 剪輯在審片進度卡按「知道了」收起已審過通知（連結補齊後才能收；審過 7 天自動不顯示） |
 | `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原）。**全員都可刪**（2026-07 起）：任何角色在影片視窗按刪除→進回收桶並記 `deletedBy`；救回／永久刪除只有管理員能做 |
 | `deletedBy` | string | 刪除者 | 成員名字 |
@@ -124,7 +126,7 @@
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `name` | string | 名字（= 文件 ID） |
-| `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面）／`hr`（人資：看每日工作確認與 KPI，不能指派） |
+| `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面）／`hr`（人資：審查影片內容＋看 KPI，不能指派） |
 | `intlLocale` | string | 海外剪輯綁定語言 | `en`／`th`／`ms`（僅 `role=intl` 用；未設定＝`en`）。帳號綁語言：只做/只看該語言 |
 | `isDefault` | boolean | 系統預設旗標 |
 
@@ -145,15 +147,7 @@
 | `report` | string | 回報狀況（進度） |
 | `done` | boolean | 完成打勾（false=進行中） |
 | `createdAt` | string(ISO) | 建立時間 |
-| `hrSeenBy` | string | 人資已看過：操作者名字（空＝尚未查看） |
-| `hrSeenAt` | string(ISO) | 人資查看時間 |
 
-> **HR 每日工作確認（2026-07 起）**：人資在「工作確認」分頁以月曆矩陣看每位同仁每天的狀態
-> （未查看／部分已看／已全數確認）。點某天開啟明細：上半是**系統自動紀錄**（上下班時間、當日完成
-> 影片＋審片狀態＋存檔/上傳連結、當日認領、被退回待修 —— 全部從 `videos`／`shifts` 自動撈，
-> 同仁無法竄改），下半是**同仁自填的工作項目**（即本表，沿用「上班計畫」既有輸入，不需重複填寫）。
-> 兩層確認：逐筆按「已看過」寫入 `hrSeenBy/hrSeenAt`；全部看完才可按「本日工作已全數確認」，
-> 寫入 `shifts` 的 `hrConfirmedBy/hrConfirmedAt`。兩者都可取消，動作寫入 `logs`。
 
 ---
 
@@ -183,10 +177,18 @@
 | `date` | string | `YYYY-MM-DD` |
 | `clockIn` | string(ISO) | 上班時間 |
 | `clockOut` | string(ISO) | 下班時間（空＝上班中） |
-| `hrConfirmedBy` | string | 人資「本日工作已全數確認」的操作者（空＝未確認） |
-| `hrConfirmedAt` | string(ISO) | 人資確認時間。沒打卡的日子若被確認，會建立只有這兩欄的 shifts 文件 |
+
 
 > 單片工時（認領→完成）由 `videos.claimedAt`／`finishedAt`／`durationMin` 衍生，亦只給管理員看（「工時/KPI」頁）。
+
+---
+
+> **人資（`role:"hr"`）影片審查（2026-07 起）**：分頁「影片審查」只有兩份清單 ——
+> ①**等待審查**（剪完還沒審，即 `needsReview`）②**已完成**（審過或已上片）。可依同仁與月份篩選。
+> 點片名開影片檢視視窗，文案、商品、連結、審片狀態全部看得到。看完按「✓ 檢查完成」寫入
+> `videos.hrCheckedBy/hrCheckedAt`＝**鎖定**：之後剪輯不能再按「已審過」、經理人不能改審核狀態或
+> 退回重剪（避免同一支片反覆送審灌工作量）；**只有管理員能解鎖**（影片視窗的「解鎖」鍵），
+> 檢查與解鎖都寫入 `logs`。人資另可看儀表板 KPI，但**不能指派**工作或毛片。
 
 ---
 
