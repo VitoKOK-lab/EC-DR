@@ -210,3 +210,14 @@
 1. **寫入一律走 `app.js` 的 `newVideoRecord()`／route**，確保每筆影片都是完整一致的結構。
 2. 讀取時對缺漏欄位以預設值容錯（`v.field || 預設`）。
 3. 改欄位前**先改這份文件**並升 `schemaVersion`；UI／版面改動不影響本結構。
+
+---
+
+## 8. 開發／測試
+
+- **離線煙霧測試**：`node tests/run-all.js`（語法檢查 ＋ 18 套角色/流程斷言 ＋ 中英介面洩漏掃描）。
+  每支 `tests/smoke-*.js` 用假的 `document`／`localStorage` 把 `app.js` eval 進來，直接呼叫 view 函式驗證輸出，
+  不需瀏覽器、不連資料庫。改完 `app.js` 一定要跑過再上版。
+- **CI**：`.github/workflows/tests.yml` 在每次 push／PR 自動跑同一支腳本。
+- **語言洩漏掃描**：`tests/audit-lang.js` 把測試資料全換成英數，掃 intl 視角殘留的中文與中文視角殘留的英文 UI 詞；
+  標籤（寵粉／珠寶介紹…）與階段內部值屬設計例外，已列在該檔的 `ALLOW` 清單。

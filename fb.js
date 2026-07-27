@@ -59,7 +59,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
   const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
-  function push() { if (window.__onState) window.__onState(JSON.parse(JSON.stringify(raw))); }
+  // 直接傳參照即可：app.js 的 decorate() 收到後會立刻深拷貝一份自用，
+  // 這裡再拷一次等於每次同步都全量複製兩遍（影片多時手機會有感），故省略。
+  function push() { if (window.__onState) window.__onState(raw); }
 
   // 暴露給 app.js 的寫入介面
   window.DB = {
