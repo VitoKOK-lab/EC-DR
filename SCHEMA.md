@@ -53,6 +53,7 @@
 | `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
+| `reviewAck` | boolean | 已審過通知收起 | 剪輯在審片進度卡按「知道了」收起已審過通知（連結補齊後才能收；審過 7 天自動不顯示） |
 | `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原） |
 | `deletedBy` | string | 刪除者 | 成員名字 |
 | `deletedAt` | string(ISO) | 刪除時間 | |

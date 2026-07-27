@@ -724,7 +724,12 @@ function viewWork(){
   const myVids=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me));
   const rejected=myVids.filter(v=>v.reviewStatus==="退回");
   const waitingReview=myVids.filter(v=>v.stage==="已完成" && !v.reviewStatus);
-  const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !(String(v.driveFolder||"").trim() && String(v.publishedLink||"").trim()));
+  // 已審過（不論 Regina 按的還是剪輯自己按的）都要「亮出來」，不能沈下去：
+  // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
+  const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
+  const linksDone=(v)=>!!(String(v.driveFolder||"").trim() && String(v.publishedLink||"").trim());
+  const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
+    && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
   const nRev=rejected.length+approvedTodo.length+waitingReview.length;
   const rejCard = nRev?`<div class="card" style="border-color:${rejected.length?'var(--red)':(approvedTodo.length?'var(--gold)':'var(--line)')}">
@@ -735,11 +740,16 @@ function viewWork(){
       ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
         <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
         ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
-    ${approvedTodo.length?`<div style="margin-top:10px"><b style="color:var(--gold-dk);font-size:13px">✓ ${T("審核通過了 → 快上傳雲端＋補連結","Approved — upload to cloud & add the links")}（${approvedTodo.length}）</b>
-      ${approvedTodo.map(v=>{ const miss=[!String(v.driveFolder||"").trim()?T("缺雲端存檔連結","file link missing"):"", !String(v.publishedLink||"").trim()?T("缺上傳連結","upload link missing"):""].filter(Boolean).join(T("、",", "));
-        return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
-        <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
-        <div class="muted" style="font-size:12px;margin-top:2px">${miss}</div></div>`; }).join("")}</div>`:''}
+    ${approvedTodo.length?`<div style="margin-top:10px"><b style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}（${approvedTodo.length}）</b>
+      ${approvedTodo.map(v=>{ const who=`${esc(v.reviewedBy||"Regina")} ${T("已審過","approved")}${v.reviewedAt?("・"+esc(String(v.reviewedAt).slice(0,10))):''}`;
+        if(!linksDone(v)){ const miss=[!String(v.driveFolder||"").trim()?T("缺雲端存檔連結","file link missing"):"", !String(v.publishedLink||"").trim()?T("缺上傳連結","upload link missing"):""].filter(Boolean).join(T("、",", "));
+          return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
+          <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
+          <div class="muted" style="font-size:12px;margin-top:2px">${who}・<span style="color:var(--red)">${miss}</span> → ${T("快上傳雲端＋補連結","upload & add the links")}</div></div>`; }
+        return `<div style="margin-top:6px;padding:9px;background:var(--greenbg);border-radius:5px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
+          <span class="muted" style="font-size:12px"> ${who}・${T("連結都補齊了","links all set")}</span></span>
+          <button class="btn sec sm" style="flex:none" onclick="ackReviewedVid('${v.id}')" title="${T("收起這則通知","Dismiss this notice")}">${T("知道了","Got it")}</button></div>`; }).join("")}</div>`:''}
     ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
         <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
@@ -1461,6 +1471,8 @@ function reviewCardHTML(v){
         <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
       </div></div>`;
 }
+// 已審過通知「知道了」：連結都補齊後，剪輯自己收起（reviewAck）；在那之前會一直亮在審片進度卡
+function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
 // 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
 function editorMarkReviewed(id){ const v=vid(id)||{};
   if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
