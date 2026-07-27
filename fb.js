@@ -45,6 +45,8 @@ const DEFAULT_SETTINGS = {
   msDailyTarget: 2,
   // 各平台商品價格換算：{key:{code,rate,mult}}；rate＝1 台幣可換多少該幣別（蝦皮固定 1）、mult＝該平台售價加乘倍數
   exchangeRates: { en:{code:"USD",rate:1,mult:1}, th:{code:"THB",rate:1,mult:1}, ms:{code:"MYR",rate:1,mult:1}, shopee:{code:"TWD",rate:1,mult:1} },
+  // 審片流程上線日：這天之前完成的舊片不回溯要求審核（避免歷史影片一次全湧進待審清單）
+  reviewSince: "2026-07-27",
 };
 
 // 尚未填入設定 → 顯示設定指引
@@ -97,6 +99,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
           up[k] = { code: old.code || DEFAULT_SETTINGS.exchangeRates[k].code, rate: (+old.rate > 0 ? +old.rate : 1), mult: (+old.mult > 0 ? +old.mult : 1) }; });
         patch.exchangeRates = up;
       }
+      if (!cur.reviewSince) patch.reviewSince = DEFAULT_SETTINGS.reviewSince;
       if (cur.schemaVersion == null || cur.schemaVersion < 15) patch.schemaVersion = 15;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }

@@ -724,7 +724,7 @@ function viewWork(){
   // 審片進度（剪完 → Regina 審 → 通過才上傳雲端補連結）：量多容易忘，這張卡幫剪輯記住
   const myVids=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me));
   const rejected=myVids.filter(v=>v.reviewStatus==="退回");
-  const waitingReview=myVids.filter(v=>v.stage==="已完成" && !v.reviewStatus);
+  const waitingReview=myVids.filter(needsReview);
   // 已審過（不論 Regina 按的還是剪輯自己按的）都要「亮出來」，不能沈下去：
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
@@ -953,7 +953,7 @@ function viewFlow(){
   </div>`;
 
   // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
-  const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && v.stage==="已完成" && !v.reviewStatus)
+  const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
   const reviewQueueCard=`<div class="card"${pendingReview.length?' style="border-color:var(--gold)"':''}>
@@ -1423,9 +1423,17 @@ async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套�
 // ===================================================================
 // 是否剪好（可標新/舊片）：已完成上架，或手選過新/舊片
 function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
-// 顯示用階段（流程：待處理→剪輯中→待審核→剪輯完成→已上片）：
-// 「待審核」是虛擬階段＝stage 已完成但 Regina 還沒審（reviewStatus 空）；審過（通過）才顯示剪輯完成
-function dispStage(v){ return (v && v.stage==="已完成" && !v.reviewStatus) ? "待審核" : ((v&&v.stage)||""); }
+// 審片流程上線日：這天之前完成的舊片不回溯要求審核（可在 settings.reviewSince 調整）
+function reviewSince(){ return String((STATE&&STATE.settings&&STATE.settings.reviewSince)||"2026-07-27").slice(0,10); }
+// 是否「待審核」＝三個條件同時成立：①剪輯完成 ②還沒審過 ③還沒有上傳網址（有網址＝早就上片，不用審）
+// 再加時間界線：流程上線前完成的舊片一律不算，否則幾百支歷史影片會一次全湧進待審清單
+function needsReview(v){
+  if(!v || v.stage!=="已完成" || v.reviewStatus) return false;
+  if(String(v.publishedLink||"").trim()) return false;
+  return String(v.finishedAt||"").slice(0,10) >= reviewSince();
+}
+// 顯示用階段（流程：待處理→剪輯中→待審核→剪輯完成→已上片）；審過（通過）才顯示剪輯完成
+function dispStage(v){ return needsReview(v) ? "待審核" : ((v&&v.stage)||""); }
 // 狀態顯示文字：「已完成」對使用者顯示為「剪輯完成」（只代表剪輯工作完成，不代表排程/上片完成；內部值不變）
 function stageLabel(s){ if(currentRole()==="intl"){ return ({"待處理":"To do","剪輯中":"In progress","待審核":"In review","已完成":"Done","已上片":"Published"})[s]||s||""; }
   return s==="已完成" ? "剪輯完成" : (s||""); }
