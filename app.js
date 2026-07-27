@@ -3,7 +3,7 @@
 // 角色：管理員（Vito）＋ 剪輯。已移除：交辦、KPI、日報、稽核、二創、商品庫。
 // 資料層走 Firestore（fb.js 提供 window.DB）；商業邏輯都在前端。
 // ===================================================================
-const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯"};
+const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯", hr:"人資"};
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   boss:    [["dashboard","儀表板"],["flow","流程中控"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
@@ -11,6 +11,7 @@ const ROLE_TABS = {
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["videos","Library"],["cal","Schedule"]],
+  hr:      [["hr","工作確認"],["dashboard","儀表板"]],   // 人資：看每日工作計畫＋確認紀錄、看 KPI
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -243,7 +244,7 @@ function closeHeaderMenu(){
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl","hr"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name); b.onclick=()=>loginAs(u); return b; };
@@ -254,6 +255,7 @@ function bootLogin(){
   section("Taiwan", all.filter(u=>(u.role||"editor")==="editor"));
   section("海外版", all.filter(u=>u.role==="intl"));
   section("管理層", all.filter(u=>u.role==="manager"));
+  section("人資", all.filter(u=>u.role==="hr"));
 }
 function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
@@ -378,7 +380,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, flow:viewFlow, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, hr:viewHR, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
@@ -599,6 +601,14 @@ function renameContact(name){ const input=prompt("修改對接窗口名稱：", 
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
   cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
+// 常用工作項目：一鍵加入當日工作計畫（HR 每日確認會看到這些）
+const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
+async function addPresetTask(title){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
+  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title, contact:"", report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()}); }
+  catch(e){ toast("新增失敗，請稍後再試",true); }
+}
 async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
@@ -752,7 +762,7 @@ function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
 // 上班計畫：交辦工作卡（老闆指派需按收到；回報滿 12 字才可打勾完成）
 function workTasksCard(tasks){
   return `<div class="card">
-    <b style="font-size:16px">${T("我的今日交辦工作（剪輯以外）","My assigned tasks (beyond editing)")}</b>
+    <b style="font-size:16px">${T("我的今日工作計畫（剪輯以外）","My work plan today (beyond editing)")}</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
           <b style="font-size:14px">${esc(t.title)}${(assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:''}</b>
@@ -770,6 +780,9 @@ function workTasksCard(tasks){
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
       </div>`;}).join("")||`<div class="muted">${T("尚無交辦工作","No tasks yet")}</div>`}</div>
+    ${currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 8px">
+      <span class="muted" style="font-size:12px;align-self:center">常用：</span>
+      ${WORK_PRESETS.map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`}
     <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ ${T("加入","Add")}</button></div>
   </div>`;
 }
@@ -1313,6 +1326,154 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
     <div style="margin-top:14px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音外部成效儀表板 →</a></div>
   </div>`;
 }
+
+// ===================================================================
+// 人資（HR）：每月工作計畫與每日工作確認
+// 只做「審視紀錄」不做審核流程 —— 每一天分兩區：
+//   ① 系統自動紀錄（客觀）：上下班、當日完成影片＋審片狀態、進行中、被退回
+//   ② 同仁自填的工作項目（主觀）：沿用「上班計畫」裡本來就在填的項目，不用重複輸入
+// 兩層確認：逐筆「已看過」→ 全部看完才可按「本日工作已全數確認」
+// 資料沿用既有集合：tasks 加 hrSeenBy/hrSeenAt、shifts 加 hrConfirmedBy/hrConfirmedAt
+// ===================================================================
+let HR_YM=null;                      // 目前檢視的年月 [y,m]
+function hrStaff(){ return (STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")).map(u=>u.name); }
+function hrDayTasks(user, date){ return Object.values((STATE&&STATE.tasks)||{})
+  .filter(t=>t && t.user===user && t.date===date)
+  .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+function hrShift(user, date){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(user,date)])||null; }
+// 當日的系統紀錄（從影片庫自動撈，不需要任何人填）
+function hrDayVideos(user, date){
+  const all=(STATE.videos||[]).filter(v=>!v.deleted);
+  return {
+    done: all.filter(v=>v.editor===user && isPublished(v) && String(v.finishedAt||"").slice(0,10)===date),
+    claimed: all.filter(v=>(v.claimedBy===user||v.editor===user) && String(v.claimedAt||"").slice(0,10)===date),
+    wip: all.filter(v=>(v.claimedBy===user||v.editor===user) && v.stage==="剪輯中"),
+    rejected: all.filter(v=>(v.editor===user||v.claimedBy===user) && v.reviewStatus==="退回"),
+  };
+}
+// 某人某天的確認狀態：none 無資料／unseen 未查看／part 部分已看／all 已全數確認
+function hrDayStatus(user, date){
+  const items=hrDayTasks(user,date), sh=hrShift(user,date), vids=hrDayVideos(user,date);
+  const hasAny=items.length || (sh&&sh.clockIn) || vids.done.length || vids.claimed.length;
+  if(!hasAny) return "none";
+  if(sh && sh.hrConfirmedAt) return "all";
+  if(!items.length) return "unseen";                            // 有工作紀錄但沒填項目 → 等 HR 按「本日確認」
+  return items.some(t=>t.hrSeenAt) ? "part" : "unseen";         // 有看過但還沒按「本日確認」＝部分
+}
+const HR_ST={none:{c:"var(--line)",bg:"transparent",t:"—"}, unseen:{c:"var(--red)",bg:"var(--redbg)",t:"未查看"},
+             part:{c:"var(--amber)",bg:"var(--amberbg)",t:"部分已看"}, all:{c:"var(--green)",bg:"var(--greenbg)",t:"已全數確認"}};
+function hrMonthMove(n){ let [y,m]=HR_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} HR_YM=[y,m]; render(); }
+function viewHR(){
+  if(!HR_YM){ const t=new Date(Date.now()+288e5); HR_YM=[t.getFullYear(), t.getMonth()]; }
+  const [y,m]=HR_YM;
+  const days=new Date(y,m+1,0).getDate();
+  const staff=hrStaff();
+  const dstr=(d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  // 每人一列：31 個小格（點下去看當日明細）
+  const rows=staff.map(name=>{
+    let nAll=0, nWork=0;
+    const cells=[];
+    for(let d=1;d<=days;d++){ const ds=dstr(d); const st=hrDayStatus(name,ds); const S=HR_ST[st];
+      if(st!=="none"){ nWork++; if(st==="all") nAll++; }
+      const isToday=ds===today;
+      cells.push(`<button class="hrcell" style="border-color:${S.c};background:${S.bg}${isToday?';box-shadow:0 0 0 2px var(--accent)':''}" title="${ds}（${weekdayZh(ds)}）・${S.t}" onclick="openHRDay('${esc(jsEsc(name))}','${ds}')">${d}</button>`); }
+    return `<div class="card" style="padding:12px 14px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:15px">${esc(name)}</b>
+        <span class="pill ${nWork&&nAll===nWork?'ok':(nAll?'wa':'')}">${T("本月已確認","Confirmed")} ${nAll}/${nWork} ${T("天","days")}</span></div>
+      <div class="hrgrid">${cells.join("")}</div>
+    </div>`;
+  }).join("")||'<div class="card muted">尚無同仁</div>';
+  const legend=`<div class="row" style="gap:14px;flex-wrap:wrap;font-size:12px;margin:10px 0 14px">
+    ${["unseen","part","all","none"].map(k=>`<span class="muted"><i style="display:inline-block;width:12px;height:12px;border-radius:3px;border:2px solid ${HR_ST[k].c};background:${HR_ST[k].bg};vertical-align:-2px;margin-right:5px"></i>${HR_ST[k].t==="—"?"當天沒有工作":HR_ST[k].t}</span>`).join("")}
+  </div>`;
+  // 本月待處理提醒：還沒全數確認的天數
+  const pending=staff.reduce((a,n)=>{ let c=0; for(let d=1;d<=days;d++){ const st=hrDayStatus(n,dstr(d)); if(st==="unseen"||st==="part") c++; } return a+c; },0);
+  return `<h2>工作確認 <span class="muted" style="font-size:13px">每位同仁每日的工作計畫與完成內容</span></h2>
+  <div class="card">
+    <div class="calhead">
+      <button class="calnav" onclick="hrMonthMove(-1)" title="上月">‹</button>
+      <div class="calmonth">${y} <span>年</span> ${m+1} <span>月</span></div>
+      <button class="calnav" onclick="hrMonthMove(1)" title="下月">›</button>
+    </div>
+    <div class="row" style="justify-content:center;margin-top:6px">
+      <span class="pill ${pending?'wa':'ok'}">${pending?("本月還有 "+pending+" 天待確認"):"本月已全數確認 ✓"}</span></div>
+  </div>
+  ${legend}
+  ${rows}`;
+}
+// 某人某天的明細：系統紀錄（自動）＋自填工作項目（逐筆已看過）＋本日全數確認
+function openHRDay(user, date){
+  const items=hrDayTasks(user,date), sh=hrShift(user,date), V=hrDayVideos(user,date);
+  const hm=(iso)=>String(iso||"").slice(11,16);
+  const stageChip=(v)=>{ const ds=dispStage(v);
+    return ds==="待審核" ? '<span class="pill wa" style="font-size:10px">待審核</span>'
+      : (v.reviewStatus==="通過" ? '<span class="pill ok" style="font-size:10px">已審過</span>'
+      : (v.reviewStatus==="退回" ? '<span class="pill em" style="font-size:10px">被退回</span>'
+      : '<span class="pill" style="font-size:10px">'+esc(stageLabel(ds))+'</span>')); };
+  const linkChip=(v)=>[v.driveFolder?'<span class="muted" style="font-size:11px">存檔✓</span>':'',
+                       v.publishedLink?'<span class="muted" style="font-size:11px">上傳✓</span>':''].filter(Boolean).join(" ");
+  const sysCard=`<div class="card" style="background:var(--panel2)">
+    <b>系統紀錄（自動，非同仁填寫）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">上班 ${sh&&sh.clockIn?esc(hm(sh.clockIn)):"—"}　下班 ${sh&&sh.clockOut?esc(hm(sh.clockOut)):(sh&&sh.clockIn?"未打卡":"—")}</div>
+    <div style="margin-top:8px"><b style="font-size:13px">當日完成影片（${V.done.length}）</b>
+      ${V.done.length?V.done.map(v=>`<div style="font-size:13px;padding:3px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a> ${stageChip(v)} ${linkChip(v)}</div>`).join("")
+        :'<div class="muted" style="font-size:12px;margin-top:2px">當日無完成影片</div>'}</div>
+    <div style="margin-top:8px"><b style="font-size:13px">當日認領（${V.claimed.length}）</b>
+      ${V.claimed.length?V.claimed.map(v=>`<div style="font-size:13px;padding:3px 0">• ${esc(vidTitle(v))} <span class="muted" style="font-size:11px">${esc(hm(v.claimedAt))}</span></div>`).join("")
+        :'<div class="muted" style="font-size:12px;margin-top:2px">當日無認領</div>'}</div>
+    ${V.rejected.length?`<div style="margin-top:8px"><b style="font-size:13px;color:var(--red)">被退回待修（${V.rejected.length}）</b>
+      ${V.rejected.map(v=>`<div style="font-size:13px;padding:3px 0">• ${esc(vidTitle(v))}${v.reviewNote?`<span class="muted" style="font-size:11px">・${esc(v.reviewNote)}</span>`:''}</div>`).join("")}</div>`:''}
+  </div>`;
+  const itemRows=items.map(t=>{
+    const seen=!!t.hrSeenAt;
+    return `<div style="border:1px solid ${seen?'var(--green)':'var(--line)'};border-radius:6px;padding:10px 12px;margin-bottom:8px;background:${seen?'var(--greenbg)':'#fff'}">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="font-size:14px">${esc(t.title)}${t.assignedBy?' <span class="pill em" style="font-size:10px">指派</span>':''}</b>
+        ${t.done?'<span class="pill ok" style="font-size:10px">已完成</span>':'<span class="pill wa" style="font-size:10px">進行中</span>'}
+      </div>
+      ${t.contact?`<div class="muted" style="font-size:12px;margin-top:3px">對接窗口：<b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
+      <div class="muted" style="font-size:12px;margin-top:3px">回報：${(t.report||'').trim()?esc(t.report):'<span style="color:var(--red)">（未填回報）</span>'}</div>
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        ${seen?`<span class="muted" style="font-size:12px">✓ ${esc(t.hrSeenBy||"HR")} 已看過・${esc(String(t.hrSeenAt||"").slice(5,16).replace("T"," "))}</span>`
+              :`<span class="muted" style="font-size:12px">尚未查看</span>`}
+        <button class="btn ${seen?'sec':''} sm" style="flex:none" onclick="hrSeeItem('${t.id}',${seen?'false':'true'},'${esc(jsEsc(user))}','${date}')">${seen?"取消已看過":"已看過"}</button>
+      </div></div>`; }).join("")||'<div class="muted" style="font-size:13px">當日沒有自填的工作項目</div>';
+  const allSeen=items.every(t=>t.hrSeenAt);
+  const confirmed=!!(sh&&sh.hrConfirmedAt);
+  const foot=`<div class="modalFoot" style="flex-direction:column;align-items:stretch;gap:8px">
+    ${confirmed?`<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="color:var(--green);font-weight:700">✓ 本日已全數確認（${esc(sh.hrConfirmedBy||"HR")}・${esc(String(sh.hrConfirmedAt||"").slice(5,16).replace("T"," "))}）</span>
+        <button class="btn sec sm" onclick="hrConfirmDay('${esc(jsEsc(user))}','${date}',false)">取消確認</button></div>`
+      :`<button class="btn" ${allSeen?'':'disabled style="opacity:.5;cursor:not-allowed"'} onclick="hrConfirmDay('${esc(jsEsc(user))}','${date}',true)">${allSeen?"本日工作已全數確認":"請先逐筆按「已看過」"}</button>`}
+    <button class="btn sec" onclick="closeModal()">關閉</button></div>`;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+      <h3 style="margin:0">${esc(user)}　<span class="muted" style="font-size:13px;font-weight:400">${esc(date)}（${weekdayZh(date)}）</span></h3>
+      <button class="btn sec sm" onclick="closeModal()">×</button></div>
+    ${sysCard}
+    <div style="margin:14px 0 8px"><b style="font-size:15px">同仁自填的工作項目（${items.length}）</b>
+      <span class="muted" style="font-size:12px">・逐筆確認看過</span></div>
+    ${itemRows}${foot}</div></div>`;
+}
+function hrSeeItem(id, seen, user, date){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
+  const patch = seen ? {hrSeenBy:currentUser(), hrSeenAt:nowIso()} : {hrSeenBy:"", hrSeenAt:""};
+  window.DB.update("tasks", id, patch)
+    .then(()=>{ logA(seen?"HR 已看過工作項目":"HR 取消已看過", user+" "+date); openHRDay(user,date); })
+    .catch(()=>toast("更新失敗，請稍後再試",true));
+}
+function hrConfirmDay(user, date, on){
+  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
+  if(on && !confirm(`確認「${user}」${date} 的工作已全部看過？`)) return;
+  const id=shiftId(user,date); const cur=hrShift(user,date);
+  const patch = on ? {hrConfirmedBy:currentUser(), hrConfirmedAt:nowIso()} : {hrConfirmedBy:"", hrConfirmedAt:""};
+  const p = cur ? window.DB.update("shifts", id, patch)
+                : window.DB.set("shifts", id, Object.assign({id, user, date, clockIn:"", clockOut:""}, patch));
+  p.then(()=>{ logA(on?"HR 本日工作已全數確認":"HR 取消本日確認", user+" "+date); toast(on?"已確認":"已取消確認"); openHRDay(user,date); })
+   .catch(()=>toast("更新失敗，請稍後再試",true));
+}
+
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
   const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
@@ -1342,9 +1503,9 @@ function viewDashboard(){
   ${currentRole()==="boss"?dashViewAsCard():''}
 
   <div class="dgrid">
-  ${dashAssignTaskCard()}
+  ${["boss","manager"].includes(currentRole())?dashAssignTaskCard():''}
 
-  ${dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)}
+  ${["boss","manager"].includes(currentRole())?dashAssignFootageCard(editors, poolN, unassignedPool, assignCount):''}
 
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   </div>
@@ -2622,11 +2783,12 @@ function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
-  const members=(STATE.users||[]).filter(u=>["editor","manager","intl"].includes(u.role||"editor"));
+  const members=(STATE.users||[]).filter(u=>["editor","manager","intl","hr"].includes(u.role||"editor"));
   const roleSel=(u)=>`<select onchange="setMemberRole('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
       <option value="editor" ${(u.role||"editor")==="editor"?"selected":""}>剪輯</option>
       <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option>
-      <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option></select>`;
+      <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option>
+      <option value="hr" ${u.role==="hr"?"selected":""}>人資</option></select>`;
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label="角色">${roleSel(u)}</td>
