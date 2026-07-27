@@ -60,6 +60,19 @@ let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
 reset();
+// ── 人資這個角色到處都設得出來（v56 修：新增成員下拉漏了人資）──
+{ localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss");
+  const st=viewSettings();
+  ok("新增成員下拉有人資", st.includes('<option value="hr">人資</option>'));
+  ok("既有成員角色下拉有人資", st.includes('value="hr" ') || st.includes('value="hr">人資'));
+  const d=viewDashboard();
+  ok("員工視角可選人資", d.includes("人資"));
+  ok("setMemberRole 接受 hr", (()=>{ let ok2=false; const _w=global.window.DB;
+    global.window.DB={set:async()=>{},update:async(c,id,p)=>{ if(p.role==="hr") ok2=true; },del:async()=>{},scheduleSet:async()=>{},setSettings:async()=>{}};
+    try{ setMemberRole("小葵","hr"); }catch(e){}
+    global.window.DB=_w; return ok2; })());
+  localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr"); }
+
 // ── 分頁與兩份清單 ──
 ok("HR 分頁＝影片審查＋儀表板", JSON.stringify(myTabs())===JSON.stringify([["hr","影片審查"],["dashboard","儀表板"]]));
 let h=viewHR();
