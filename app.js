@@ -245,18 +245,18 @@ function closeHeaderMenu(){
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
-  const all=((STATE?.users)||[]).filter(u=>["editor","manager","intl","hr"].includes(u.role||"editor")).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const all=staffSorted(((STATE?.users)||[]).filter(u=>["editor","manager","intl","hr"].includes(u.role||"editor")));   // 一創→兩種→二創，英文名在後
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name); b.onclick=()=>loginAs(u); return b; };
   const section=(title, list)=>{ if(!list.length) return;
     const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
     list.forEach(u=>g.appendChild(mkBtn(u))); };
-  // 分區：Taiwan（剪輯）／海外版（海外剪輯）／管理層（經理人，如 Regina）放最下面，靠近「管理員登入」
+  // 分區順序：Taiwan（剪輯）→ 海外版 → 人資 → 管理層（Regina 放最下面，靠近「管理員登入」）
   section("Taiwan", all.filter(u=>(u.role||"editor")==="editor"));
   section("海外版", all.filter(u=>u.role==="intl"));
-  section("管理層", all.filter(u=>u.role==="manager"));
   section("人資", all.filter(u=>u.role==="hr"));
+  section("管理層", all.filter(u=>u.role==="manager"));
 }
 function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
