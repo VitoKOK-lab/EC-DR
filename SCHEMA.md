@@ -24,7 +24,7 @@
 | `subTag` | string | 子標籤 | = `tags[0]`，相容舊資料用 |
 | `mainType` | string | 主類別 | `流量型`／`帶貨型`／`寵粉`，由標籤推導，**排程分類用** |
 | `source` | string | 片源 | `老闆自拍`／`外部公司`（`settings.sources`） |
-| `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片`。畫面上另有虛擬階段「**待審核**」＝`stage:已完成` 且 `reviewStatus` 空（剪完等 Regina 審；審過= 通過 才顯示「剪輯完成」並進入上傳/補連結） |
+| `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片`。畫面上另有虛擬階段「**待審核**」，三個條件同時成立才算：①`stage:已完成` ②`reviewStatus` 空 ③`publishedLink` 空（有上傳網址＝早就上片，不用審），且 `finishedAt` ≥ `settings.reviewSince`（流程上線日，舊片不回溯） |
 | `editor` | string | 剪輯人員 | 成員名字（對應 `users`） |
 | `assignedTo` | string | 指派對象 | 管理員把待剪毛片指派給的成員名字（只分配、不計時；空＝公用待剪池）。員工認領後才開始計時 |
 | `claimedBy` | string | 認領人 | 拉下來剪的人 |
@@ -186,6 +186,7 @@
 | `schemaVersion` | number | 結構版本（目前 9） |
 | `dailyTarget` | number | **每日應上片數（單一數字，不分類型）**；月排程以此判斷已排滿／缺幾支。未設定時沿用 `weekdayTargets` 加總 |
 | `weekdayTargets` | map | （舊）`{0..6: {流量型, 帶貨型, 寵粉}}` 每星期幾各類型上片數；已被 `dailyTarget` 取代，僅作未設定時的後備加總 |
+| `reviewSince` | string | 審片流程上線日 `YYYY-MM-DD`；這天之前完成的舊片不列入待審核（預設 `2026-07-27`） |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `intlAccounts` | object[] | 海外 TikTok 帳號清單，每筆 `{locale, name}`（en/th/ms ＋ 帳號名）；建立在地化版本時挑帳號用 |
 | `intlDailyTarget` | number | 海外每日目標（**每個帳號**每天幾支），預設 2；海外月歷（P2）以此判斷已排滿／缺幾支 |
