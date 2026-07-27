@@ -1944,6 +1944,62 @@ async function saveVideo(id){
 let INTL_Q="";
 // 在地化語言（海外二創）：一種角色、建立時選語言；皆用英文操作介面
 // 馬來西亞已移到台灣區（channel:"ms"，比照蝦皮由台灣剪輯做），海外只剩 英/泰
+// ===================================================================
+// 衍生版本線（四條）：蝦皮／馬來西亞走 channel 欄位，英文／泰文走 locale 欄位。
+// 建立／認領／退回／完成／改期／月曆計數 全部共用下面這組 line* 函式 ——
+// 改流程只要改一次，四條線同時生效（顯示文字仍各線自訂，由呼叫端傳入）。
+// ===================================================================
+const LINES={
+  shopee:{ key:"shopee", field:"channel", priceKey:"shopee", acctKey:"shopeeAccounts", targetKey:"shopeeDailyTarget" },
+  ms:    { key:"ms",     field:"channel", priceKey:"ms",     acctKey:"msAccounts",     targetKey:"msDailyTarget" },
+  en:    { key:"en",     field:"locale",  priceKey:"en",     acctKey:"",               targetKey:"intlDailyTarget" },
+  th:    { key:"th",     field:"locale",  priceKey:"th",     acctKey:"",               targetKey:"intlDailyTarget" },
+};
+function lineOf(v){ return String((v&&(v.channel||v.locale))||""); }                 // 這支屬於哪條線（空＝台灣源片）
+function lineMatch(v,k){ const L=LINES[k]; return !!L && String((v||{})[L.field]||"")===k; }
+function lineAccounts(k){ const L=LINES[k]; if(!L) return [];
+  if(L.acctKey){ const a=STATE.settings&&STATE.settings[L.acctKey]; return Array.isArray(a)?a.filter(x=>String(x||"").trim()):[]; }
+  return intlAccountsFor(k).map(a=>a.name); }
+function lineTarget(k){ const L=LINES[k]; if(!L) return 2;
+  const v=STATE.settings&&STATE.settings[L.targetKey]; return (v!=null&&v!=="")?(+v||0):2; }
+function lineVersionsOfSrc(k, sourceId){ return (STATE.videos||[]).filter(v=>lineMatch(v,k) && v.sourceVideoId===sourceId); }
+function lineDayList(k, date, acct){ return (STATE.videos||[]).filter(v=>lineMatch(v,k) && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
+function lineDayBreak(k, date, acct){ const total=lineDayList(k,date,acct).length, target=lineTarget(k);
+  return {total, target, short:Math.max(0,target-total), full: total>=target}; }
+// 來源片池：四條線共用「已完整上傳的中文舊片」，互相排除彼此的衍生版本
+function lineSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && !v.channel && isPublished(v) && vidIsOld(v)); }
+// 建立版本殼（指派給自己；同源片同帳號不重複）。msg 由各線提供，行為只有這一份
+function createLineVersion(k, sourceId, account, msg){
+  const L=LINES[k]; if(!L){ toast(T("未知的平台","Unknown line"),true); return; }
+  account=account||"";
+  const s=vid(sourceId); if(!s){ toast(msg.notFound,true); return; }
+  if(!isPublished(s)){ toast(msg.notPublished,true); return; }
+  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && lineMatch(v,k) && v.account===account)){
+    toast(msg.dup(account),true); return; }
+  const rec=newVideoRecord({ [L.field]:k, account, sourceVideoId:sourceId,
+    rawName:(s.name||s.rawName||""), name:(msg.draftName?msg.draftName(s):""), videoCopy:"",
+    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+    productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
+    stage:"待處理", assignedTo:currentUser() });
+  write("POST","/api/videos",{video:rec},msg.ok(account)).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
+}
+// 退回待處理（放回公用池重選）
+function lineUnclaim(id, askMsg, okMsg){ if(!confirm(askMsg)) return; write("POST",`/api/videos/${id}/unclaim`,{},okMsg); }
+// 完成：不強制先填上傳連結（先排日期、到日子上傳後再回來補）→ 進入「待審核」
+function lineFinish(id, askMsg, okMsg){ const v=vid(id)||{};
+  if(!confirm(askMsg)) return;
+  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},okMsg).then(ok=>{ if(ok) render(); });
+}
+// 退回資料庫：只移除「還沒開始做」的版本殼，不動源片、不進回收桶
+function lineDiscard(k, id, msg){ const v=vid(id)||{};
+  if(!(lineMatch(v,k) && v.stage==="待處理")){ toast(msg.notAllowed,true); return; }
+  if(!confirm(msg.ask(v))) return;
+  write("DELETE","/api/videos/"+id+"/purge",{},msg.ok(v)).then(ok=>{ if(ok) render(); });
+}
+// 排程調整：只改預排上片日／移出當天，影片本身不動
+function lineReschedule(id, nd, okMsg, after){ if(!nd) return; write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},okMsg).then(ok=>{ if(ok&&after) after(); }); }
+function lineUnschedule(id, askMsg, okMsg, after){ if(!confirm(askMsg)) return;
+  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},okMsg).then(ok=>{ if(ok&&after) after(); }); }
 const INTL_LOCALES=["en","th"];
 const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};   // ms 保留給顯示/翻譯用
 const LOCALE_SHORT={en:"EN",th:"TH",ms:"MS"};
@@ -1981,44 +2037,50 @@ function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
-function intlDailyTarget(){ const v=STATE.settings&&STATE.settings.intlDailyTarget; return (v!=null&&v!=="")?(+v||0):2; }
+function intlDailyTarget(){ return lineTarget("en"); }
 function localizedVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.sourceVideoId===sourceId && v.locale); }
-// 源片視窗的「各語言版本」卡（中／英泰馬一起看）＋在地化版本回連源片
-function localizedVersionsCard(v){
-  if(!v||!v.id) return "";
-  if(v.locale){   // 這支本身是在地化版本 → 回連源片
-    const s=srcOf(v);
-    return `<div class="card" style="background:var(--panel2)"><b>${T("來源片（台灣）","Source video (Taiwan)")}</b>
-      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:`<span class="muted">${T("來源片已不存在","Source video no longer exists")}</span>`} <span class="muted" style="font-size:12px">・${esc(localeName(v.locale))}</span></div></div>`;
-  }
-  const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
+// 版本卡（源片視窗用，四條線共用）：列出這支源片在某條線的所有版本；
+// 欄位／狀態顏色只有這一份，差異只有「標題、是否顯示語言欄、是否顯示觀看數」
+function lineVersionsCard(cfg){
+  const {kids, title, hint, cols} = cfg;
   if(!kids.length) return "";
   const rows=kids.map(k=>{
     const st=dispStage(k)==="待審核"?`<span class="pill wa" style="font-size:10px">${T("待審核","In review")}</span>`:(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
     const link=k.publishedLink?`<a href="${esc(k.publishedLink)}" target="_blank">${T("上傳連結","Upload link")}</a>`:'<span class="muted">—</span>';
-    const mv=(Array.isArray(k.metrics)?k.metrics:[]).reduce((a,m)=>a+(+m.views||0),0);
     const doneAt=String(k.finishedAt||"").slice(0,10)||'<span class="muted">—</span>';
     const sched=k.scheduledDate?esc(String(k.scheduledDate).slice(0,10)):'<span class="muted">—</span>';
+    const mv=(Array.isArray(k.metrics)?k.metrics:[]).reduce((a,m)=>a+(+m.views||0),0);
     return `<tr>
-      <td data-label="${T("語言","Language")}">${esc(localeName(k.locale))}</td>
+      ${cols.lang?`<td data-label="${T("語言","Language")}">${esc(localeName(k.locale))}</td>`:''}
       <td data-label="${T("帳號","Account")}">${esc(k.account||"")||'<span class="muted">—</span>'}</td>
       <td data-label="${T("剪輯","Editor")}">${esc(k.editor||k.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="${T("狀態","Status")}">${st}</td>
       <td data-label="${T("完成日","Finished")}">${doneAt}</td>
       <td data-label="${T("預排上片","Scheduled")}">${sched}</td>
       <td data-label="${T("上傳連結","Upload")}">${link}</td>
-      <td data-label="${T("觀看","Views")}">${mv?num(mv):'<span class="muted">—</span>'}</td>
+      ${cols.views?`<td data-label="${T("觀看","Views")}">${mv?num(mv):'<span class="muted">—</span>'}</td>`:''}
       <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">${T("開啟","Open")}</a></td></tr>`;
   }).join("");
-  return `<div class="card" style="background:var(--panel2)"><b>${T("各語言版本","Language versions")}（${kids.length}）</b> <span class="muted" style="font-size:12px">${T("誰剪的・何時完成・預排何時上片，一起看","editor · finished date · scheduled date, at a glance")}</span>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>${T("語言","Language")}</th><th>${T("帳號","Account")}</th><th>${T("剪輯","Editor")}</th><th>${T("狀態","Status")}</th><th>${T("完成日","Finished")}</th><th>${T("預排上片","Scheduled")}</th><th>${T("上傳連結","Upload")}</th><th>${T("觀看","Views")}</th><th></th></tr></thead>
+  return `<div class="card" style="background:var(--panel2)"><b>${title}（${kids.length}）</b> <span class="muted" style="font-size:12px">${hint}</span>
+    <table class="responsive" style="margin-top:8px"><thead><tr>${cols.lang?`<th>${T("語言","Language")}</th>`:''}<th>${T("帳號","Account")}</th><th>${T("剪輯","Editor")}</th><th>${T("狀態","Status")}</th><th>${T("完成日","Finished")}</th><th>${T("預排上片","Scheduled")}</th><th>${T("上傳連結","Upload")}</th>${cols.views?"<th>"+T("觀看","Views")+"</th>":''}<th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
-
-// 海外版顯示用：把 # 之後的標籤全部去掉、太長標題變乾淨
+// 版本回連源片的小卡（各線共用）
+function lineBackToSourceCard(v, label){ const s=srcOf(v);
+  return `<div class="card" style="background:var(--panel2)"><b>${label.head}</b>
+      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:`<span class="muted">${T("來源片已不存在","Source video no longer exists")}</span>`} <span class="muted" style="font-size:12px">・${label.tail}</span></div></div>`; }
+// 源片視窗的「各語言版本」卡（中／英泰馬一起看）＋在地化版本回連源片
+function localizedVersionsCard(v){
+  if(!v||!v.id) return "";
+  if(v.locale) return lineBackToSourceCard(v, {head:T("來源片（台灣）","Source video (Taiwan)"), tail:esc(localeName(v.locale))});
+  const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
+  return lineVersionsCard({ kids, title:T("各語言版本","Language versions"),
+    hint:T("誰剪的・何時完成・預排何時上片，一起看","editor · finished date · scheduled date, at a glance"),
+    cols:{lang:true, views:true} });
+}
 function stripHash(s){ return String(s||"").split(/[#＃]/)[0].trim(); }
 // ---- Library：只列「已上傳的中文舊片」（完整已上傳＝已完成且過了上片日）----
-function intlSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && !v.channel && isPublished(v) && vidIsOld(v)); }
+function intlSourcePool(){ return lineSourcePool(); }
 // 站內影片預覽播放器：能嵌入就播（Drive 檔案 / YouTube / 直接影片檔），資料夾或受保護貼文則給「開新分頁」
 function playableEmbed(url){ url=String(url||"").trim();
   let m=url.match(/drive\.google\.com\/file\/d\/([-\w]+)/); if(m) return {t:'iframe',src:'https://drive.google.com/file/d/'+m[1]+'/preview'};
@@ -2091,19 +2153,16 @@ function intlSetAcct(name){ INTL_ACCT=name||""; render(); }
 function calMoveIntl(n){ let [y,m]=INTL_CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} INTL_CAL_YM=[y,m]; render(); }
 // 某日某帳號已排的在地化版本（依上傳預排日 scheduledDate；不分階段＝看整體計畫）
 function intlDayList(date, acct){ acct=acct!=null?acct:intlCurAcct();
-  return (STATE.videos||[]).filter(v=>v.locale && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
+  return (STATE.videos||[]).filter(v=>v.locale && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }   // 海外月曆是跨語言看帳號，不套 lineDayList
 function intlDayBreak(date, acct){ const total=intlDayList(date,acct).length, target=intlDailyTarget();
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 const MONTHS_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
-// 海外月曆內容體（依語言：en／th 各自的 TikTok 帳號）：月排程 hub 用
-function calIntlBody(loc){
-  loc=INTL_LOCALES.includes(loc)?loc:"en";
-  const accts=intlAccountsFor(loc);
-  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("這個語言還沒有 TikTok 帳號。請管理員到「設定 → 海外設定」新增（格式 "+loc+"=帳號名）。","No "+loc.toUpperCase()+" TikTok accounts yet. Ask the admin to add them in Settings → Overseas.")}</p></div>`;
-  if(!INTL_ACCT || !accts.some(a=>a.name===INTL_ACCT)) INTL_ACCT=accts[0].name;   // 目前帳號要屬於這個語言
-  const acc=INTL_ACCT;
-  if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
-  const [y,m]=INTL_CAL_YM;
+// 月曆內容體（四條線共用）：格子計數／顏色／今日標記／缺片提示邏輯只有這一份，
+// 各線只提供「帳號清單、目前帳號、年月狀態、點日期與換月要呼叫誰」
+function calLineBody(cfg){
+  const {accts, acc, ym, emptyHTML, dayOpen, setAcct, move, targetTip} = cfg;
+  if(!accts.length) return emptyHTML;
+  const [y,m]=ym;
   const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
   const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
   let cells="";
@@ -2112,23 +2171,22 @@ function calIntlBody(loc){
     const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const isToday=ds===today; const tmk=isToday?`<span class="todaymk">${T("今天","Today")}</span>`:"";
     const within10=ds>=today && ds<=d10s;
-    const b=intlDayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
+    const b=cfg.dayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
-    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayIntl('${ds}')">
+    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="${dayOpen(ds)}">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
     </div>`;
   }
-  const acctSel=`<select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">
-    ${accts.map(a=>`<option ${a.name===acc?'selected':''}>${esc(a.name)}</option>`).join("")}</select>`;
+  const acctSel=`<select onchange="${setAcct}" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select>`;
   return `
   <div class="card">
-    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b> ${acctSel} <span class="muted" style="font-size:12px">${intlDailyTarget()} ${T("支／帳號／天","per account / day")}</span></div>
+    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b> ${acctSel} <span class="muted" style="font-size:12px">${targetTip}</span></div>
     <div class="calhead">
-      <button class="calnav" onclick="calMoveIntl(-1)" title="${T("上月","Previous month")}">‹</button>
+      <button class="calnav" onclick="${move(-1)}" title="${T("上月","Previous month")}">‹</button>
       <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
-      <button class="calnav" onclick="calMoveIntl(1)" title="${T("下月","Next month")}">›</button>
+      <button class="calnav" onclick="${move(1)}" title="${T("下月","Next month")}">›</button>
     </div>
     <div class="cal">
       ${(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]:["日","一","二","三","四","五","六"]).map(x=>`<div class="dow">${x}</div>`).join("")}
@@ -2136,6 +2194,20 @@ function calIntlBody(loc){
     </div>
     <div class="callegend"><span><i class="lg-g"></i>${T("已排滿","Full")}</span><span><i class="lg-r"></i>${T("待補","Behind")}</span><span><i class="lg-b"></i>${T("未排","None")}</span><span><i class="lg-t"></i>${T("今天","Today")}</span></div>
   </div>`;
+}
+// 海外月曆內容體（依語言：en／th 各自的 TikTok 帳號）：月排程 hub 用
+function calIntlBody(loc){
+  loc=INTL_LOCALES.includes(loc)?loc:"en";
+  const accts=intlAccountsFor(loc).map(a=>a.name);
+  if(!INTL_ACCT || !accts.includes(INTL_ACCT)) INTL_ACCT=accts[0]||"";   // 目前帳號要屬於這個語言
+  if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
+  return calLineBody({ accts, acc:INTL_ACCT, ym:INTL_CAL_YM,
+    emptyHTML:`<div class="card"><p class="muted" style="padding:18px 4px">${T("這個語言還沒有 TikTok 帳號。請管理員到「設定 → 海外設定」新增（格式 "+loc+"=帳號名）。","No "+loc.toUpperCase()+" TikTok accounts yet. Ask the admin to add them in Settings → Overseas.")}</p></div>`,
+    dayBreak:(ds,acc)=>intlDayBreak(ds,acc),
+    dayOpen:(ds)=>`openDayIntl('${ds}')`,
+    setAcct:`intlSetAcct(this.value)`,
+    move:(n)=>`calMoveIntl(${n})`,
+    targetTip:`${intlDailyTarget()} ${T("支／帳號／天","per account / day")}` });
 }
 function openDayIntl(ds){
   const acc=intlCurAcct(); const b=intlDayBreak(ds,acc); const list=intlDayList(ds,acc);
@@ -2159,52 +2231,44 @@ function openDayIntl(ds){
   </div></div>`;
 }
 // 海外排程調整（比照中文版月曆）：改上片日／移出這一天 — 只動排程日期，影片本身不動
-function intlReschedule(id,nd,ds){ if(!nd||nd===ds) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},T("已改期至 ","Moved to ")+nd).then(ok=>{ if(ok) openDayIntl(ds); }); }
-function intlUnschedule(id,ds){
-  if(!confirm(T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video itself stays."))) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},T("已移出排程","Removed from this day")).then(ok=>{ if(ok) openDayIntl(ds); }); }
+function intlReschedule(id,nd,ds){ if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayIntl(ds)); }
+function intlUnschedule(id,ds){ lineUnschedule(id,
+  T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video itself stays."),
+  T("已移出排程","Removed from this day"), ()=>openDayIntl(ds)); }
 
 // ---- 從 Library 的帳號選單建立版本：value = 帳號在 intlAccounts() 的索引 ----
 function createLocalFromAcct(sourceId, idx){ const a=intlAccounts()[+idx]; if(!a){ toast(T("請先選擇帳號","Pick an account"),true); return; }
   createLocalVersion(sourceId, a.locale, a.name); }
 // ---- 建立在地化版本（衍生影片，指派給自己；語言＋帳號帶入；同源片同語言同帳號不重複）----
 function createLocalVersion(sourceId, locale, account){
-  locale=locale||"en"; account=account||"";
+  locale=locale||"en";
   if(!INTL_LOCALES.includes(locale)){ toast(T("未知的語言","Unknown language"),true); return; }
-  const s=vid(sourceId); if(!s){ toast(T("找不到源片","Source not found"),true); return; }
-  if(!isPublished(s)){ toast(T("只有已完成上片的影片可以做二創","Only finished videos can be localized"),true); return; }
-  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.locale===locale && v.account===account)){
-    toast(T("「"+account+"」的"+localeName(locale)+"版本已存在",localeName(locale)+" version for “"+account+"” already exists"),true); return; }
-  const me=currentUser();
-  // 英文版：建立時直接帶入源片的英文片名（nameEn，去掉 # 標籤）當標題草稿；泰/馬由剪輯用 文A 自行翻譯
-  const draftName = locale==="en" ? stripHash(s.nameEn||"") : "";
-  const rec=newVideoRecord({ locale, account, sourceVideoId:sourceId,
-    rawName:(s.name||s.rawName||""), name:draftName, videoCopy:"",
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
-    productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
-    stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},localeName(locale)+(account?(" · "+account):"")+T(" 版本已加入待處理"," added to the pool")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
+  createLineVersion(locale, sourceId, account, {
+    notFound:T("找不到源片","Source not found"),
+    notPublished:T("只有已完成上片的影片可以做二創","Only finished videos can be localized"),
+    dup:(a)=>T("「"+a+"」的"+localeName(locale)+"版本已存在",localeName(locale)+" version for “"+a+"” already exists"),
+    // 英文版：建立時帶入源片的英文片名（去掉 # 標籤）當標題草稿；泰文由剪輯用 文A 自行翻譯
+    draftName:(s)=> locale==="en" ? stripHash(s.nameEn||"") : "",
+    ok:(a)=>localeName(locale)+(a?(" · "+a):"")+T(" 版本已加入待處理"," added to the pool") });
 }
 // 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'+sourceId); const idx=sel?sel.value:'';
   if(idx===''){ toast(T("請先選擇帳號","Pick an account first"),true); return; } createLocalFromAcct(sourceId, idx); }
-function intlUnclaim(id){ if(!confirm(T("退回這支版本，重新排隊給大家選？","Return this version to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
+function intlUnclaim(id){ lineUnclaim(id, T("退回這支版本，重新排隊給大家選？","Return this version to the shared pool?"), T("已退回待處理","Returned to the pool")); }
 // 退回資料庫：只移除 To do 裡「還沒開始做」的版本殼（無任何內容），源片立即回到 Library 可重選。
 // 不動源片、不進回收桶 — 海外版全是二創，絕不能刪到原始檔。
-function intlDiscard(id){ const v=vid(id)||{};
-  if(!(v.locale && v.stage==="待處理")){ toast(T("只有還沒開始的項目可以退回","Only unstarted To-do items can be returned"),true); return; }
-  const s=srcOf(v); const t=stripHash(v.name)||stripHash(s?(s.nameEn||s.name||s.rawName):"")||v.rawName||T("這支版本","this version");
-  if(!confirm(T(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${t}" to the library?\nNothing is deleted — the original video stays and can be picked again.`))) return;
-  write("DELETE","/api/videos/"+id+"/purge",{},T(`已退回資料庫：「${t}」（沒有刪除任何影片）`,`Returned to the library: "${t}" — no video was deleted`)).then(ok=>{ if(ok) render(); }); }
+function intlDiscard(id){ const v0=vid(id)||{}; const k=INTL_LOCALES.includes(v0.locale)?v0.locale:"";   // 只放行海外（英/泰）殼
+  const title=(v)=>{ const s=srcOf(v); return stripHash(v.name)||stripHash(s?(s.nameEn||s.name||s.rawName):"")||v.rawName||T("這支版本","this version"); };
+  lineDiscard(k, id, { notAllowed:T("只有還沒開始的項目可以退回","Only unstarted To-do items can be returned"),
+    ask:(v)=>T(`把「${title(v)}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${title(v)}" to the library?\nNothing is deleted — the original video stays and can be picked again.`),
+    ok:(v)=>T(`已退回資料庫：「${title(v)}」（沒有刪除任何影片）`,`Returned to the library: "${title(v)}" — no video was deleted`) }); }
 
 // ---- 在地化版本編輯視窗（全英文；語言隨版本）----
 // 完成不強制先填上傳連結：實務上是先排日期、到日子上傳後才有連結，之後再回來補
-function intlFinish(id){ const v=vid(id)||{};
-  const t=v.name||v.rawName||T("這支影片","this video");
-  if(!confirm(T(`「${t}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
-    `Done cutting "${t}"?\nIt moves to In review — upload & add links after Regina approves.`))) return;
-  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},T("已完成，移到影片庫","Done — moved to the library")).then(ok=>{ if(ok) render(); });
+function intlFinish(id){ const v=vid(id)||{}; const t=v.name||v.rawName||T("這支影片","this video");
+  lineFinish(id, T(`「${t}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
+    `Done cutting "${t}"?\nIt moves to In review — upload & add links after Regina approves.`),
+    T("已完成，移到影片庫","Done — moved to the library"));
 }
 async function intlSaveVideo(id){
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
@@ -2281,46 +2345,38 @@ const CHANNELS={
     setName:"馬來設定", acctKey:"msAccounts", targetKey:"msDailyTarget", priceKey:"ms",
     upLabel:"上傳連結（TikTok 貼文）", upPh:"https://www.tiktok.com/@.../video/...", srcBadge:"🇲🇾", gt:"ms" },   // 馬來版要翻成馬來文 → 文A
 };
-function chAccounts(ch){ const a=STATE.settings&&STATE.settings[CHANNELS[ch].acctKey]; return Array.isArray(a)?a.filter(x=>String(x||"").trim()):[]; }
-function chDailyTarget(ch){ const v=STATE.settings&&STATE.settings[CHANNELS[ch].targetKey]; return (v!=null&&v!=="")?(+v||0):2; }
+function chAccounts(ch){ return lineAccounts(ch); }
+function chDailyTarget(ch){ return lineTarget(ch); }
 // 來源片池：跟海外共用「已完整上傳的中文舊片」定義，互相排除彼此的衍生版本
-function chSourcePool(){ return (STATE.videos||[]).filter(v=> !v.locale && !v.channel && isPublished(v) && vidIsOld(v)); }
-function chVersionsOfSrc(ch, sourceId){ return (STATE.videos||[]).filter(v=>v.channel===ch && v.sourceVideoId===sourceId); }
+function chSourcePool(){ return lineSourcePool(); }
+function chVersionsOfSrc(ch, sourceId){ return lineVersionsOfSrc(ch, sourceId); }
 
 // ---- 建立版本（衍生影片，指派給自己；帳號帶入；同源片同帳號不重複）----
 function createChVersion(ch, sourceId, account){
   const C=CHANNELS[ch]; if(!C){ toast("未知的平台",true); return; }
-  account=account||"";
-  const s=vid(sourceId); if(!s){ toast("找不到源片",true); return; }
-  if(!isPublished(s)){ toast(T("只有已完成上片的影片可以做"+C.verName,"Only fully-published videos can be localized"),true); return; }
-  if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && v.channel===ch && v.account===account)){
-    toast(T("「"+account+"」的"+C.verName+"已存在",C.verNameEn+" for "+account+" already exists"),true); return; }
-  const me=currentUser();
-  const rec=newVideoRecord({ channel:ch, account, sourceVideoId:sourceId,
-    rawName:(s.name||s.rawName||""), name:"", videoCopy:"",
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
-    productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
-    stage:"待處理", assignedTo:me });
-  write("POST","/api/videos",{video:rec},T((account?("「"+account+"」"):"")+C.verName+"已加入待處理",C.verNameEn+(account?(" ("+account+")"):"")+" added to the pool")).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
+  createLineVersion(ch, sourceId, account, {
+    notFound:"找不到源片",
+    notPublished:T("只有已完成上片的影片可以做"+C.verName,"Only fully-published videos can be localized"),
+    dup:(a)=>T("「"+a+"」的"+C.verName+"已存在",C.verNameEn+" for "+a+" already exists"),
+    ok:(a)=>T((a?("「"+a+"」"):"")+C.verName+"已加入待處理",C.verNameEn+(a?(" ("+a+")"):"")+" added to the pool") });
 }
 // 從清單的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createChPick(ch, sourceId){ const sel=document.getElementById(CHANNELS[ch].pfx+'acct_'+sourceId); const acct=sel?sel.value:'';
   if(!acct){ toast(T("請先選擇"+CHANNELS[ch].label+"帳號","Pick a "+CHANNELS[ch].labelEn+" account first"),true); return; } createChVersion(ch, sourceId, acct); }
 
-function chUnclaim(ch,id){ if(!confirm(T("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？","Return this "+CHANNELS[ch].verNameEn+" to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
+function chUnclaim(ch,id){ lineUnclaim(id, T("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？","Return this "+CHANNELS[ch].verNameEn+" to the shared pool?"), T("已退回待處理","Returned to the pool")); }
 // 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
 function chFinish(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
-  const msg=T(`「${(v.name||v.rawName||"這支"+C.verName)}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
-    `Done cutting "${(v.name||v.rawName||"this "+C.verNameEn)}"?\nIt moves to In review — upload & add links after Regina approves.`);
-  if(!confirm(msg)) return;
-  write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},T("已完成","Done")).then(ok=>{ if(ok) render(); });
+  lineFinish(id, T(`「${(v.name||v.rawName||"這支"+C.verName)}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
+    `Done cutting "${(v.name||v.rawName||"this "+C.verNameEn)}"?\nIt moves to In review — upload & add links after Regina approves.`),
+    T("已完成","Done"));
 }
 // 退回資料庫：只移除「還沒開始做」的版本殼，不動源片、不進回收桶
-function chDiscard(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
-  if(!(v.channel===ch && v.stage==="待處理")){ toast(T("只有還沒開始的項目可以退回","Only unstarted items can be returned"),true); return; }
-  const t=v.name||v.rawName||T("這支"+C.verName,"this "+C.verNameEn);
-  if(!confirm(T(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${t}" to the library?\nNothing is deleted — the original stays and can be picked again.`))) return;
-  write("DELETE","/api/videos/"+id+"/purge",{},T(`已退回資料庫：「${t}」（沒有刪除任何影片）`,`Returned to the library: "${t}" (nothing deleted)`)).then(ok=>{ if(ok) render(); });
+function chDiscard(ch,id){ const C=CHANNELS[ch];
+  const title=(v)=>v.name||v.rawName||T("這支"+C.verName,"this "+C.verNameEn);
+  lineDiscard(ch, id, { notAllowed:T("只有還沒開始的項目可以退回","Only unstarted items can be returned"),
+    ask:(v)=>T(`把「${title(v)}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${title(v)}" to the library?\nNothing is deleted — the original stays and can be picked again.`),
+    ok:(v)=>T(`已退回資料庫：「${title(v)}」（沒有刪除任何影片）`,`Returned to the library: "${title(v)}" (nothing deleted)`) });
 }
 async function chSaveVideo(ch,id){ const p=CHANNELS[ch].pfx;
   const video={ name:val(p+"_name").trim(), videoCopy:val(p+"_vcopy").trim(),
@@ -2426,55 +2482,19 @@ let CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
 function chCurAcct(ch){ const list=chAccounts(ch); if(!list.length) return ""; const st=CH_CAL[ch]; if(!st.acct || !list.includes(st.acct)){ st.acct=list[0]; } return st.acct; }
 function chSetAcct(ch,name){ CH_CAL[ch].acct=name||""; render(); }
 function calMoveCh(ch,n){ const st=CH_CAL[ch]; let [y,m]=st.ym; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} st.ym=[y,m]; render(); }
-function chDayList(ch, date, acct){ acct=acct!=null?acct:chCurAcct(ch);
-  return (STATE.videos||[]).filter(v=>v.channel===ch && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
-function chDayBreak(ch, date, acct){ const total=chDayList(ch,date,acct).length, target=chDailyTarget(ch);
-  return {total, target, short:Math.max(0,target-total), full: total>=target}; }
+function chDayList(ch, date, acct){ return lineDayList(ch, date, acct!=null?acct:chCurAcct(ch)); }
+function chDayBreak(ch, date, acct){ return lineDayBreak(ch, date, acct!=null?acct:chCurAcct(ch)); }
 // 平台月曆內容體：月排程 hub 共用
 function calChBody(ch){
-  const C=CHANNELS[ch];
-  const accts=chAccounts(ch);
-  if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("還沒有"+C.label+"帳號。請管理員到「設定 → "+C.setName+"」新增，之後就能依帳號排程。","No "+C.labelEn+" accounts yet. Ask the admin to add them in Settings.")}</p></div>`;
-  const acc=chCurAcct(ch);
-  const st=CH_CAL[ch];
+  const C=CHANNELS[ch]; const accts=chAccounts(ch); const st=CH_CAL[ch];
   if(!st.ym){ const t=new Date(); st.ym=[t.getFullYear(), t.getMonth()]; }
-  const [y,m]=st.ym;
-  const first=new Date(y,m,1), startDow=first.getDay(), days=new Date(y,m+1,0).getDate();
-  const d10=new Date(today+"T00:00:00"); d10.setDate(d10.getDate()+10); const d10s=d10.toISOString().slice(0,10);
-  let cells="";
-  for(let i=0;i<startDow;i++) cells+=`<div class="day out"></div>`;
-  for(let d=1;d<=days;d++){
-    const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const isToday=ds===today; const tmk=isToday?`<span class="todaymk">${T("今天","Today")}</span>`:"";
-    const within10=ds>=today && ds<=d10s;
-    const b=chDayBreak(ch,ds,acc); const filled=b.full; const empty=(b.total||0)===0;
-    const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
-    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="openDayCh('${ch}','${ds}')">
-      ${tmk}<div class="dnum">${d}</div>
-      <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
-      ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
-    </div>`;
-  }
-  const acctSel=`<select onchange="chSetAcct('${ch}',this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select>`;
-  return `
-  <div class="card">
-    <div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b> ${acctSel} <span class="muted" style="font-size:12px">${T("每帳號每天","per account / day:")} ${chDailyTarget(ch)} ${T("支","")}</span></div>
-    <div class="calhead">
-      <button class="calnav" onclick="calMoveCh('${ch}',-1)" title="${T("上月","Previous month")}">‹</button>
-      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
-      <button class="calnav" onclick="calMoveCh('${ch}',1)" title="${T("下月","Next month")}">›</button>
-    </div>
-    <div class="cal">
-      ${(currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]:["日","一","二","三","四","五","六"]).map(x=>`<div class="dow">${x}</div>`).join("")}
-      ${cells}
-    </div>
-    <div class="callegend">
-      <span><i class="lg-g"></i>${T("已排滿","Full")}</span>
-      <span><i class="lg-r"></i>${T("待補","Behind")}</span>
-      <span><i class="lg-b"></i>${T("未排","None")}</span>
-      <span><i class="lg-t"></i>${T("今天","Today")}</span>
-    </div>
-  </div>`;
+  return calLineBody({ accts, acc:chCurAcct(ch), ym:st.ym,
+    emptyHTML:`<div class="card"><p class="muted" style="padding:18px 4px">${T("還沒有"+C.label+"帳號。請管理員到「設定 → "+C.setName+"」新增，之後就能依帳號排程。","No "+C.labelEn+" accounts yet. Ask the admin to add them in Settings.")}</p></div>`,
+    dayBreak:(ds,acc)=>chDayBreak(ch,ds,acc),
+    dayOpen:(ds)=>`openDayCh('${ch}','${ds}')`,
+    setAcct:`chSetAcct('${ch}',this.value)`,
+    move:(n)=>`calMoveCh('${ch}',${n})`,
+    targetTip:`${T("每帳號每天","per account / day:")} ${chDailyTarget(ch)} ${T("支","")}` });
 }
 function openDayCh(ch,ds){
   const C=CHANNELS[ch];
@@ -2497,43 +2517,21 @@ function openDayCh(ch,ds){
     ${list.length?`<table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
   </div></div>`;
 }
-function chReschedule(ch,id,nd,ds){ if(!nd||nd===ds) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},T("已改期至 ","Moved to ")+nd).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
-function chUnschedule(ch,id,ds){
-  if(!confirm(T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video stays."))) return;
-  write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},T("已移出排程","Removed from schedule")).then(ok=>{ if(ok) openDayCh(ch,ds); }); }
+function chReschedule(ch,id,nd,ds){ if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayCh(ch,ds)); }
+function chUnschedule(ch,id,ds){ lineUnschedule(id,
+  T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video stays."),
+  T("已移出排程","Removed from schedule"), ()=>openDayCh(ch,ds)); }
 
 // ---- 源片視窗的「○○版本」卡（誰剪的・何時完成・預排何時上片）＋ 版本回連源片 ----
 function chVersionsCard(ch,v){
   const C=CHANNELS[ch];
   if(!v||!v.id) return "";
-  if(v.channel===ch){
-    const s=srcOf(v);
-    return `<div class="card" style="background:var(--panel2)"><b>${T("來源片（中文版）","Source video (Chinese)")}</b>
-      <div style="margin-top:6px">${s?`<a href="javascript:void(0)" onclick="editVideo('${s.id}')">${esc(vidTitle(s))}</a>`:`<span class="muted">${T("來源片已不存在","Source video no longer exists")}</span>`} <span class="muted" style="font-size:12px">・${T(C.verName,C.verNameEn)}</span></div></div>`;
-  }
+  if(v.channel===ch) return lineBackToSourceCard(v, {head:T("來源片（中文版）","Source video (Chinese)"), tail:T(C.verName,C.verNameEn)});
   if(v.channel) return "";   // 其他平台的衍生版本 → 由該平台的卡處理
-  const kids=chVersionsOfSrc(ch,v.id);
-  if(!kids.length) return "";
-  const rows=kids.map(k=>{
-    const st=dispStage(k)==="待審核"?`<span class="pill wa" style="font-size:10px">${T("待審核","In review")}</span>`:(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
-    const link=k.publishedLink?`<a href="${esc(k.publishedLink)}" target="_blank">${T("上傳連結","Upload link")}</a>`:'<span class="muted">—</span>';
-    const doneAt=String(k.finishedAt||"").slice(0,10)||'<span class="muted">—</span>';
-    const sched=k.scheduledDate?esc(String(k.scheduledDate).slice(0,10)):'<span class="muted">—</span>';
-    return `<tr>
-      <td data-label="${T("帳號","Account")}">${esc(k.account||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="${T("剪輯","Editor")}">${esc(k.editor||k.claimedBy||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="${T("狀態","Status")}">${st}</td>
-      <td data-label="${T("完成日","Finished")}">${doneAt}</td>
-      <td data-label="${T("預排上片","Scheduled")}">${sched}</td>
-      <td data-label="${T("上傳連結","Upload")}">${link}</td>
-      <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">${T("開啟","Open")}</a></td></tr>`;
-  }).join("");
-  return `<div class="card" style="background:var(--panel2)"><b>${T(C.verName,C.verNameEn)}（${kids.length}）</b> <span class="muted" style="font-size:12px">${T("誰剪的・何時完成・預排何時上片，一起看","editor · finished date · scheduled date, at a glance")}</span>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>${T("帳號","Account")}</th><th>${T("剪輯","Editor")}</th><th>${T("狀態","Status")}</th><th>${T("完成日","Finished")}</th><th>${T("預排上片","Scheduled")}</th><th>${T("上傳連結","Upload")}</th><th></th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+  return lineVersionsCard({ kids:chVersionsOfSrc(ch,v.id), title:T(C.verName,C.verNameEn),
+    hint:T("誰剪的・何時完成・預排何時上片，一起看","editor · finished date · scheduled date, at a glance"),
+    cols:{lang:false, views:false} });
 }
-
 function shopeeVersionsCard(v){ return chVersionsCard("shopee",v); }
 function msVersionsCard(v){ return chVersionsCard("ms",v); }
 function shopeeAccounts(){ return chAccounts("shopee"); }
