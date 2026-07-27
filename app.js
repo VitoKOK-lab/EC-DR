@@ -699,7 +699,7 @@ function transferTask(id){
   const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
   if(!t){ toast("找不到這項交辦",true); return; }
   // 交辦可指派給台灣剪輯或海外剪輯，轉移對象也一致
-  const editors=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor") && u.name!==t.user).map(u=>u.name);
+  const editors=staffNamesSorted(["editor","intl"]).filter(n=>n!==t.user);
   if(!editors.length){ toast("沒有其他員工可轉移",true); return; }
   const menu=editors.map((n,i)=>`${i+1}. ${n}`).join("\n");
   const ans=prompt("把「"+t.title+"」轉移給哪位員工？輸入編號：\n"+menu); if(ans===null) return;
@@ -816,6 +816,45 @@ function workTasksCard(tasks){
   </div>`;
 }
 // ===================================================================
+// 員工顯示順序（所有清單共用）：一次創作 → 兩種都做 → 二次創作／海外；同組內中文名在前、英文名在後
+function staffRank(u){
+  const role = u.role||"editor";
+  const c = role==="editor" ? (u.craft||"orig") : (role==="intl" ? "derived" : "other");
+  const byCraft = c==="orig" ? 0 : (c==="both" ? 1 : (c==="derived" ? 2 : 3));
+  const byIntl  = u.role==="intl" ? 1 : 0;              // 海外一律再往後
+  const byName  = /^[A-Za-z]/.test(String(u.name||"")) ? 1 : 0;   // 英文名字排後面
+  return [byCraft, byIntl, byName];
+}
+function staffSorted(list){
+  return (list||[]).slice().sort((a,b)=>{
+    const ra=staffRank(a), rb=staffRank(b);
+    return (ra[0]-rb[0]) || (ra[1]-rb[1]) || (ra[2]-rb[2]) || String(a.name).localeCompare(String(b.name),"zh-Hant");
+  });
+}
+// 下拉選單的分組：一次創作 / 二次創作 / 海外 / 其他角色（順序即顯示順序）
+function staffOptGroups(roles){
+  const rs = roles || ["editor","intl"];
+  const pool = staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor")));
+  const isEd=(u)=>(u.role||"editor")==="editor";               // 分工只對本地剪輯有意義
+  const groups=[
+    ["一次創作", u=>isEd(u) && (u.craft||"orig")==="orig"],
+    ["二次創作", u=>isEd(u) && (u.craft||"orig")==="derived"],
+    ["兩種都做", u=>isEd(u) && (u.craft||"orig")==="both"],
+    ["海外剪輯", u=>u.role==="intl"],
+    ["經理人",   u=>u.role==="manager"],
+    ["人資",     u=>u.role==="hr"],
+  ];
+  const used=new Set();
+  return groups.map(([label,test])=>{
+    const ppl=pool.filter(u=>!used.has(u.name) && test(u));
+    ppl.forEach(u=>used.add(u.name));
+    return ppl.length?`<optgroup label="${esc(label)}">${ppl.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`:'';
+  }).join("");
+}
+function staffNamesSorted(roles){
+  const rs = roles || ["editor","intl"];
+  return staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor"))).map(u=>u.name);
+}
 // 一次創作／二次創作分工：每位剪輯只看到自己負責的那一種，畫面才不會互相干擾
 //   orig    一次創作：台灣毛片、原創影片庫、社群媒體月排程
 //   derived 二次創作：蝦皮／馬來西亞／英文／泰文版本（從已完成原創再剪）
@@ -1043,7 +1082,7 @@ function flowReviewQueueCard(){
   return reviewQueueCard;
 }
 // 流程中控④：單一剪輯卡（上線狀態、進行中/完成、拖延警示、今日交辦與回報、一鍵交辦）
-function flowStaffCard(u, idx, allTasks){
+function flowStaffCard(u, idx, allTasks, readOnly){
 
   // ---- ④ 每位剪輯：狀態＋交辦＋回報 ----
 
@@ -1080,12 +1119,12 @@ function flowStaffCard(u, idx, allTasks){
         <span class="pill" style="font-size:11px">交辦 ${tasks.filter(t=>t.done).length}/${tasks.length}</span></div>
       ${wipRows?`<div style="margin-top:8px">${wipRows}</div>`:''}
       ${taskRows?`<div style="margin-top:8px">${taskRows}</div>`:`<p class="muted" style="font-size:12px;margin:8px 0 0">今天還沒有交辦事項</p>`}
-      <div class="row" style="gap:6px;margin-top:10px">
+      ${readOnly?'':`<div class="row" style="gap:6px;margin-top:10px">
         <input id="fa_${idx}" placeholder="交辦 ${esc(name)} 一件事…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')flowAssign(${idx},'${esc(jsEsc(name))}')">
-        <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>
+        <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>`}
     </div>`; }
 function viewFlow(){
-  const staff=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor"));
+  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const g=scheduleGlance();
   const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
@@ -1265,7 +1304,7 @@ function dashViewAsCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
-        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${["editor","intl","manager","hr"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select>
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","manager","hr"])}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
@@ -1279,7 +1318,7 @@ function dashAssignTaskCard(){
     </div>
     <div class="grid cols2" style="margin-top:12px">
       <div><label>選擇員工</label>
-        <select id="asg_who"><option value="">— 選擇員工 —</option>${["editor","intl"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select></div>
+        <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl"])}</select></div>
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
     </div>
@@ -1387,7 +1426,7 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 let HR_YM=null;            // 目前檢視的年月 [y,m]；null＝不限月份
 let HR_TAB="pending";      // pending＝等待審查、done＝已完成
 let HR_WHO="";             // 篩選同仁（空＝全部）
-function hrStaff(){ return (STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")).map(u=>u.name); }
+function hrStaff(){ return staffNamesSorted(["editor","intl"]); }
 // 人資的檢查紀錄放在自己的 hrchecks 集合（不寫進影片、不影響剪輯流程）
 // {id:videoId, count, lastBy, lastAt, history:[{by,at,stage}]}
 function hrCheck(id){ return (STATE&&STATE.hrchecks&&STATE.hrchecks[id])||null; }
@@ -1477,7 +1516,17 @@ function viewHR(){
   <p class="muted" style="font-size:12px;margin:0 0 10px">${HR_TAB==="pending"
     ? "剪輯完成、還在等審的片。點片名看內容，看完按「✓ 檢查完成」記錄下來。"
     : "已經審過或已上片的成品。"}　這只是<b>你自己的紀錄</b>，不會改到影片，剪輯那邊完全不受影響。${nFlag?`<b style="color:var(--red)">目前有 ${nFlag} 支標了重工提醒。</b>`:""}</p>
-  ${rows.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}`;
+  ${rows.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}
+  ${hrTeamTasksSection()}`;
+}
+// 人資也看得到每位同仁的交辦狀況與回報 —— 只能看，不能交辦、不能審查
+function hrTeamTasksSection(){
+  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")));
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  if(!staff.length) return "";
+  return `<h3 style="margin:30px 0 6px">團隊交辦＆回報 <span class="muted" style="font-size:13px;font-weight:400">今天的狀況（唯讀）</span></h3>
+  <p class="muted" style="font-size:12px;margin:0 0 12px">看得到大家今天在做什麼、交辦有沒有回報；交辦與審查由經理人負責，這裡不能操作。</p>
+  ${staff.map((u,i)=>flowStaffCard(u, i, allTasks, true)).join("")}`;
 }
 // 人資按「檢查完成」：只寫自己的 hrchecks，不動影片。再按一次＝累計次數（看得出重覆送）
 function hrCheckVideo(id){
@@ -1501,7 +1550,7 @@ function hrClearCheck(id){
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
+  const editors=staffNamesSorted(["editor"]);
   const shifts=Object.values((STATE&&STATE.shifts)||{});
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const D=SHIFT_DATE, isToday=(D===today);
