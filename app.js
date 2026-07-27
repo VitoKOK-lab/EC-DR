@@ -672,56 +672,8 @@ function transferTask(id){
     .catch(()=>toast("轉移失敗",true));
 }
 
-// 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
-function viewWork(){
-  const me = currentUser();
-  const inProg = myInProgressCount(); const atLimit = false;   // 已取消同時支數上限（2026-07）；只顯示支數
-  // 全員畫面一致（只分中/英介面）：台灣毛片＋蝦皮/馬來/EN/TH 版本全部合併同一份清單，小圖（蝦/馬/EN/TH）分辨
-  const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
-    .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
-  // 待剪池：指派給我的 ＋ 還沒指派的公用毛片/版本（別人被指派的不顯示）；指派給我的排前面
-  // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
-  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
-    .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
-      return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
-  // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
-  const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
-  const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
-  const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
-  const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
-  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
-  const clockedOut = !!(myShift() && myShift().clockOut);
-  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
-    .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-  const myWork = mine.concat(myDoneToday);
-  const tasks = myTasks();
-  const g=scheduleGlance();
-  // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
-  const dayBadge=(v)=>{ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
-    return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b==="新"?T("新","New"):b}</span>`; };
-  // 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
-  const shpBadge=(v)=> (v.channel&&CHANNELS[v.channel])
-    ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
-    : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : '';
-  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台/海外二創版走各自專屬編輯視窗/完成流程
-  const workBtn=(v)=>{
-    if(v.stage==="已完成") return dispStage(v)==="待審核"
-      ? `<button class="btn sm" disabled style="opacity:1;background:var(--amber);box-shadow:none">${T("待審核","In review")}</button>`
-      : `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
-    if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
-    if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="intlFinish('${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
-    // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
-    return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="${T("編輯內容（按「儲存修改」只存、留在這頁）","Edit content (Save keeps you here)")}">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`; };
-  // 退回鍵：把認領的毛片/版本放回待剪清單重選
-  const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
-    ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="${T("後悔了？退回待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
-    : v.locale
-      ? `<button class="btn sec sm" onclick="intlUnclaim('${v.id}')" title="${T("後悔了？退回海外待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
-      : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="${T("後悔了？退回給大家重選","Return to the shared pool")}">${T("退回","Return")}</button>`;
-  // 審片進度（剪完 → Regina 審 → 通過才上傳雲端補連結）：量多容易忘，這張卡幫剪輯記住
+// 上班計畫：審片進度卡（被退回要修／已審過通過／待審核 三段；剪完 → 審 → 通過才上傳補連結）
+function workReviewCard(me){
   const myVids=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me));
   const rejected=myVids.filter(v=>v.reviewStatus==="退回");
   const waitingReview=myVids.filter(needsReview);
@@ -756,22 +708,18 @@ function viewWork(){
         <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
         <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
   </div>`:'';
-  // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
-  const nTaskDone=tasks.filter(t=>t.done).length;
-  const focusBar=`<div class="focusbar">
-    <div><span class="fn">${inProg}</span><span class="fl">${T("製作中","In progress")}</span></div>
-    <div><span class="fn">${doneToday.length}</span><span class="fl">${T("今日完成","Done today")}</span></div>
-    <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
-    <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
-  </div>`;
-  return `
-  <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
-  ${focusBar}
-  ${rejCard}
-
-  <div class="workgrid">
-
-  <div class="card">
+  return rejCard;
+}
+// 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
+function dayBadge(v){ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
+  return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b==="新"?T("新","New"):b}</span>`; }
+// 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
+function shpBadge(v){ return (v.channel&&CHANNELS[v.channel])
+  ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
+  : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : ''; }
+// 上班計畫：待認領卡（快選列＋清單＋認領/退回鍵）
+function workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit){
+  return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">${T("待認領（毛片＋二創版本）","To claim (raw + versions)")}</b>
       <span class="pill ${pool.length?'ok':'wa'}">${POOL_FILTER==="all"?pool.length:poolShown.length+"/"+pool.length}</span>
@@ -785,9 +733,11 @@ function viewWork(){
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest")}</td></tr>`}</tbody></table>
     </div>
     ${atLimit?`<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">${T("你已有 3 支製作中，先完成幾支再領","You have 3 in progress — finish some before claiming more")}</span></p>`:''}
-  </div>
-
-  <div class="card">
+  </div>`;
+}
+// 上班計畫：我的今日工作卡（進行中＋今天剛完成；天數標記與各線專屬按鈕）
+function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
+  return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">${T("我的今日工作","My work today")}</b>
       <span class="pill ok">${T("製作中","In progress")} ${inProg}</span>
@@ -798,9 +748,11 @@ function viewWork(){
         <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${enSubLine(v)}</td>
         <td data-label="${T("狀態","Status")}"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
-  </div>
-
-  <div class="card">
+  </div>`;
+}
+// 上班計畫：交辦工作卡（老闆指派需按收到；回報滿 12 字才可打勾完成）
+function workTasksCard(tasks){
+  return `<div class="card">
     <b style="font-size:16px">${T("我的今日交辦工作（剪輯以外）","My assigned tasks (beyond editing)")}</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
@@ -820,7 +772,73 @@ function viewWork(){
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
       </div>`;}).join("")||`<div class="muted">${T("尚無交辦工作","No tasks yet")}</div>`}</div>
     <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ ${T("加入","Add")}</button></div>
-  </div>
+  </div>`;
+}
+// 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
+function viewWork(){
+  const me = currentUser();
+  const inProg = myInProgressCount(); const atLimit = false;   // 已取消同時支數上限（2026-07）；只顯示支數
+  // 全員畫面一致（只分中/英介面）：台灣毛片＋蝦皮/馬來/EN/TH 版本全部合併同一份清單，小圖（蝦/馬/EN/TH）分辨
+  const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
+    .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
+  // 待剪池：指派給我的 ＋ 還沒指派的公用毛片/版本（別人被指派的不顯示）；指派給我的排前面
+  // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
+  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+    .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
+      return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
+  // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
+  const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
+  const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
+  const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
+  const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
+  const clockedOut = !!(myShift() && myShift().clockOut);
+  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
+    .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
+  const myWork = mine.concat(myDoneToday);
+  const tasks = myTasks();
+  const g=scheduleGlance();
+
+  // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台/海外二創版走各自專屬編輯視窗/完成流程
+  const workBtn=(v)=>{
+    if(v.stage==="已完成") return dispStage(v)==="待審核"
+      ? `<button class="btn sm" disabled style="opacity:1;background:var(--amber);box-shadow:none">${T("待審核","In review")}</button>`
+      : `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
+    if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
+    if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="intlFinish('${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
+    // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
+    return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="${T("編輯內容（按「儲存修改」只存、留在這頁）","Edit content (Save keeps you here)")}">${T("編輯內容","Edit")}</button>
+      <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`; };
+  // 退回鍵：把認領的毛片/版本放回待剪清單重選
+  const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
+    ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="${T("後悔了？退回待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
+    : v.locale
+      ? `<button class="btn sec sm" onclick="intlUnclaim('${v.id}')" title="${T("後悔了？退回海外待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
+      : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="${T("後悔了？退回給大家重選","Return to the shared pool")}">${T("退回","Return")}</button>`;
+  const rejCard=workReviewCard(me);
+
+  // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
+  const nTaskDone=tasks.filter(t=>t.done).length;
+  const focusBar=`<div class="focusbar">
+    <div><span class="fn">${inProg}</span><span class="fl">${T("製作中","In progress")}</span></div>
+    <div><span class="fn">${doneToday.length}</span><span class="fl">${T("今日完成","Done today")}</span></div>
+    <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
+    <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
+  </div>`;
+  return `
+  <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
+  ${focusBar}
+  ${rejCard}
+
+  <div class="workgrid">
+
+  ${workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit)}
+
+  ${workMineCard(myWork, inProg, atLimit, workBtn, undoBtn)}
+
+  ${workTasksCard(tasks)}
 
   <div class="card" style="text-align:center">
     <span class="pill ok">${T("今日已完成上架","Done today")} ${doneToday.length}</span>
@@ -900,19 +918,8 @@ async function flowAssign(idx, name){
     toast("已交辦給 "+name+"（等他按「收到」）"); }
   catch(e){ toast("交辦失敗，請稍後再試",true); }
 }
-function viewFlow(){
-  const staff=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor"));
-  const allTasks=Object.values((STATE&&STATE.tasks)||{});
-  const g=scheduleGlance();
-  const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
-  const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
-  const doneToday=(STATE.videos||[]).filter(v=>isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
-  const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
-  const daily=Math.max(1,+daySum(today)||4);
-  const stockDays=Math.floor(pool.length/daily);
-  const okRunway=g.runway>=RUNWAY_TARGET;
-  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
-
+// 流程中控①：備片存量警報（連續排滿天數 vs 兩個月目標、缺口、各平台排到哪天）
+function flowRunwayCard(g, okRunway, pct){
   // ---- ① 兩個月備片警報 ----
   const gapChips=(g.defs||[]).slice(0,6).map(d=>`<span class="pill em" style="font-size:11px">${fmtMD(d.ds)} 缺${d.short}</span>`).join(" ");
   // 各平台排到哪天（二創殼的最遠預排日）
@@ -933,7 +940,10 @@ function viewFlow(){
       <button class="btn sm" onclick="batchNewFootage()">＋ 批次新增毛片</button>
       <button class="btn sec sm" onclick="CUR_TAB='cal';buildNav();render()">看月排程</button></div>
   </div>`;
-
+  return runwayCard;
+}
+// 流程中控②：毛片庫存＋指派（勾選未指派毛片、選人一鍵指派）
+function flowStockCard(staff, pool, unassigned, stockDays){
   // ---- ② 毛片庫存＋指派 ----
   const afpRows=unassigned.slice(0,20).map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);font-weight:400">
       <input type="checkbox" class="afp_vid" value="${v.id}" style="width:auto;margin:0;flex:none"> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></label>`).join("");
@@ -951,7 +961,10 @@ function viewFlow(){
     <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支（指派只是分配，員工自己「認領」才開始計時）</p>`
     :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
   </div>`;
-
+  return stockCard;
+}
+// 流程中控③：待你審片（剪輯完成、還沒審的片，含各平台二創殼）
+function flowReviewQueueCard(){
   // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
@@ -966,9 +979,13 @@ function viewFlow(){
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
     <p class="muted" style="font-size:12px;margin:8px 0 0">在影片視窗按「通過」或「× 退回」。通過後剪輯會收到「快上傳雲端＋補連結」提醒；退回會在他的上班計畫標紅待修。</p>
   </div>`;
+  return reviewQueueCard;
+}
+// 流程中控④：單一剪輯卡（上線狀態、進行中/完成、拖延警示、今日交辦與回報、一鍵交辦）
+function flowStaffCard(u, idx, allTasks){
 
   // ---- ④ 每位剪輯：狀態＋交辦＋回報 ----
-  const staffCards=staff.map((u,idx)=>{
+
     const name=u.name;
     const sh=(STATE.shifts||{})[shiftId(name,today)];
     const on=sh&&sh.clockIn, off=sh&&sh.clockOut;
@@ -1005,7 +1022,27 @@ function viewFlow(){
       <div class="row" style="gap:6px;margin-top:10px">
         <input id="fa_${idx}" placeholder="交辦 ${esc(name)} 一件事…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')flowAssign(${idx},'${esc(jsEsc(name))}')">
         <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>
-    </div>`; }).join("");
+    </div>`; }
+function viewFlow(){
+  const staff=(STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor"));
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const g=scheduleGlance();
+  const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
+  const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const doneToday=(STATE.videos||[]).filter(v=>isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
+  const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
+  const daily=Math.max(1,+daySum(today)||4);
+  const stockDays=Math.floor(pool.length/daily);
+  const okRunway=g.runway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+
+  const runwayCard=flowRunwayCard(g, okRunway, pct);
+
+  const stockCard=flowStockCard(staff, pool, unassigned, stockDays);
+
+  const reviewQueueCard=flowReviewQueueCard();
+
+  const staffCards=staff.map((u,idx)=>flowStaffCard(u, idx, allTasks)).join("");
 
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
@@ -1021,19 +1058,17 @@ function viewFlow(){
   ${staffCards||'<p class="muted">還沒有剪輯人員</p>'}`;
 }
 
-// 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
-function viewDashboard(){
-  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
-  const shifts=Object.values((STATE&&STATE.shifts)||{});
-  const allTasks=Object.values((STATE&&STATE.tasks)||{});
-  const D=SHIFT_DATE, isToday=(D===today);
-  const hm=iso=>String(iso||"").slice(11,16);
-  const dur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
-  const minLabel=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
-  const fin=(STATE.videos||[]).filter(v=>isPublished(v)&&v.finishedAt&&v.editor);
+// ===== 儀表板：小工具（各卡片共用）=====
+const dashHM=iso=>String(iso||"").slice(11,16);                       // ISO → HH:MM
+const dashDur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
+const dashMin=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
+const dashStatusPill=(s)=> !s||!s.clockIn ? '<span class="pill em">未上班</span>'
+    : (s.clockOut?'<span class="pill ok">已下班</span>':'<span class="pill wa">上班中</span>');
+const dashVLine=(v,extra)=>`<div style="margin:5px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a>${extra||""}</div>`;
 
-  // ---- 每位剪輯：所選日期的當日明細（蝦皮版本合併計入，跟該剪輯自己的「上班計畫」一致）----
-  const perEditor=editors.map(name=>{
+// 每位剪輯在「所選日期」的當日明細（各線合併計入，跟該剪輯自己的上班計畫一致）
+function dashEditorRows(editors, shifts, allTasks, D, isToday){
+  return editors.map(name=>{
     const s=shifts.find(x=>x.user===name && x.date===D);
     const done=(STATE.videos||[]).filter(v=>v.editor===name && isPublished(v) && String(v.finishedAt||"").slice(0,10)===D)
       .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
@@ -1049,18 +1084,10 @@ function viewDashboard(){
     const sumMin=mins.reduce((a,b)=>a+b,0);
     return {name,s,done,wip,tasks,assignedOpen,assignedDone,sales,sumMin};
   });
-  const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
-  const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
-  const teamSales=perEditor.reduce((a,e)=>a+e.sales,0);
-  const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
-  const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
-  const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
-
-  const statusPill=(s)=> !s||!s.clockIn ? '<span class="pill em">未上班</span>'
-      : (s.clockOut?'<span class="pill ok">已下班</span>':'<span class="pill wa">上班中</span>');
-  const vline=(v,extra)=>`<div style="margin:5px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a>${extra||""}</div>`;
-
-  const cards=perEditor.map((e,i)=>{
+}
+// 儀表板：單一剪輯的當日卡（出勤、完成、進行中、交辦回報、我交辦給他的追蹤）
+function dashEditorCard(e, isToday){
+  const hm=dashHM, dur=dashDur, minLabel=dashMin, statusPill=dashStatusPill, vline=dashVLine;
     const att=e.s&&e.s.clockIn? `${hm(e.s.clockIn)}–${e.s.clockOut?hm(e.s.clockOut):'…'}　工時 ${dur(e.s.clockIn,e.s.clockOut||(isToday?nowIso():e.s.clockIn))}` : '—';
     const doneHTML=e.done.length? e.done.map(v=>vline(v,` <span class="pill ok" style="font-size:10px">完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)||'-'} 天・工時 ${minLabel(v.durationMin)}</span>`)).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無完成</div>';
@@ -1117,9 +1144,9 @@ function viewDashboard(){
       ${isToday?`<div style="margin-top:10px"><b style="font-size:13px">進行中（未完成）</b>${wipHTML}</div>`:''}
       <div style="margin-top:10px"><b style="font-size:13px">交辦回報</b>${taskHTML}</div>
     </div>`;
-  }).join("")||'<div class="card muted">尚無剪輯成員</div>';
-
-  // ---- 累計 KPI ----
+}
+// 儀表板：累計 KPI（剪片量/速度/工時/寵粉/交辦）＋綜合之星
+function dashKpi(editors, fin, allTasks){
   const kpi=editors.map(name=>{ const my=fin.filter(v=>v.editor===name);
     const days=my.map(editDays).filter(x=>x!=null); const avgDays=days.length?(days.reduce((a,b)=>a+b,0)/days.length):null;
     const mins=my.map(v=>v.durationMin).filter(x=>typeof x==="number"); const avgMin=mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null;
@@ -1146,7 +1173,10 @@ function viewDashboard(){
     if(scored.length && scored[0].s>0) starName=scored[0].name;
   }
 
-  // ---- 排程健康/庫存 ----
+  return {kpi, okEditors, bestEdit, bestACount, bestATime, starName};
+}
+// 儀表板：排程健康／毛片庫存＋未來 35 天視覺帶
+function dashSchedule(){
   // 防呆：指派毛片只針對台灣毛片，海外(locale)/蝦皮(channel)二創殼不列入計數與可指派清單
   const g=scheduleGlance();
   const poolAll=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
@@ -1166,11 +1196,11 @@ function viewDashboard(){
     return `<div class="sday sd-${x.st} ${x.off===0?'sd-today':''}" title="${x.ds}（${wd}）已排 ${x.total}/${x.target}" onclick="CUR_TAB='cal';CAL_YM=null;buildNav();render()">
       <span class="sd-wd">${wd}</span><span class="sd-n">${+x.ds.slice(8,10)}</span><span class="sd-c">${x.total}/${x.target}</span></div>`; }).join("");
 
-  const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
-
-  return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
-
-  ${currentRole()==="boss"?`<div class="card" style="border-color:var(--accent)">
+  return {g, poolN, unassignedPool, assignCount, noSchedN, wipN, stripHTML, runwayEnd, gapN};
+}
+// 儀表板：員工視角卡（管理員專用，以員工身分唯讀預覽）
+function dashViewAsCard(){
+  return `<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
@@ -1178,10 +1208,11 @@ function viewDashboard(){
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
-  </div>`:''}
-
-  <div class="dgrid">
-  <div class="card" style="border-color:var(--gold)">
+  </div>`;
+}
+// 儀表板①：指派交辦給員工
+function dashAssignTaskCard(){
+  return `<div class="card" style="border-color:var(--gold)">
     <div class="row" style="align-items:baseline;gap:8px">
       <b style="font-size:16px">① 指派交辦給員工</b>
     </div>
@@ -1194,9 +1225,11 @@ function viewDashboard(){
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
-  </div>
-
-  <div class="card" style="border-color:var(--gold)">
+  </div>`;
+}
+// 儀表板：指派毛片給員工（勾選＋收回未認領）
+function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
+  return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">🎬 指派毛片給員工</b>
     <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）。指派只是分配，員工自己「認領」才開始計時。</div>
     <div class="grid cols2" style="margin-top:10px">
@@ -1215,9 +1248,11 @@ function viewDashboard(){
         <span>${esc(n)}：待剪已指派 <b>${assignCount[n]}</b> 支</span>
         <button class="btn sec sm" onclick="unassignEditor('${esc(jsEsc(n))}')">收回未認領</button></div>`).join("")}
     </div>`:''}
-  </div>
-
-  <div class="card">
+  </div>`;
+}
+// 儀表板②：所選日期的團隊進度摘要（日期切換器＋四個數字）
+function dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen){
+  return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
       <b style="font-size:16px">② 工作進度與交辦回報</b>
       <div class="row" style="gap:6px;align-items:center;flex-wrap:nowrap">
@@ -1233,11 +1268,11 @@ function viewDashboard(){
       <div><div class="n ${teamTasks&&teamTasksDone<teamTasks?'warn':''} ${teamTasks?'':'muted'}">${teamTasksDone}/${teamTasks}</div><div class="l">交辦完成</div></div>
       ${teamAssignedOpen?`<div><div class="n warn">${teamAssignedOpen}</div><div class="l">交辦待結</div></div>`:''}
     </div>
-  </div>
-  </div>
-  <div class="dgrid-ed">${cards}</div>
-
-  <div class="card">
+  </div>`;
+}
+// 儀表板③：未來影片排程（連續排滿天數＋35 天視覺帶）
+function dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN){
+  return `<div class="card">
     <b style="font-size:16px">③ 未來影片排程</b>
     <div style="display:flex;align-items:baseline;gap:10px;margin-top:12px;flex-wrap:wrap">
       <span style="font-family:var(--serif);font-size:40px;font-weight:700;line-height:1;color:${g.runway>=7?'var(--green)':(g.runway>=3?'var(--gold-dk)':'var(--red)')}">${g.runway}</span>
@@ -1256,9 +1291,12 @@ function viewDashboard(){
       <span class="pill wa">製作中 ${wipN}</span>
       <span class="pill ${noSchedN?'wa':'ok'}">新片未排程 ${noSchedN}</span>
     </div>
-  </div>
-
-  <div class="card">
+  </div>`;
+}
+// 儀表板④：員工長期績效（累計）＋綜合之星
+function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
+  const minLabel=dashMin;
+  return `<div class="card">
     <b style="font-size:16px">④ 員工長期績效（累計・全期）</b>
     ${starName?`<div style="margin-top:10px;padding:10px 14px;background:var(--amberbg);border:1px solid var(--gold);border-radius:6px;display:flex;align-items:center;gap:10px">
       <span style="font-size:22px;color:var(--signal)">✦</span>
@@ -1275,6 +1313,47 @@ function viewDashboard(){
       <td data-label="交辦速度" class="${okEditors&&k.aAvg!=null&&k.aAvg===bestATime?'pos':''}">${k.aAvg!=null?minLabel(k.aAvg):'—'}</td></tr>`).join("")||'<tr><td colspan="7" class="muted">尚無資料</td></tr>'}</tbody></table>
     <div style="margin-top:14px"><a class="btn sec sm" href="${META_DASH_URL}" target="_blank">開啟短影音外部成效儀表板 →</a></div>
   </div>`;
+}
+// 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
+function viewDashboard(){
+  const editors=(STATE.users||[]).filter(u=>(u.role||"editor")==="editor").map(u=>u.name);
+  const shifts=Object.values((STATE&&STATE.shifts)||{});
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const D=SHIFT_DATE, isToday=(D===today);
+  const hm=dashHM, dur=dashDur, minLabel=dashMin;
+  const fin=(STATE.videos||[]).filter(v=>isPublished(v)&&v.finishedAt&&v.editor);
+  const perEditor=dashEditorRows(editors, shifts, allTasks, D, isToday);
+  const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
+  const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
+  const teamSales=perEditor.reduce((a,e)=>a+e.sales,0);
+  const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
+  const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
+  const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
+
+  const cards=perEditor.map(e=>dashEditorCard(e,isToday)).join("")||'<div class="card muted">尚無剪輯成員</div>';
+
+  const {kpi, okEditors, bestEdit, bestACount, bestATime, starName}=dashKpi(editors, fin, allTasks);
+
+  const {g, poolN, unassignedPool, assignCount, noSchedN, wipN, stripHTML, runwayEnd, gapN}=dashSchedule();
+
+  const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
+
+  return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
+
+  ${currentRole()==="boss"?dashViewAsCard():''}
+
+  <div class="dgrid">
+  ${dashAssignTaskCard()}
+
+  ${dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)}
+
+  ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
+  </div>
+  <div class="dgrid-ed">${cards}</div>
+
+  ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
+
+  ${dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime)}`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
 function batchNewFootage(){
@@ -1715,18 +1794,11 @@ function editVideo(id){ openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
 function tryExitVideoEdit(){ if(MODAL_DIRTY){ toast(T("已修改，請按「儲存修改」或「取消編輯」","Unsaved changes — press Save or Cancel"),true); return; } closeModal(); }
-function openVideoModal(id, edit, fromWork){
-  const v = vid(id)||{};
-  const s=STATE.settings||{};
-  const sources=s.sources||["老闆自拍","外部公司"];
-  const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
-  const stages=["待處理","剪輯中","已完成","已上片"];
-  const tags=videoTagsOf(v);
-  const prodList=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]);
-  const reviewCard = reviewCardHTML(v);
+// 影片視窗：平台成效卡（管理員／經理人可見）
+function vidMetricsCard(v){
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
-  const metricsCard = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
+  const html = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
       <b>平台成效</b>${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</div>
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
@@ -1734,21 +1806,13 @@ function openVideoModal(id, edit, fromWork){
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
   </div>` : "";
   // 跨語言：源片列出各語言版本（中英一起看）；英文版顯示回連源片
-  const localizedCard = localizedVersionsCard(v) + shopeeVersionsCard(v) + msVersionsCard(v);
-  const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
-      <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
-      ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
-      </tbody></table></div>`:"";
-  const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
-      <h3 style="margin:0">${T("影片內容","Video details")}</h3>
-      <div style="display:flex;gap:6px;align-items:center">
-        ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`}
-        <button class="btn sec sm" type="button" onclick="${edit?'tryExitVideoEdit()':'closeModal()'}" title="${T("關閉","Close")}">×</button>
-      </div></div>`;
-
-  if(!edit){
-    const row=(l,c)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="muted" style="width:100px;flex:none;font-size:13px">${l}</div><div style="flex:1;min-width:0">${c||'<span class="muted">—</span>'}</div></div>`;
-    const body=`
+  return html;
+}
+// 影片視窗：檢視模式（唯讀明細＋各語言版本／成效／審片卡）
+// 影片視窗：檢視模式（唯讀明細＋各語言版本／成效／審片／使用紀錄）
+function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, reviewCard, usageCard){
+  const row=(l,c)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="muted" style="width:100px;flex:none;font-size:13px">${l}</div><div style="flex:1;min-width:0">${c||'<span class="muted">—</span>'}</div></div>`;
+  const body=`
       ${row(T("編號","Code"), esc(vidCode(v)))}
       ${row(T("原始片名","Raw title"), esc(zhTW(v.rawName||"")))}
       ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||""))+enSubLine(v))}
@@ -1772,7 +1836,30 @@ function openVideoModal(id, edit, fromWork){
     MODAL_DIRTY=false;
     document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}</div></div>`;
     return;
-  }
+}
+function openVideoModal(id, edit, fromWork){
+  const v = vid(id)||{};
+  const s=STATE.settings||{};
+  const sources=s.sources||["老闆自拍","外部公司"];
+  const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
+  const stages=["待處理","剪輯中","已完成","已上片"];
+  const tags=videoTagsOf(v);
+  const prodList=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]);
+  const reviewCard = reviewCardHTML(v);
+  const metricsCard=vidMetricsCard(v);
+  const localizedCard = localizedVersionsCard(v) + shopeeVersionsCard(v) + msVersionsCard(v);
+  const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
+      <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
+      ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
+      </tbody></table></div>`:"";
+  const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
+      <h3 style="margin:0">${T("影片內容","Video details")}</h3>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`}
+        <button class="btn sec sm" type="button" onclick="${edit?'tryExitVideoEdit()':'closeModal()'}" title="${T("關閉","Close")}">×</button>
+      </div></div>`;
+
+  if(!edit){ vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, reviewCard, usageCard); return; }
 
   const body=`
     <label>${T("編號 ／ 原始片名","Code / Raw title")}</label>
@@ -2455,6 +2542,85 @@ function msAccounts(){ return chAccounts("ms"); }
 // ===================================================================
 // 設定（管理員）
 // ===================================================================
+// 設定：海外（英/泰）TikTok 帳號與每帳號每日目標
+function setIntlCard(s){
+  const intlAcctStr=(Array.isArray(s.intlAccounts)?s.intlAccounts:[]).map(a=>a.locale+"="+a.name).join("\n");
+  const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
+  return `<div class="card"><b>海外設定</b>
+    <label style="margin-top:8px">海外 TikTok 帳號（一行一個，格式 <code>語言=帳號名</code>，語言用 en／th；馬來西亞已移到台灣區的「馬來設定」）</label>
+    <textarea id="set_intlacct" style="min-height:96px" placeholder="en=TikTok US（@zana_us）&#10;th=TikTok TH（@zana_th）">${esc(intlAcctStr)}</textarea>
+    <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>`;
+}
+// 設定：四平台商品價格換算（匯率＋售價加乘倍數）
+function setRatesCard(s){
+  const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
+    const rate=(r.rate!=null&&r.rate!=="")?r.rate:1; const mult=(r.mult!=null&&r.mult!=="")?r.mult:1;
+    return `<div><label>${label}（${code}）</label>
+      <div class="row" style="gap:6px;flex-wrap:nowrap">
+        ${loc==="shopee"?'<span class="muted" style="font-size:12px;flex:1">台幣，不換匯</span>':`<input type="number" min="0" step="0.001" id="set_rate_${loc}" value="${esc(rate)}" placeholder="1 台幣＝? ${code}" title="匯率：1 台幣可換多少 ${code}" style="flex:1">`}
+        <span class="muted" style="flex:none">×</span>
+        <input type="number" min="0" step="0.01" id="set_mult_${loc}" value="${esc(mult)}" placeholder="加乘" title="加乘倍數：該平台售價＝原價×匯率×加乘" style="flex:1">
+      </div></div>`; };
+  return `<div class="card"><b>商品價格換算（四個平台）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；各平台編輯畫面依「匯率 × 加乘」即時換算顯示，唯讀不能改。加乘＝該平台的售價倍數（例 1.2＝加價 2 成），1＝不加乘；蝦皮是台幣、只有加乘。</div>
+    <div class="grid cols2" style="margin-top:10px">
+      ${rateRow("en","英文 匯率×加乘")}
+      ${rateRow("th","泰文 匯率×加乘")}
+      ${rateRow("ms","馬來 匯率×加乘")}
+      ${rateRow("shopee","蝦皮 加乘")}
+    </div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>`;
+}
+// 設定：蝦皮／馬來西亞帳號與每帳號每日目標
+function setChannelCards(s){
+  const shopeeAccountStr=(Array.isArray(s.shopeeAccounts)?s.shopeeAccounts:[]).join("\n");
+  const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
+  const msAccountStr=(Array.isArray(s.msAccounts)?s.msAccounts:[]).join("\n");
+  const msTargetVal=(s.msDailyTarget!=null&&s.msDailyTarget!=="")?s.msDailyTarget:2;
+  return `<div class="card"><b>蝦皮設定</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">國內二創：挑已上傳的中文舊片，換個平台重新剪一次上傳蝦皮（同語言、不用翻譯），掛在「剪輯」角色下，任何國內剪輯登入都看得到。</div>
+    <label style="margin-top:8px">蝦皮帳號（一行一個）</label>
+    <textarea id="set_shpacct" style="min-height:88px" placeholder="蝦皮官方旗艦店&#10;蝦皮XX店">${esc(shopeeAccountStr)}</textarea>
+    <label style="margin-top:12px">蝦皮每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_shptarget" value="${shopeeTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— 蝦皮排程以此判斷「已排滿／缺幾支」。</span></div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>馬來設定</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">馬來西亞已移到台灣區（比照蝦皮）：由國內剪輯在「影片馬來二創區」挑片、翻成馬來文重剪上傳；價格依「商品價格換算」的馬來 匯率×加乘換算成 MYR 顯示。</div>
+    <label style="margin-top:8px">馬來帳號（一行一個）</label>
+    <textarea id="set_msacct" style="min-height:88px" placeholder="tiktok-Malaysia（@zana_my）">${esc(msAccountStr)}</textarea>
+    <label style="margin-top:12px">馬來每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_mstarget" value="${msTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— 馬來排程以此判斷「已排滿／缺幾支」。</span></div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>`;
+}
+// 設定：成員名單（角色、改名、重設密碼、刪除）
+function setMembersCard(members, memberRows){
+  return `<div class="card"><b>成員（${members.length}）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok（共用同一畫面協作）。</div>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
+    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+    <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
+      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option></select>
+      <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
+  </div>`;
+}
+// 設定：對接窗口名單
+function setContactsCard(contactList, contactRows){
+  return `<div class="card"><b>對接窗口名單（${contactList.length}）</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>窗口名稱</th><th></th></tr></thead>
+    <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
+    <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
+      <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
+  </div>`;
+}
 function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
@@ -2477,20 +2643,6 @@ function viewSettings(){
     <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(jsEsc(c))}')">改名</button>
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
-  const intlAcctStr=(Array.isArray(s.intlAccounts)?s.intlAccounts:[]).map(a=>a.locale+"="+a.name).join("\n");
-  const intlTargetVal=(s.intlDailyTarget!=null&&s.intlDailyTarget!=="")?s.intlDailyTarget:2;
-  const shopeeAccountStr=(Array.isArray(s.shopeeAccounts)?s.shopeeAccounts:[]).join("\n");
-  const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
-  const msAccountStr=(Array.isArray(s.msAccounts)?s.msAccounts:[]).join("\n");
-  const msTargetVal=(s.msDailyTarget!=null&&s.msDailyTarget!=="")?s.msDailyTarget:2;
-  const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
-    const rate=(r.rate!=null&&r.rate!=="")?r.rate:1; const mult=(r.mult!=null&&r.mult!=="")?r.mult:1;
-    return `<div><label>${label}（${code}）</label>
-      <div class="row" style="gap:6px;flex-wrap:nowrap">
-        ${loc==="shopee"?'<span class="muted" style="font-size:12px;flex:1">台幣，不換匯</span>':`<input type="number" min="0" step="0.001" id="set_rate_${loc}" value="${esc(rate)}" placeholder="1 台幣＝? ${code}" title="匯率：1 台幣可換多少 ${code}" style="flex:1">`}
-        <span class="muted" style="flex:none">×</span>
-        <input type="number" min="0" step="0.01" id="set_mult_${loc}" value="${esc(mult)}" placeholder="加乘" title="加乘倍數：該平台售價＝原價×匯率×加乘" style="flex:1">
-      </div></div>`; };
   return `<h2>設定</h2>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
@@ -2508,50 +2660,10 @@ function viewSettings(){
     <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
-  <div class="card"><b>海外設定</b>
-    <label style="margin-top:8px">海外 TikTok 帳號（一行一個，格式 <code>語言=帳號名</code>，語言用 en／th；馬來西亞已移到台灣區的「馬來設定」）</label>
-    <textarea id="set_intlacct" style="min-height:96px" placeholder="en=TikTok US（@zana_us）&#10;th=TikTok TH（@zana_th）">${esc(intlAcctStr)}</textarea>
-    <label style="margin-top:12px">海外每日目標（每個帳號每天幾支）</label>
-    <div class="row" style="gap:8px"><input type="number" min="0" id="set_intltarget" value="${intlTargetVal}" style="max-width:120px;text-align:center">
-      <span class="muted">支／帳號／天 —— 海外月歷以此判斷「已排滿／缺幾支」。</span></div>
-    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
-  </div>
-  <div class="card"><b>商品價格換算（四個平台）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">源片的商品原價／售價（寵粉價）只在台灣影片編輯畫面輸入；各平台編輯畫面依「匯率 × 加乘」即時換算顯示，唯讀不能改。加乘＝該平台的售價倍數（例 1.2＝加價 2 成），1＝不加乘；蝦皮是台幣、只有加乘。</div>
-    <div class="grid cols2" style="margin-top:10px">
-      ${rateRow("en","英文 匯率×加乘")}
-      ${rateRow("th","泰文 匯率×加乘")}
-      ${rateRow("ms","馬來 匯率×加乘")}
-      ${rateRow("shopee","蝦皮 加乘")}
-    </div>
-    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
-  </div>
-  <div class="card"><b>蝦皮設定</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">國內二創：挑已上傳的中文舊片，換個平台重新剪一次上傳蝦皮（同語言、不用翻譯），掛在「剪輯」角色下，任何國內剪輯登入都看得到。</div>
-    <label style="margin-top:8px">蝦皮帳號（一行一個）</label>
-    <textarea id="set_shpacct" style="min-height:88px" placeholder="蝦皮官方旗艦店&#10;蝦皮XX店">${esc(shopeeAccountStr)}</textarea>
-    <label style="margin-top:12px">蝦皮每日目標（每個帳號每天幾支）</label>
-    <div class="row" style="gap:8px"><input type="number" min="0" id="set_shptarget" value="${shopeeTargetVal}" style="max-width:120px;text-align:center">
-      <span class="muted">支／帳號／天 —— 蝦皮排程以此判斷「已排滿／缺幾支」。</span></div>
-    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
-  </div>
-  <div class="card"><b>馬來設定</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">馬來西亞已移到台灣區（比照蝦皮）：由國內剪輯在「影片馬來二創區」挑片、翻成馬來文重剪上傳；價格依「商品價格換算」的馬來 匯率×加乘換算成 MYR 顯示。</div>
-    <label style="margin-top:8px">馬來帳號（一行一個）</label>
-    <textarea id="set_msacct" style="min-height:88px" placeholder="tiktok-Malaysia（@zana_my）">${esc(msAccountStr)}</textarea>
-    <label style="margin-top:12px">馬來每日目標（每個帳號每天幾支）</label>
-    <div class="row" style="gap:8px"><input type="number" min="0" id="set_mstarget" value="${msTargetVal}" style="max-width:120px;text-align:center">
-      <span class="muted">支／帳號／天 —— 馬來排程以此判斷「已排滿／缺幾支」。</span></div>
-    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
-  </div>
-  <div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok（共用同一畫面協作）。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
-    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
-    <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
-      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option></select>
-      <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
-  </div>
+  ${setIntlCard(s)}
+  ${setRatesCard(s)}
+  ${setChannelCards(s)}
+  ${setMembersCard(members, memberRows)}
   <div class="card"><b>影片標籤</b>
     <div class="muted" style="font-size:12px;margin-top:4px">新增／編輯影片時可勾選的標籤。刪除標籤不影響已套用在影片上的。</div>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -2560,12 +2672,7 @@ function viewSettings(){
     <div class="row" style="gap:8px;margin-top:12px"><input id="tag_new" placeholder="新增標籤名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addVideoTagSel()">
       <button class="btn" onclick="addVideoTagSel()">＋ 新增標籤</button></div>
   </div>
-  <div class="card"><b>對接窗口名單（${contactList.length}）</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>窗口名稱</th><th></th></tr></thead>
-    <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
-    <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
-      <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
-  </div>
+  ${setContactsCard(contactList, contactRows)}
   <div class="card"><b>資料維護</b>
     <div class="row" style="gap:8px;margin-top:8px"><span class="muted" style="flex:1">把「現有」影片標題與文案裡的簡體字一次轉成繁體存回資料庫（新增/編輯時本來就會自動轉）。</span>
       <button class="btn sec sm" onclick="convertExistingToTW()" style="white-space:nowrap">現有簡體轉繁體</button></div>
