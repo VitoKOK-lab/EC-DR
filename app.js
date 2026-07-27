@@ -695,10 +695,9 @@ function workReviewCard(me){
         ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
     ${approvedTodo.length?`<div style="margin-top:10px"><b style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}（${approvedTodo.length}）</b>
       ${approvedTodo.map(v=>{ const who=`${esc(v.reviewedBy||"Regina")} ${T("已審過","approved")}${v.reviewedAt?("・"+esc(String(v.reviewedAt).slice(0,10))):''}`;
-        if(!linksDone(v)){ const miss=[!String(v.driveFolder||"").trim()?T("缺雲端存檔連結","file link missing"):"", !String(v.publishedLink||"").trim()?T("缺上傳連結","upload link missing"):""].filter(Boolean).join(T("、",", "));
-          return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
+        if(!linksDone(v)) return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
           <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
-          <div class="muted" style="font-size:12px;margin-top:2px">${who}・<span style="color:var(--red)">${miss}</span> → ${T("快上傳雲端＋補連結","upload & add the links")}</div></div>`; }
+          <div class="muted" style="font-size:12px;margin-top:2px">${who}</div></div>`;
         return `<div style="margin-top:6px;padding:9px;background:var(--greenbg);border-radius:5px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
           <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
           <span class="muted" style="font-size:12px"> ${who}・${T("連結都補齊了","links all set")}</span></span>
@@ -977,7 +976,7 @@ function flowReviewQueueCard(){
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">在影片視窗按「通過」或「× 退回」。通過後剪輯會收到「快上傳雲端＋補連結」提醒；退回會在他的上班計畫標紅待修。</p>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">在影片視窗按「通過」或「× 退回」。通過後剪輯的上班計畫會顯示「已審過」；退回會標紅待修。</p>
   </div>`;
   return reviewQueueCard;
 }
