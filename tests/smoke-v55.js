@@ -74,12 +74,15 @@ reset();
   localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr"); }
 
 // ── 分頁與兩份清單 ──
-ok("HR 分頁＝影片審查＋儀表板", JSON.stringify(myTabs())===JSON.stringify([["hr","影片審查"],["dashboard","儀表板"]]));
+ok("HR 分頁＝工作審查＋儀表板", JSON.stringify(myTabs())===JSON.stringify([["hr","工作審查"],["dashboard","儀表板"]]));
 let h=viewHR();
 ok("有兩個分頁：等待審查／已完成", h.includes("等待審查") && h.includes("已完成") && h.includes("hrSetTab('pending')") && h.includes("hrSetTab('done')"));
 ok("等待審查列出剪完未審的片（2 支）", h.includes("待審的片A") && h.includes("待審的片B"));
 ok("等待審查不含已審過/已記錄/還在剪", !h.includes("已審過的片") && !h.includes("已記錄的片") && !h.includes("還在剪的片"));
-ok("每列可點開看內容", h.includes("openVideoModal('P1',false)") && h.includes("看內容"));
+ok("每列可點開看文案", h.includes("openVideoModal('P1',false)") && h.includes("看文案"));
+ok("頂部有審查重點四步驟", h.includes("審查重點") && h.includes("影片檔") && h.includes("封面檔") && h.includes("口播文案"));
+ok("有雲端檔案連結（去看影片＋封面）", h.includes('href="http://d"') && h.includes("☁ 雲端檔案"));
+ok("沒填雲端連結的會標出來", (()=>{ STATE.videos.find(v=>v.id==="P2").driveFolder=""; const hh=viewHR(); return hh.includes("未填雲端連結"); })());
 ok("未鎖定的有『檢查完成』鍵", h.includes("hrCheckVideo('P1')"));
 HR_TAB="done"; h=viewHR();
 ok("已完成清單列出審過與已上片", h.includes("已審過的片") && h.includes("已記錄的片"));
