@@ -49,7 +49,7 @@
 | `published` | boolean | 已上架 | 完成確認旗標 |
 | `backupDone` | boolean | 已備份 | 完成確認旗標 |
 | `socialScheduled` | boolean | 已預排 | 完成確認旗標 |
-| `reviewStatus` | string | 審核狀態 | 老闆娘選擇性審核：``／`通過`／`退回`（不擋上架） |
+| `reviewStatus` | string | 審核狀態 | Regina／管理員審片：``＝等審／`通過`／`退回`。剪輯完成後等審，通過後剪輯才上傳雲端補連結；剪輯的上班計畫有「審片進度」卡追蹤三種狀態 |
 | `reviewNote` | string | 退回原因 | 退回時填，剪輯端會看到 |
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
