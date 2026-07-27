@@ -80,6 +80,9 @@ STATE = {
      createdBy:"小葵",createdAt:D+"T01:00:00",scheduledDate:D,tags:[],products:[],usageHistory:[],metrics:[]},
     {id:"M1",name:"馬來版",rawName:"中文源片",stage:"剪輯中",channel:"ms",sourceVideoId:"S1",account:"tiktok-MY",
      editor:"小葵",claimedBy:"小葵",claimedAt:D+"T01:00:00",tags:[],products:[],usageHistory:[],metrics:[]},
+    {id:"W5",name:"人資已檢查鎖定的片",rawName:"x",stage:"已上片",published:true,editor:"小葵",finishedAt:D+"T05:00:00",
+     reviewStatus:"通過",hrCheckedBy:"HR小姐",hrCheckedAt:D+"T20:00:00",driveFolder:"http://d",publishedLink:"http://p",
+     locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},
   ],
 };
 
@@ -88,7 +91,7 @@ const out = {};
 function snap(key, fn){ try{ out[key] = String(fn()); }catch(e){ out[key] = "THREW: " + e.message; } }
 function as(user, role){ localStorage.setItem("ecdr_user", user); localStorage.setItem("ecdr_role", role); }
 function resetUI(){ CAL_PLAT="tw"; CAL_YM=[2026,6]; INTL_CAL_YM=[2026,6]; INTL_ACCT="";
-  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}}; HR_YM=[2026,6];
+  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}}; HR_YM=null; HR_TAB="pending"; HR_WHO="";
   WORK_ZONE="shopee"; POOL_FILTER="all"; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
   VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; }
 
@@ -102,6 +105,7 @@ for (const [user, role] of ROLES) {
   for (const [name, fn] of Object.entries(VIEWS)) { resetUI(); snap(`${role}/${name}`, fn); }
   // 月排程五個平台
   for (const p of ["tw","th","shopee","en","ms"]) { resetUI(); CAL_PLAT=p; snap(`${role}/cal:${p}`, ()=>viewCal()); }
+  for (const t of ["pending","done"]) { resetUI(); HR_TAB=t; snap(`${role}/hr:${t}`, ()=>viewHR()); }
   // 二創區四個分頁
   for (const z of ["shopee","ms","en","th"]) { resetUI(); WORK_ZONE=z; snap(`${role}/zone:${z}`, ()=>createZoneCard()); }
   // 待認領六種篩選
@@ -116,7 +120,7 @@ for (const [user, role] of ROLES) {
                    chMs:()=>openChModal("ms","M1"), day:()=>openDay(D), dayIntl:()=>{ INTL_ACCT="tiktok-EN"; openDayIntl(D); },
                    dayCh:()=>{ CH_CAL.shopee.acct="蝦皮店A"; openDayCh("shopee",D); },
                    newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage(),
-                   hrDay:()=>openHRDay("小葵", D), hrDayEmpty:()=>openHRDay("阿明", D) };
+                   hrLocked:()=>openVideoModal("W5",false) };
   for (const [name, open] of Object.entries(MODALS)) { resetUI(); modalHTML=""; try{ open(); }catch(e){ modalHTML="THREW: "+e.message; } out[`${role}/modal:${name}`]=modalHTML; }
 }
 
