@@ -29,7 +29,7 @@ const D = "2026-07-20";          // 固定日期，快照才不會每天變
 const D2 = "2026-06-15";
 STATE = {
   users:[ {name:"Regina",role:"manager"}, {name:"小葵",role:"editor"}, {name:"阿明",role:"editor"},
-          {name:"Anna",role:"intl"}, {name:"管理員",role:"boss"} ],
+          {name:"Anna",role:"intl"}, {name:"管理員",role:"boss"}, {name:"HR小姐",role:"hr"} ],
   settings:{ dailyTarget:4, videoTags:["新片","舊片","寵粉","珠寶介紹"], sources:["老闆自拍","外部公司"],
     postPlatforms:[{name:"IG 主帳號",utm:"ig_main"},{name:"FB 粉專",utm:"fb"}],
     intlAccounts:[{locale:"en",name:"tiktok-EN"},{locale:"th",name:"tiktok-TH"}],
@@ -41,7 +41,8 @@ STATE = {
   schedule:{ [D]:{ slots:[{videoId:"S1",time:"10:00",reused:true,by:"小葵",at:D+"T09:00:00",publishedLink:"http://p1",driveFolder:"http://d1"}] } },
   tasks:{ T1:{id:"T1",user:"小葵",date:D,title:"回覆廠商",contact:"廠商A",report:"已聯絡完成回報中",done:false,assignedBy:"Regina",ack:true,createdAt:D+"T01:00:00"},
           T2:{id:"T2",user:"小葵",date:D,title:"寄樣品",contact:"",report:"",done:false,assignedBy:"Regina",ack:false,createdAt:D+"T02:00:00"},
-          T3:{id:"T3",user:"Anna",date:D,title:"Check comments",contact:"",report:"done all",done:true,assignedBy:"",ack:true,createdAt:D+"T03:00:00"} },
+          T3:{id:"T3",user:"Anna",date:D,title:"Check comments",contact:"",report:"done all",done:true,assignedBy:"",ack:true,createdAt:D+"T03:00:00"},
+          T4:{id:"T4",user:"小葵",date:D,title:"影片清單整理",contact:"",report:"清單已重新排序完成",done:true,assignedBy:"",ack:true,createdAt:D+"T04:00:00",hrSeenBy:"HR小姐",hrSeenAt:D+"T18:00:00"} },
   shifts:{ ["小葵__"+D]:{id:"a",user:"小葵",date:D,clockIn:D+"T01:00:00Z",clockOut:""},
            ["阿明__"+D]:{id:"b",user:"阿明",date:D,clockIn:D+"T01:00:00Z",clockOut:D+"T10:00:00Z"} },
   logs:[{id:"L1",at:D+"T05:00:00",user:"小葵",role:"editor",action:"已新增影片",target:"某片"}],
@@ -87,13 +88,14 @@ const out = {};
 function snap(key, fn){ try{ out[key] = String(fn()); }catch(e){ out[key] = "THREW: " + e.message; } }
 function as(user, role){ localStorage.setItem("ecdr_user", user); localStorage.setItem("ecdr_role", role); }
 function resetUI(){ CAL_PLAT="tw"; CAL_YM=[2026,6]; INTL_CAL_YM=[2026,6]; INTL_ACCT="";
-  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}};
+  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}}; HR_YM=[2026,6];
   WORK_ZONE="shopee"; POOL_FILTER="all"; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
   VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; }
 
-const ROLES = [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]];
+const ROLES = [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"],["HR小姐","hr"]];
 const VIEWS = { dashboard:()=>viewDashboard(), flow:()=>viewFlow(), work:()=>viewWork(), videos:()=>viewVideos(),
-                cal:()=>viewCal(), settings:()=>viewSettings(), log:()=>viewLog(), trash:()=>viewTrash(), perf:()=>viewPerf() };
+                cal:()=>viewCal(), settings:()=>viewSettings(), log:()=>viewLog(), trash:()=>viewTrash(), perf:()=>viewPerf(),
+                hr:()=>viewHR() };
 
 for (const [user, role] of ROLES) {
   as(user, role);
@@ -113,7 +115,8 @@ for (const [user, role] of ROLES) {
                    thModal:()=>openIntlModal("T1v"), chShopee:()=>openChModal("shopee","P1"),
                    chMs:()=>openChModal("ms","M1"), day:()=>openDay(D), dayIntl:()=>{ INTL_ACCT="tiktok-EN"; openDayIntl(D); },
                    dayCh:()=>{ CH_CAL.shopee.acct="蝦皮店A"; openDayCh("shopee",D); },
-                   newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage() };
+                   newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage(),
+                   hrDay:()=>openHRDay("小葵", D), hrDayEmpty:()=>openHRDay("阿明", D) };
   for (const [name, open] of Object.entries(MODALS)) { resetUI(); modalHTML=""; try{ open(); }catch(e){ modalHTML="THREW: "+e.message; } out[`${role}/modal:${name}`]=modalHTML; }
 }
 

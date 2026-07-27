@@ -186,6 +186,12 @@
   .ilib-en{color:var(--gold-dk);font-size:13px;margin-top:3px;line-height:1.45}
   /* 海外視角：中文標題下的英文小字（清單、彈窗共用） */
   .vt-en{color:var(--gold-dk);font-size:12px;margin-top:2px;line-height:1.4;font-weight:400}
+  /* 人資工作確認：每人一列的日期小格（未查看/部分/已全數確認） */
+  .hrgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:10px}
+  .hrcell{border:2px solid var(--line);background:transparent;border-radius:5px;padding:6px 0;font-size:12px;font-weight:700;
+    color:var(--txt);font-family:var(--sans);transition:.15s;min-width:0}
+  .hrcell:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(43,24,34,.12)}
+  @media(max-width:520px){ .hrgrid{grid-template-columns:repeat(7,1fr)} }
   /* 流程中控：備片存量進度條（Regina 手機版首頁） */
   .flowbar{height:10px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .flowbar i{display:block;height:100%;background:var(--foil);background-size:200% 100%;border-radius:6px;transition:width .4s ease}
@@ -550,7 +556,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783880000"></script>
+<script src="app.js?v=1783900000"></script>
 <script type="module" src="fb.js?v=1783820000"></script>
 </body>
 </html>
