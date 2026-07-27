@@ -52,6 +52,19 @@ ok("一創排最前面", sorted[0]==="小葵" && sorted[1]==="Edward");
 ok("同組內中文名在英文名前面", sorted.indexOf("小葵")<sorted.indexOf("Edward"));
 ok("海外排最後", sorted.slice(-2).every(n=>["Asmeer","Pakistan Team"].includes(n)));
 
+// ── 登入頁：分區順序 Taiwan → 海外版 → 人資 → 管理層 ──
+{ reset();
+  const order=[]; const grid={innerHTML:"",appendChild:(el)=>{ if(el.__g) order.push("#"+el.textContent); else order.push(el.textContent||el.innerHTML); }};
+  const _get=global.document.getElementById;
+  global.document.getElementById=(id)=> id==="userGrid" ? grid : _get(id);
+  global.document.createElement=(tag)=>{ const e=el(); Object.defineProperty(e,"className",{set(v){ e.__g=(v==="loginGroup"); },get(){return "";}}); return e; };
+  bootLogin();
+  global.document.getElementById=_get;
+  const groups=order.filter(x=>String(x).startsWith("#")).map(x=>x.slice(1));
+  ok("登入頁分區：人資在管理層之前", JSON.stringify(groups)===JSON.stringify(["Taiwan","海外版","人資","管理層"]));
+  const tw=order.slice(order.indexOf("#Taiwan")+1, order.indexOf("#海外版"));
+  ok("登入頁 Taiwan 區照分工排序", JSON.stringify(tw)===JSON.stringify(["小葵","Edward","阿明","小華"])); }
+
 // ── 流程中控（Regina）──
 reset(); as("Regina","manager");
 let h=viewFlow();
