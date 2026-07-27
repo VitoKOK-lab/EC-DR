@@ -704,7 +704,9 @@ function viewWork(){
     : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : '';
   // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台/海外二創版走各自專屬編輯視窗/完成流程
   const workBtn=(v)=>{
-    if(v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
+    if(v.stage==="已完成") return dispStage(v)==="待審核"
+      ? `<button class="btn sm" disabled style="opacity:1;background:var(--amber);box-shadow:none">${T("待審核","In review")}</button>`
+      : `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
     if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">${T("編輯內容","Edit")}</button>
       <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
     if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">${T("編輯內容","Edit")}</button>
@@ -738,9 +740,10 @@ function viewWork(){
         return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
         <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
         <div class="muted" style="font-size:12px;margin-top:2px">${miss}</div></div>`; }).join("")}</div>`:''}
-    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("等 Regina 審片（審過才上傳）","Waiting for Regina's review (upload after approval)")}（${waitingReview.length}）</b>
-      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px">
-        <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></div>`).join("")}</div>`:''}
+    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
+        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
   </div>`:'';
   // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
   const nTaskDone=tasks.filter(t=>t.done).length;
@@ -1309,7 +1312,7 @@ function unclaimVid(id){ if(!confirm(T("退回這支毛片到待剪清單？大�
 function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
 // 完成：剪輯按了才標「剪輯完成」並移到影片庫（編輯時的「儲存修改」只存內容、不完成）
 function finishWork(id){ const v=vid(id)||{};
-  if(!confirm(T("把「"+vidTitle(v)+"」標記為「剪輯完成」？\n完成後會移到影片庫。","Mark \""+vidTitle(v)+"\" as done? It moves to the library."))) return;
+  if(!confirm(T("「"+vidTitle(v)+"」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳雲端＋補連結。","Done cutting \""+vidTitle(v)+"\"?\nIt moves to In review — upload & add links after Regina approves."))) return;
   write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},T("剪輯完成，已移到影片庫","Done — moved to the library")).then(ok=>{ if(ok && myTabs().some(t=>t[0]==="videos")){ CUR_TAB="videos"; buildNav(); render(); } });
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
@@ -1409,8 +1412,11 @@ async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套�
 // ===================================================================
 // 是否剪好（可標新/舊片）：已完成上架，或手選過新/舊片
 function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
+// 顯示用階段（流程：待處理→剪輯中→待審核→剪輯完成→已上片）：
+// 「待審核」是虛擬階段＝stage 已完成但 Regina 還沒審（reviewStatus 空）；審過（通過）才顯示剪輯完成
+function dispStage(v){ return (v && v.stage==="已完成" && !v.reviewStatus) ? "待審核" : ((v&&v.stage)||""); }
 // 狀態顯示文字：「已完成」對使用者顯示為「剪輯完成」（只代表剪輯工作完成，不代表排程/上片完成；內部值不變）
-function stageLabel(s){ if(currentRole()==="intl"){ return ({"待處理":"To do","剪輯中":"In progress","已完成":"Done","已上片":"Published"})[s]||s||""; }
+function stageLabel(s){ if(currentRole()==="intl"){ return ({"待處理":"To do","剪輯中":"In progress","待審核":"In review","已完成":"Done","已上片":"Published"})[s]||s||""; }
   return s==="已完成" ? "剪輯完成" : (s||""); }
 // 是否歸為「舊片」：手選舊片、或已過預排上片日（已上傳）
 function vidIsOld(v){
@@ -1455,6 +1461,13 @@ function reviewCardHTML(v){
         <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
       </div></div>`;
 }
+// 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
+function editorMarkReviewed(id){ const v=vid(id)||{};
+  if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
+    `Has Regina approved "${vidTitle(v)}"?\nNext step: upload to the cloud & add the links.`))) return;
+  write("PUT",`/api/videos/${id}`,{video:{reviewStatus:"通過",reviewedBy:currentUser(),reviewedAt:nowIso()}},
+    T("已標記審過 → 快上傳雲端＋補連結","Marked as approved — now upload & add the links")).then(ok=>{ if(ok) render(); });
+}
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
 function reviewVid(id, status){
   let note="";
@@ -1488,7 +1501,7 @@ function poolDiscardBtn(v){ if(!v||v.stage!=="待處理") return "";
   return ""; }
 // 一列 = 一支影片
 function vidTableRow(v){
-  const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","已完成":"var(--green)","已上片":"var(--green)"}[v.stage]||"var(--muted)";
+  const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
   const tags=videoTagsOf(v);
   const tagHTML=tags.length?tags.map(t=>`<span class="tag" style="font-size:11px">${esc(t)}</span>`).join(" "):'<span class="muted" style="font-size:12px">—</span>';
   const prod=(v.productUrl||"").trim();
@@ -1724,7 +1737,7 @@ function openVideoModal(id, edit, fromWork){
       ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
       ${(!v.locale&&!v.channel)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc(origLangLabel(origLangOf(v)))}`):''}
       ${row(T("片源","Source"), esc(v.source||""))}
-      ${row(T("階段","Stage"), `<span class="pill ${v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':'')}">${esc(stageLabel(v.stage))}</span>`)}
+      ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}
       ${row(T("建立者","Created by"), v.createdBy?`${esc(v.createdBy)}${v.createdAt?` <span class="muted" style="font-size:12px">${esc(String(v.createdAt).slice(0,10))}</span>`:''}`:'')}
       ${row(T("商品","Products"), prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（NT$${esc(p.price)}${p.salePrice?T(`／寵粉價 NT$${esc(p.salePrice)}`,` / Fan price NT$${esc(p.salePrice)}`):''}）`:"")).join("、"):'')}
@@ -1874,7 +1887,7 @@ function localizedVersionsCard(v){
   const kids=localizedVersionsOfSrc(v.id).slice().sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
   if(!kids.length) return "";
   const rows=kids.map(k=>{
-    const st=(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
+    const st=dispStage(k)==="待審核"?`<span class="pill wa" style="font-size:10px">${T("待審核","In review")}</span>`:(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
     const link=k.publishedLink?`<a href="${esc(k.publishedLink)}" target="_blank">${T("上傳連結","Upload link")}</a>`:'<span class="muted">—</span>';
     const mv=(Array.isArray(k.metrics)?k.metrics:[]).reduce((a,m)=>a+(+m.views||0),0);
     const doneAt=String(k.finishedAt||"").slice(0,10)||'<span class="muted">—</span>';
@@ -1933,8 +1946,8 @@ function intlLibRows(loc){
     const enT=stripHash(v.nameEn);
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
     const kids=localizedVersionsOfSrc(v.id).filter(k=>!loc||k.locale===loc).sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
-    const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${localeShort(k.locale)} · ${done?T('完成','done'):T('進行中','in progress')}</span>`;
+    const chips=kids.map(k=>{ const ds=dispStage(k); const done=(k.published||k.stage==='已完成')&&ds!=='待審核';
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${localeShort(k.locale)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):T('進行中','in progress')}</span>`;
     }).join(" ");
     // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽中文成片","Preview finished Chinese")}">▶</button>`:'';
@@ -2033,7 +2046,7 @@ function openDayIntl(ds){
     return `<tr>
       <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.nameEn||s.name||s.rawName):"")||T("(未命名)","(untitled)"))}</a>
         <span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-left:5px">${localeShort(v.locale)}</span></td>
-      <td data-label="${T("狀態","Status")}"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?T('已完成','Done'):(v.stage==='剪輯中'?T('製作中','In progress'):T('待處理','To do'))}</span></td>
+      <td data-label="${T("狀態","Status")}"><span class="pill ${done&&dispStage(v)!=='待審核'?'ok':(v.stage==='剪輯中'||dispStage(v)==='待審核'?'wa':'')}" style="font-size:10px">${dispStage(v)==='待審核'?T('待審核','In review'):done?T('已完成','Done'):(v.stage==='剪輯中'?T('製作中','In progress'):T('待處理','To do'))}</span></td>
       <td data-label="${T("剪輯","Editor")}">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="${T("上傳連結","Upload")}">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">${T("開啟","Link")}</a>`:'<span class="muted">—</span>'}</td>
       <td data-label="${T("改期","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="intlReschedule('${v.id}',this.value,'${ds}')"></td>
@@ -2191,8 +2204,8 @@ function intlAssignedTasks(me){
 // 完成不強制先填上傳連結：實務上是先排日期、到日子上傳後才有連結，之後再回來補
 function intlFinish(id){ const v=vid(id)||{};
   const t=v.name||v.rawName||T("這支影片","this video");
-  if(!confirm(T(`確定「${t}」已完成？會移到影片庫。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`,
-    `Mark "${t}" as done? It will move to the library.${String(v.publishedLink||"").trim()?"":"\n(No upload URL yet — you can add it later via Edit.)"}`))) return;
+  if(!confirm(T(`「${t}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
+    `Done cutting "${t}"?\nIt moves to In review — upload & add links after Regina approves.`))) return;
   write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},T("已完成，移到影片庫","Done — moved to the library")).then(ok=>{ if(ok) render(); });
 }
 async function intlSaveVideo(id){
@@ -2300,8 +2313,8 @@ function chClaim(ch,id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領�
 function chUnclaim(ch,id){ if(!confirm(T("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？","Return this "+CHANNELS[ch].verNameEn+" to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
 // 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
 function chFinish(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
-  const msg=T(`確定「${(v.name||v.rawName||"這支"+C.verName)}」已完成？會移到「${C.verName}」明細。${String(v.publishedLink||"").trim()?"":"\n（還沒填上傳連結，之後可再按「編輯」補上）"}`,
-    `Mark "${(v.name||v.rawName||"this "+C.verNameEn)}" as done?${String(v.publishedLink||"").trim()?"":"\n(No upload URL yet — add it later via Edit.)"}`);
+  const msg=T(`「${(v.name||v.rawName||"這支"+C.verName)}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
+    `Done cutting "${(v.name||v.rawName||"this "+C.verNameEn)}"?\nIt moves to In review — upload & add links after Regina approves.`);
   if(!confirm(msg)) return;
   write("POST","/api/videos/"+id+"/finish",{name:v.name||null,driveFolder:v.driveFolder||"",publishedLink:v.publishedLink||"",scheduledDate:v.scheduledDate||null},T("已完成","Done")).then(ok=>{ if(ok) render(); });
 }
@@ -2380,8 +2393,8 @@ function chLibRows(ch){
   return src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
     const kids=chVersionsOfSrc(ch, v.id);
-    const chips=kids.map(k=>{ const done=(k.published||k.stage==='已完成');
-      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${esc(k.account||C.label)} · ${done?T('完成','done'):(k.stage==='剪輯中'?T('製作中','in progress'):T('待處理','to do'))}</span>`;
+    const chips=kids.map(k=>{ const ds=dispStage(k); const done=(k.published||k.stage==='已完成')&&ds!=='待審核';
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${esc(k.account||C.label)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):(k.stage==='剪輯中'?T('製作中','in progress'):T('待處理','to do'))}</span>`;
     }).join(" ");
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽成片","Preview the finished cut")}">▶</button>`:'';
     // 只有一個帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
@@ -2528,7 +2541,7 @@ function openDayCh(ch,ds){
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
     return `<tr>
       <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(stripHash(v.name)||(s?stripHash(s.name||s.rawName):"")||T("(未命名)","(untitled)"))}</a></td>
-      <td data-label="${T("狀態","Status")}"><span class="pill ${done?'ok':(v.stage==='剪輯中'?'wa':'')}" style="font-size:10px">${done?T('已完成','Done'):(v.stage==='剪輯中'?T('製作中','In progress'):T('待處理','To do'))}</span></td>
+      <td data-label="${T("狀態","Status")}"><span class="pill ${done&&dispStage(v)!=='待審核'?'ok':(v.stage==='剪輯中'||dispStage(v)==='待審核'?'wa':'')}" style="font-size:10px">${dispStage(v)==='待審核'?T('待審核','In review'):done?T('已完成','Done'):(v.stage==='剪輯中'?T('製作中','In progress'):T('待處理','To do'))}</span></td>
       <td data-label="${T("剪輯","Editor")}">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="${T("上傳連結","Upload")}">${v.publishedLink?`<a href="${esc(v.publishedLink)}" target="_blank">${T("開啟","Open")}</a>`:'<span class="muted">—</span>'}</td>
       <td data-label="${T("改期","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="chReschedule('${ch}','${v.id}',this.value,'${ds}')"></td>
@@ -2562,7 +2575,7 @@ function chVersionsCard(ch,v){
   const kids=chVersionsOfSrc(ch,v.id);
   if(!kids.length) return "";
   const rows=kids.map(k=>{
-    const st=(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
+    const st=dispStage(k)==="待審核"?`<span class="pill wa" style="font-size:10px">${T("待審核","In review")}</span>`:(k.published||k.stage==="已完成")?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`:(k.stage==="剪輯中"?`<span class="pill wa" style="font-size:10px">${T("製作中","In progress")}</span>`:`<span class="pill" style="font-size:10px">${T("待製作","To do")}</span>`);
     const link=k.publishedLink?`<a href="${esc(k.publishedLink)}" target="_blank">${T("上傳連結","Upload link")}</a>`:'<span class="muted">—</span>';
     const doneAt=String(k.finishedAt||"").slice(0,10)||'<span class="muted">—</span>';
     const sched=k.scheduledDate?esc(String(k.scheduledDate).slice(0,10)):'<span class="muted">—</span>';

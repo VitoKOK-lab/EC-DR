@@ -24,7 +24,7 @@
 | `subTag` | string | 子標籤 | = `tags[0]`，相容舊資料用 |
 | `mainType` | string | 主類別 | `流量型`／`帶貨型`／`寵粉`，由標籤推導，**排程分類用** |
 | `source` | string | 片源 | `老闆自拍`／`外部公司`（`settings.sources`） |
-| `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片` |
+| `stage` | string | 階段 | `待處理`→`剪輯中`→`已完成`→`已上片`。畫面上另有虛擬階段「**待審核**」＝`stage:已完成` 且 `reviewStatus` 空（剪完等 Regina 審；審過= 通過 才顯示「剪輯完成」並進入上傳/補連結） |
 | `editor` | string | 剪輯人員 | 成員名字（對應 `users`） |
 | `assignedTo` | string | 指派對象 | 管理員把待剪毛片指派給的成員名字（只分配、不計時；空＝公用待剪池）。員工認領後才開始計時 |
 | `claimedBy` | string | 認領人 | 拉下來剪的人 |
