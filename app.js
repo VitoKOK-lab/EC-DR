@@ -718,11 +718,30 @@ function viewWork(){
     : v.locale
       ? `<button class="btn sec sm" onclick="intlUnclaim('${v.id}')" title="${T("後悔了？退回海外待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
       : `<button class="btn sec sm" onclick="unclaimVid('${v.id}')" title="${T("後悔了？退回給大家重選","Return to the shared pool")}">${T("退回","Return")}</button>`;
-  const rejected = (STATE.videos||[]).filter(v=>v.reviewStatus==="退回" && (v.editor===me||v.claimedBy===me));
-  const rejCard = rejected.length?`<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">${T("老闆娘退回待修","Sent back for fixes")}（${rejected.length}）</b>
-    ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
-      <a href="javascript:void(0)" onclick="editVideo('${v.id}')"><b>${esc(vidTitle(v))}</b></a>
-      ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:'';
+  // 審片進度（剪完 → Regina 審 → 通過才上傳雲端補連結）：量多容易忘，這張卡幫剪輯記住
+  const myVids=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me));
+  const rejected=myVids.filter(v=>v.reviewStatus==="退回");
+  const waitingReview=myVids.filter(v=>v.stage==="已完成" && !v.reviewStatus);
+  const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !(String(v.driveFolder||"").trim() && String(v.publishedLink||"").trim()));
+  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const nRev=rejected.length+approvedTodo.length+waitingReview.length;
+  const rejCard = nRev?`<div class="card" style="border-color:${rejected.length?'var(--red)':(approvedTodo.length?'var(--gold)':'var(--line)')}">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="font-size:16px">${T("審片進度（別忘了這些）","Review status (don't forget these)")}</b>
+      <span class="pill ${(rejected.length||approvedTodo.length)?'wa':'ok'}">${nRev}</span></div>
+    ${rejected.length?`<div style="margin-top:8px"><b style="color:var(--red);font-size:13px">✕ ${T("被退回，要修","Sent back — fix these")}（${rejected.length}）</b>
+      ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
+        <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
+        ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
+    ${approvedTodo.length?`<div style="margin-top:10px"><b style="color:var(--gold-dk);font-size:13px">✓ ${T("審核通過了 → 快上傳雲端＋補連結","Approved — upload to cloud & add the links")}（${approvedTodo.length}）</b>
+      ${approvedTodo.map(v=>{ const miss=[!String(v.driveFolder||"").trim()?T("缺雲端存檔連結","file link missing"):"", !String(v.publishedLink||"").trim()?T("缺上傳連結","upload link missing"):""].filter(Boolean).join(T("、",", "));
+        return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
+        <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
+        <div class="muted" style="font-size:12px;margin-top:2px">${miss}</div></div>`; }).join("")}</div>`:''}
+    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("等 Regina 審片（審過才上傳）","Waiting for Regina's review (upload after approval)")}（${waitingReview.length}）</b>
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px">
+        <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></div>`).join("")}</div>`:''}
+  </div>`:'';
   // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
   const nTaskDone=tasks.filter(t=>t.done).length;
   const focusBar=`<div class="focusbar">
@@ -919,7 +938,22 @@ function viewFlow(){
     :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
   </div>`;
 
-  // ---- ③ 每位剪輯：狀態＋交辦＋回報 ----
+  // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
+  const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && v.stage==="已完成" && !v.reviewStatus)
+    .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
+  const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const reviewQueueCard=`<div class="card"${pendingReview.length?' style="border-color:var(--gold)"':''}>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="font-size:16px">🎞 待你審片</b><span class="pill ${pendingReview.length?'wa':'ok'}">${pendingReview.length}</span></div>
+    ${pendingReview.length?pendingReview.slice(0,20).map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>
+          <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
+        <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
+      :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">在影片視窗按「通過」或「× 退回」。通過後剪輯會收到「快上傳雲端＋補連結」提醒；退回會在他的上班計畫標紅待修。</p>
+  </div>`;
+
+  // ---- ④ 每位剪輯：狀態＋交辦＋回報 ----
   const staffCards=staff.map((u,idx)=>{
     const name=u.name;
     const sh=(STATE.shifts||{})[shiftId(name,today)];
@@ -968,7 +1002,7 @@ function viewFlow(){
   </div>`;
 
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${runwayCard}${stockCard}
+  ${focus}${runwayCard}${reviewQueueCard}${stockCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
   ${staffCards||'<p class="muted">還沒有剪輯人員</p>'}`;
 }
@@ -1411,6 +1445,16 @@ function editDays(v){ const c=String(v.claimedAt||"").slice(0,10), f=String(v.fi
 function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<=1?"-":String(d); }
 // 最後更新日（資料庫任何異動）
 function vidUpdated(v){ return String(v.updatedAt||v.finishedAt||v.claimedAt||"").slice(0,10); }
+// 審片卡（管理員＋Regina 都可審）：一創與蝦皮/馬來/英/泰二創視窗共用
+function reviewCardHTML(v){
+  if(!v||!v.id||!["boss","manager"].includes(currentRole())) return "";
+  return `<div class="card" style="background:var(--panel2)"><b>審片（Regina／管理員）</b>
+      <div class="row" style="gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn sm" type="button" onclick="reviewVid('${v.id}','通過')">通過</button>
+        <button class="btn sm danger" type="button" onclick="reviewVid('${v.id}','退回')">× 退回</button>
+        <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
+      </div></div>`;
+}
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
 function reviewVid(id, status){
   let note="";
@@ -1647,12 +1691,7 @@ function openVideoModal(id, edit, fromWork){
   const stages=["待處理","剪輯中","已完成","已上片"];
   const tags=videoTagsOf(v);
   const prodList=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]);
-  const reviewCard = currentRole()==='boss'?`<div class="card" style="background:var(--panel2)"><b>‍老闆娘審核</b>
-      <div class="row" style="gap:8px;margin-top:6px;align-items:center">
-        <button class="btn sm" type="button" onclick="reviewVid('${id}','通過')">通過</button>
-        <button class="btn sm danger" type="button" onclick="reviewVid('${id}','退回')">× 退回</button>
-        <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
-      </div></div>`:'';
+  const reviewCard = reviewCardHTML(v);
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
   const metricsCard = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
@@ -2215,7 +2254,7 @@ function openIntlModal(id){
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="intlSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
   MODAL_DIRTY=false;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${foot}</div></div>`;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
 }
 
 // ===================================================================
@@ -2325,7 +2364,7 @@ function openChModal(ch,id){
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
   MODAL_DIRTY=false;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${foot}</div></div>`;
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
 }
 
 // ---- 二創區頁（可製作清單 ＋ 我的工作，合併一頁；比照上班計畫風格）----
