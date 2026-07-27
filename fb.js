@@ -60,7 +60,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const auth = getAuth(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
-  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
+  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [], hrchecks: {} };
   // 直接傳參照即可：app.js 的 decorate() 收到後會立刻深拷貝一份自用，
   // 這裡再拷一次等於每次同步都全量複製兩遍（影片多時手機會有感），故省略。
   function push() { if (window.__onState) window.__onState(raw); }
@@ -111,6 +111,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
     onSnapshot(collection(db, "shifts"),   q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.shifts = s; push(); });
+    // 人資自己的檢查紀錄（只有人資看，不影響影片與剪輯流程）
+    onSnapshot(collection(db, "hrchecks"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.hrchecks = s; push(); });
     // 操作紀錄（稽核用）：只訂閱最近 300 筆，避免無限成長
     onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(300)), q => { raw.logs = q.docs.map(d => d.data()); push(); });
   });

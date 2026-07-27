@@ -45,6 +45,7 @@ STATE = {
           T4:{id:"T4",user:"小葵",date:D,title:"影片清單整理",contact:"",report:"清單已重新排序完成",done:true,assignedBy:"",ack:true,createdAt:D+"T04:00:00",hrSeenBy:"HR小姐",hrSeenAt:D+"T18:00:00"} },
   shifts:{ ["小葵__"+D]:{id:"a",user:"小葵",date:D,clockIn:D+"T01:00:00Z",clockOut:""},
            ["阿明__"+D]:{id:"b",user:"阿明",date:D,clockIn:D+"T01:00:00Z",clockOut:D+"T10:00:00Z"} },
+  hrchecks:{ W5:{id:"W5",count:2,lastBy:"HR小姐",lastAt:D+"T20:00:00",title:"人資已記錄過的片",history:[{by:"HR小姐",at:D+"T19:00:00",stage:"已完成"},{by:"HR小姐",at:D+"T20:00:00",stage:"已上片"}]} },
   logs:[{id:"L1",at:D+"T05:00:00",user:"小葵",role:"editor",action:"已新增影片",target:"某片"}],
   deletedVideos:[{id:"X1",name:"被刪的片",rawName:"被刪的片",deleted:true,deletedBy:"小葵",deletedAt:D+"T06:00:00",tags:[],products:[],usageHistory:[],metrics:[]}],
   videos:[
@@ -80,8 +81,8 @@ STATE = {
      createdBy:"小葵",createdAt:D+"T01:00:00",scheduledDate:D,tags:[],products:[],usageHistory:[],metrics:[]},
     {id:"M1",name:"馬來版",rawName:"中文源片",stage:"剪輯中",channel:"ms",sourceVideoId:"S1",account:"tiktok-MY",
      editor:"小葵",claimedBy:"小葵",claimedAt:D+"T01:00:00",tags:[],products:[],usageHistory:[],metrics:[]},
-    {id:"W5",name:"人資已檢查鎖定的片",rawName:"x",stage:"已上片",published:true,editor:"小葵",finishedAt:D+"T05:00:00",
-     reviewStatus:"通過",hrCheckedBy:"HR小姐",hrCheckedAt:D+"T20:00:00",driveFolder:"http://d",publishedLink:"http://p",
+    {id:"W5",name:"人資已記錄過的片",rawName:"x",stage:"已上片",published:true,editor:"小葵",finishedAt:D+"T05:00:00",
+     reviewStatus:"通過",driveFolder:"http://d",publishedLink:"http://p",
      locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},
   ],
 };
@@ -120,7 +121,7 @@ for (const [user, role] of ROLES) {
                    chMs:()=>openChModal("ms","M1"), day:()=>openDay(D), dayIntl:()=>{ INTL_ACCT="tiktok-EN"; openDayIntl(D); },
                    dayCh:()=>{ CH_CAL.shopee.acct="蝦皮店A"; openDayCh("shopee",D); },
                    newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage(),
-                   hrLocked:()=>openVideoModal("W5",false) };
+                   hrChecked:()=>openVideoModal("W5",false) };
   for (const [name, open] of Object.entries(MODALS)) { resetUI(); modalHTML=""; try{ open(); }catch(e){ modalHTML="THREW: "+e.message; } out[`${role}/modal:${name}`]=modalHTML; }
 }
 
