@@ -107,7 +107,7 @@ function dayBreakdown(date){ const list=dayVideoList(date);
   const target=daySum(date), total=list.length;
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 // 我目前進行中的影片數
-// 全域 3 支上限：不分平台/語言（海內外權限一致）；bucket 可另傳做單一平台的顯示計數
+// 進行中支數（顯示用，無上限）；bucket 可另傳做單一平台的顯示計數
 function inProgressCount(name, bucket){ bucket=bucket||(x=>true);
   return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)&&bucket(v)).length; }
 function myInProgressCount(bucket){ return inProgressCount(currentUser(), bucket); }
@@ -155,9 +155,7 @@ async function route(method, path, body){
     const id=seg[1], v=vidLocal(id), action=seg[2];
     if(!v && method!=="DELETE") throw new Error(currentRole()==="intl"?"Video not found":"找不到影片");
     if(action==="claim"){
-      // 全域 3 支上限：不分平台/語言，一個人同時最多 3 支進行中（海內外權限一致）
-      const cnt=(STATE.videos||[]).filter(x=>x.stage==="剪輯中" && (x.claimedBy===user||x.editor===user)).length;
-      if(cnt>=3) throw new Error(currentRole()==="intl"?"You already have 3 in progress — finish some first":"你手上已有 3 支進行中，先完成幾支再拉新片");
+      // 同時在手上的支數不設上限（2026-07 取消 3 支上限）；「上班計畫」仍顯示進行中支數與天數警示
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",workStep:0,updatedAt:nowIso()}); return; }
     if(action==="unclaim"){
       await window.DB.update("videos",id,{stage:"待處理",claimedBy:"",claimedAt:"",editor:"",workStep:0,updatedAt:nowIso()}); return; }
@@ -676,7 +674,7 @@ function transferTask(id){
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
   const me = currentUser();
-  const inProg = myInProgressCount(); const atLimit = inProg>=3;   // 全域 3 支上限：不分平台/語言
+  const inProg = myInProgressCount(); const atLimit = false;   // 已取消同時支數上限（2026-07）；只顯示支數
   // 全員畫面一致（只分中/英介面）：台灣毛片＋蝦皮/馬來/EN/TH 版本全部合併同一份清單，小圖（蝦/馬/EN/TH）分辨
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
@@ -714,7 +712,7 @@ function viewWork(){
     // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
     return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="${T("編輯內容（按「儲存修改」只存、留在這頁）","Edit content (Save keeps you here)")}">${T("編輯內容","Edit")}</button>
       <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`; };
-  // 退回鍵：把認領的毛片/版本放回待剪清單重選（全域最多 3 支）
+  // 退回鍵：把認領的毛片/版本放回待剪清單重選
   const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
     ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="${T("後悔了？退回待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
     : v.locale
@@ -728,7 +726,7 @@ function viewWork(){
   // 今日焦點列：開頁一眼看到自己今天的狀態（缺口才轉紅）
   const nTaskDone=tasks.filter(t=>t.done).length;
   const focusBar=`<div class="focusbar">
-    <div><span class="fn ${atLimit?'warn':''}">${inProg}<i>/3</i></span><span class="fl">${T("製作中","In progress")}</span></div>
+    <div><span class="fn">${inProg}</span><span class="fl">${T("製作中","In progress")}</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">${T("今日完成","Done today")}</span></div>
     <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
@@ -759,7 +757,7 @@ function viewWork(){
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">${T("我的今日工作","My work today")}</b>
-      <span class="pill ${atLimit?'wa':'ok'}">${T("製作中","In progress")} ${inProg}/3</span>
+      <span class="pill ok">${T("製作中","In progress")} ${inProg}</span>
     </div>
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">${T("天數","Days")}</th><th>${T("影片","Video")}</th><th style="width:200px">${T("狀態","Status")}</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
@@ -950,7 +948,7 @@ function viewFlow(){
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':''}</b>${dot}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
-        <span class="pill ${wip.length?'wa':''}" style="font-size:11px">進行中 ${wip.length}/3</span>
+        <span class="pill ${wip.length?'wa':''}" style="font-size:11px">進行中 ${wip.length}</span>
         <span class="pill ${done.length?'ok':''}" style="font-size:11px">今日完成 ${done.length}</span>
         ${late.length?`<span class="pill em" style="font-size:11px">⚠ ${late.length} 支拖太久</span>`:''}
         <span class="pill" style="font-size:11px">交辦 ${tasks.filter(t=>t.done).length}/${tasks.length}</span></div>
@@ -1152,7 +1150,7 @@ function viewDashboard(){
 
   <div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">🎬 指派毛片給員工</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）。指派只是分配，員工自己「認領」才開始計時；同時最多領 3 支，其餘排隊。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）。指派只是分配，員工自己「認領」才開始計時。</div>
     <div class="grid cols2" style="margin-top:10px">
       <div><label>選擇員工</label>
         <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
@@ -1271,7 +1269,7 @@ function batchNewFootage(){
   });
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")); }
-// 退回：把已認領的毛片放回共用「待剪毛片」清單，重新給大家選（一人最多 3 支）
+// 退回：把已認領的毛片放回共用「待剪毛片」清單，重新給大家選
 function unclaimVid(id){ if(!confirm(T("退回這支毛片到待剪清單？大家就能重新認領。","Return this to the shared pool so others can claim it?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待剪毛片清單","Returned to the pool")); }
 // 我的剪輯工作：作業中 →（按一下）編輯內容
 function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
@@ -2058,7 +2056,7 @@ function viewIntlWork(){
   const all=STATE.videos||[];
   // 合併：跨語言（任一 locale），不再依帳號語言過濾；3 支上限＝全域（不分平台/語言，海內外一致）
   const inProg=all.filter(v=>v.locale && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
-  const atLimit=myInProgressCount()>=3;
+  const atLimit=false;
   const todo=all.filter(v=>v.locale && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
     .sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale) || String(a.id).localeCompare(String(b.id)));
   const doneToday=all.filter(v=>v.locale && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
@@ -2093,7 +2091,7 @@ function viewIntlWork(){
   // Focus strip: one-glance status for the day
   const focusBar=`<div class="focusbar">
     <div><span class="fn">${todo.length}</span><span class="fl">To do</span></div>
-    <div><span class="fn ${atLimit?'warn':''}">${inProg.length}<i>/3</i></span><span class="fl">In progress</span></div>
+    <div><span class="fn">${inProg.length}</span><span class="fl">In progress</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">Done today</span></div>
   </div>`;
   return `
@@ -2112,7 +2110,7 @@ function viewIntlWork(){
 
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:16px">In progress / done today</b><span class="pill ${atLimit?'wa':'ok'}">${inProg.length}/3</span>
+        <b style="font-size:16px">In progress / done today</b><span class="pill ok">${inProg.length}</span>
       </div>
       <div style="margin-top:6px">
         ${work.map(workItem).join("")||`<div class="emptyState"><span class="es-mk">✦</span>Nothing in progress. Claim one from “To do”.</div>`}
@@ -2378,7 +2376,7 @@ function chFilter(ch){ const el=document.getElementById(CHANNELS[ch].pfx+'_list'
 function chMyWorkCard(ch){
   const C=CHANNELS[ch];
   const me=currentUser();
-  const inProg=myInProgressCount(x=>x.channel===ch); const atLimit=myInProgressCount()>=3;   // 3 支上限＝台灣線合併計（含各平台二創）
+  const inProg=myInProgressCount(x=>x.channel===ch); const atLimit=false;   // 已取消同時支數上限
   const todo=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const mine=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me))
@@ -2850,7 +2848,7 @@ let TUT_ON=false, TUT_TIMER=null, TUT_CUR=null;
 const TUT_RULES=[
   {oc:"claimVid",        title:"認領開始剪", text:"從共用的待剪毛片清單把這支拉給自己，狀態變「剪輯中」、進入「我的今日工作」，其他剪輯就看不到、不會重複剪。"},
   {oc:"setWorkStep",     title:"我作業中…", text:"剪好了？按一下進到「編輯內容 ▶」，再進編輯畫面填資料。"},
-  {oc:"unclaimVid",      title:"退回", text:"後悔了或想改選？把這支退回共用的待剪清單，大家可重新認領（一人最多 3 支）。"},
+  {oc:"unclaimVid",      title:"退回", text:"後悔了或想改選？把這支退回共用的待剪清單，大家可重新認領。"},
   {oc:"batchNewFootage", title:"＋ 新增毛片", text:"一次最多新增 5 支新影片，每支可填原始片名＋最多 4 個商品；其餘細節剪片時再補。"},
   {oc:"newSimpleVideo",  title:"新增影片", text:"建立一支新影片，填原始片名、影片文案與商品。"},
   {oc:"editVideo",       title:"打開影片內容", text:"點影片名稱可看這支片的完整資料；裡面再按「編輯」才能修改。"},
