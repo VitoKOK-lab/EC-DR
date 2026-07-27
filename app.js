@@ -1615,8 +1615,8 @@ function viewVideos(){
 // 刪除影片：二次確認，無法復原
 function delVideo(id){
   const v=vid(id)||{};
-  if(!confirm("確定要刪除「"+vidTitle(v)+"」？\n\n（會移到「回收桶」，管理員可復原）")) return;
-  write("DELETE","/api/videos/"+id,{},"已刪除「"+vidTitle(v)+"」（移到回收桶，管理員可復原）").then(ok=>{ if(ok) closeModal(); });
+  if(!confirm(T("確定要刪除「"+vidTitle(v)+"」？\n\n（會移到「回收桶」並記錄是誰刪的，管理員可復原）","Delete \""+vidTitle(v)+"\"?\n\n(It goes to the recycle bin with your name logged — the admin can restore it.)"))) return;
+  write("DELETE","/api/videos/"+id,{},T("已刪除「"+vidTitle(v)+"」（移到回收桶，管理員可復原）","Deleted \""+vidTitle(v)+"\" — moved to the recycle bin; the admin can restore it")).then(ok=>{ if(ok) closeModal(); });
 }
 // 回收桶（管理員）：復原 / 永久刪除
 function restoreVideo(id){ const v=vidLocal(id)||{}; write("POST","/api/videos/"+id+"/restore",{},"已復原「"+vidTitle(v)+"」"); }
@@ -1806,13 +1806,14 @@ function openVideoModal(id, edit, fromWork){
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>
     </div>`:''}
-    ${(currentRole()==="boss"||currentRole()==="manager")?`<div class="card" style="border-color:var(--red)">
-      <button class="btn danger sm" type="button" onclick="delVideo('${id}')">刪除這支影片</button>
-      <span class="muted" style="font-size:12px;margin-left:8px">需二次確認（移到回收桶，可復原）・管理功能</span>
-    </div>`:(v.stage==="剪輯中"?`<div class="card">
+    ${(v.stage==="剪輯中"&&!["boss","manager"].includes(currentRole()))?`<div class="card">
       <button class="btn sec sm" type="button" onclick="closeModal();unclaimVid('${id}')">${T("退回（放回待剪清單）","Return to the pool")}</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${T("不會刪除影片，只是退回給大家重選","Nothing is deleted — it goes back to the shared pool")}</span>
-    </div>`:'')}`;
+    </div>`:''}
+    <div class="card" style="border-color:var(--red)">
+      <button class="btn danger sm" type="button" onclick="delVideo('${id}')">${T("刪除這支影片","Delete this video")}</button>
+      <span class="muted" style="font-size:12px;margin-left:8px">${T("需二次確認：移到回收桶（會記錄是誰刪的），管理員可救回","Asks to confirm — goes to the recycle bin (logged with your name); the admin can restore it")}</span>
+    </div>`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="cancelVideoEdit()">${T("取消編輯","Cancel")}</button>
       <button class="btn" id="vmSave" type="button">${fromWork?T('儲存並完成','Save & finish'):T('儲存修改','Save')}</button></div>`;
