@@ -54,7 +54,7 @@
 | `reviewedBy` | string | 審核人 | |
 | `reviewedAt` | string(ISO) | 審核時間 | |
 | `reviewAck` | boolean | 已審過通知收起 | 剪輯在審片進度卡按「知道了」收起已審過通知（連結補齊後才能收；審過 7 天自動不顯示） |
-| `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原） |
+| `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原）。**全員都可刪**（2026-07 起）：任何角色在影片視窗按刪除→進回收桶並記 `deletedBy`；救回／永久刪除只有管理員能做 |
 | `deletedBy` | string | 刪除者 | 成員名字 |
 | `deletedAt` | string(ISO) | 刪除時間 | |
 | `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
