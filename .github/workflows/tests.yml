@@ -1,0 +1,17 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # 離線煙霧測試：語法檢查 ＋ 各角色畫面/流程斷言 ＋ 中英介面洩漏掃描
+      - run: node tests/run-all.js

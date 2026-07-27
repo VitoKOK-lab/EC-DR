@@ -227,7 +227,8 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
-    b.onclick = ()=>{ if(id==='cal') CAL_YM=null; if(id==='intlcal') INTL_CAL_YM=null; if(id==='shopeecal') CH_CAL.shopee.ym=null; if(id==='mscal') CH_CAL.ms.ym=null; CUR_TAB = id; buildNav(); render(); };  // 進月排程一律回到當月
+    // 進月排程一律回到當月（hub 內各平台月曆各自的年月也一起重設）
+    b.onclick = ()=>{ if(id==='cal'){ CAL_YM=null; INTL_CAL_YM=null; CH_CAL.shopee.ym=null; CH_CAL.ms.ym=null; } CUR_TAB = id; buildNav(); render(); };
     nav.appendChild(b);
   });
 }
@@ -377,7 +378,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, flow:viewFlow, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, intlwork:viewIntlWork, intllib:viewIntlLibrary, intlcal:viewCalIntl, shopeelib:viewShopeeLib, shopeecal:viewCalShopee, mslib:viewMsLib, mscal:viewCalMs }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
@@ -1459,8 +1460,6 @@ function claimDayBadge(v){ const c=String(v.claimedAt||"").slice(0,10); if(!c) r
 // 剪輯耗時（天）：認領→完成，當天完成＝「-」，跨 2 天＝2，3 天＝3…（KPI 用）
 function editDays(v){ const c=String(v.claimedAt||"").slice(0,10), f=String(v.finishedAt||"").slice(0,10); if(!c||!f) return null; return daysBetween(c,f)+1; }
 function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<=1?"-":String(d); }
-// 最後更新日（資料庫任何異動）
-function vidUpdated(v){ return String(v.updatedAt||v.finishedAt||v.claimedAt||"").slice(0,10); }
 // 審片卡（管理員＋Regina 都可審）：一創與蝦皮/馬來/英/泰二創視窗共用
 function reviewCardHTML(v){
   if(!v||!v.id||!["boss","manager"].includes(currentRole())) return "";
@@ -1990,15 +1989,6 @@ function intlLibRows(loc){
   return cards;
 }
 function intlFilter(){ const el=document.getElementById('intl_list'); if(el) el.innerHTML=intlLibRows((WORK_ZONE==="en"||WORK_ZONE==="th")?WORK_ZONE:""); }
-function viewIntlLibrary(){
-  const src=intlSourcePool();
-  return `<h2 style="margin-top:0">Library <span class="muted" style="font-size:13px">Already-uploaded videos — create EN / TH / MS versions</span></h2>
-  <div class="card">
-    <input id="intl_q" placeholder="🔍  Search title / products / code" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px">
-    <div id="intl_list" class="${src.length>8?'vidscroll':''}" style="margin-top:12px">${intlLibRows()}</div>
-  </div>`;
-}
-
 // ---- 海外月歷（Schedule）：依帳號看每天排幾支、目標＝每帳號 intlDailyTarget（預設 2）----
 let INTL_CAL_YM=null; let INTL_ACCT="";
 function intlCurAcct(){ const list=intlAccounts(); if(!list.length) return ""; if(!INTL_ACCT || !list.some(a=>a.name===INTL_ACCT)){ INTL_ACCT=list[0].name; } return INTL_ACCT; }
@@ -2052,7 +2042,6 @@ function calIntlBody(loc){
     <div class="callegend"><span><i class="lg-g"></i>${T("已排滿","Full")}</span><span><i class="lg-r"></i>${T("待補","Behind")}</span><span><i class="lg-b"></i>${T("未排","None")}</span><span><i class="lg-t"></i>${T("今天","Today")}</span></div>
   </div>`;
 }
-function viewCalIntl(){ return `<h2 style="margin-top:0">Schedule</h2>`+calIntlBody(); }
 function openDayIntl(ds){
   const acc=intlCurAcct(); const b=intlDayBreak(ds,acc); const list=intlDayList(ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
@@ -2105,7 +2094,6 @@ function createLocalVersion(sourceId, locale, account){
 // 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
 function createLocalPick(sourceId){ const sel=document.getElementById('addacct_'+sourceId); const idx=sel?sel.value:'';
   if(idx===''){ toast(T("請先選擇帳號","Pick an account first"),true); return; } createLocalFromAcct(sourceId, idx); }
-function intlClaim(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")).then(ok=>{ if(ok) render(); }); }
 function intlUnclaim(id){ if(!confirm(T("退回這支版本，重新排隊給大家選？","Return this version to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
 // 退回資料庫：只移除 To do 裡「還沒開始做」的版本殼（無任何內容），源片立即回到 Library 可重選。
 // 不動源片、不進回收桶 — 海外版全是二創，絕不能刪到原始檔。
@@ -2114,104 +2102,6 @@ function intlDiscard(id){ const v=vid(id)||{};
   const s=srcOf(v); const t=stripHash(v.name)||stripHash(s?(s.nameEn||s.name||s.rawName):"")||v.rawName||T("這支版本","this version");
   if(!confirm(T(`把「${t}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${t}" to the library?\nNothing is deleted — the original video stays and can be picked again.`))) return;
   write("DELETE","/api/videos/"+id+"/purge",{},T(`已退回資料庫：「${t}」（沒有刪除任何影片）`,`Returned to the library: "${t}" — no video was deleted`)).then(ok=>{ if(ok) render(); }); }
-
-// ---- My Work（全英文，跨語言）----
-function viewIntlWork(){
-  const me=currentUser();
-  const all=STATE.videos||[];
-  // 合併：跨語言（任一 locale），不再依帳號語言過濾；3 支上限＝全域（不分平台/語言，海內外一致）
-  const inProg=all.filter(v=>v.locale && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me));
-  const atLimit=false;
-  const todo=all.filter(v=>v.locale && v.stage==="待處理" && (v.assignedTo===me||!v.assignedTo))
-    .sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale) || String(a.id).localeCompare(String(b.id)));
-  const doneToday=all.filter(v=>v.locale && v.editor===me && (v.published||v.stage==="已完成") && String(v.finishedAt||"").slice(0,10)===today)
-    .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-  const work=inProg.concat(doneToday);
-  const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.nameEn||s.name||s.rawName||""):""); };
-  const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(untitled)";
-  const lb=(v)=>`<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px">${localeShort(v.locale)}</span>`;
-  const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
-  const workBtn=(v)=>{
-    if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">Done ✓</button>`;
-    return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">Edit</button>
-      <button class="btn sm" onclick="intlFinish('${v.id}')" title="Uploaded & finished">Done ✔</button>
-      <button class="btn sec sm" onclick="intlUnclaim('${v.id}')">Return</button>`; };
-  const todoItem=(v)=>`<div class="iwork-item">
-      <div style="min-width:0">
-        <div class="iwork-title">${lb(v)}${esc(vTitle(v))}${acct(v)}</div>
-        <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||stripHash(v.rawName))}</div>
-      </div>
-      <div class="row" style="gap:6px;flex:none">
-        <button class="btn sm" onclick="intlClaim('${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'You already have 3 in progress — finish one first':'Claim & start (starts the timer)'}">${atLimit?'Queued':'Claim & start'}</button>
-        <button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="Return to the library — nothing gets deleted; the source video stays">✕ Remove</button>
-      </div>
-    </div>`;
-  const workItem=(v)=>`<div class="iwork-item">
-      <div style="min-width:0">
-        <div class="iwork-title">${lb(v)}<a href="javascript:void(0)" onclick="openIntlModal('${v.id}')">${esc(vTitle(v))}</a>${acct(v)}</div>
-        <div class="muted" style="font-size:12px">from: ${esc(srcTitle(v)||stripHash(v.rawName))}${v.scheduledDate?` &nbsp;·&nbsp; 🗓 upload ${esc(v.scheduledDate)}`:''}</div>
-      </div>
-      <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div>
-    </div>`;
-  // Focus strip: one-glance status for the day
-  const focusBar=`<div class="focusbar">
-    <div><span class="fn">${todo.length}</span><span class="fl">To do</span></div>
-    <div><span class="fn">${inProg.length}</span><span class="fl">In progress</span></div>
-    <div><span class="fn">${doneToday.length}</span><span class="fl">Done today</span></div>
-  </div>`;
-  return `
-  <h2 style="margin-top:0">My Work <span class="muted" style="font-size:13px">${esc(me)}</span></h2>
-  ${focusBar}
-  <div class="workgrid2">
-    <div class="card">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:16px">To do</b><span class="pill ${todo.length?'ok':'wa'}">${todo.length}</span>
-      </div>
-      <div style="margin-top:6px${todo.length>6?';max-height:340px;overflow-y:auto':''}">
-        ${todo.map(todoItem).join("")||`<div class="emptyState"><span class="es-mk">✦</span>Nothing to do here. Open <b>Library</b> and add a version.</div>`}
-      </div>
-      ${atLimit?'<p style="font-size:12px;margin:8px 0 0;color:var(--red)">You have 3 in progress — finish some before claiming more.</p>':''}
-    </div>
-
-    <div class="card">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:16px">In progress / done today</b><span class="pill ok">${inProg.length}</span>
-      </div>
-      <div style="margin-top:6px">
-        ${work.map(workItem).join("")||`<div class="emptyState"><span class="es-mk">✦</span>Nothing in progress. Claim one from “To do”.</div>`}
-      </div>
-    </div>
-  </div>
-  ${intlAssignedTasks(me)}`;
-}
-// 交辦給海外剪輯的工作：顯示＋一鍵翻譯(文A)＋收到/回報/完成
-// 交辦工作卡（英文版；全平行台灣版 我的今日交辦工作）：老闆指派的 ＋ 自己新增的，永遠顯示（沒有交辦時顯示空狀態）
-function intlAssignedTasks(me){
-  const list=myTasks();  // 跨角色共用：currentUser() 今天的所有交辦（自建＋被指派）
-  const rows=list.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
-    const trIcon=assigned?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:'';
-    const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-        <b style="font-size:14px">${esc(t.title)}${trIcon}</b>
-        ${assigned?`<span class="pill em" style="font-size:10px;flex:none">Assigned</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">✕</button>`}
-      </div>`;
-    const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">Contact:</span> <b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
-    if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
-      ${head}${contactLine}
-      <div class="muted" style="font-size:12px;margin:6px 0 8px">Assigned by ${esc(t.assignedBy)} · <b style="color:var(--gold-dk)">Press “Got it” to start</b></div>
-      <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">Got it</button></div>`;
-    return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
-      ${head}${contactLine}
-      ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">Received (assigned by ${esc(t.assignedBy)})</div>`:''}
-      <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="Progress note (at least 12 characters)…">
-      <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
-        <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?'Done':'In progress'}</label>
-    </div>`;}).join("")||`<div class="emptyState"><span class="es-mk">✦</span>No tasks assigned today.</div>`;
-  return `<div class="card" style="margin-top:14px">
-    <b style="font-size:16px">Assigned tasks <span class="muted" style="font-size:12px">(beyond editing)</span></b>
-    <div style="margin-top:10px">${rows}</div>
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="Add your own task…" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="Contact (optional)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ Add</button></div>
-  </div>`;
-}
 
 // ---- 在地化版本編輯視窗（全英文；語言隨版本）----
 // 完成不強制先填上傳連結：實務上是先排日期、到日子上傳後才有連結，之後再回來補
@@ -2322,7 +2212,6 @@ function createChVersion(ch, sourceId, account){
 function createChPick(ch, sourceId){ const sel=document.getElementById(CHANNELS[ch].pfx+'acct_'+sourceId); const acct=sel?sel.value:'';
   if(!acct){ toast(T("請先選擇"+CHANNELS[ch].label+"帳號","Pick a "+CHANNELS[ch].labelEn+" account first"),true); return; } createChVersion(ch, sourceId, acct); }
 
-function chClaim(ch,id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")).then(ok=>{ if(ok) render(); }); }
 function chUnclaim(ch,id){ if(!confirm(T("退回這支"+CHANNELS[ch].verName+"，重新排隊給大家選？","Return this "+CHANNELS[ch].verNameEn+" to the shared pool?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待處理","Returned to the pool")); }
 // 完成不強制先填上傳連結：先排日期、到日子上傳後再回來補連結
 function chFinish(ch,id){ const C=CHANNELS[ch]; const v=vid(id)||{};
@@ -2437,62 +2326,6 @@ function chLibRows(ch){
   }).join("");
 }
 function chFilter(ch){ const el=document.getElementById(CHANNELS[ch].pfx+'_list'); if(el) el.innerHTML=chLibRows(ch); }
-// 「我的○○工作」卡：二創區頁用（上班計畫已把各平台版本合併進「我的工作」清單，用小圖分辨）
-function chMyWorkCard(ch){
-  const C=CHANNELS[ch];
-  const me=currentUser();
-  const inProg=myInProgressCount(x=>x.channel===ch); const atLimit=false;   // 已取消同時支數上限
-  const todo=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
-    .sort((a,b)=>String(a.id).localeCompare(String(b.id)));
-  const mine=(STATE.videos||[]).filter(v=>v.channel===ch && v.stage==="剪輯中" && (v.claimedBy===me||v.editor===me))
-    .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
-  const doneToday=(STATE.videos||[]).filter(v=>v.channel===ch && v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
-  const work=mine.concat(doneToday);
-  const srcTitle=(v)=>{ const s=srcOf(v); return stripHash(s?(s.name||s.rawName||""):""); };
-  const vTitle=(v)=>stripHash(v.name)||srcTitle(v)||stripHash(v.rawName)||"(未命名)";
-  const acct=(v)=> v.account?` <span class="muted" style="font-weight:400">· ${esc(v.account)}</span>`:'';
-  const workBtn=(v)=>{
-    if(v.published||v.stage==="已完成") return `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">已完成</button>`;
-    return `<button class="btn sec sm" onclick="openChModal('${ch}','${v.id}')">編輯</button>
-      <button class="btn sm" onclick="chFinish('${ch}','${v.id}')">完成 ✔</button>
-      <button class="btn sec sm" onclick="chUnclaim('${ch}','${v.id}')">退回</button>`; };
-  return `<div class="card">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <b style="font-size:16px">我的${C.label}工作</b><span class="pill ${atLimit?'wa':'ok'}">${C.label}製作中 ${inProg}</span>
-      </div>
-      <div class="igroup" style="border-top:none;padding-top:0">
-        <span class="igroup-l">待處理（${todo.length}）</span>
-        ${todo.length?todo.map(v=>`<div class="iwork-item">
-            <div style="min-width:0"><div class="iwork-title">${esc(vTitle(v))}${acct(v)}</div>
-              <div class="muted" style="font-size:12px">來源：${esc(srcTitle(v)||stripHash(v.rawName))}</div></div>
-            <div class="row" style="gap:6px;flex:none">
-              <button class="btn sm" onclick="chClaim('${ch}','${v.id}')" ${atLimit?'disabled':''} title="${atLimit?'你已有 3 支在做，先完成一支再領':'認領並開始剪'}">${atLimit?'排隊中':'認領開始剪'}</button>
-              <button class="btn sec sm" onclick="chDiscard('${ch}','${v.id}')" title="退回資料庫（不會刪除任何影片）">✕ 退回</button>
-            </div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有待處理的${C.verName}，從左邊挑一支加入。</div>`}
-      </div>
-      <div class="igroup">
-        <span class="igroup-l">製作中／今日完成（${work.length}）</span>
-        ${work.length?work.map(v=>`<div class="iwork-item">
-            <div style="min-width:0"><div class="iwork-title"><a href="javascript:void(0)" onclick="openChModal('${ch}','${v.id}')">${esc(vTitle(v))}</a>${acct(v)}</div>
-              <div class="muted" style="font-size:12px">來源：${esc(srcTitle(v)||stripHash(v.rawName))}</div></div>
-            <div class="row" style="gap:6px;flex:none">${workBtn(v)}</div></div>`).join(""):`<div class="emptyState"><span class="es-mk">✦</span>目前沒有製作中的${C.verName}。</div>`}
-      </div>
-    </div>`;
-}
-function viewChLib(ch){
-  const C=CHANNELS[ch];
-  return `
-  <h2 style="margin-top:0">${C.zoneName}</h2>
-  <div class="workgrid2">
-    <div class="card">
-      <b style="font-size:16px">可製作${C.verName}</b>
-      <input id="${C.pfx}_q" placeholder="🔍 搜尋片名／編號" value="${esc(CH_Q[ch])}" oninput="CH_Q['${ch}']=this.value;chFilter('${ch}')" style="width:100%;margin:10px 0">
-      <div id="${C.pfx}_list" class="${chSourcePool().length>8?'vidscroll':''}">${chLibRows(ch)}</div>
-    </div>
-    ${chMyWorkCard(ch)}
-  </div>`;
-}
-
 // ---- 排程（月曆）：依帳號看每天排幾支，目標＝每帳號 chDailyTarget（預設 2）----
 let CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
 function chCurAcct(ch){ const list=chAccounts(ch); if(!list.length) return ""; const st=CH_CAL[ch]; if(!st.acct || !list.includes(st.acct)){ st.acct=list[0]; } return st.acct; }
@@ -2606,24 +2439,8 @@ function chVersionsCard(ch,v){
     <tbody>${rows}</tbody></table></div>`;
 }
 
-// ---- 相容包裝（既有引用/測試沿用的名稱）----
-function shopeeVersionsOfSrc(id){ return chVersionsOfSrc("shopee",id); }
-function msVersionsOfSrc(id){ return chVersionsOfSrc("ms",id); }
-function openShopeeModal(id){ openChModal("shopee",id); }
-function openMsModal(id){ openChModal("ms",id); }
-function shopeeFinish(id){ chFinish("shopee",id); }
-function shopeeUnclaim(id){ chUnclaim("shopee",id); }
-function shopeeDiscard(id){ chDiscard("shopee",id); }
-function shopeeClaim(id){ chClaim("shopee",id); }
-function createShopeeVersion(sourceId,account){ createChVersion("shopee",sourceId,account); }
-function viewShopeeLib(){ return viewChLib("shopee"); }
-function viewMsLib(){ return viewChLib("ms"); }
-function viewCalCh(ch){ return `<h2 style="margin-top:0">${CHANNELS[ch].calName}</h2>`+calChBody(ch); }
-function viewCalShopee(){ return viewCalCh("shopee"); }
-function viewCalMs(){ return viewCalCh("ms"); }
 function shopeeVersionsCard(v){ return chVersionsCard("shopee",v); }
 function msVersionsCard(v){ return chVersionsCard("ms",v); }
-function shopeeSourcePool(){ return chSourcePool(); }
 function shopeeAccounts(){ return chAccounts("shopee"); }
 function msAccounts(){ return chAccounts("ms"); }
 
@@ -2857,9 +2674,6 @@ const DEFAULT_PLATFORMS=[
 function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
 // 依平台一條導購連結，最短：只用 utm_source（月底靠訂單時間對應商品）
 function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||""); }
-function copyFromInput(id){ const e=document.getElementById(id); if(!e) return; e.focus(); e.select();
-  const t=e.value; if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>toast("已選取，請手動複製",true)); }
-  else { try{ document.execCommand("copy"); toast("已複製連結"); }catch(_){ toast("已選取，請手動複製",true); } } }
 // 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主
 function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
 function vidTitle(v){ const t=zhTW((v&&(v.name||v.rawName))||"(未命名)"); const c=vidCode(v); return c?(c+" "+t):t; }
