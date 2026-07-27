@@ -1216,7 +1216,7 @@ function dashViewAsCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
       <div class="row" style="gap:8px">
-        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${["editor","intl","manager"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select>
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${["editor","intl","manager","hr"].map(role=>{ const ppl=(STATE.users||[]).filter(u=>(u.role||"editor")===role).map(u=>u.name); return ppl.length?`<optgroup label="${esc(ROLE_LABEL[role]||role)}">${ppl.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>`:''; }).join("")}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
@@ -2733,7 +2733,7 @@ function setMembersCard(members, memberRows){
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
-      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option></select>
+      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="hr">人資</option></select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>`;
 }
@@ -2872,7 +2872,7 @@ async function saveSettings(){
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
   const role=val("mb_role")||"editor";
   write("POST","/api/users",{name,role},"已新增成員（"+(ROLE_LABEL[role]||role)+"）"); }
-function setMemberRole(name, role){ if(!["editor","manager","intl"].includes(role)) return;
+function setMemberRole(name, role){ if(!["editor","manager","intl","hr"].includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
