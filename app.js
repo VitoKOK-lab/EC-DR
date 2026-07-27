@@ -11,7 +11,7 @@ const ROLE_TABS = {
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["videos","Library"],["cal","Schedule"]],
-  hr:      [["hr","影片審查"],["dashboard","儀表板"]],   // 人資：審查影片內容（兩份清單）＋看 KPI
+  hr:      [["hr","工作審查"],["dashboard","儀表板"]],   // 人資：審查每支片的實際產出（雲端檔案＋封面＋文案）＋看 KPI
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -521,7 +521,7 @@ function odPickVid(){ const e=document.getElementById("od_drive"); if(e) e.value
 function odReuse(ds){ const id=val("od_vid"); if(!id){ toast("請先選一支舊片",true); return; }
   write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
-async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return;
+async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
   const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
   const link=(idx>=0?(day.slots[idx].publishedLink||""):"");
   try{
@@ -529,6 +529,7 @@ async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) 
     await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
     const v=vid(id); const uh=(v.usageHistory||[]).map(u=> (u&&typeof u==="object" && u.date===oldDate)?Object.assign({},u,{date:newDate}):u);
     await window.DB.update("videos", id, {usageHistory:uh});
+    logA("重播改期至 "+newDate, vidTitle(vid(id)||{}));
     await delay(140); toast("已改重播日至 "+newDate); openDay(newDate);
   }catch(e){ toast(e.message||"改期失敗",true); }
 }
@@ -548,7 +549,7 @@ async function unscheduleVid(id, ds){
   }catch(e){ toast(e.message||"移出失敗",true); }
 }
 // 移出排程（舊片重播）：只移除這天的重播，影片保留、使用次數同步退回
-async function unscheduleReuse(id, ds){
+async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
   const v=vid(id)||{};
   const slots=((STATE.schedule||{})[ds]||{}).slots||[];
   const idx=slots.findIndex(s=>s.videoId===id && s.reused);
@@ -558,6 +559,7 @@ async function unscheduleReuse(id, ds){
     await route("DELETE",`/api/schedule/${ds}/slot/${idx}`,{});
     const uh=(v.usageHistory||[]).filter(u=>!(u&&typeof u==="object"&&u.date===ds));
     await window.DB.update("videos", id, {usageHistory:uh, totalUsed:Math.max(0,(v.totalUsed||0)-1)});
+    logA("移出重播排程 "+ds, vidTitle(v));
     await delay(140); toast("已移出這天的重播（影片保留）"); openDay(ds);
   }catch(e){ toast(e.message||"移出失敗",true); }
 }
@@ -575,7 +577,27 @@ function scheduleGlance(){
     const b=dayBreakdown(ds); if(!b.full){ defs.push({ds,short:b.short}); } }
   return {runway, defs, todayTarget:daySum(today)};
 }
+// ===================================================================
+// 統一資料寫入包裝：所有直接寫資料庫的動作都走這裡
+//   ① 員工視角（VIEW_AS）一律唯讀，避免管理員預覽時誤改到員工的資料
+//   ② 自動寫入操作紀錄（誰、何時、做了什麼、對象）
+//   ③ 失敗統一提示；回傳 Promise<boolean>
+// ===================================================================
+function dbBlocked(){ if(VIEW_AS){ toast(T("員工視角為唯讀預覽，離開後才能操作","Read-only preview — leave it first"),true); return true; } return false; }
+function dbWrite(op, coll, id, payload, log){
+  if(dbBlocked()) return Promise.resolve(false);
+  const p = op==="del" ? window.DB.del(coll, id)
+          : op==="set" ? window.DB.set(coll, id, payload)
+          : window.DB.update(coll, id, payload);
+  return p.then(()=>{ if(log) logA(log.action, log.target||""); return true; })
+          .catch(()=>{ toast(T("更新失敗，請稍後再試","Update failed — please try again"),true); return false; });
+}
+function dbSet(coll, id, o, log){ return dbWrite("set", coll, id, o, log); }
+function dbUpdate(coll, id, p, log){ return dbWrite("update", coll, id, p, log); }
+function dbDel(coll, id, log){ return dbWrite("del", coll, id, null, log); }
+
 // ===== 交辦工作（剪輯以外）：tasks/{id} =====
+function taskById(id){ return Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id)||null; }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .filter(t=>t && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
@@ -591,13 +613,13 @@ function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===c)) return;
   cur.push(c); try{ window.DB.setSettings({contacts:cur}); }catch(e){} }
 // 後台名單管理（限管理員・設定頁）
-function addContact(){ const v=(val("ct_name")||"").trim(); if(!v){ toast("請輸入窗口名稱",true); return; }
+function addContact(){ if(dbBlocked()) return; const v=(val("ct_name")||"").trim(); if(!v){ toast("請輸入窗口名稱",true); return; }
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===v)){ toast("已有相同窗口",true); return; }
   cur.push(v); window.DB.setSettings({contacts:cur}).then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
-function delContact(name){ if(!confirm("刪除對接窗口「"+name+"」？（不影響已建立的交辦）")) return;
+function delContact(name){ if(dbBlocked()) return; if(!confirm("刪除對接窗口「"+name+"」？（不影響已建立的交辦）")) return;
   const cur=settingsContacts().filter(x=>String(x).trim()!==String(name).trim());
   window.DB.setSettings({contacts:cur}).then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
-function renameContact(name){ const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
+function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
   cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
@@ -619,7 +641,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
-async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
+async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
@@ -631,6 +653,7 @@ async function assignTaskSel(){ const name=val("asg_who"); const t=val("asg_txt"
 function afpToggleAll(btn){ const boxes=Array.from(document.querySelectorAll('.afp_vid'));
   const turnOn=boxes.some(b=>!b.checked); boxes.forEach(b=>b.checked=turnOn); if(btn) btn.textContent=turnOn?"全部取消":"全選"; }
 async function assignFootage(){
+  if(dbBlocked()) return;
   const who=val("afp_who");
   if(!who){ toast("請先選擇員工",true); return; }
   const ids=Array.from(document.querySelectorAll('.afp_vid:checked')).map(o=>o.value).filter(Boolean);
@@ -644,6 +667,7 @@ async function assignFootage(){
 // 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
 // 防呆：只收回台灣毛片；海外/蝦皮二創殼的 assignedTo＝建立者本人，收回會讓它跑進所有人的清單
 async function unassignEditor(name){
+  if(dbBlocked()) return;
   const list=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理" && v.assignedTo===name);
   if(!list.length){ toast("「"+name+"」沒有待認領的指派毛片",true); return; }
   if(!confirm("把指派給「"+name+"」但還沒認領的 "+list.length+" 支毛片收回公用池？")) return;
@@ -653,18 +677,19 @@ async function unassignEditor(name){
   logA("收回指派毛片 "+n+" 支", name);
   await delay(300); toast("已收回 "+n+" 支到公用池");
 }
-function ackTask(id){ window.DB.update("tasks", id, {ack:true, ackAt:nowIso()}).catch(()=>toast(currentRole()==="intl"?"Update failed":"更新失敗",true)); }
-function taskReport(id, v){ window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
-function taskDone(id, done){ const isIntl=currentRole()==="intl";
+function ackTask(id){ const t=taskById(id);
+  dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:"收到交辦工作", target:(t&&t.title)||id}); }
+function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
+function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
     if(t && t.assignedBy && !t.ack){ toast(isIntl?"Press “Got it” first before marking done":"請先按「收到」再回報完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; }
     if(t && (t.report||'').trim().length<12){ toast(isIntl?"Write a full progress note before marking done":"請填寫完整處理狀況及後續才能打勾完成",true);
       const c=document.getElementById('tc_'+id); if(c) c.checked=false; return; } }
-  window.DB.update("tasks", id, {done:!!done, doneAt: done?nowIso():""}).catch(()=>toast(isIntl?"Update failed":"更新失敗",true)); }
-function delTask(id){ const isIntl=currentRole()==="intl";
+  dbUpdate("tasks", id, {done:!!done, doneAt: done?nowIso():""}, {action:done?"交辦工作標記完成":"交辦工作改回進行中", target:(t2&&t2.title)||id}); }
+function delTask(id){ const isIntl=currentRole()==="intl"; const t=taskById(id);
   if(!confirm(isIntl?"Delete this task?":"刪除這項交辦工作？")) return;
-  window.DB.del("tasks", id).catch(()=>toast(isIntl?"Delete failed":"刪除失敗",true)); }
+  dbDel("tasks", id, {action:"刪除交辦工作", target:(t&&t.title)||id}); }
 // 管理員：把交辦工作轉移給其他員工（原員工會消失，新員工需重新按「收到」）
 function transferTask(id){
   const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -677,7 +702,7 @@ function transferTask(id){
   const idx=parseInt(String(ans).trim(),10)-1;
   if(isNaN(idx)||idx<0||idx>=editors.length){ toast("編號不正確",true); return; }
   const to=editors[idx];
-  window.DB.update("tasks", id, {user:to, ack:false, ackAt:"", done:false, doneAt:""})
+  dbUpdate("tasks", id, {user:to, ack:false, ackAt:"", done:false, doneAt:""}, {action:"轉移交辦工作給 "+to, target:t.title})
     .then(()=>toast("已轉移給「"+to+"」，等對方按「收到」重新計時"))
     .catch(()=>toast("轉移失敗",true));
 }
@@ -1367,12 +1392,15 @@ function hrVideoList(tab){
   return list.sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
 }
 function viewHR(){
-  const list=hrVideoList(HR_TAB);
-  const nPend=hrVideoList("pending").length, nDone=hrVideoList("done").length;
-  const nChecked=list.filter(hrChecked).length;
+  // 一次算好重複用（原本每次重繪要掃 5 遍影片庫）
+  const pend=hrVideoList("pending"), done=hrVideoList("done");
+  const list = HR_TAB==="pending" ? pend : done;
+  const nPend=pend.length, nDone=done.length;
+  const rows=list.map(v=>({v, c:hrCheck(v.id), flags:hrRework(v)}));
+  const nChecked=rows.filter(r=>r.c).length, nFlag=rows.filter(r=>r.flags.length).length;
   const staff=hrStaff();
-  const row=(v)=>{
-    const c=hrCheck(v.id); const done=!!c; const flags=hrRework(v);
+  const row=({v, c, flags})=>{
+    const done=!!c;
     const who=esc(v.editor||v.claimedBy||"—");
     const fin=String(v.finishedAt||"").slice(0,10);
     const st=dispStage(v)==="待審核" ? '<span class="pill wa" style="font-size:10px">待審核</span>'
@@ -1389,8 +1417,9 @@ function viewHR(){
           ${done?`<div style="font-size:12px;margin-top:4px;color:var(--green);font-weight:700">✓ 你已檢查（${esc(String(c.lastAt||"").slice(5,16).replace("T"," "))}${c.count>1?`・第 ${c.count} 次`:''}）</div>`:''}
           ${flags.length?`<div style="font-size:12px;margin-top:4px;color:var(--red);font-weight:700">⚠ 重工提醒：${flags.map(esc).join("、")}</div>`:''}
         </div>
-        <div class="row" style="gap:6px;flex:none">
-          <button class="btn sec sm" onclick="openVideoModal('${v.id}',false)">看內容</button>
+        <div class="row" style="gap:6px;flex:none;flex-wrap:wrap">
+          ${v.driveFolder?`<a class="btn sec sm" href="${esc(v.driveFolder)}" target="_blank" rel="noopener" title="開雲端資料夾：看影片檔與封面檔">☁ 雲端檔案</a>`:'<span class="muted" style="font-size:11px;align-self:center">未填雲端連結</span>'}
+          <button class="btn sec sm" onclick="openVideoModal('${v.id}',false)">看文案</button>
           <button class="btn ${done?'sec':''} sm" onclick="hrCheckVideo('${v.id}')">${done?"再記一次":"✓ 檢查完成"}</button>
           ${done?`<button class="btn sec sm" onclick="hrClearCheck('${v.id}')" title="清掉我的檢查紀錄">✕</button>`:''}
         </div>
@@ -1408,19 +1437,24 @@ function viewHR(){
       <b style="font-size:14px">${HR_YM[0]} 年 ${HR_YM[1]+1} 月</b>
       <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="hrMonthMove(1)">›</button></span>`:''}
     <span class="pill ${nChecked===list.length&&list.length?'ok':'wa'}">已檢查 ${nChecked}/${list.length}</span>
-    ${nFlagInline(list)}
+    ${nFlag?`<span class="pill em">⚠ 重工提醒 ${nFlag}</span>`:''}
   </div>`;
-  const nFlag=list.filter(v=>hrRework(v).length).length;
-  return `<h2>影片審查 <span class="muted" style="font-size:13px">你自己的檢查紀錄（不會動到影片、不影響剪輯）</span></h2>
+  return `<h2>工作審查 <span class="muted" style="font-size:13px">你自己的檢查紀錄（不會動到影片、不影響剪輯）</span></h2>
+  <div class="card" style="background:var(--panel2);border-color:var(--gold)">
+    <b style="font-size:15px">審查重點</b>
+    <div style="font-size:13px;line-height:1.9;margin-top:6px">
+      <b style="color:var(--gold-dk)">1.</b> 點「<b>☁ 雲端檔案</b>」開備份資料夾 → 裡面要有<b>影片檔</b>和<b>封面檔</b>，兩個都要在。<br>
+      <b style="color:var(--gold-dk)">2.</b> 打開影片看一遍，順便確認<b>封面</b>做得對不對。<br>
+      <b style="color:var(--gold-dk)">3.</b> 點「<b>看文案</b>」把<b>貼文文案與口播文案</b>都看過。<br>
+      <b style="color:var(--gold-dk)">4.</b> 三項都看完，再按「<b>✓ 檢查完成</b>」記錄下來。
+    </div>
+  </div>
   ${tabs}${filters}
   <p class="muted" style="font-size:12px;margin:0 0 10px">${HR_TAB==="pending"
     ? "剪輯完成、還在等審的片。點片名看內容，看完按「✓ 檢查完成」記錄下來。"
     : "已經審過或已上片的成品。"}　這只是<b>你自己的紀錄</b>，不會改到影片，剪輯那邊完全不受影響。${nFlag?`<b style="color:var(--red)">目前有 ${nFlag} 支標了重工提醒。</b>`:""}</p>
-  ${list.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}`;
+  ${rows.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}`;
 }
-// 重工提醒的小計（放在篩選列）
-function nFlagInline(list){ const n=list.filter(v=>hrRework(v).length).length;
-  return n?`<span class="pill em">⚠ 重工提醒 ${n}</span>`:''; }
 // 人資按「檢查完成」：只寫自己的 hrchecks，不動影片。再按一次＝累計次數（看得出重覆送）
 function hrCheckVideo(id){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
@@ -1483,7 +1517,7 @@ function viewDashboard(){
   ${dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime)}`;
 }
 // ① 批次建檔新毛片：一行一支片名，一次建立多支「待剪新片」
-function batchNewFootage(){
+function batchNewFootage(){ if(dbBlocked()) return;
   let blocks="";
   for(let i=0;i<5;i++){
     blocks+=`<fieldset style="border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0 0 10px">
@@ -1518,6 +1552,7 @@ function batchNewFootage(){
           origLang:bLang,
           tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}), {id});   // 有銷售商品 → 自動帶「寵粉」
         try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
+      if(ok) logA("批次新增毛片 "+ok+" 支", "");
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast(T("已新增 "+ok+" 支毛片",ok+" clips added")); return true;
   });
@@ -1526,7 +1561,7 @@ function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，
 // 退回：把已認領的毛片放回共用「待剪毛片」清單，重新給大家選
 function unclaimVid(id){ if(!confirm(T("退回這支毛片到待剪清單？大家就能重新認領。","Return this to the shared pool so others can claim it?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待剪毛片清單","Returned to the pool")); }
 // 我的剪輯工作：作業中 →（按一下）編輯內容
-function setWorkStep(id, step){ window.DB.update("videos", id, {workStep:step, updatedAt:nowIso()}).catch(()=>toast("更新失敗",true)); }
+function setWorkStep(id, step){ dbUpdate("videos", id, {workStep:step, updatedAt:nowIso()}); }
 // 完成：剪輯按了才標「剪輯完成」並移到影片庫（編輯時的「儲存修改」只存內容、不完成）
 function finishWork(id){ const v=vid(id)||{};
   if(!confirm(T("「"+vidTitle(v)+"」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳雲端＋補連結。","Done cutting \""+vidTitle(v)+"\"?\nIt moves to In review — upload & add links after Regina approves."))) return;
@@ -1697,9 +1732,10 @@ function editorMarkReviewed(id){ const v=vid(id)||{};
 function reviewVid(id, status){
   let note="";
   if(status==="退回"){ note=prompt("退回原因（給剪輯修正）："); if(note===null) return; if(!note.trim()){ toast("請填退回原因",true); return; } }
-  window.DB.update("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso(), updatedAt:nowIso()})
-    .then(()=>{ toast(status==="通過"?"已通過 ":"已退回，剪輯會收到 "); closeModal(); })
-    .catch(()=>toast("操作失敗，請稍後再試",true));
+  const v=vid(id)||{};
+  dbUpdate("videos", id, {reviewStatus:status, reviewNote:note.trim(), reviewedBy:currentUser(), reviewedAt:nowIso(), updatedAt:nowIso()},
+    {action:"審片"+status, target:vidTitle(v)+(note.trim()?("・"+note.trim()):"")})
+    .then(ok=>{ if(ok){ toast(status==="通過"?"已通過 ":"已退回，剪輯會收到 "); closeModal(); } });
 }
 let VID_VIEW="rawNoSched";   // 影片庫分頁：rawNoSched/rawSched/newNoSched/newSched/old（五類）
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
@@ -2808,7 +2844,7 @@ function viewSettings(){
 }
 // 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）
-async function migratePamperTag(){
+async function migratePamperTag(){ if(dbBlocked()) return;
   if(!confirm("把所有影片與標籤清單裡的「每日寵粉」改成「寵粉」？")) return;
   const all=(STATE.videos||[]).concat(STATE.deletedVideos||[]);
   BULK_BUSY=true; let n=0;
@@ -2821,7 +2857,7 @@ async function migratePamperTag(){
   } finally { BULK_BUSY=false; applyState(LAST_RAW); }
   logA("整理標籤 每日寵粉→寵粉", n+" 支"); await delay(300); toast("完成：已把 "+n+" 支影片的「每日寵粉」改成「寵粉」");
 }
-async function convertExistingToTW(){
+async function convertExistingToTW(){ if(dbBlocked()) return;
   if(!__s2t){ toast("簡繁轉換尚未就緒（可能網路載入中），請稍候再試",true); return; }
   const vids=(STATE.videos||[]);
   if(!confirm("把現有 "+vids.length+" 支影片的標題與文案的簡體字轉成繁體存回？此動作會直接更新資料。")) return;
@@ -2880,7 +2916,7 @@ function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) re
 function resetMemberPw(name){
   if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
   writeAdmin("PUT","/api/users/"+name,{pw:"0000"},"已將「"+name+"」密碼重設為 0000"); }
-function renameMember(oldName){
+function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
   if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }

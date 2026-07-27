@@ -103,7 +103,6 @@
   .userBtn.lead{border-color:var(--accent);border-width:2px;box-shadow:var(--shadow2)}
   .userBtn.lead .role{color:var(--accent);font-weight:700}
   .userBtn.mgr{border-style:dashed}
-  .userSep{flex-basis:100%;height:1px;background:linear-gradient(90deg,transparent,var(--line-gold,#E7DEC8),transparent);margin:8px 0}
   .addRow{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .addRow input,.addRow select{padding:10px;border-radius:var(--rs);border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
@@ -130,7 +129,6 @@
   .hwho{display:flex;align-items:center;gap:6px;color:#F3E9D6;font-size:13px;font-weight:600;white-space:nowrap;flex:none}
   .hwho .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px rgba(197,179,130,.9);flex:none}
   .hwho .rb{font-size:11px;opacity:.8;font-weight:500;color:#CBB9C2}
-  .offline{background:var(--red)!important}
   .hlogout{background:none;border:none;color:#CBB9C2;font-size:13px;font-weight:600;letter-spacing:.02em;
     padding:2px 0;border-bottom:1px solid transparent;transition:.15s;flex:none}
   .hlogout:hover{color:#F6ECDA;border-bottom-color:rgba(197,179,130,.6)}
@@ -187,11 +185,6 @@
   /* 海外視角：中文標題下的英文小字（清單、彈窗共用） */
   .vt-en{color:var(--gold-dk);font-size:12px;margin-top:2px;line-height:1.4;font-weight:400}
   /* 人資工作確認：每人一列的日期小格（未查看/部分/已全數確認） */
-  .hrgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:10px}
-  .hrcell{border:2px solid var(--line);background:transparent;border-radius:5px;padding:6px 0;font-size:12px;font-weight:700;
-    color:var(--txt);font-family:var(--sans);transition:.15s;min-width:0}
-  .hrcell:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(43,24,34,.12)}
-  @media(max-width:520px){ .hrgrid{grid-template-columns:repeat(7,1fr)} }
   /* 流程中控：備片存量進度條（Regina 手機版首頁） */
   .flowbar{height:10px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;overflow:hidden}
   .flowbar i{display:block;height:100%;background:var(--foil);background-size:200% 100%;border-radius:6px;transition:width .4s ease}
@@ -203,17 +196,11 @@
   /* 海外版沿用中文版樣式（品牌金色/pill）；語言以 EN/TH/MS 文字區分，不用彩色 */
   .verrow{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
   .ibtn{width:38px;flex:none;padding:0;justify-content:center;font-size:14px;display:inline-flex;align-items:center}
-  .iwork-item{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:13px 2px;border-bottom:1px solid var(--line)}
-  .iwork-item:last-child{border-bottom:none}
-  .iwork-title{font-weight:600;line-height:1.4}
   .icallout{margin-top:14px;background:var(--amberbg);border:1px solid var(--gold);border-radius:10px;padding:14px}
-  .igroup{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(140,110,70,.35)}
-  .igroup:first-of-type{border-top:none;padding-top:0}
-  .igroup-l{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
   .tricon{display:inline-flex;align-items:center;justify-content:center;height:21px;padding:0 6px;border-radius:6px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:700;color:var(--muted);text-decoration:none;vertical-align:middle;margin-left:7px;line-height:1;transition:.15s}
   .tricon span{font-size:9px;opacity:.85;margin-left:1px}
   .tricon:hover{border-color:var(--gold);background:var(--amberbg);color:var(--gold-dk)}
-  @media(max-width:640px){.ilib-card{flex-direction:column}.ilib-actions{width:100%}.iwork-item{flex-direction:column;align-items:stretch}}
+  @media(max-width:640px){.ilib-card{flex-direction:column}.ilib-actions{width:100%}}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle;overflow-wrap:anywhere;word-break:break-word}
   th{color:var(--faint);font-weight:700;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-family:var(--latin)}
@@ -222,7 +209,6 @@
   .tag{display:inline-block;padding:3px 11px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.04em}
   .tag.traffic{background:#fff;border-color:var(--teal);color:var(--traffic)}
   .tag.sales{background:#fff;border-color:var(--gold);color:var(--gold-dk)}
-  .light{display:inline-block;width:10px;height:10px;border-radius:50%}
   .green{background:var(--green)} .yellow{background:var(--amber)} .red{background:var(--red)}
   .muted{color:var(--muted)}
   .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
@@ -230,10 +216,7 @@
   .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
   .pill.ok{background:var(--greenbg);color:var(--green)}
   .pos{color:var(--green);font-weight:800}
-  .neg{color:var(--red);font-weight:800}
 
-  .progbar{height:9px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:6px}
-  .progbar > i{display:block;height:100%;background:var(--foil);background-size:200% 100%;animation:foilFlow 5s linear infinite;border-radius:6px}
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
@@ -352,7 +335,6 @@
     /* 日期選擇器與導覽鈕加大 */
     input[type=date]{min-height:44px}
     .pill{font-size:12.5px;padding:4px 12px}
-    .hideMobile{display:none}
     /* 表格→直列卡片：整張表轉 block 吃滿寬度（table-layout/colgroup 不再限制寬度） */
     table.responsive{display:block;width:100%;table-layout:auto}
     table.responsive colgroup{display:none}
@@ -377,7 +359,6 @@
     .vtab{flex:0 0 auto;min-width:auto;white-space:nowrap;padding:9px 14px}
     .grid.cols2{grid-template-columns:1fr !important}
     .workgrid{grid-template-columns:1fr !important;grid-template-rows:auto;grid-auto-flow:row}
-    .workgrid2{grid-template-columns:1fr !important}
     .dgrid{grid-template-columns:1fr !important}
     .dgrid-ed{grid-template-columns:1fr !important}
     .grid.cols3{grid-template-columns:1fr !important}
@@ -410,8 +391,6 @@
   .workgrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;grid-auto-flow:column;gap:16px}
   .workgrid>.card{margin-bottom:0}
   /* 海外 My Work：只有 2 張卡（To do／In progress），並排滿版，桌機才不會右半邊空一大塊 */
-  .workgrid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-  .workgrid2>.card{margin-bottom:0}
   /* 儀表板：內容少的卡片兩兩並排，長的（每位剪輯/排程帶/績效）各自整列 */
   .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:stretch}
   .dgrid>.card{margin-bottom:0}
@@ -556,7 +535,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1783960000"></script>
+<script src="app.js?v=1783980000"></script>
 <script type="module" src="fb.js?v=1783940000"></script>
 </body>
 </html>
