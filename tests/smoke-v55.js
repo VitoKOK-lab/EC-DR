@@ -78,7 +78,8 @@ ok("HR 分頁＝工作審查＋儀表板", JSON.stringify(myTabs())===JSON.strin
 let h=viewHR();
 ok("有兩個分頁：等待審查／已完成", h.includes("等待審查") && h.includes("已完成") && h.includes("hrSetTab('pending')") && h.includes("hrSetTab('done')"));
 ok("等待審查列出剪完未審的片（2 支）", h.includes("待審的片A") && h.includes("待審的片B"));
-ok("等待審查不含已審過/已記錄/還在剪", !h.includes("已審過的片") && !h.includes("已記錄的片") && !h.includes("還在剪的片"));
+{ const seg=h.split("審查重點")[1].split("團隊交辦")[0];   // 只看影片清單區（下方另有唯讀的團隊交辦區）
+  ok("等待審查不含已審過/已記錄/還在剪", !seg.includes("已審過的片") && !seg.includes("已記錄的片") && !seg.includes("還在剪的片")); }
 ok("每列可點開看文案", h.includes("openVideoModal('P1',false)") && h.includes("看文案"));
 ok("頂部有審查重點四步驟", h.includes("審查重點") && h.includes("影片檔") && h.includes("封面檔") && h.includes("口播文案"));
 ok("有雲端檔案連結（去看影片＋封面）", h.includes('href="http://d"') && h.includes("☁ 雲端檔案"));
@@ -90,6 +91,14 @@ ok("已完成清單不含待審的片", !h.includes("待審的片A"));
 ok("已記錄的顯示✓你已檢查＋可清除", h.includes("✓ 你已檢查") && h.includes("hrClearCheck('D2')") && h.includes("再記一次"));
 ok("曾被退回的標重工提醒", h.includes("曾被退回的片") && h.includes("⚠ 重工提醒") && h.includes("曾被退回重修"));
 ok("清單顯示已檢查進度", h.includes("已檢查 1/"));
+// ── HR 看得到團隊交辦，但不能交辦、不能審查 ──
+reset(); localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr"); STATE.tasks={ K1:{id:"K1",user:"小葵",date:T0,title:"回覆廠商",report:"已聯絡完成，等對方回覆",done:false,assignedBy:"Regina",ack:true,createdAt:T0} };
+h=viewHR();
+ok("HR 看得到團隊交辦區", h.includes("團隊交辦＆回報") && h.includes("回覆廠商") && h.includes("已聯絡完成"));
+ok("HR 不能交辦（沒有輸入框與按鈕）", !h.includes("flowAssign("));
+ok("HR 不能審核（沒有審核鍵）", !h.includes("reviewVid("));
+ok("HR 團隊區照分工排序", h.indexOf("小葵")>0);
+
 // ── 篩選 ──
 reset(); HR_TAB="done"; HR_WHO="小葵"; h=viewHR();
 ok("依同仁篩選", h.includes("已審過的片") && !h.includes("待審的片B"));
