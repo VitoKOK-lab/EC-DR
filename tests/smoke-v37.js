@@ -20,7 +20,7 @@ eval(src);
 
 const T0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 const raw = {
-  users:[ {name:"小葵",role:"editor"}, {name:"Anna",role:"intl"}, {name:"Regina",role:"manager"} ],
+  users:[ {name:"小葵",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"}, {name:"Regina",role:"manager"} ],
   settings:{ dailyTarget:4, videoTags:["舊片"], sources:["老闆自拍"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"en",name:"tiktok-EN"},{locale:"th",name:"tiktok-TH"}], intlDailyTarget:2,
     shopeeAccounts:["蝦皮店A"], shopeeDailyTarget:2, msAccounts:["tiktok-Malaysia"], msDailyTarget:2,

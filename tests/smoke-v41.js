@@ -20,7 +20,7 @@ eval(src);
 
 const T0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 STATE = {
-  users:[ {name:"Kai",role:"editor"}, {name:"Anna",role:"intl"} ],
+  users:[ {name:"Kai",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"} ],
   settings:{ dailyTarget:4, videoTags:["oldtag"], sources:["srcA"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"th",name:"acctTH"},{locale:"en",name:"acctEN"}],
     shopeeAccounts:["acctSHP"], msAccounts:["acctMS"],

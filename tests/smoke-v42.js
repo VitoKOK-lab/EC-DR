@@ -19,7 +19,7 @@ global.confirm = ()=>true; global.prompt = ()=>null;
 eval(src);
 
 STATE = {
-  users:[ {name:"小葵",role:"editor"}, {name:"Anna",role:"intl"} ],
+  users:[ {name:"小葵",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"} ],
   settings:{ videoTags:["舊片"], sources:["srcA"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"th",name:"acctTH"},{locale:"en",name:"acctEN"}],
     shopeeAccounts:["acctSHP"], msAccounts:["acctMS"], exchangeRates:{} },

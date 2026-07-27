@@ -15,7 +15,7 @@ eval(src);
 
 const today0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 STATE = {
-  users:[{name:"小葵",role:"editor"}],
+  users:[{name:"小葵",role:"editor",craft:"both"}],
   settings:{shopeeAccounts:["蝦皮店A"],shopeeDailyTarget:2,dailyTarget:4},
   schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
   videos:[

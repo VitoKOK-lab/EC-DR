@@ -141,6 +141,7 @@ async function route(method, path, body){
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
       const rec={name, role, isDefault:false, pw:"0000"};
+      if(body.craft!=null) rec.craft=body.craft;                  // 剪輯分工：一次創作／二次創作／兩種
       if(body.intlLocale!=null) rec.intlLocale=body.intlLocale;   // 海外剪輯：帳號綁定語言（en/th/ms）
       await window.DB.set("users", name, rec); return; }
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
@@ -448,7 +449,10 @@ function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++
 let CAL_PLAT="tw";
 function calSetPlat(p){ CAL_PLAT=p; render(); }
 function viewCal(){
-  const plats=[["tw",T("中文","Chinese")],["th",T("泰文","Thai")],["shopee",T("蝦皮","Shopee")],["en",T("英文","English")],["ms",T("馬來西亞","Malaysia")]];
+  // 依分工：一創只看社群媒體（中文）月曆，二創看四個平台/語言月曆
+  const allPlats=[["tw",T("中文","Chinese")],["th",T("泰文","Thai")],["shopee",T("蝦皮","Shopee")],["en",T("英文","English")],["ms",T("馬來西亞","Malaysia")]];
+  const plats=allPlats.filter(([k])=> k==="tw" ? doesOrig() : doesDerived());
+  if(!plats.some(([k])=>k===CAL_PLAT)) CAL_PLAT=(plats[0]||allPlats[0])[0];
   const sel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:14px">
     <label style="margin:0">${T("平台","Platform")}</label>
     <select onchange="calSetPlat(this.value)" style="width:auto;min-width:170px">
@@ -811,6 +815,24 @@ function workTasksCard(tasks){
     <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ ${T("加入","Add")}</button></div>
   </div>`;
 }
+// ===================================================================
+// 一次創作／二次創作分工：每位剪輯只看到自己負責的那一種，畫面才不會互相干擾
+//   orig    一次創作：台灣毛片、原創影片庫、社群媒體月排程
+//   derived 二次創作：蝦皮／馬來西亞／英文／泰文版本（從已完成原創再剪）
+//   both    兩種都做（管理員、經理人、人資固定看全部）
+// 未設定時：一般剪輯＝一次創作、海外剪輯＝二次創作（他們本來就只做英/泰版）
+// ===================================================================
+const CRAFT_LABEL={orig:"一次創作",derived:"二次創作",both:"兩種都做"};
+function craftOf(name){ const u=(STATE.users||[]).find(x=>x.name===name); if(!u) return "both";
+  if(["boss","manager","hr"].includes(u.role)) return "both";
+  return u.craft || (u.role==="intl" ? "derived" : "orig"); }
+function myCraft(){ if(["boss","manager","hr"].includes(currentRole())) return "both"; return craftOf(currentUser()); }
+function doesOrig(){ const c=myCraft(); return c==="orig"||c==="both"; }
+function doesDerived(){ const c=myCraft(); return c==="derived"||c==="both"; }
+// 這支片屬於哪一種創作
+function isDerived(v){ return !!(v && (v.locale||v.channel)); }
+// 已封存：二創版本上片後就完成任務，不用再佔清單版面（資料仍留在資料庫）
+function isArchived(v){ return isDerived(v) && (v.stage==="已上片" || (v.stage==="已完成" && String(v.publishedLink||"").trim())); }
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
 function viewWork(){
   const me = currentUser();
@@ -820,7 +842,9 @@ function viewWork(){
     .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
   // 待剪池：指派給我的 ＋ 還沒指派的公用毛片/版本（別人被指派的不顯示）；指派給我的排前面
   // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
-  const pool = (STATE.videos||[]).filter(v=>v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+  // 依分工過濾：一創只看毛片/原創、二創只看各平台語言版本（兩種都做的看全部）
+  const craftOK=(v)=> isDerived(v) ? doesDerived() : doesOrig();
+  const pool = (STATE.videos||[]).filter(v=>craftOK(v) && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
   // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
@@ -884,7 +908,7 @@ function viewWork(){
   </div>
 
   </div>
-  ${createZoneCard()}`
+  ${doesDerived()?createZoneCard():''}`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
@@ -2010,7 +2034,8 @@ function openVideoModal(id, edit, fromWork){
   const prodList=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]);
   const reviewCard = reviewCardHTML(v);
   const metricsCard=vidMetricsCard(v);
-  const localizedCard = localizedVersionsCard(v) + shopeeVersionsCard(v) + msVersionsCard(v);
+  // 一創剪輯不需要看到二創版本的狀況（減少干擾）；做二創的人與管理層才顯示
+  const localizedCard = doesDerived() ? (localizedVersionsCard(v) + shopeeVersionsCard(v) + msVersionsCard(v)) : "";
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -2277,10 +2302,12 @@ function intlLibRows(loc){
     const zhTitle=stripHash(v.name||v.rawName)||T("(未命名)","(untitled)");   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
-    const kids=localizedVersionsOfSrc(v.id).filter(k=>!loc||k.locale===loc).sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
+    const kidsAll=localizedVersionsOfSrc(v.id).filter(k=>!loc||k.locale===loc);
+    const nArch=kidsAll.filter(isArchived).length;                 // 已上片＝完成任務，封存不再列出
+    const kids=kidsAll.filter(k=>!isArchived(k)).sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
     const chips=kids.map(k=>{ const ds=dispStage(k); const done=(k.published||k.stage==='已完成')&&ds!=='待審核';
       return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${localeShort(k.locale)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):T('進行中','in progress')}</span>`;
-    }).join(" ");
+    }).join(" ") + (nArch?`<span class="pill" style="font-size:11px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="${T("已上片、已封存","Published & archived")}">${T("已封存","Archived")} ${nArch}</span>`:'');
     // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽中文成片","Preview finished Chinese")}">▶</button>`:'';
     const addRow = shownAccts.length
@@ -2608,10 +2635,12 @@ function chLibRows(ch){
   const accts=chAccounts(ch);
   return src.slice(0,200).map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
-    const kids=chVersionsOfSrc(ch, v.id);
+    const kidsAll=chVersionsOfSrc(ch, v.id);
+    const nArch=kidsAll.filter(isArchived).length;                 // 已上片＝完成任務，封存不再列出
+    const kids=kidsAll.filter(k=>!isArchived(k));
     const chips=kids.map(k=>{ const ds=dispStage(k); const done=(k.published||k.stage==='已完成')&&ds!=='待審核';
       return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openChModal('${ch}','${k.id}')" title="${esc(k.account||'')}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${esc(k.account||C.label)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):(k.stage==='剪輯中'?T('製作中','in progress'):T('待處理','to do'))}</span>`;
-    }).join(" ");
+    }).join(" ") + (nArch?`<span class="pill" style="font-size:11px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="${T("已上片、已封存","Published & archived")}">${T("已封存","Archived")} ${nArch}</span>`:'');
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽成片","Preview the finished cut")}">▶</button>`:'';
     // 只有一個帳號時不用選，按一下直接加入（少一個步驟）；有多個帳號才需要選單
     const addRow = accts.length>1
@@ -2766,10 +2795,11 @@ function setChannelCards(s){
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok（共用同一畫面協作）。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th></th></tr></thead>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>負責</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="hr">人資</option></select>
+      <select id="mb_craft" style="width:auto" title="剪輯才需要分工">${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>`;
 }
@@ -2792,9 +2822,15 @@ function viewSettings(){
       <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option>
       <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option>
       <option value="hr" ${u.role==="hr"?"selected":""}>人資</option></select>`;
+  // 剪輯才需要分工；管理員/經理人/人資固定看全部
+  const craftSel=(u)=> ["editor","intl"].includes(u.role||"editor")
+    ? `<select onchange="setMemberCraft('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
+        ${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}" ${craftOf(u.name)===k?"selected":""}>${l}</option>`).join("")}</select>`
+    : '<span class="muted" style="font-size:12px">全部</span>';
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label="角色">${roleSel(u)}</td>
+    <td data-label="負責">${craftSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -2906,8 +2942,12 @@ async function saveSettings(){
 // 成員管理（限管理員・併入設定頁）
 // ===================================================================
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
-  const role=val("mb_role")||"editor";
-  write("POST","/api/users",{name,role},"已新增成員（"+(ROLE_LABEL[role]||role)+"）"); }
+  const role=val("mb_role")||"editor"; const craft=val("mb_craft")||"orig";
+  write("POST","/api/users",{name,role,craft},"已新增成員（"+(ROLE_LABEL[role]||role)+(["editor","intl"].includes(role)?("・"+CRAFT_LABEL[craft]):"")+"）"); }
+// 指定這位剪輯負責一次創作還是二次創作（決定他看得到哪些工作）
+function setMemberCraft(name, craft){ if(!Object.keys(CRAFT_LABEL).includes(craft)) return;
+  dbUpdate("users", name, {craft}, {action:"設定分工："+CRAFT_LABEL[craft], target:name})
+    .then(ok=>{ if(ok) toast("已設定「"+name+"」負責"+CRAFT_LABEL[craft]); }); }
 function setMemberRole(name, role){ if(!["editor","manager","intl","hr"].includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;

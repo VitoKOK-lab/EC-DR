@@ -19,7 +19,7 @@ global.confirm = ()=>true; global.prompt = ()=>null;
 eval(src);
 
 STATE = {
-  users:[ {name:"小葵",role:"editor"}, {name:"Anna",role:"intl"}, {name:"老闆",role:"boss"} ],
+  users:[ {name:"小葵",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"}, {name:"老闆",role:"boss"} ],
   settings:{ dailyTarget:4, videoTags:["舊片"], sources:["老闆自拍"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"th",name:"tiktok-TH"},{locale:"en",name:"tiktok-EN"}],
     shopeeAccounts:["蝦皮店A"], msAccounts:["tiktok-Malaysia"], exchangeRates:{} },

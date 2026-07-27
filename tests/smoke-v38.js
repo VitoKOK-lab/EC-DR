@@ -20,7 +20,7 @@ eval(src);
 
 const T0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 STATE = {
-  users:[ {name:"小葵",role:"editor"}, {name:"Anna",role:"intl"} ],
+  users:[ {name:"小葵",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"} ],
   settings:{ dailyTarget:4, videoTags:["舊片"], sources:["老闆自拍"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"en",name:"tiktok-EN"}], shopeeAccounts:["蝦皮店A"], msAccounts:["tiktok-Malaysia"],
     exchangeRates:{} },
