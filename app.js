@@ -46,14 +46,28 @@ function toast(msg, isErr){
 }
 
 // ---------- ID / 影片預設記錄 ----------
-function nextId(arr, prefix){
-  let mx=0; (arr||[]).forEach(it=>{ const m=String(it.id||"").match(new RegExp("^"+prefix+"(\\d+)$")); if(m) mx=Math.max(mx,parseInt(m[1])); });
-  return prefix+String(mx+1).padStart(3,"0");
+// 影片文件 ID：一定要「跨裝置不會撞號」。
+// 舊版是掃自己這台看到的最大編號 +1 → 兩個人幾乎同時新增會算出同一個 ID，
+// 後寫的那筆會整份覆蓋前一筆（Firestore set），先建的影片就這樣無聲消失。
+// 也會撞到回收桶裡（已軟刪除、不在 STATE.videos）的舊編號。
+// 改成 時間戳(base36) + 亂數，各自產生、永不重複。
+function newVideoId(){
+  return "V" + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
+}
+// 人看的編號：民國年＋月日（7 碼）＋當日序號（3 碼）。含回收桶一起掃，才不會重覆。
+function nextVideoCode(seen){
+  const [Y,M,D]=today.split("-");
+  const pre=`${(+Y-1911)}${M}${D}`;
+  const re=new RegExp("^"+pre+"(\\d{3})$");
+  let seq=0;
+  const scan=(arr)=>(arr||[]).forEach(v=>{ const m=String((v&&v.code)||"").match(re); if(m) seq=Math.max(seq,+m[1]); });
+  scan(STATE&&STATE.videos); scan(STATE&&STATE.deletedVideos); scan(seen);
+  return pre+String(seq+1).padStart(3,"0");
 }
 // 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 2）。每筆寫入都用這個確保一致。
 function newVideoRecord(over){
   const s=STATE.settings||{};
-  const rec={ id: nextId(STATE.videos,"V"), code:"",
+  const rec={ id: newVideoId(), code: nextVideoCode(),
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:"",   // 預設不分類（流量型是多數，不特別標）
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
@@ -133,6 +147,20 @@ function logA(action, target){
       action:String(action||"").slice(0,80), target:String(target||"").slice(0,200)}).catch(()=>{});
   }catch(e){}
 }
+// 多人同時操作的原子寫入包裝：window.DB 有 arrayAdd/arrayDel/bump 就用伺服器端加減，
+// 沒有（舊的快取版 fb.js、測試替身）就退回原本的「讀出→改→整份寫回」。
+function dbArrayAdd(coll, id, field, val, fallback){
+  if(window.DB && window.DB.arrayAdd) return window.DB.arrayAdd(coll, id, field, val);
+  return fallback();
+}
+function dbArrayDel(coll, id, field, val, fallback){
+  if(window.DB && window.DB.arrayDel) return window.DB.arrayDel(coll, id, field, val);
+  return fallback();
+}
+function dbBump(coll, id, field, n, fallback){
+  if(window.DB && window.DB.bump) return window.DB.bump(coll, id, field, n);
+  return fallback();
+}
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
 async function route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
@@ -182,17 +210,29 @@ async function route(method, path, body){
     if(action==="reuse" && method==="POST"){
       const date=body.date; const link=(body.link||"").trim(); const time=body.time||""; const drive=(body.drive||"").trim();
       if(!date) throw new Error("請選擇重播上片日期");
-      const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
-      slots.push({videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time});
-      await window.DB.scheduleSet(date,{slots});
-      const uh=(v.usageHistory||[]).concat([{date, link, drive, time, by:user, at:nowIso()}]);
-      const patch={totalUsed:(v.totalUsed||0)+1, usageHistory:uh};
-      if(drive && drive!==v.driveFolder) patch.driveFolder=drive; // 同步存檔位置回影片（同一支都一樣）
-      await window.DB.update("videos", id, patch);
+      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time};
+      await dbArrayAdd("schedule", date, "slots", slot, ()=>{
+        const day=(STATE.schedule||{})[date]||{slots:[]};
+        return window.DB.scheduleSet(date,{slots:(day.slots||[]).concat([slot])}); });
+      const use={date, link, drive, time, by:user, at:nowIso()};
+      await dbArrayAdd("videos", id, "usageHistory", use, ()=>
+        window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).concat([use])}));
+      await dbBump("videos", id, "totalUsed", 1, ()=>
+        window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1}));
+      if(drive && drive!==v.driveFolder) await window.DB.update("videos", id, {driveFolder:drive}); // 同步存檔位置回影片
       return;
     }
     if(action==="restore"){ await window.DB.update("videos",id,{deleted:false,deletedBy:"",deletedAt:""}); return; }
-    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso(); await window.DB.update("videos",id,patch); return; }
+    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso();
+      // 從編輯視窗把階段改成「已完成／已上片」時，也要蓋上完成時間。
+      // 少了它，這支在「今日完成」「團隊看板」「剪片速度」通通算不到 —— 影片庫看得到，剪輯自己的清單卻沒有。
+      const nextStage = patch.stage!==undefined ? patch.stage : v.stage;
+      const nextFin   = patch.finishedAt!==undefined ? patch.finishedAt : v.finishedAt;
+      if(["已完成","已上片"].includes(nextStage) && !String(nextFin||"").trim()){
+        patch.finishedAt=nowIso();
+        if(v.claimedAt && patch.durationMin==null && v.durationMin==null) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
+      }
+      await window.DB.update("videos",id,patch); return; }
     if(method==="DELETE"){
       if(action==="purge"){ await window.DB.del("videos",id); return; }                       // 永久刪除（管理員）
       await window.DB.update("videos",id,{deleted:true,deletedBy:user,deletedAt:nowIso()}); return;  // 軟刪除：進回收桶，可復原
@@ -202,11 +242,19 @@ async function route(method, path, body){
     const date=seg[1], sub=seg[2]; const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
     if(sub==="slot" && method==="POST"){
       const slot=body.slot||{}; const tv=vidLocal(slot.videoId);
-      slots.push(slot); await window.DB.scheduleSet(date,{slots});
+      await dbArrayAdd("schedule", date, "slots", slot, ()=>window.DB.scheduleSet(date,{slots:slots.concat([slot])}));
       if(tv && !slot.reused) await window.DB.update("videos", slot.videoId, {scheduledDate:date}); return;
     }
-    if(sub==="slot" && method==="DELETE"){ const idx=parseInt(seg[3]); if(idx<0||idx>=slots.length) throw new Error("索引超出範圍");
-      if(slots[idx].locked) throw new Error("此排片已上架鎖定"); slots.splice(idx,1); await window.DB.scheduleSet(date,{slots}); return; }
+    // 刪除一格：用「整格的內容」比對，不用索引。
+    // 用索引的話，別人同時剛好新增／刪除同一天，索引會位移 → 刪到別人的排片。
+    if(sub==="slot" && method==="DELETE"){
+      const idx=parseInt(seg[3]); if(!(idx>=0 && idx<slots.length)) throw new Error("找不到這一格排片");
+      const slot=slots[idx];
+      if(slot.locked) throw new Error("此排片已上架鎖定");
+      await dbArrayDel("schedule", date, "slots", slot, ()=>{
+        const rest=slots.slice(); rest.splice(idx,1); return window.DB.scheduleSet(date,{slots:rest}); });
+      return;
+    }
   }
   throw new Error("不支援的操作");
 }
@@ -534,8 +582,15 @@ async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) 
   try{
     if(idx>=0) await route("DELETE",`/api/schedule/${oldDate}/slot/${idx}`,{});
     await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
-    const v=vid(id); const uh=(v.usageHistory||[]).map(u=> (u&&typeof u==="object" && u.date===oldDate)?Object.assign({},u,{date:newDate}):u);
-    await window.DB.update("videos", id, {usageHistory:uh});
+    const v=vid(id);
+    const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===oldDate);
+    if(window.DB&&window.DB.arrayDel){
+      for(const u of hits){ await window.DB.arrayDel("videos", id, "usageHistory", u);
+        await window.DB.arrayAdd("videos", id, "usageHistory", Object.assign({},u,{date:newDate})); }
+    }else{
+      await window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).map(u=>
+        (u&&typeof u==="object"&&u.date===oldDate)?Object.assign({},u,{date:newDate}):u)});
+    }
     logA("重播改期至 "+newDate, vidTitle(vid(id)||{}));
     await delay(140); toast("已改重播日至 "+newDate); openDay(newDate);
   }catch(e){ toast(e.message||"改期失敗",true); }
@@ -564,8 +619,12 @@ async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
   if(!confirm("把「"+vidTitle(v)+"」的重播移出「"+ds+"」？\n\n只移除這天的重播排程，影片不會刪除。")) return;
   try{
     await route("DELETE",`/api/schedule/${ds}/slot/${idx}`,{});
-    const uh=(v.usageHistory||[]).filter(u=>!(u&&typeof u==="object"&&u.date===ds));
-    await window.DB.update("videos", id, {usageHistory:uh, totalUsed:Math.max(0,(v.totalUsed||0)-1)});
+    const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===ds);
+    for(const u of hits) await dbArrayDel("videos", id, "usageHistory", u, ()=>Promise.resolve());
+    if(!(window.DB&&window.DB.arrayDel)){   // 舊環境：退回整份寫回
+      await window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).filter(u=>!hits.includes(u))}); }
+    await dbBump("videos", id, "totalUsed", -Math.max(1,hits.length), ()=>
+      window.DB.update("videos", id, {totalUsed:Math.max(0,(v.totalUsed||0)-1)}));
     logA("移出重播排程 "+ds, vidTitle(v));
     await delay(140); toast("已移出這天的重播（影片保留）"); openDay(ds);
   }catch(e){ toast(e.message||"移出失敗",true); }
@@ -633,14 +692,20 @@ function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
 // 後台名單管理（限管理員・設定頁）
 function addContact(){ if(dbBlocked()) return; const v=(val("ct_name")||"").trim(); if(!v){ toast("請輸入窗口名稱",true); return; }
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===v)){ toast("已有相同窗口",true); return; }
-  cur.push(v); window.DB.setSettings({contacts:cur}).then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
+  dbArrayAdd("meta","settings","contacts",v,()=>window.DB.setSettings({contacts:cur.concat([v])}))
+    .then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
 function delContact(name){ if(dbBlocked()) return; if(!confirm("刪除對接窗口「"+name+"」？（不影響已建立的交辦）")) return;
   const cur=settingsContacts().filter(x=>String(x).trim()!==String(name).trim());
-  window.DB.setSettings({contacts:cur}).then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
+  dbArrayDel("meta","settings","contacts",name,()=>window.DB.setSettings({contacts:cur}))
+    .then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
 function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
-  cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
+  cur[i]=nn;
+  (window.DB&&window.DB.arrayDel
+    ? window.DB.arrayDel("meta","settings","contacts",name).then(()=>window.DB.arrayAdd("meta","settings","contacts",nn))
+    : window.DB.setSettings({contacts:cur})
+  ).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
 // 常用工作項目：一鍵加入當日工作計畫（HR 每日確認會看到這些）
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
@@ -655,7 +720,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
-  const id="T"+Date.now().toString(36);
+  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
@@ -984,10 +1049,13 @@ function viewWork(){
   const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
   const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
   const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
-  const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
-  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
-  const clockedOut = !!(myShift() && myShift().clockOut);
-  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
+  // 「這支是不是我的」：以剪輯人員為準；剪輯人員沒填時退回看認領人（避免完成後從自己的清單消失）
+  const isMine=(v)=> v.editor===me || (!v.editor && v.claimedBy===me);
+  const doneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天完成的
+  //   完成的用 isPublished（含「已上片」）：上片後階段會變成已上片，只認「已完成」會讓它整支消失。
+  //   隔天自然不再出現（靠 finishedAt 是今天）；按過下班也照樣看得到今天做了什麼。
+  const myDoneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && v.stage!=="剪輯中" && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const myWork = mine.concat(myDoneToday);
   const tasks = myTasks();
@@ -1727,18 +1795,15 @@ function batchNewFootage(){ if(dbBlocked()) return;
     for(let i=0;i<5;i++){ const name=zhTW((val("bn"+i)||"").trim()); if(!name) continue;
       items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
-    let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
-    // 編號自動產生：民國年＋月日（共 7 碼）＋3 碼當日序號；依現有編號取下一個序號，避免重覆
-    const [Y,M,D]=today.split("-"); const codePrefix=`${(+Y-1911)}${M}${D}`;
-    let seq=0; (STATE.videos||[]).forEach(v=>{ const m=String(v.code||"").match(new RegExp("^"+codePrefix+"(\\d{3})$")); if(m) seq=Math.max(seq,+m[1]); });
-    let ok=0; BULK_BUSY=true;
+    // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
+    let ok=0; BULK_BUSY=true; const made=[];
     try{
-      for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const code=codePrefix+String(seq+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products,
-          origLang:bLang,
-          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}), {id});   // 有銷售商品 → 自動帶「寵粉」
-        try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
+      for(let i=0;i<items.length;i++){
+        const rec=newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
+          rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
+          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]});   // 有銷售商品 → 自動帶「寵粉」
+        made.push(rec);
+        try{ await window.DB.set("videos", rec.id, rec); ok++; }catch(e){} }
       if(ok) logA("批次新增毛片 "+ok+" 支", "");
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast(T("已新增 "+ok+" 支毛片",ok+" clips added")); return true;
@@ -1837,14 +1902,18 @@ function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) r
   if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
   inp.value=''; }
 async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
-  if(add.length && window.DB&&window.DB.setSettings){ try{ await window.DB.setSettings({videoTags:cur.concat(add)}); }catch(e){} } }
+  if(!add.length || !window.DB) return;
+  try{
+    if(window.DB.arrayAdd){ for(const t of add) await window.DB.arrayAdd("meta","settings","videoTags",t); }
+    else if(window.DB.setSettings){ await window.DB.setSettings({videoTags:cur.concat(add)}); }
+  }catch(e){} }
 // 標籤編輯器（管理員・設定頁）
 async function addVideoTagSel(){ const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
   const cur=videoTags(); if(cur.includes(t)){ toast("已有這個標籤",true); return; }
-  try{ await window.DB.setSettings({videoTags:cur.concat([t])}); logA("新增標籤",t);
+  try{ await dbArrayAdd("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:cur.concat([t])})); logA("新增標籤",t);
     const e=document.getElementById("tag_new"); if(e) e.value=""; toast("已新增標籤「"+t+"」"); }catch(e){ toast("新增失敗",true); } }
 async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
-  try{ await window.DB.setSettings({videoTags:videoTags().filter(x=>x!==t)}); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
+  try{ await dbArrayDel("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
 
 // ===================================================================
 // 影片庫
@@ -2228,7 +2297,11 @@ function openVideoModal(id, edit, fromWork){
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>${T("階段","Stage")}</label><select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select></div>
+      <div><label>${T("階段","Stage")}</label>
+        ${["boss","manager"].includes(currentRole())
+          ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
+          : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
+             <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
     </div>
     ${(!v.locale&&!v.channel)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
     <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
