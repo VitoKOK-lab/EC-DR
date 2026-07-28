@@ -71,7 +71,8 @@ reset();
 // ── 分頁：人資只有「員工成效」一頁 ──
 ok("HR 只有團隊看板一個分頁", JSON.stringify(myTabs())===JSON.stringify([["team","團隊看板"]]));
 
-let h=viewTeam();
+localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
+let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡，另外測）
 // ── 兩塊：今日成效／本月成效 ──
 ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
@@ -95,12 +96,17 @@ ok("平均工時算得出來（小葵 2h0m）", h.includes("2h0m"));
 ok("帶商品數算得出來", h.includes('data-label="帶商品">1<'));
 ok("出勤天數算得出來", h.includes('data-label="出勤天數">1<'));
 
-// ── 純檢視：畫面上完全沒有可以按的東西 ──
+// ── 純檢視：一般員工的看板上完全沒有可以按的東西 ──
 ok("沒有按鈕", !h.includes("<button"));
 ok("沒有 onclick", !h.includes("onclick"));
 ok("沒有連結", !h.includes("<a "));
 ok("沒有輸入框／下拉", !h.includes("<input") && !h.includes("<select"));
 ok("沒有審核／交辦／檢查的動作", !h.includes("reviewVid(") && !h.includes("flowAssign(") && !h.includes("hrCheckVideo"));
+// ── 人資的看板多一張「發 HR 通知」卡，其餘一樣是唯讀 ──
+localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr");
+{ const hh=viewTeam();
+  ok("人資看板有發通知卡", hh.includes("發出 HR 通知") && hh.includes("hrNotify()") && hh.includes("全體同仁"));
+  ok("人資看板仍然不能審核／交辦影片", !hh.includes("reviewVid(") && !hh.includes("flowAssign(") && !hh.includes("delTask(")); }
 
 // ── 人資不寫任何資料：整頁渲染不會呼叫 DB ──
 reset(); hookDB(); CUR_TAB="team"; render();

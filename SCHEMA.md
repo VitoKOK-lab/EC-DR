@@ -142,19 +142,35 @@
 
 ---
 
-## 3b. `tasks/{id}` — 交辦工作（剪輯以外，每日）
+## 3b. `tasks/{id}` — 交辦工作與 HR 通知（每日）
 
-文件 ID = `T<base36 時間戳>`。剪輯在「上班計畫」手動建立；下班匯報依 `done` 顯示已完成／未完成。
+文件 ID = `T<base36 時間戳>`（交辦）／`N<base36 時間戳>`（HR 通知）。
+同一個集合用 `kind` 分流：**沒有 `kind`＝交辦工作**、**`kind:"notice"`＝HR 通知**。
 
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `id` | string | 文件 ID |
-| `user` | string | 負責剪輯（= users.name） |
+| `kind` | string | 空＝交辦工作；`notice`＝HR 通知 |
+| `user` | string | 對象（= users.name） |
 | `date` | string | `YYYY-MM-DD`，當天計畫 |
-| `title` | string | 工作項目 |
-| `report` | string | 回報狀況（進度） |
-| `done` | boolean | 完成打勾（false=進行中） |
+| `title` | string | 工作項目／通知內容 |
+| `contact` | string | 對接窗口（選填，通知不用） |
+| `report` | string | 回報狀況（進度；通知不用） |
+| `done` | boolean | 完成打勾（false=進行中；通知恆為 false） |
+| `assignedBy` | string | 交辦人／發通知的人（空＝自己建立的） |
+| `ack` | boolean | 已按「收到」（自己建立的直接 true） |
+| `ackAt` | string(ISO) | 按下收到的時間 |
+| `doneAt` | string(ISO) | 打勾完成的時間 |
 | `createdAt` | string(ISO) | 建立時間 |
+
+> **主管交辦（v67 更名，原「老闆指派」）**：Regina／管理員在「流程中控」或「儀表板」派工，
+> 對方的工作頁會出現，按小小的「**收到**」開始執行，填滿 12 字處理狀況才能打勾完成。
+>
+> **HR 通知（v67 新增）**：人資在「團隊看板」的發送卡選一位同仁或**全體同仁**送出，
+> 寫成 `kind:"notice"` 的文件。對方工作頁最上面出現 📣 通知卡，**只要按小小的「收到」**，
+> 不用回報、不能打勾完成、**不計入任何人的交辦成效**（所有統計都先用 `realTasks()` 濾掉通知）。
+> 今天發的都看得到；以前發但還沒按收到的會一直留著，不會漏看。
+> 人資在看板可以看到每則通知「已收到 x/y」與是誰收了，也可以收回發錯的通知。
 
 
 ---

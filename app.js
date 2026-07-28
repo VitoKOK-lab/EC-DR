@@ -605,9 +605,20 @@ function dbDel(coll, id, log){ return dbWrite("del", coll, id, null, log); }
 
 // ===== 交辦工作（剪輯以外）：tasks/{id} =====
 function taskById(id){ return Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id)||null; }
+// HR 通知與交辦共用 tasks 集合，用 kind 分流：kind==="notice" 是 HR 通知（只要按「收到」，不用回報、不計交辦成效）
+function isNotice(t){ return !!(t && t.kind==="notice"); }
+function realTasks(list){ return (list||[]).filter(t=>t && !isNotice(t)); }
+function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isNotice); }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>t && t.user===currentUser() && t.date===today)
+  .filter(t=>t && !isNotice(t) && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+// 我的 HR 通知：今天發的，加上以前發但我還沒按「收到」的（不會漏看）
+function myNotices(){ return allNotices()
+  .filter(t=>t.user===currentUser() && (t.date===today || !t.ack))
+  .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))); }
+function noticesOf(name){ return allNotices()
+  .filter(t=>t.user===name && (t.date===today || !t.ack))
+  .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))); }
 // 對接窗口：後台名單（settings.contacts）＋ 任務曾用過的窗口，合併去重做成下拉
 function settingsContacts(){ const sc=(STATE&&STATE.settings&&STATE.settings.contacts); return Array.isArray(sc)?sc.slice():[]; }
 function contactOptions(){ const set=new Set();
@@ -649,7 +660,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
     if(contact) rememberContact(contact);
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
-// 老闆指派交辦給指定剪輯：自動出現在他的頁面（今天），需按「收到」
+// 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
 async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
@@ -658,6 +669,27 @@ async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"
     if(contact) rememberContact(contact);
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
+// 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
+async function hrNotify(){ if(dbBlocked()) return;
+  const who=val("hrn_who"); const txt=val("hrn_txt").trim();
+  if(!txt){ toast("請輸入通知內容",true); return; }
+  const targets = who==="__all__" ? staffNamesSorted(["editor","intl","cs"]) : (who?[who]:[]);
+  if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
+  try{
+    for(const name of targets){
+      const id="N"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36)+targets.indexOf(name);
+      await window.DB.set("tasks", id, {id, kind:"notice", user:name, date:today, title:txt, contact:"", report:"",
+        done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
+    }
+    logA("發出 HR 通知（"+targets.length+" 人）", txt);
+    const a=document.getElementById("hrn_txt"); if(a) a.value="";
+    toast(targets.length>1?("已通知 "+targets.length+" 位同仁"):("已通知 "+targets[0]));
+  }catch(e){ toast("發送失敗，請稍後再試",true); }
+}
+// 人資收回自己發的通知（打錯字或發錯人）
+function hrNotifyDel(id){ const t=taskById(id);
+  if(!confirm("收回這則通知？\n「"+((t&&t.title)||"")+"」")) return;
+  dbDel("tasks", id, {action:"收回 HR 通知", target:(t&&t.title)||id}); }
 // 管理員指派毛片給指定員工（只分配、不啟動計時；員工自己認領才開始計時）
 function afpToggleAll(btn){ const boxes=Array.from(document.querySelectorAll('.afp_vid'));
   const turnOn=boxes.some(b=>!b.checked); boxes.forEach(b=>b.checked=turnOn); if(btn) btn.textContent=turnOn?"全部取消":"全選"; }
@@ -687,7 +719,7 @@ async function unassignEditor(name){
   await delay(300); toast("已收回 "+n+" 支到公用池");
 }
 function ackTask(id){ const t=taskById(id);
-  dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:"收到交辦工作", target:(t&&t.title)||id}); }
+  dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:isNotice(t)?"收到 HR 通知":"收到交辦工作", target:(t&&t.title)||id}); }
 function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -793,23 +825,43 @@ function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>`;
 }
-// 上班計畫：交辦工作卡（老闆指派需按收到；回報滿 12 字才可打勾完成）
+// 上班計畫：HR 通知卡 —— 只需要按一顆小小的「收到」，不用回報、不算交辦成效
+function workNoticeCard(notices){
+  if(!notices.length) return "";
+  const nNew=notices.filter(t=>!t.ack).length;
+  return `<div class="card" style="border-color:var(--gold)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">📣 ${T("HR 通知","HR notice")}</b>
+      ${nNew?`<span class="pill em" style="font-size:11px">${T(nNew+" 則未讀",nNew+" unread")}</span>`:`<span class="pill ok" style="font-size:11px">${T("都看過了","All read")}</span>`}
+    </div>
+    <div style="margin-top:8px">${notices.map(t=>`<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:14px;font-weight:600;min-width:0;flex:1">${esc(t.title)}</span>
+        ${t.ack?`<span class="pill ok" style="font-size:10px;flex:none">${T("已收到","Received")} ${String(t.ackAt||"").slice(11,16)}</span>`
+               :`<button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`}
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${esc(t.assignedBy||"")}・${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}</div>
+    </div>`).join("")}</div>
+  </div>`;
+}
+// 上班計畫：交辦工作卡（主管交辦需按收到；回報滿 12 字才可打勾完成）
 function workTasksCard(tasks){
   return `<div class="card">
     <b style="font-size:16px">${currentRole()==="cs"?"我的今日工作計畫":T("我的今日工作計畫（剪輯以外）","My work plan today (beyond editing)")}</b>
     <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
       const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
           <b style="font-size:14px">${esc(t.title)}${(assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:''}</b>
-          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">${T("老闆指派","Assigned")}</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">${T("刪","✕")}</button>`}
+          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">${T("主管交辦","Assigned")}</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">${T("刪","✕")}</button>`}
         </div>`;
       const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">${T("對接窗口","Contact")}：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
       if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
-        <div class="muted" style="font-size:12px;margin:6px 0 8px">${T("老闆","Assigned by")} ${esc(t.assignedBy)} ${T("指派・","·")}<b style="color:var(--gold-dk)">${T("按下收到開始執行","Press Got it to start")}</b></div>
-        <button class="btn sm" style="width:100%" onclick="ackTask('${t.id}')">${T("我收到了","Got it")}</button></div>`;
+        <div class="row" style="align-items:center;gap:8px;margin:6px 0 0;flex-wrap:wrap">
+          <span class="muted" style="font-size:12px;flex:1;min-width:0">${T("主管","Assigned by")} ${esc(t.assignedBy)} ${T("交辦・按「收到」開始執行","· press Got it to start")}</span>
+          <button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button></div></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
-        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（老闆","Received (assigned by")} ${esc(t.assignedBy)}${T(" 指派）",")")}</div>`:''}
+        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（主管","Received (assigned by")} ${esc(t.assignedBy)}${T(" 交辦）",")")}</div>`:''}
         <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="${T("填寫完整處理狀況及後續…","Progress note (at least 12 characters)…")}">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
@@ -892,6 +944,7 @@ function viewWorkCS(me){
     <div><span class="fn ${nAck?'warn':''}">${nAck}</span><span class="fl">待接收</span></div>
     <div><span class="fn ${nNoReport?'warn':''}">${nNoReport}</span><span class="fl">未回報</span></div>
   </div>
+  ${workNoticeCard(myNotices())}
   ${workTasksCard(tasks)}
   <div class="card" style="text-align:center">
     <span class="pill ${tasks.length&&nDone===tasks.length?'ok':'wa'}">交辦完成 ${nDone}/${tasks.length}</span>
@@ -956,6 +1009,7 @@ function viewWork(){
   return `
   <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
   ${focusBar}
+  ${workNoticeCard(myNotices())}
   ${rejCard}
 
   <div class="workgrid">
@@ -1127,7 +1181,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
         <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></div>`; }).join("");
-    const tasks=allTasks.filter(t=>t&&t.user===name&&t.date===today).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+    const tasks=realTasks(allTasks).filter(t=>t.user===name&&t.date===today).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
     const taskRows=tasks.map(t=>{
       const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
         :(t.assignedBy&&!t.ack)?'<span class="pill em" style="font-size:10px">未讀</span>'
@@ -1201,11 +1255,11 @@ function dashEditorRows(editors, shifts, allTasks, D, isToday){
     const done=(STATE.videos||[]).filter(v=>v.editor===name && isPublished(v) && String(v.finishedAt||"").slice(0,10)===D)
       .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
     const wip=isToday?(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name) && v.stage==="剪輯中"):[];
-    const tasks=allTasks.filter(t=>t.user===name && t.date===D);
+    const tasks=realTasks(allTasks).filter(t=>t.user===name && t.date===D);
     // 我交辦給他的：只看「所選日期當天」的交辦 → 昨天的留在昨天的工作日誌，不會跑到今天
-    const assignedOpen=allTasks.filter(t=>t.user===name && t.assignedBy && t.date===D && !t.done)
+    const assignedOpen=realTasks(allTasks).filter(t=>t.user===name && t.assignedBy && t.date===D && !t.done)
       .sort((a,b)=>String(b.createdAt||b.date||"").localeCompare(String(a.createdAt||a.date||"")));
-    const assignedDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.date===D && t.done)
+    const assignedDone=realTasks(allTasks).filter(t=>t.user===name && t.assignedBy && t.date===D && t.done)
       .sort((a,b)=>String(b.doneAt||"").localeCompare(String(a.doneAt||"")));
     const sales=done.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
     const mins=done.map(v=>v.durationMin).filter(x=>typeof x==="number");
@@ -1279,7 +1333,7 @@ function dashKpi(editors, fin, allTasks){
     const days=my.map(editDays).filter(x=>x!=null); const avgDays=days.length?(days.reduce((a,b)=>a+b,0)/days.length):null;
     const mins=my.map(v=>v.durationMin).filter(x=>typeof x==="number"); const avgMin=mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null;
     const sales=my.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length;
-    const aDone=allTasks.filter(t=>t.user===name && t.assignedBy && t.done);
+    const aDone=realTasks(allTasks).filter(t=>t.user===name && t.assignedBy && t.done);
     const aMins=aDone.map(t=>durationMin(t.ackAt||t.createdAt,t.doneAt)).filter(x=>typeof x==="number");
     const aAvg=aMins.length?Math.round(aMins.reduce((a,b)=>a+b,0)/aMins.length):null;
     return {name, count:my.length, avgDays, avgMin, sales, aCount:aDone.length, aAvg}; });
@@ -1457,17 +1511,17 @@ function teamDayStat(name, allTasks){
   const s=(STATE.shifts||{})[shiftId(name,today)];
   const done=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name)&&v.stage==="剪輯中");
-  const tasks=allTasks.filter(t=>t&&t.user===name&&t.date===today)
+  const tasks=realTasks(allTasks).filter(t=>t.user===name&&t.date===today)
     .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
   const workMin=(s&&s.clockIn)?durationMin(s.clockIn, s.clockOut||nowIso()):null;
-  return {s, done, wip, tasks, workMin};
+  return {s, done, wip, tasks, notices:noticesOf(name), workMin};
 }
 // 某人「某個月」的成效：完成量、剪片速度、平均工時、帶商品、出勤天數、交辦完成
 function teamMonthStat(name, allTasks, ym){
   const fin=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,7)===ym);
   const days=fin.map(editDays).filter(x=>x!=null);
   const mins=fin.map(v=>v.durationMin).filter(x=>typeof x==="number");
-  const tasks=allTasks.filter(t=>t&&t.user===name&&String(t.date||"").slice(0,7)===ym);
+  const tasks=realTasks(allTasks).filter(t=>t.user===name&&String(t.date||"").slice(0,7)===ym);
   return {
     count: fin.length,
     avgDays: days.length?(days.reduce((a,b)=>a+b,0)/days.length):null,
@@ -1496,7 +1550,7 @@ function teamTaskRow(t){
 // 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
 function teamDayCard(u, allTasks){
   const name=u.name, minLabel=dashMin, hm=dashHM, isCS=(u.role==="cs");
-  const {s, done, wip, tasks, workMin}=teamDayStat(name, allTasks);
+  const {s, done, wip, tasks, notices, workMin}=teamDayStat(name, allTasks);
   const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・${T("工時","Hours")} ${minLabel(workMin)}`:T("今天還沒上線","Not clocked in yet");
   const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
       <span class="pill ${cls}" style="font-size:10px;flex:none">${label}</span>
@@ -1514,6 +1568,40 @@ function teamDayCard(u, allTasks){
     </div>
     ${isCS?'':list(done,T("完成","Done"),"ok")+list(wip.slice(0,4),T("進行中","In progress"),"wa")}
     ${tasks.map(teamTaskRow).join("")||`<p class="muted" style="font-size:12px;margin:8px 0 0">${T("今天沒有交辦事項","No tasks today")}</p>`}
+    ${notices.length?`<div style="margin-top:8px;border-top:1px dashed var(--gold);padding-top:6px">
+      ${notices.map(n=>`<div style="font-size:12px;padding:3px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span class="pill ${n.ack?'ok':'em'}" style="font-size:10px;flex:none">${n.ack?T("已收到","Received"):T("未讀","Unread")}</span>
+        <span style="min-width:0">📣 ${esc(n.title)}</span></div>`).join("")}
+    </div>`:''}
+  </div>`;
+}
+// 人資專用：發 HR 通知（可指定一人或全體）＋看自己發出去的誰收到了
+function teamNoticeCompose(staff){
+  const mine=allNotices().filter(t=>t.assignedBy===currentUser())
+    .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,12);
+  const groups={};
+  mine.forEach(t=>{ const k=(t.title||"")+"__"+String(t.createdAt||"").slice(0,16); (groups[k]=groups[k]||[]).push(t); });
+  const rows=Object.values(groups).map(g=>{
+    const t=g[0], got=g.filter(x=>x.ack);
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:13.5px;font-weight:600;min-width:0;flex:1">${esc(t.title)}</span>
+        <span class="pill ${got.length===g.length?'ok':'wa'}" style="font-size:10px;flex:none">已收到 ${got.length}/${g.length}</span>
+        <button class="btn sec sm" style="flex:none;padding:3px 9px" onclick="hrNotifyDel('${t.id}')" title="收回這則通知">✕</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}・${g.map(x=>esc(x.user)+(x.ack?"✓":"")).join("、")}</div>
+    </div>`; }).join("");
+  return `<div class="card" style="border-color:var(--gold)">
+    <b style="font-size:16px">📣 發出 HR 通知</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">通知會出現在對方的工作頁最上面，他按一下「收到」就好；這不是交辦，不用回報、不算他的交辦成效。</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <select id="hrn_who" style="width:auto;min-width:140px">
+        <option value="__all__">全體同仁</option>
+        ${staff.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</select>
+      <input id="hrn_txt" placeholder="要通知大家的事…" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')hrNotify()">
+      <button class="btn sm" style="flex:none" onclick="hrNotify()">送出通知</button>
+    </div>
+    ${rows?`<div style="margin-top:12px"><b style="font-size:13px">我發出的通知</b>${rows}</div>`:''}
   </div>`;
 }
 function viewTeam(){
@@ -1537,6 +1625,7 @@ function viewTeam(){
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `<h2>${T("團隊看板","Team Board")} <span class="muted" style="font-size:13px">${T("大家今天在做什麼・只看不用操作","Who is doing what today — view only")}</span></h2>
+  ${currentRole()==="hr"?teamNoticeCompose(staff):''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     <div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>
