@@ -1,4 +1,4 @@
-# Firebase 設定 — 剪輯部 · 影音中控台
+# Firebase 設定 — 電商部
 
 資料放 Firebase Firestore，多裝置即時同步。
 **網站本身由 GitHub Pages 服務 repo 根目錄**（見上層 [`README.md`](../README.md)）；
