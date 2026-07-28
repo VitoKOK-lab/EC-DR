@@ -32,7 +32,7 @@ const D = "2026-07-20";          // 固定日期，快照才不會每天變
 const D2 = "2026-06-15";
 STATE = {
   users:[ {name:"Regina",role:"manager"}, {name:"小葵",role:"editor"}, {name:"阿明",role:"editor"},
-          {name:"Anna",role:"intl"}, {name:"管理員",role:"boss"}, {name:"HR小姐",role:"hr"} ],
+          {name:"Anna",role:"intl"}, {name:"管理員",role:"boss"}, {name:"HR小姐",role:"hr"}, {name:"小美",role:"cs"} ],
   settings:{ dailyTarget:4, videoTags:["新片","舊片","寵粉","珠寶介紹"], sources:["老闆自拍","外部公司"],
     postPlatforms:[{name:"IG 主帳號",utm:"ig_main"},{name:"FB 粉專",utm:"fb"}],
     intlAccounts:[{locale:"en",name:"tiktok-EN"},{locale:"th",name:"tiktok-TH"}],
@@ -98,10 +98,10 @@ function resetUI(){ CAL_PLAT="tw"; CAL_YM=[2026,6]; INTL_CAL_YM=[2026,6]; INTL_A
   WORK_ZONE="shopee"; POOL_FILTER="all"; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
   VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; }
 
-const ROLES = [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"],["HR小姐","hr"]];
+const ROLES = [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"],["HR小姐","hr"],["小美","cs"]];
 const VIEWS = { dashboard:()=>viewDashboard(), flow:()=>viewFlow(), work:()=>viewWork(), videos:()=>viewVideos(),
                 cal:()=>viewCal(), settings:()=>viewSettings(), log:()=>viewLog(), trash:()=>viewTrash(), perf:()=>viewPerf(),
-                hr:()=>viewHR() };
+                team:()=>viewTeam() };
 
 for (const [user, role] of ROLES) {
   as(user, role);

@@ -1,4 +1,4 @@
-// 人資（HR）：只看每個人的「今日成效」與「本月成效」，純檢視、沒有任何按鍵（v64 改版）
+// 團隊看板：每個人的「今日成效」與「本月成效」，純檢視、沒有任何按鍵；人資只有這一頁（v66）
 const fs=require("fs"), path=require("path");
 let src=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8").replace(/^let /gm,"");
 const el=()=>({value:"",innerHTML:"",textContent:"",className:"",style:{},
@@ -69,9 +69,9 @@ reset();
   localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr"); }
 
 // ── 分頁：人資只有「員工成效」一頁 ──
-ok("HR 只有員工成效一個分頁", JSON.stringify(myTabs())===JSON.stringify([["hr","員工成效"]]));
+ok("HR 只有團隊看板一個分頁", JSON.stringify(myTabs())===JSON.stringify([["team","團隊看板"]]));
 
-let h=viewHR();
+let h=viewTeam();
 // ── 兩塊：今日成效／本月成效 ──
 ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
@@ -103,7 +103,7 @@ ok("沒有輸入框／下拉", !h.includes("<input") && !h.includes("<select"));
 ok("沒有審核／交辦／檢查的動作", !h.includes("reviewVid(") && !h.includes("flowAssign(") && !h.includes("hrCheckVideo"));
 
 // ── 人資不寫任何資料：整頁渲染不會呼叫 DB ──
-reset(); hookDB(); CUR_TAB="hr"; render();
+reset(); hookDB(); CUR_TAB="team"; render();
 ok("渲染人資頁不會寫入任何資料", calls.length===0);
 
 // ── 剪輯流程完全不受人資影響 ──
@@ -119,11 +119,11 @@ ok("Regina 照樣能退回重剪", calls.some(c=>c[0]==="update"&&c[1]==="videos
 
 // ── 沒有剪輯人員時不會炸 ──
 reset(); STATE.users=[{name:"HR小姐",role:"hr"}];
-ok("沒有剪輯人員時給提示", viewHR().includes("還沒有剪輯人員"));
+ok("沒有成員時給提示", viewTeam().includes("還沒有成員"));
 
 // ── render 不炸 ──
 reset();
-[["HR小姐","hr","hr"],["管理員","boss","dashboard"],["小葵","editor","work"]].forEach(([u,r,tab])=>{
+[["HR小姐","hr","team"],["管理員","boss","dashboard"],["小葵","editor","work"]].forEach(([u,r,tab])=>{
   localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); CUR_TAB=tab; WORK_ZONE="shopee"; CAL_PLAT="tw"; CAL_YM=null;
   try{ render(); ok(`[${r}] ${tab}`, true); }catch(e){ ok(`[${r}] ${tab} → ${e.message}`, false); } });
 

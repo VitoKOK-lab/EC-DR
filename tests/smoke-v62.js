@@ -61,7 +61,7 @@ ok("海外排最後", sorted.slice(-2).every(n=>["Asmeer","Pakistan Team"].inclu
   bootLogin();
   global.document.getElementById=_get;
   const groups=order.filter(x=>String(x).startsWith("#")).map(x=>x.slice(1));
-  ok("登入頁分區：人資在管理層之前", JSON.stringify(groups)===JSON.stringify(["Taiwan","海外版","人資","管理層"]));
+  ok("登入頁分區：客服、人資在管理層之前", JSON.stringify(groups)===JSON.stringify(["Taiwan","海外版","人資","管理層"]));
   const tw=order.slice(order.indexOf("#Taiwan")+1, order.indexOf("#海外版"));
   ok("登入頁 Taiwan 區照分工排序", JSON.stringify(tw)===JSON.stringify(["小葵","Edward","阿明","小華"])); }
 
@@ -84,7 +84,7 @@ ok("指派交辦下拉照順序分組", d.includes('label="一次創作"') && d.
 
 // ── 人資：看得到交辦，但不能操作 ──
 reset(); as("HR小姐","hr");
-h=viewHR();
+h=viewTeam();
 ok("HR 看得到交辦與回報", h.includes("交辦完成") && h.includes("回覆廠商") && h.includes("已聯絡完成"));
 ok("HR 沒有交辦輸入框", !h.includes("flowAssign("));
 ok("HR 沒有審核按鈕", !h.includes("reviewVid("));
@@ -96,7 +96,7 @@ reset(); as("Regina","manager");
 ok("Regina 有交辦輸入框", viewFlow().includes("flowAssign("));
 
 // ── render 不炸 ──
-[["Regina","manager","flow"],["HR小姐","hr","hr"],["管理員","boss","dashboard"]].forEach(([u,r,tab])=>{
+[["Regina","manager","flow"],["HR小姐","hr","team"],["管理員","boss","dashboard"]].forEach(([u,r,tab])=>{
   reset(); as(u,r); CUR_TAB=tab;
   try{ render(); ok(`[${u}] ${tab}`, true); }catch(e){ ok(`[${u}] ${tab} → ${e.message}`, false); } });
 
