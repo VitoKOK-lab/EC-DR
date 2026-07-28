@@ -1261,9 +1261,9 @@ function flowStaffCard(u, idx, allTasks, readOnly){
     const done=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
     const late=wip.filter(v=>{ const b=claimDayBadge(v); return b!=="新"&&+b>=4; });
     const wipRows=wip.slice(0,4).map(v=>{ const b=claimDayBadge(v); const slow=b!=="新"&&+b>=4;
-      return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
+      return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
         <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></div>`; }).join("");
+        <span class="linetitle">${esc(vidTitle(v))}</span></div>`; }).join("");
     const tasks=realTasks(allTasks).filter(t=>t.user===name&&t.date===today).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
     const taskRows=tasks.map(t=>{
       const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
@@ -1638,9 +1638,9 @@ function teamDayCard(u, allTasks){
   const name=u.name, minLabel=dashMin, hm=dashHM, isCS=(u.role==="cs");
   const {s, done, wip, tasks, notices, workMin}=teamDayStat(name, allTasks);
   const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・${T("工時","Hours")} ${minLabel(workMin)}`:T("今天還沒上線","Not clocked in yet");
-  const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
+  const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
       <span class="pill ${cls}" style="font-size:10px;flex:none">${label}</span>
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></div>`).join(""):"";
+      <span class="linetitle">${esc(vidTitle(v))}</span></div>`).join(""):"";
   const nDone=tasks.filter(t=>t.done).length;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1672,8 +1672,8 @@ function teamNoticeCompose(staff){
   const rows=Object.values(sent).map(g=>{
     const t=g[0], got=g.filter(x=>x.ack), replies=g.filter(x=>(x.report||"").trim());
     return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
-      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:13.5px;font-weight:600;min-width:0;flex:1">${esc(t.title)}</span>
+      <div style="font-size:13.5px;font-weight:600;overflow-wrap:anywhere">${esc(t.title)}</div>
+      <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">
         <span class="pill ${got.length===g.length?'ok':'wa'}" style="font-size:10px;flex:none">已收到 ${got.length}/${g.length}</span>
         <button class="btn sec sm" style="flex:none;padding:3px 9px" onclick="hrNotifyDel('${t.id}')" title="收回這則通知">✕</button>
       </div>

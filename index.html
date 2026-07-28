@@ -29,8 +29,12 @@
     --r:8px; --rs:5px;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:var(--sans);
+  /* 手機不左右移動：任何一個太寬的東西都不會把整頁撐開。
+     用 clip 不用 hidden —— hidden 會讓 sticky 的標題列與分頁列失效。 */
+  html{overflow-x:clip}
+  body{margin:0;font-family:var(--sans);width:100%;max-width:100%;overflow-x:clip;
        background:var(--bg);color:var(--txt);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  @supports not (overflow:clip){ html,body{overflow-x:hidden} }
   button{font-family:inherit;cursor:pointer}
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
@@ -56,6 +60,11 @@
   ::-webkit-scrollbar-thumb:hover{background:var(--gold)}
   ::-webkit-scrollbar-track{background:transparent}
   /* 空狀態：✦ 浮水印＋引導文字 */
+  /* 清單裡的片名：桌機一行放不下就用「…」，手機改成最多兩行，不會被切一半 */
+  .linetitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @media (max-width:640px){
+    .linetitle{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;text-overflow:clip;overflow-wrap:anywhere}
+  }
   .emptyState{text-align:center;padding:30px 10px;color:var(--faint)}
   .emptyState .es-mk{font-size:32px;color:var(--gold);opacity:.4;display:block;margin-bottom:8px}
   /* 員工「今日焦點列」：一眼看到自己今天的狀態 */
@@ -358,13 +367,19 @@
     .vtabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none}
     .vtabs::-webkit-scrollbar{display:none}
     .vtab{flex:0 0 auto;min-width:auto;white-space:nowrap;padding:9px 14px}
-    .grid.cols2{grid-template-columns:1fr !important}
-    .workgrid{grid-template-columns:1fr !important;grid-template-rows:auto;grid-auto-flow:row}
-    .dgrid{grid-template-columns:1fr !important}
-    .dgrid-ed{grid-template-columns:1fr !important}
-    .teamgrid{grid-template-columns:1fr !important}
-    .grid.cols3{grid-template-columns:1fr !important}
-    .grid.cols4{grid-template-columns:1fr 1fr !important}
+    .grid.cols2{grid-template-columns:minmax(0,1fr) !important}
+    .workgrid{grid-template-columns:minmax(0,1fr) !important;grid-template-rows:auto;grid-auto-flow:row}
+    .dgrid{grid-template-columns:minmax(0,1fr) !important}
+    .dgrid-ed{grid-template-columns:minmax(0,1fr) !important}
+    .teamgrid{grid-template-columns:minmax(0,1fr) !important}
+    .grid.cols3{grid-template-columns:minmax(0,1fr) !important}
+    .grid.cols4{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+    /* 卡片一律撐滿一欄，內容太長就換行，不會把版面推寬 */
+    main>*,.card,.teamgrid>*,.dgrid>*,.dgrid-ed>*,.workgrid>*{min-width:0;max-width:100%}
+    .card{overflow-wrap:anywhere;word-break:break-word}
+    .focusbar>div{min-width:0}
+    .row{flex-wrap:wrap}
+    input,select,textarea{max-width:100%}
     .modal .box{padding:18px;border-radius:10px}
     .addRow{flex-direction:column}
     .cal{gap:5px}
@@ -390,22 +405,22 @@
     .day .tbar{display:none}
   }
   /* 上班計畫四宮格：2×2 對齊（同一列等高），手機收合單欄並維持工作順序 */
-  .workgrid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;grid-auto-flow:column;gap:16px}
+  .workgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto;grid-auto-flow:column;gap:16px}
   .workgrid>.card{margin-bottom:0}
   /* 海外 My Work：只有 2 張卡（To do／In progress），並排滿版，桌機才不會右半邊空一大塊 */
   /* 儀表板：內容少的卡片兩兩並排，長的（每位剪輯/排程帶/績效）各自整列 */
-  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;align-items:stretch}
+  .dgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}
   .dgrid>.card{margin-bottom:0}
-  .dgrid-ed{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;margin-bottom:16px;align-items:start}
+  .dgrid-ed{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));gap:16px;margin-bottom:16px;align-items:start}
   .dgrid-ed>.card{margin-bottom:0}
   /* 團隊看板：桌機一排 4 人，一次看到多一點；窄一點自動變 3／2 欄 */
-  .teamgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;align-items:start}
+  .teamgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px;align-items:start}
   .teamgrid>.card{margin-bottom:0}
-  @media(max-width:1400px){ .teamgrid{grid-template-columns:repeat(3,1fr)} }
-  @media(max-width:1040px){ .teamgrid{grid-template-columns:repeat(2,1fr)} }
-  .grid.cols2{grid-template-columns:1fr 1fr}
-  .grid.cols3{grid-template-columns:repeat(3,1fr)}
-  .grid.cols4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:1400px){ .teamgrid{grid-template-columns:repeat(3,minmax(0,1fr))} }
+  @media(max-width:1040px){ .teamgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .grid.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .grid.cols4{grid-template-columns:repeat(4,minmax(0,1fr))}
   .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);transition:.22s}
   .stat:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(43,24,34,.10);border-color:var(--gold)}
   .stat .n{font-family:var(--serif);font-size:28px;font-weight:900;line-height:1.1}
@@ -542,7 +557,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1784178000"></script>
+<script src="app.js?v=1784185200"></script>
 <script type="module" src="fb.js?v=1783940000"></script>
 </body>
 </html>
