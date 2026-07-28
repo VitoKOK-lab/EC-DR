@@ -573,8 +573,15 @@ async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) 
   try{
     if(idx>=0) await route("DELETE",`/api/schedule/${oldDate}/slot/${idx}`,{});
     await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
-    const v=vid(id); const uh=(v.usageHistory||[]).map(u=> (u&&typeof u==="object" && u.date===oldDate)?Object.assign({},u,{date:newDate}):u);
-    await window.DB.update("videos", id, {usageHistory:uh});
+    const v=vid(id);
+    const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===oldDate);
+    if(window.DB&&window.DB.arrayDel){
+      for(const u of hits){ await window.DB.arrayDel("videos", id, "usageHistory", u);
+        await window.DB.arrayAdd("videos", id, "usageHistory", Object.assign({},u,{date:newDate})); }
+    }else{
+      await window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).map(u=>
+        (u&&typeof u==="object"&&u.date===oldDate)?Object.assign({},u,{date:newDate}):u)});
+    }
     logA("重播改期至 "+newDate, vidTitle(vid(id)||{}));
     await delay(140); toast("已改重播日至 "+newDate); openDay(newDate);
   }catch(e){ toast(e.message||"改期失敗",true); }
@@ -685,7 +692,11 @@ function delContact(name){ if(dbBlocked()) return; if(!confirm("刪除對接窗�
 function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
-  cur[i]=nn; window.DB.setSettings({contacts:cur}).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
+  cur[i]=nn;
+  (window.DB&&window.DB.arrayDel
+    ? window.DB.arrayDel("meta","settings","contacts",name).then(()=>window.DB.arrayAdd("meta","settings","contacts",nn))
+    : window.DB.setSettings({contacts:cur})
+  ).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
 // 常用工作項目：一鍵加入當日工作計畫（HR 每日確認會看到這些）
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
@@ -1879,14 +1890,18 @@ function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) r
   if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
   inp.value=''; }
 async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
-  if(add.length && window.DB&&window.DB.setSettings){ try{ await window.DB.setSettings({videoTags:cur.concat(add)}); }catch(e){} } }
+  if(!add.length || !window.DB) return;
+  try{
+    if(window.DB.arrayAdd){ for(const t of add) await window.DB.arrayAdd("meta","settings","videoTags",t); }
+    else if(window.DB.setSettings){ await window.DB.setSettings({videoTags:cur.concat(add)}); }
+  }catch(e){} }
 // 標籤編輯器（管理員・設定頁）
 async function addVideoTagSel(){ const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
   const cur=videoTags(); if(cur.includes(t)){ toast("已有這個標籤",true); return; }
-  try{ await window.DB.setSettings({videoTags:cur.concat([t])}); logA("新增標籤",t);
+  try{ await dbArrayAdd("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:cur.concat([t])})); logA("新增標籤",t);
     const e=document.getElementById("tag_new"); if(e) e.value=""; toast("已新增標籤「"+t+"」"); }catch(e){ toast("新增失敗",true); } }
 async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
-  try{ await window.DB.setSettings({videoTags:videoTags().filter(x=>x!==t)}); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
+  try{ await dbArrayDel("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
 
 // ===================================================================
 // 影片庫

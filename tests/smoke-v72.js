@@ -138,6 +138,34 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   delContact("廠商A"); await new Promise(r=>setTimeout(r,20));
   ok("刪除窗口用原子刪除", calls.some(c=>c[0]==="arrayDel"&&c[3]==="contacts"));
 
+  // ── ⑨ 剩下的讀改寫也補上原子操作 ──
+  reset(); as("小葵","editor");
+  STATE.videos[0].usageHistory=[{date:T0,link:"a",by:"小葵",at:T0+"T01:00:00"}];
+  STATE.videos[0].totalUsed=1;
+  STATE.schedule={[T0]:{slots:[{videoId:"V001",reused:true,by:"小葵"}]}};
+  server.schedule={[T0]:{slots:[{videoId:"V001",reused:true,by:"小葵"}]}};
+  await moveReuse("V001", T0, "2026-09-09"); await new Promise(r=>setTimeout(r,30));
+  ok("重播改期：舊那筆原子刪掉、新那筆原子加上",
+     calls.some(c=>c[0]==="arrayDel"&&c[3]==="usageHistory") && calls.some(c=>c[0]==="arrayAdd"&&c[3]==="usageHistory"));
+  ok("重播改期不會整份改寫使用紀錄", !calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[3]&&c[3].usageHistory));
+
+  reset(); as("管理員","boss");
+  global.prompt=()=>"改過的窗口";
+  renameContact("廠商A"); await new Promise(r=>setTimeout(r,30));
+  global.prompt=()=>null;
+  ok("窗口改名＝原子刪舊＋原子加新",
+     calls.some(c=>c[0]==="arrayDel"&&c[3]==="contacts") && calls.some(c=>c[0]==="arrayAdd"&&c[3]==="contacts"));
+
+  reset(); as("管理員","boss");
+  fields.tag_new="新標籤"; await addVideoTagSel(); await new Promise(r=>setTimeout(r,20));
+  ok("新增標籤用原子追加", calls.some(c=>c[0]==="arrayAdd"&&c[3]==="videoTags"));
+  reset(); as("管理員","boss");
+  await delVideoTag("舊片"); await new Promise(r=>setTimeout(r,20));
+  ok("刪除標籤用原子刪除", calls.some(c=>c[0]==="arrayDel"&&c[3]==="videoTags"));
+  reset(); as("小葵","editor");
+  await persistNewTags(["全新標籤"]); await new Promise(r=>setTimeout(r,20));
+  ok("編輯影片時新增的標籤也是原子追加", calls.some(c=>c[0]==="arrayAdd"&&c[3]==="videoTags"));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);
 })();
