@@ -857,11 +857,11 @@ function workTasksCard(tasks){
       if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
         <div class="row" style="align-items:center;gap:8px;margin:6px 0 0;flex-wrap:wrap">
-          <span class="muted" style="font-size:12px;flex:1;min-width:0">${T("主管","Assigned by")} ${esc(t.assignedBy)} ${T("交辦・按「收到」開始執行","· press Got it to start")}</span>
+          <span class="muted" style="font-size:12px;flex:1;min-width:0">${T("主管交辦・按「收到」開始執行","Assigned · press Got it to start")}</span>
           <button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button></div></div>`;
       return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
         ${head}${contactLine}
-        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（主管","Received (assigned by")} ${esc(t.assignedBy)}${T(" 交辦）",")")}</div>`:''}
+        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（主管交辦）","Received (assigned)")}</div>`:''}
         <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="${T("填寫完整處理狀況及後續…","Progress note (at least 12 characters)…")}">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
@@ -1537,7 +1537,7 @@ function teamTaskRow(t){
   const st=t.done?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`
     :(t.assignedBy&&!t.ack)?`<span class="pill em" style="font-size:10px">${T("還沒接收","Not seen")}</span>`
     :`<span class="pill wa" style="font-size:10px">${T("處理中","In progress")}</span>`;
-  const from=t.assignedBy?`<span class="muted" style="font-size:11px">${T(esc(t.assignedBy)+" 交辦","from "+esc(t.assignedBy))}</span>`
+  const from=t.assignedBy?`<span class="muted" style="font-size:11px">${T("主管交辦","Assigned")}</span>`
     :`<span class="muted" style="font-size:11px">${T("自己安排","self")}</span>`;
   return `<div style="padding:7px 0;border-bottom:1px solid var(--line)">
     <div style="display:flex;gap:6px;align-items:center;justify-content:space-between">
