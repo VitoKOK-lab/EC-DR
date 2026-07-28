@@ -46,14 +46,28 @@ function toast(msg, isErr){
 }
 
 // ---------- ID / 影片預設記錄 ----------
-function nextId(arr, prefix){
-  let mx=0; (arr||[]).forEach(it=>{ const m=String(it.id||"").match(new RegExp("^"+prefix+"(\\d+)$")); if(m) mx=Math.max(mx,parseInt(m[1])); });
-  return prefix+String(mx+1).padStart(3,"0");
+// 影片文件 ID：一定要「跨裝置不會撞號」。
+// 舊版是掃自己這台看到的最大編號 +1 → 兩個人幾乎同時新增會算出同一個 ID，
+// 後寫的那筆會整份覆蓋前一筆（Firestore set），先建的影片就這樣無聲消失。
+// 也會撞到回收桶裡（已軟刪除、不在 STATE.videos）的舊編號。
+// 改成 時間戳(base36) + 亂數，各自產生、永不重複。
+function newVideoId(){
+  return "V" + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
+}
+// 人看的編號：民國年＋月日（7 碼）＋當日序號（3 碼）。含回收桶一起掃，才不會重覆。
+function nextVideoCode(seen){
+  const [Y,M,D]=today.split("-");
+  const pre=`${(+Y-1911)}${M}${D}`;
+  const re=new RegExp("^"+pre+"(\\d{3})$");
+  let seq=0;
+  const scan=(arr)=>(arr||[]).forEach(v=>{ const m=String((v&&v.code)||"").match(re); if(m) seq=Math.max(seq,+m[1]); });
+  scan(STATE&&STATE.videos); scan(STATE&&STATE.deletedVideos); scan(seen);
+  return pre+String(seq+1).padStart(3,"0");
 }
 // 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 2）。每筆寫入都用這個確保一致。
 function newVideoRecord(over){
   const s=STATE.settings||{};
-  const rec={ id: nextId(STATE.videos,"V"), code:"",
+  const rec={ id: newVideoId(), code: nextVideoCode(),
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:"",   // 預設不分類（流量型是多數，不特別標）
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
@@ -1727,18 +1741,15 @@ function batchNewFootage(){ if(dbBlocked()) return;
     for(let i=0;i<5;i++){ const name=zhTW((val("bn"+i)||"").trim()); if(!name) continue;
       items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
-    let base=0; (STATE.videos||[]).forEach(it=>{ const m=String(it.id||"").match(/^V(\d+)$/); if(m) base=Math.max(base,+m[1]); });
-    // 編號自動產生：民國年＋月日（共 7 碼）＋3 碼當日序號；依現有編號取下一個序號，避免重覆
-    const [Y,M,D]=today.split("-"); const codePrefix=`${(+Y-1911)}${M}${D}`;
-    let seq=0; (STATE.videos||[]).forEach(v=>{ const m=String(v.code||"").match(new RegExp("^"+codePrefix+"(\\d{3})$")); if(m) seq=Math.max(seq,+m[1]); });
-    let ok=0; BULK_BUSY=true;
+    // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
+    let ok=0; BULK_BUSY=true; const made=[];
     try{
-      for(let i=0;i<items.length;i++){ const id="V"+String(base+i+1).padStart(3,"0");
-        const code=codePrefix+String(seq+i+1).padStart(3,"0");
-        const rec=Object.assign(newVideoRecord({code, name:items[i].name, rawName:items[i].name, rawLink:items[i].rawLink, products:items[i].products,
-          origLang:bLang,
-          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}), {id});   // 有銷售商品 → 自動帶「寵粉」
-        try{ await window.DB.set("videos", id, rec); ok++; }catch(e){} }
+      for(let i=0;i<items.length;i++){
+        const rec=newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
+          rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
+          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]});   // 有銷售商品 → 自動帶「寵粉」
+        made.push(rec);
+        try{ await window.DB.set("videos", rec.id, rec); ok++; }catch(e){} }
       if(ok) logA("批次新增毛片 "+ok+" 支", "");
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
     await delay(300); toast(T("已新增 "+ok+" 支毛片",ok+" clips added")); return true;
