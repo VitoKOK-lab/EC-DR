@@ -673,7 +673,8 @@ async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"
 async function hrNotify(){ if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
   if(!txt){ toast("請輸入通知內容",true); return; }
-  const targets = who==="__all__" ? staffNamesSorted(["editor","intl","cs"]) : (who?[who]:[]);
+  const ALL={"__all__":["editor","intl","cs"], "__editor__":["editor"], "__cs__":["cs"], "__intl__":["intl"]};
+  const targets = ALL[who] ? staffNamesSorted(ALL[who]) : (who?[who]:[]);
   if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
   try{
     for(const name of targets){
@@ -720,6 +721,7 @@ async function unassignEditor(name){
 }
 function ackTask(id){ const t=taskById(id);
   dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:isNotice(t)?"收到 HR 通知":"收到交辦工作", target:(t&&t.title)||id}); }
+function noticeReply(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
 function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -841,6 +843,8 @@ function workNoticeCard(notices){
                :`<button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`}
       </div>
       <div class="muted" style="font-size:11px;margin-top:2px">${esc(t.assignedBy||"")}・${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}</div>
+      <input id="nr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+        onchange="noticeReply('${t.id}',this.value)" placeholder="${T("想回覆什麼可以寫在這裡（選填）…","Reply here (optional)…")}">
     </div>`).join("")}</div>
   </div>`;
 }
@@ -908,6 +912,17 @@ function staffOptGroups(roles){
     ppl.forEach(u=>used.add(u.name));
     return ppl.length?`<optgroup label="${esc(label)}">${ppl.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`:'';
   }).join("");
+}
+// 分清單：剪輯 → 員工（不剪片） → 海外剪輯（海外一律排最後）
+const STAFF_GROUPS=[
+  ["editor", "剪輯",     "Editors"],
+  ["cs",     "員工",     "Staff"],
+  ["intl",   "海外剪輯", "Intl editors"],
+];
+function staffByGroup(list){
+  const pool = staffSorted(list || (STATE.users||[]).filter(u=>["editor","intl","cs"].includes(u.role||"editor")));
+  return STAFF_GROUPS.map(([role,zh,en])=>({role, zh, en, people:pool.filter(u=>(u.role||"editor")===role)}))
+    .filter(g=>g.people.length);
 }
 function staffNamesSorted(roles){
   const rs = roles || ["editor","intl"];
@@ -1045,7 +1060,7 @@ function createZoneCard(){
     <select onchange="setWorkZone(this.value)" style="width:auto;min-width:190px">
       ${zones.map(([k,l])=>`<option value="${k}" ${WORK_ZONE===k?'selected':''}>${esc(l)}</option>`).join("")}
     </select>
-    <span class="muted" style="font-size:12px">${T("挑一支已完整上傳的原本，建立該平台/語言的二創版本，會進到「待認領」","Pick a fully-published original and create a version — it lands in the claim pool")}</span></div>`;
+    </div>`;
   let body="";
   if(WORK_ZONE==="en"||WORK_ZONE==="th"){
     body=`<input id="intl_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px;margin:10px 0">
@@ -1139,7 +1154,7 @@ function flowStockCard(staff, pool, unassigned, stockDays){
       <button class="btn sec sm" type="button" onclick="afpToggleAll(this)">全選</button>
       <button class="btn sm" onclick="assignFootage()">指派勾選的毛片</button></div>
     <div style="margin-top:6px${unassigned.length>6?';max-height:260px;overflow-y:auto':''}">${afpRows}</div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支（指派只是分配，員工自己「認領」才開始計時）</p>`
+    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支</p>`
     :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
   </div>`;
   return stockCard;
@@ -1158,7 +1173,7 @@ function flowReviewQueueCard(){
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">在影片視窗按「通過」或「× 退回」。通過後剪輯的上班計畫會顯示「已審過」；退回會標紅待修。</p>
+
   </div>`;
   return reviewQueueCard;
 }
@@ -1224,7 +1239,10 @@ function viewFlow(){
 
   const reviewQueueCard=flowReviewQueueCard();
 
-  const staffCards=staff.map((u,idx)=>flowStaffCard(u, idx, allTasks)).join("");
+  let fi=0;
+  const staffCards=staffByGroup(staff).map(g=>
+    `<h4 style="margin:16px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${esc(g.zh)}（${g.people.length}）</h4>`
+    + g.people.map(u=>flowStaffCard(u, fi++, allTasks)).join("")).join("");
 
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
@@ -1237,7 +1255,7 @@ function viewFlow(){
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
   ${focus}${runwayCard}${reviewQueueCard}${stockCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
-  ${staffCards||'<p class="muted">還沒有剪輯人員</p>'}`;
+  ${staffCards||'<p class="muted">還沒有成員</p>'}`;
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
@@ -1384,7 +1402,7 @@ function dashSchedule(){
 function dashViewAsCard(){
   return `<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <div><b style="font-size:16px">👁 員工視角</b> <span class="muted" style="font-size:12px">以員工身分看他的畫面，不用切換帳號（唯讀）</span></div>
+      <div><b style="font-size:16px">👁 員工視角</b></div>
       <div class="row" style="gap:8px">
         <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","manager","hr"])}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
@@ -1413,7 +1431,7 @@ function dashAssignTaskCard(){
 function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
   return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">🎬 指派毛片給員工</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）。指派只是分配，員工自己「認領」才開始計時。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）</div>
     <div class="grid cols2" style="margin-top:10px">
       <div><label>選擇員工</label>
         <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
@@ -1571,18 +1589,20 @@ function teamDayCard(u, allTasks){
     ${notices.length?`<div style="margin-top:8px;border-top:1px dashed var(--gold);padding-top:6px">
       ${notices.map(n=>`<div style="font-size:12px;padding:3px 0;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <span class="pill ${n.ack?'ok':'em'}" style="font-size:10px;flex:none">${n.ack?T("已收到","Received"):T("未讀","Unread")}</span>
-        <span style="min-width:0">📣 ${esc(n.title)}</span></div>`).join("")}
+        <span style="min-width:0">📣 ${esc(n.title)}</span>
+        ${(n.report||"").trim()?`<span class="muted" style="width:100%;padding-left:2px">${T("回覆","Reply")}：${esc(n.report)}</span>`:''}</div>`).join("")}
     </div>`:''}
   </div>`;
 }
 // 人資專用：發 HR 通知（可指定一人或全體）＋看自己發出去的誰收到了
 function teamNoticeCompose(staff){
+  const groups=staffByGroup(staff);
   const mine=allNotices().filter(t=>t.assignedBy===currentUser())
     .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,12);
-  const groups={};
-  mine.forEach(t=>{ const k=(t.title||"")+"__"+String(t.createdAt||"").slice(0,16); (groups[k]=groups[k]||[]).push(t); });
-  const rows=Object.values(groups).map(g=>{
-    const t=g[0], got=g.filter(x=>x.ack);
+  const sent={};
+  mine.forEach(t=>{ const k=(t.title||"")+"__"+String(t.createdAt||"").slice(0,16); (sent[k]=sent[k]||[]).push(t); });
+  const rows=Object.values(sent).map(g=>{
+    const t=g[0], got=g.filter(x=>x.ack), replies=g.filter(x=>(x.report||"").trim());
     return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:13.5px;font-weight:600;min-width:0;flex:1">${esc(t.title)}</span>
@@ -1590,13 +1610,15 @@ function teamNoticeCompose(staff){
         <button class="btn sec sm" style="flex:none;padding:3px 9px" onclick="hrNotifyDel('${t.id}')" title="收回這則通知">✕</button>
       </div>
       <div class="muted" style="font-size:11px;margin-top:2px">${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}・${g.map(x=>esc(x.user)+(x.ack?"✓":"")).join("、")}</div>
+      ${replies.map(x=>`<div style="font-size:12px;margin-top:3px"><b>${esc(x.user)}</b> <span class="muted">回覆：</span>${esc(x.report)}</div>`).join("")}
     </div>`; }).join("");
   return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">📣 發出 HR 通知</b>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-      <select id="hrn_who" style="width:auto;min-width:140px">
+      <select id="hrn_who" style="width:auto;min-width:150px">
         <option value="__all__">全體同仁</option>
-        ${staff.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</select>
+        ${groups.map(g=>`<option value="__${esc(g.role)}__">全體${esc(g.zh)}（${g.people.length}）</option>`).join("")}
+        ${groups.map(g=>`<optgroup label="${esc(g.zh)}">${g.people.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`).join("")}</select>
       <input id="hrn_txt" placeholder="要通知大家的事…" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')hrNotify()">
       <button class="btn sm" style="flex:none" onclick="hrNotify()">送出通知</button>
     </div>
@@ -1623,7 +1645,7 @@ function viewTeam(){
     <td data-label="${T("帶商品","With product")}">${u.role==="cs"?"—":m.sales}</td>
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
-  return `<h2>${T("團隊看板","Team Board")} <span class="muted" style="font-size:13px">${T("大家今天在做什麼・只看不用操作","Who is doing what today — view only")}</span></h2>
+  return `<h2>${T("團隊看板","Team Board")}</h2>
   ${currentRole()==="hr"?teamNoticeCompose(staff):''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
@@ -1632,12 +1654,12 @@ function viewTeam(){
     <div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>
   </div>
   <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
-  <div class="teamgrid">${staff.map(u=>teamDayCard(u, allTasks)).join("")}</div>
+  ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}（${g.people.length}）</h4>
+    <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
   <h3 style="margin:24px 0 10px">${T("本月成效","This month")} <span class="muted" style="font-size:13px;font-weight:400">${T(+ym.slice(0,4)+" 年 "+(+ym.slice(5,7))+" 月", ym)}</span></h3>
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th><th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th><th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:8px">${T("剪片速度＝從認領到完成的平均天數；平均工時＝每支片實際花的時間；帶商品＝有掛寵粉商品的片。不剪片的員工只看出勤與交辦。","Days/clip = average days from claim to finish; Avg time = actual time per clip; With product = clips carrying a product. Non-editing staff show attendance and tasks only.")}</div>
   </div>`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
@@ -1664,7 +1686,7 @@ function viewDashboard(){
 
   const D2=daysBetween(D,today); const dayLabel = D===today?'今天':(D===yesterday?'昨天':(D2+' 天前'));
 
-  return `<h2>儀表板 <span class="muted" style="font-size:13px">${isOwner()?"僅管理員可見":"管理員／經理人"}</span></h2>
+  return `<h2>儀表板</h2>
 
   ${currentRole()==="boss"?dashViewAsCard():''}
 
@@ -2045,7 +2067,7 @@ function viewLog(){
     <td data-label="誰"><b>${esc(l.user||"")}</b> <span class="muted" style="font-size:11px">${esc(ROLE_LABEL[l.role]||l.role||"")}</span></td>
     <td data-label="動作">${esc(l.action||"")}</td>
     <td data-label="對象">${esc(l.target||"")}</td></tr>`).join("");
-  return `<h2>操作紀錄 <span class="muted" style="font-size:13px">誰・何時・做了什麼（最近 300 筆）</span></h2>
+  return `<h2>操作紀錄</h2>
     <div class="card"><div class="${logs.length>10?'vidscroll':''}">
       <table class="responsive"><thead><tr><th>時間</th><th>誰</th><th>動作</th><th>對象</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="4" class="muted">目前沒有紀錄</td></tr>`}</tbody></table>
@@ -2061,7 +2083,7 @@ function viewTrash(){
     <td data-label="操作"><div class="row" style="gap:6px">
       <button class="btn sm" onclick="restoreVideo('${esc(jsEsc(v.id))}')">復原</button>
       <button class="btn danger sm" onclick="purgeVideo('${esc(jsEsc(v.id))}')">永久刪除</button></div></td></tr>`).join("");
-  return `<h2>回收桶 <span class="muted" style="font-size:13px">被刪除的影片可在此復原（防誤刪／惡意刪除）</span></h2>
+  return `<h2>回收桶</h2>
     <div class="card"><div class="${list.length>10?'vidscroll':''}">
       <table class="responsive"><thead><tr><th>影片</th><th>刪除者</th><th>刪除時間</th><th>操作</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="4" class="muted">回收桶是空的</td></tr>`}</tbody></table>
@@ -2092,7 +2114,7 @@ function viewPerf(){
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
       <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
 
-  return `<h2>平台成效 <span class="muted" style="font-size:13px">${PERF_PLAT?`目前只看：${esc(PERF_PLAT)}（點卡片可切換／取消）`:"各平台累計；點平台卡片可只看該平台"}</span></h2>
+  return `<h2>平台成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
     <b>尚無平台成效數據</b>
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
@@ -2215,7 +2237,7 @@ function openVideoModal(id, edit, fromWork){
     <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">${T("選了這天，這支片就會顯示在「月排程」的那一天","Pick a date and this video shows on that day in Schedule")}</div>
+
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">
     ${reviewCard}
@@ -2655,7 +2677,7 @@ function openIntlModal(id){
     </div>
     <label>${T("預排上片日期","Scheduled upload date (when it will go live)")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="i_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">${T("選了日期，這支就會出現在「月排程」的那一天"+(v.account?"（帳號 "+esc(v.account)+"）":"")+"。","Pick a date here and this version will show up on that day in <b>Schedule</b>"+(v.account?" for "+esc(v.account):"")+".")}</div>`;
+`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="intlSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
@@ -2756,7 +2778,7 @@ function openChModal(ch,id){
     </div>
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="${p}_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    <div class="muted" style="font-size:11px;margin:5px 0 0">${T("選了這天，這支版本就會出現在「月排程」對應的那一天","Pick a date and this version shows on that day in Schedule")}${v.account?`（${esc(v.account)}）`:''}。</div>`;
+`;
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;

@@ -73,37 +73,38 @@
       radial-gradient(1100px 480px at 50% -8%, rgba(230,0,126,.07), transparent 60%),
       radial-gradient(820px 460px at 92% 112%, rgba(197,179,130,.10), transparent 55%),
       var(--bg);
-    display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:50;padding:24px}
+    display:flex;align-items:center;justify-content:flex-start;flex-direction:column;z-index:50;
+    padding:clamp(16px,6vh,60px) 16px 40px;overflow-y:auto}
   /* 品牌名 → 燙金漸層字（緩慢流動）；✦ 保持桃紅並帶呼吸微光 */
-  #login h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:6px 0 4px;letter-spacing:3px;
+  #login h1{font-family:var(--serif);font-weight:600;font-size:26px;margin:4px 0 2px;letter-spacing:2px;
     background:linear-gradient(120deg,#5C4A22,#8A7338 35%,#C5B382 50%,#8A7338 65%,#5C4A22);background-size:200% 100%;
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:foilFlow 9s linear infinite}
   #login h1 .di{-webkit-text-fill-color:var(--signal);color:var(--signal);font-style:normal;animation:starGlow 3.2s ease-in-out infinite;display:inline-block}
   #login .sub{font-family:var(--latin);color:var(--gold-dk);font-weight:500;letter-spacing:.32em;font-size:12px;margin:0;text-transform:uppercase}
-  #login p{color:var(--muted);margin:0 0 24px;text-align:center}
-  .loginRule{width:120px;height:1.5px;background:var(--foil);background-size:200% 100%;animation:foilFlow 7s linear infinite;margin:10px auto 24px;border-radius:2px}
+  #login p{color:var(--muted);margin:0 0 14px;text-align:center}
+  .loginRule{width:100px;height:1.5px;background:var(--foil);background-size:200% 100%;animation:foilFlow 7s linear infinite;margin:8px auto 14px;border-radius:2px}
   /* 漂浮金塵 ✦（極淡，緩慢上飄） */
   .fdust{position:absolute;color:var(--gold);pointer-events:none;animation:floatUp 9s linear infinite;font-size:11px;opacity:0}
-  .userGrid{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:620px}
-  .loginGroup{flex-basis:100%;width:100%;text-align:center;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin:10px 0 -2px;font-weight:700;
+  .userGrid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:720px}
+  .loginGroup{flex-basis:100%;width:100%;text-align:center;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:6px 0 -2px;font-weight:700;
     display:flex;align-items:center;gap:12px;justify-content:center}
   .loginGroup::before,.loginGroup::after{content:"";height:1px;width:52px;background:linear-gradient(90deg,transparent,var(--gold));opacity:.6}
   .loginGroup::after{background:linear-gradient(90deg,var(--gold),transparent)}
   .loginGroup:first-child{margin-top:0}
   /* 登入卡 hover：金邊浮起＋一道光澤掃過 */
   .userBtn{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);color:var(--txt);box-shadow:var(--shadow);
-           padding:18px 26px;border-radius:var(--rs);font-size:16px;min-width:140px;text-align:center;font-weight:700;transition:.22s}
+           padding:10px 16px;border-radius:var(--rs);font-size:14px;min-width:92px;text-align:center;font-weight:700;transition:.22s}
   .userBtn::after{content:"";position:absolute;top:0;left:-80%;width:55%;height:100%;
     background:linear-gradient(100deg,transparent,rgba(197,179,130,.28),transparent);transform:skewX(-18deg);transition:left .5s ease}
   .userBtn:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 14px 34px rgba(138,115,56,.18)}
   .userBtn:hover::after{left:130%}
-  .adminLink{margin-top:6px;background:none;border:none;color:var(--muted);font-size:13px;letter-spacing:.12em;border-bottom:1px solid transparent;padding:4px 2px;transition:.2s}
+  .adminLink{margin-top:10px;background:none;border:none;color:var(--muted);font-size:13px;letter-spacing:.12em;border-bottom:1px solid transparent;padding:4px 2px;transition:.2s}
   .adminLink:hover{color:var(--gold-dk);border-bottom-color:var(--gold)}
   .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:5px;font-weight:500;letter-spacing:1px}
   .userBtn.lead{border-color:var(--accent);border-width:2px;box-shadow:var(--shadow2)}
   .userBtn.lead .role{color:var(--accent);font-weight:700}
   .userBtn.mgr{border-style:dashed}
-  .addRow{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .addRow{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .addRow input,.addRow select{padding:10px;border-radius:var(--rs);border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
   /* 頂列：墨黑 + 燙金流光線（緩慢流動） */
@@ -541,7 +542,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1784160000"></script>
+<script src="app.js?v=1784163600"></script>
 <script type="module" src="fb.js?v=1783940000"></script>
 </body>
 </html>
