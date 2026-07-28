@@ -147,6 +147,20 @@ function logA(action, target){
       action:String(action||"").slice(0,80), target:String(target||"").slice(0,200)}).catch(()=>{});
   }catch(e){}
 }
+// 多人同時操作的原子寫入包裝：window.DB 有 arrayAdd/arrayDel/bump 就用伺服器端加減，
+// 沒有（舊的快取版 fb.js、測試替身）就退回原本的「讀出→改→整份寫回」。
+function dbArrayAdd(coll, id, field, val, fallback){
+  if(window.DB && window.DB.arrayAdd) return window.DB.arrayAdd(coll, id, field, val);
+  return fallback();
+}
+function dbArrayDel(coll, id, field, val, fallback){
+  if(window.DB && window.DB.arrayDel) return window.DB.arrayDel(coll, id, field, val);
+  return fallback();
+}
+function dbBump(coll, id, field, n, fallback){
+  if(window.DB && window.DB.bump) return window.DB.bump(coll, id, field, n);
+  return fallback();
+}
 function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
 async function route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
@@ -196,13 +210,16 @@ async function route(method, path, body){
     if(action==="reuse" && method==="POST"){
       const date=body.date; const link=(body.link||"").trim(); const time=body.time||""; const drive=(body.drive||"").trim();
       if(!date) throw new Error("請選擇重播上片日期");
-      const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
-      slots.push({videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time});
-      await window.DB.scheduleSet(date,{slots});
-      const uh=(v.usageHistory||[]).concat([{date, link, drive, time, by:user, at:nowIso()}]);
-      const patch={totalUsed:(v.totalUsed||0)+1, usageHistory:uh};
-      if(drive && drive!==v.driveFolder) patch.driveFolder=drive; // 同步存檔位置回影片（同一支都一樣）
-      await window.DB.update("videos", id, patch);
+      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time};
+      await dbArrayAdd("schedule", date, "slots", slot, ()=>{
+        const day=(STATE.schedule||{})[date]||{slots:[]};
+        return window.DB.scheduleSet(date,{slots:(day.slots||[]).concat([slot])}); });
+      const use={date, link, drive, time, by:user, at:nowIso()};
+      await dbArrayAdd("videos", id, "usageHistory", use, ()=>
+        window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).concat([use])}));
+      await dbBump("videos", id, "totalUsed", 1, ()=>
+        window.DB.update("videos", id, {totalUsed:(v.totalUsed||0)+1}));
+      if(drive && drive!==v.driveFolder) await window.DB.update("videos", id, {driveFolder:drive}); // 同步存檔位置回影片
       return;
     }
     if(action==="restore"){ await window.DB.update("videos",id,{deleted:false,deletedBy:"",deletedAt:""}); return; }
@@ -216,11 +233,19 @@ async function route(method, path, body){
     const date=seg[1], sub=seg[2]; const day=(STATE.schedule||{})[date]||{slots:[]}; const slots=(day.slots||[]).slice();
     if(sub==="slot" && method==="POST"){
       const slot=body.slot||{}; const tv=vidLocal(slot.videoId);
-      slots.push(slot); await window.DB.scheduleSet(date,{slots});
+      await dbArrayAdd("schedule", date, "slots", slot, ()=>window.DB.scheduleSet(date,{slots:slots.concat([slot])}));
       if(tv && !slot.reused) await window.DB.update("videos", slot.videoId, {scheduledDate:date}); return;
     }
-    if(sub==="slot" && method==="DELETE"){ const idx=parseInt(seg[3]); if(idx<0||idx>=slots.length) throw new Error("索引超出範圍");
-      if(slots[idx].locked) throw new Error("此排片已上架鎖定"); slots.splice(idx,1); await window.DB.scheduleSet(date,{slots}); return; }
+    // 刪除一格：用「整格的內容」比對，不用索引。
+    // 用索引的話，別人同時剛好新增／刪除同一天，索引會位移 → 刪到別人的排片。
+    if(sub==="slot" && method==="DELETE"){
+      const idx=parseInt(seg[3]); if(!(idx>=0 && idx<slots.length)) throw new Error("找不到這一格排片");
+      const slot=slots[idx];
+      if(slot.locked) throw new Error("此排片已上架鎖定");
+      await dbArrayDel("schedule", date, "slots", slot, ()=>{
+        const rest=slots.slice(); rest.splice(idx,1); return window.DB.scheduleSet(date,{slots:rest}); });
+      return;
+    }
   }
   throw new Error("不支援的操作");
 }
@@ -578,8 +603,12 @@ async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
   if(!confirm("把「"+vidTitle(v)+"」的重播移出「"+ds+"」？\n\n只移除這天的重播排程，影片不會刪除。")) return;
   try{
     await route("DELETE",`/api/schedule/${ds}/slot/${idx}`,{});
-    const uh=(v.usageHistory||[]).filter(u=>!(u&&typeof u==="object"&&u.date===ds));
-    await window.DB.update("videos", id, {usageHistory:uh, totalUsed:Math.max(0,(v.totalUsed||0)-1)});
+    const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===ds);
+    for(const u of hits) await dbArrayDel("videos", id, "usageHistory", u, ()=>Promise.resolve());
+    if(!(window.DB&&window.DB.arrayDel)){   // 舊環境：退回整份寫回
+      await window.DB.update("videos", id, {usageHistory:(v.usageHistory||[]).filter(u=>!hits.includes(u))}); }
+    await dbBump("videos", id, "totalUsed", -Math.max(1,hits.length), ()=>
+      window.DB.update("videos", id, {totalUsed:Math.max(0,(v.totalUsed||0)-1)}));
     logA("移出重播排程 "+ds, vidTitle(v));
     await delay(140); toast("已移出這天的重播（影片保留）"); openDay(ds);
   }catch(e){ toast(e.message||"移出失敗",true); }
@@ -647,10 +676,12 @@ function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
 // 後台名單管理（限管理員・設定頁）
 function addContact(){ if(dbBlocked()) return; const v=(val("ct_name")||"").trim(); if(!v){ toast("請輸入窗口名稱",true); return; }
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===v)){ toast("已有相同窗口",true); return; }
-  cur.push(v); window.DB.setSettings({contacts:cur}).then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
+  dbArrayAdd("meta","settings","contacts",v,()=>window.DB.setSettings({contacts:cur.concat([v])}))
+    .then(()=>{ const i=document.getElementById('ct_name'); if(i)i.value=''; toast("已新增窗口「"+v+"」"); }).catch(()=>toast("新增失敗",true)); }
 function delContact(name){ if(dbBlocked()) return; if(!confirm("刪除對接窗口「"+name+"」？（不影響已建立的交辦）")) return;
   const cur=settingsContacts().filter(x=>String(x).trim()!==String(name).trim());
-  window.DB.setSettings({contacts:cur}).then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
+  dbArrayDel("meta","settings","contacts",name,()=>window.DB.setSettings({contacts:cur}))
+    .then(()=>toast("已刪除")).catch(()=>toast("刪除失敗",true)); }
 function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改對接窗口名稱：", name); if(input===null) return; const nn=input.trim();
   if(!nn||nn===name) return; const cur=settingsContacts(); const i=cur.findIndex(x=>String(x).trim()===String(name).trim()); if(i<0) return;
   if(cur.some((x,j)=>j!==i&&String(x).trim()===nn)){ toast("已有相同窗口",true); return; }
@@ -669,7 +700,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
-  const id="T"+Date.now().toString(36);
+  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }

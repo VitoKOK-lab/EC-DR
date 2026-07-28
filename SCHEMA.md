@@ -131,6 +131,12 @@
 ```
 > 某日的影片清單 = `schedule.slots` ∪「`videos` 中 `scheduledDate`=該日且已完成/已上片」（去重）。
 
+> **`slots` 一律用原子寫入（v72 起）**：新增用 `arrayUnion`、刪除用 `arrayRemove`（`window.DB.arrayAdd` / `arrayDel`），
+> 由伺服器直接加減陣列元素。**不可以再用「讀出整份 → 改 → 整份寫回」** ——
+> 兩個人同時排同一天，後寫的會把前一筆整份蓋掉，排片就這樣消失；
+> 刪除若用索引，別人同時新增／刪除會讓索引位移，變成刪到別人的排片。
+> 同理，`videos.usageHistory` 用 `arrayAdd`／`arrayDel`、`videos.totalUsed` 用 `bump`（`increment`）。
+
 ---
 
 ## 3. `users/{name}` — 成員

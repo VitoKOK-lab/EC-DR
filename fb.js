@@ -6,7 +6,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit }
+         getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit,
+         arrayUnion, arrayRemove, increment }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -72,6 +73,12 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     del:         (c, id)    => deleteDoc(doc(db, c, id)),
     scheduleSet: (date, o)  => setDoc(doc(db, "schedule", date), o),
     setSettings: (p)        => setDoc(doc(db, "meta", "settings"), p, { merge: true }),
+    // 多人同時操作的原子寫入：由伺服器直接加／減陣列元素與數字，
+    // 不用「讀出整份 → 改 → 整份寫回」，才不會兩個人同時做時互相蓋掉。
+    // 用 setDoc + merge，文件不存在時會自動建立（updateDoc 不會）。
+    arrayAdd:    (c, id, field, val) => setDoc(doc(db, c, id), { [field]: arrayUnion(val) },  { merge: true }),
+    arrayDel:    (c, id, field, val) => setDoc(doc(db, c, id), { [field]: arrayRemove(val) }, { merge: true }),
+    bump:        (c, id, field, n)   => setDoc(doc(db, c, id), { [field]: increment(n) },     { merge: true }),
   };
 
   signInAnonymously(auth).catch(e => { if (window.__authError) window.__authError(e.message); });
