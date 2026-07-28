@@ -43,7 +43,7 @@ ok("intl 批次新增 modal English", modalHTML.includes("Add raw footage") && m
 ok("intl language options say Malaysia", modalHTML.includes(">Malaysia<"));
 openVideoModal("S1", true);
 ok("intl 編輯視窗 English (labels+footer)", modalHTML.includes("Raw title") && modalHTML.includes("Save") && modalHTML.includes("Tags (multi-select)") && !modalHTML.includes("原始片名") && !modalHTML.includes("儲存修改"));
-ok("intl stage select English display, Chinese values", modalHTML.includes('value="待處理"') && modalHTML.includes(">To do<"));
+ok("intl 剪輯看不到階段下拉（只能用完成鍵）", !modalHTML.includes('<select id="e_stage"') && modalHTML.includes('id="e_stage"'));
 openVideoModal("S1", false);
 ok("intl 檢視視窗 English rows", modalHTML.includes("Video details") && modalHTML.includes("Post caption") && !modalHTML.includes("影片內容"));
 openDay(T0);

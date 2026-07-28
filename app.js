@@ -223,7 +223,16 @@ async function route(method, path, body){
       return;
     }
     if(action==="restore"){ await window.DB.update("videos",id,{deleted:false,deletedBy:"",deletedAt:""}); return; }
-    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso(); await window.DB.update("videos",id,patch); return; }
+    if(method==="PUT"){ const patch=Object.assign({}, body.video); delete patch.id; patch.updatedAt=nowIso();
+      // 從編輯視窗把階段改成「已完成／已上片」時，也要蓋上完成時間。
+      // 少了它，這支在「今日完成」「團隊看板」「剪片速度」通通算不到 —— 影片庫看得到，剪輯自己的清單卻沒有。
+      const nextStage = patch.stage!==undefined ? patch.stage : v.stage;
+      const nextFin   = patch.finishedAt!==undefined ? patch.finishedAt : v.finishedAt;
+      if(["已完成","已上片"].includes(nextStage) && !String(nextFin||"").trim()){
+        patch.finishedAt=nowIso();
+        if(v.claimedAt && patch.durationMin==null && v.durationMin==null) patch.durationMin=durationMin(v.claimedAt, patch.finishedAt);
+      }
+      await window.DB.update("videos",id,patch); return; }
     if(method==="DELETE"){
       if(action==="purge"){ await window.DB.del("videos",id); return; }                       // 永久刪除（管理員）
       await window.DB.update("videos",id,{deleted:true,deletedBy:user,deletedAt:nowIso()}); return;  // 軟刪除：進回收桶，可復原
@@ -1040,10 +1049,13 @@ function viewWork(){
   const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
   const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
   const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
-  const doneToday = (STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
-  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天剛完成的（保留在工作列，下班後才消失；隔天也不再出現）
-  const clockedOut = !!(myShift() && myShift().clockOut);
-  const myDoneToday = clockedOut ? [] : (STATE.videos||[]).filter(v=>v.editor===me && v.stage==="已完成" && String(v.finishedAt||"").slice(0,10)===today)
+  // 「這支是不是我的」：以剪輯人員為準；剪輯人員沒填時退回看認領人（避免完成後從自己的清單消失）
+  const isMine=(v)=> v.editor===me || (!v.editor && v.claimedBy===me);
+  const doneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
+  // 我的剪輯工作 = 進行中(剪輯中) ＋ 今天完成的
+  //   完成的用 isPublished（含「已上片」）：上片後階段會變成已上片，只認「已完成」會讓它整支消失。
+  //   隔天自然不再出現（靠 finishedAt 是今天）；按過下班也照樣看得到今天做了什麼。
+  const myDoneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && v.stage!=="剪輯中" && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const myWork = mine.concat(myDoneToday);
   const tasks = myTasks();
@@ -2285,7 +2297,11 @@ function openVideoModal(id, edit, fromWork){
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>${T("階段","Stage")}</label><select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select></div>
+      <div><label>${T("階段","Stage")}</label>
+        ${["boss","manager"].includes(currentRole())
+          ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
+          : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
+             <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
     </div>
     ${(!v.locale&&!v.channel)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
     <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
