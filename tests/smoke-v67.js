@@ -41,7 +41,7 @@ function reset(){
       N3:{id:"N3",kind:"notice",user:"小葵",date:YESTER,title:"昨天沒看到的通知",report:"",done:false,assignedBy:"HR小姐",ack:false,createdAt:YESTER+"T05:00:00"},
       // HR 通知：昨天發的，已收到 → 不再出現
       N4:{id:"N4",kind:"notice",user:"小葵",date:YESTER,title:"昨天已收到的通知",report:"",done:false,assignedBy:"HR小姐",ack:true,ackAt:YESTER+"T06:00:00",createdAt:YESTER+"T04:00:00"},
-      // 客服的通知
+      // 不剪片員工的通知
       N5:{id:"N5",kind:"notice",user:"小美",date:T0,title:"排休表記得填",report:"",done:false,assignedBy:"HR小姐",ack:false,createdAt:T0+"T02:00:00"},
     },
     videos:[] };
@@ -76,10 +76,10 @@ ok("交辦標籤是「主管交辦」", w.includes("主管交辦") && !w.include
 ok("交辦的收到也是小按鍵", w.includes(`onclick="ackTask('K1')"`) && !w.includes('style="width:100%" onclick="ackTask('));
 ok("提示文字不寫交辦人名字", w.includes("主管交辦・按「收到」開始執行") && !w.includes("Regina 交辦"));
 
-// ── 客服也收得到通知 ──
+// ── 不剪片的員工也收得到通知 ──
 reset(); as("小美","cs");
 let wc=viewWork();
-ok("客服工作頁有 HR 通知", wc.includes("HR 通知") && wc.includes("排休表記得填") && wc.includes(`ackTask('N5')`));
+ok("員工工作頁有 HR 通知", wc.includes("HR 通知") && wc.includes("排休表記得填") && wc.includes(`ackTask('N5')`));
 
 // ── 按收到 ──
 reset(); as("小葵","editor"); hookDB(); ackTask("N1");
