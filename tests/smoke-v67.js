@@ -74,7 +74,7 @@ ok("通知不會混進交辦卡", (()=>{ const seg=w.split("我的今日工作�
 // ── 主管交辦：名稱改了、收到也是小按鈕 ──
 ok("交辦標籤是「主管交辦」", w.includes("主管交辦") && !w.includes("老闆指派"));
 ok("交辦的收到也是小按鍵", w.includes(`onclick="ackTask('K1')"`) && !w.includes('style="width:100%" onclick="ackTask('));
-ok("提示文字改成主管", w.includes("主管 Regina 交辦") && !w.includes("老闆 Regina"));
+ok("提示文字不寫交辦人名字", w.includes("主管交辦・按「收到」開始執行") && !w.includes("Regina 交辦"));
 
 // ── 客服也收得到通知 ──
 reset(); as("小美","cs");

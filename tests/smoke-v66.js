@@ -119,7 +119,7 @@ reset(); as("小葵","editor");
 let t=viewTeam();
 ok("看板列出所有人（含客服）", ["小葵","Anna","小美","阿凱"].every(n=>t.includes(n)));
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));
-ok("看得到誰交辦的", t.includes("Regina 交辦"));
+ok("交辦標示為主管交辦（不寫誰）", t.includes("主管交辦") && !t.includes("Regina 交辦"));
 ok("看得到處理狀況", t.includes("處理狀況") && t.includes("已回覆 12 則"));
 ok("看得到還沒接收的", t.includes("還沒接收"));
 ok("看得到自己安排的項目", t.includes("自己安排") && t.includes("出貨對單"));
@@ -132,14 +132,14 @@ ok("純檢視：沒有輸入框", !t.includes("<input") && !t.includes("<select"
 // ── 海外看板全英文 ──
 reset(); as("Anna","intl");
 let te=viewTeam();
-ok("海外看板是英文", te.includes("Team Board") && te.includes("Tasks done") && te.includes("from Regina"));
+ok("海外看板是英文", te.includes("Team Board") && te.includes("Tasks done") && te.includes(">Assigned<"));
 ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.includes("交辦完成"));
 
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
 ok("人資只有一個分頁", myTabs().length===1 && myTabs()[0][0]==="team");
 let th=viewTeam();
-ok("人資看得到老闆交辦與處理狀況", th.includes("Regina 交辦") && th.includes("已回覆 12 則"));
+ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 
 // ── 渲染不炸 ──
 reset(); hookDB();
