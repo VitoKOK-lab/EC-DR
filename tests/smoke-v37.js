@@ -42,11 +42,11 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 // --- 分頁：二創區併入上班計畫 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let tabs=myTabs().map(t=>t[0]);
-ok("editor tabs = work/videos/cal only", JSON.stringify(tabs)===JSON.stringify(["work","videos","cal"]));
+ok("editor tabs = work/team/videos/cal", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
-ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["work","videos","cal"]));
-ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Work Plan","Library","Schedule"]));
+ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
+ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Work Plan","Team Board","Library","Schedule"]));
 
 // --- 全角色渲染 ---
 for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]]){

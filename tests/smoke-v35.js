@@ -49,10 +49,10 @@ let tabs=myTabs().map(t=>t[0]);
 ok("boss: single cal tab, no intlcal/shopeecal/mscal", tabs.includes("cal") && !tabs.includes("intlcal") && !tabs.includes("shopeecal") && !tabs.includes("mscal"));
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 tabs=myTabs().map(t=>t[0]);
-ok("editor: cal hub, zones integrated into work (v37)", JSON.stringify(tabs)===JSON.stringify(["work","videos","cal"]));
+ok("editor: cal hub, zones integrated into work (v37)", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
-ok("intl: same tab ids as editor (v37)", JSON.stringify(tabs)===JSON.stringify(["work","videos","cal"]));
+ok("intl: same tab ids as editor (v37)", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
 
 // --- 全角色全分頁渲染 ---
 for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]]){

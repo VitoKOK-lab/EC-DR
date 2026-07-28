@@ -22,11 +22,14 @@ eval(src);
 
 const T0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 STATE = {
-  users:[ {name:"Kai",role:"editor"}, {name:"Anna",role:"intl"} ],
+  users:[ {name:"Kai",role:"editor"}, {name:"Anna",role:"intl"}, {name:"Sara",role:"cs"} ],
   settings:{ dailyTarget:4, videoTags:["oldtag"], sources:["srcA"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"th",name:"acctTH"},{locale:"en",name:"acctEN"}],
     shopeeAccounts:["acctSHP"], msAccounts:["acctMS"], exchangeRates:{en:{code:"USD",rate:0.031,mult:1},th:{code:"THB",rate:1.1,mult:1},ms:{code:"MYR",rate:0.14,mult:1},shopee:{code:"TWD",rate:1,mult:1.2}} },
-  schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
+  schedule:{}, shifts:{ ["Kai__"+T0]:{id:"k",user:"Kai",date:T0,clockIn:T0+"T01:00:00",clockOut:""} },
+  tasks:{ K1:{id:"K1",user:"Kai",date:T0,title:"taskA",report:"note",done:false,assignedBy:"Regina",ack:true,createdAt:T0},
+          K2:{id:"K2",user:"Sara",date:T0,title:"taskB",report:"",done:false,createdAt:T0} },
+  logs:[], deletedVideos:[],
   videos:[
     {id:"S2",name:"SRC pub",rawName:"SRC pub",nameEn:"SRC pub EN",videoCopy:"copyZH",videoCopyEn:"copyEN",stage:"已上片",published:true,tags:["oldtag"],publishedLink:"http://x",driveFolder:"http://d",rawLink:"http://r",finishedAt:"2020-01-01T00:00:00Z",locale:"",channel:"",products:[{name:"prodA",price:"100",salePrice:"80"}],usageHistory:[],metrics:[]},
     {id:"E1",name:"EN shell",rawName:"SRC pub",stage:"待處理",locale:"en",sourceVideoId:"S2",account:"acctEN",createdBy:"Anna",scheduledDate:T0,usageHistory:[],tags:[],products:[],metrics:[]},
@@ -54,6 +57,7 @@ WORK_ZONE="shopee"; scanCJK("viewWork", viewWork());
 WORK_ZONE="en"; scanCJK("viewWork(zone en)", viewWork());
 VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
 scanCJK("viewVideos", viewVideos());
+scanCJK("viewTeam", viewTeam());
 ["tw","th","shopee","en","ms"].forEach(p=>{ CAL_PLAT=p; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT=""; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
   try{ scanCJK("viewCal:"+p, viewCal()); }catch(e){ issues.push("[炸] viewCal:"+p+" "+e.message); } });
 openIntlModal("E1"); scanCJK("openIntlModal", modalHTML);
@@ -69,6 +73,7 @@ localStorage.setItem("ecdr_user","Kai"); localStorage.setItem("ecdr_role","edito
 WORK_ZONE="shopee"; scanEN("viewWork", viewWork());
 WORK_ZONE="en"; scanEN("viewWork(zone en)", viewWork());
 scanEN("viewVideos", viewVideos());
+scanEN("viewTeam", viewTeam());
 ["tw","th","shopee","en","ms"].forEach(p=>{ CAL_PLAT=p; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT=""; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
   try{ scanEN("viewCal:"+p, viewCal()); }catch(e){ issues.push("[炸] viewCal:"+p+" "+e.message); } });
 openIntlModal("E1"); scanEN("openIntlModal", modalHTML);
