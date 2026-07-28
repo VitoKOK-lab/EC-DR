@@ -32,10 +32,10 @@ function reset(){
       {name:"管理員",role:"boss"} ],
     settings:{dailyTarget:4,videoTags:["舊片"],sources:["s"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2026-07-01"},
-    schedule:{}, logs:[], hrchecks:{}, shifts:{}, deletedVideos:[],
+    schedule:{}, logs:[], shifts:{}, deletedVideos:[],
     tasks:{ K1:{id:"K1",user:"小葵",date:T0,title:"回覆廠商",report:"已聯絡完成，等對方回覆",done:false,assignedBy:"Regina",ack:true,createdAt:T0} },
     videos:[] };
-  HR_TAB="pending"; HR_WHO=""; HR_YM=null; CUR_TAB=null; VIEW_AS=null;
+  CUR_TAB=null; VIEW_AS=null;
 }
 function as(u,r){ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); }
 function order(html, names){ return names.map(n=>html.indexOf(n)); }
@@ -85,11 +85,11 @@ ok("指派交辦下拉照順序分組", d.includes('label="一次創作"') && d.
 // ── 人資：看得到交辦，但不能操作 ──
 reset(); as("HR小姐","hr");
 h=viewHR();
-ok("HR 看得到團隊交辦與回報", h.includes("團隊交辦＆回報") && h.includes("回覆廠商") && h.includes("已聯絡完成"));
+ok("HR 看得到交辦與回報", h.includes("交辦完成") && h.includes("回覆廠商") && h.includes("已聯絡完成"));
 ok("HR 沒有交辦輸入框", !h.includes("flowAssign("));
 ok("HR 沒有審核按鈕", !h.includes("reviewVid("));
 ok("HR 沒有轉移/刪除交辦的操作", !h.includes("transferTask(") && !h.includes("delTask("));
-ok("HR 團隊區也照排序", ascending(order(h.split("團隊交辦")[1],["小葵","Edward","阿明","小華","Asmeer","Pakistan Team"])));
+ok("HR 的員工卡也照排序", ascending(order(h.split("今日成效")[1],["小葵","Edward","阿明","小華","Asmeer","Pakistan Team"])));
 
 // ── Regina 仍然可以交辦 ──
 reset(); as("Regina","manager");

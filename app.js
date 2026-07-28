@@ -11,7 +11,7 @@ const ROLE_TABS = {
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["videos","Library"],["cal","Schedule"]],
-  hr:      [["hr","工作審查"],["dashboard","儀表板"]],   // 人資：審查每支片的實際產出（雲端檔案＋封面＋文案）＋看 KPI
+  hr:      [["hr","員工成效"]],   // 人資：只看每個人的「今日成效」與「本月成效」，純檢視、沒有任何按鍵
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -1416,137 +1416,94 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 }
 
 // ===================================================================
-// 人資（HR）：每月工作計畫與每日工作確認
-// 只做「審視紀錄」不做審核流程 —— 每一天分兩區：
-//   ① 系統自動紀錄（客觀）：上下班、當日完成影片＋審片狀態、進行中、被退回
-//   ② 同仁自填的工作項目（主觀）：沿用「上班計畫」裡本來就在填的項目，不用重複輸入
-// 兩層確認：逐筆「已看過」→ 全部看完才可按「本日工作已全數確認」
-// 資料沿用既有集合：tasks 加 hrSeenBy/hrSeenAt、shifts 加 hrConfirmedBy/hrConfirmedAt
+// 人資（HR）：只看成效，不做任何操作
+// 畫面只有兩塊 —— ①每個人的「今日成效」 ②每個人的「本月成效」
+// 純檢視：沒有按鍵、沒有連結、不寫任何資料，剪輯那邊完全不受影響
 // ===================================================================
-let HR_YM=null;            // 目前檢視的年月 [y,m]；null＝不限月份
-let HR_TAB="pending";      // pending＝等待審查、done＝已完成
-let HR_WHO="";             // 篩選同仁（空＝全部）
-function hrStaff(){ return staffNamesSorted(["editor","intl"]); }
-// 人資的檢查紀錄放在自己的 hrchecks 集合（不寫進影片、不影響剪輯流程）
-// {id:videoId, count, lastBy, lastAt, history:[{by,at,stage}]}
-function hrCheck(id){ return (STATE&&STATE.hrchecks&&STATE.hrchecks[id])||null; }
-function hrChecked(v){ return !!hrCheck(v&&v.id); }
-// 重工偵測：幫人資標出「這支是不是又送一次／被退回重做」
-function hrRework(v){
-  const c=hrCheck(v.id); const flags=[];
-  if(c && c.count>1) flags.push(`人資已檢查過 ${c.count} 次`);
-  if(c && needsReview(v)) flags.push("檢查過後又出現在待審查");
-  if(v.reviewStatus==="退回" || (v.reviewNote||"").trim()) flags.push("曾被退回重修");
-  if(v.stage==="剪輯中" && v.finishedAt) flags.push("完成後又回到剪輯中");
-  return flags;
+// 某人「今天」的成效：出勤、今日完成、進行中、交辦完成
+function hrDayStat(name, allTasks){
+  const s=(STATE.shifts||{})[shiftId(name,today)];
+  const done=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
+  const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===name||v.editor===name)&&v.stage==="剪輯中");
+  const tasks=allTasks.filter(t=>t&&t.user===name&&t.date===today);
+  const workMin=(s&&s.clockIn)?durationMin(s.clockIn, s.clockOut||nowIso()):null;
+  return {s, done, wip, tasks, workMin};
 }
-function hrMonthMove(n){ if(!HR_YM) return; let [y,m]=HR_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} HR_YM=[y,m]; render(); }
-function hrSetTab(t){ HR_TAB=t; render(); }
-function hrSetWho(n){ HR_WHO=n||""; render(); }
-function hrToggleMonth(){ if(HR_YM) HR_YM=null; else { const t=new Date(Date.now()+288e5); HR_YM=[t.getFullYear(), t.getMonth()]; } render(); }
-// 兩份清單：①等待審查（剪完還沒審） ②已完成（審過或已上片）
-function hrVideoList(tab){
-  const all=(STATE.videos||[]).filter(v=>!v.deleted);
-  let list = tab==="pending" ? all.filter(needsReview)
-    : all.filter(v=>(v.stage==="已上片"||(v.stage==="已完成"&&v.reviewStatus==="通過")));
-  if(HR_WHO) list=list.filter(v=>(v.editor||v.claimedBy)===HR_WHO);
-  if(HR_YM){ const [y,m]=HR_YM; const pre=`${y}-${String(m+1).padStart(2,"0")}`;
-    list=list.filter(v=>String(v.finishedAt||v.updatedAt||"").slice(0,7)===pre); }
-  return list.sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
+// 某人「某個月」的成效：完成量、剪片速度、平均工時、帶商品、出勤天數、交辦完成
+function hrMonthStat(name, allTasks, ym){
+  const fin=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,7)===ym);
+  const days=fin.map(editDays).filter(x=>x!=null);
+  const mins=fin.map(v=>v.durationMin).filter(x=>typeof x==="number");
+  const tasks=allTasks.filter(t=>t&&t.user===name&&String(t.date||"").slice(0,7)===ym);
+  return {
+    count: fin.length,
+    avgDays: days.length?(days.reduce((a,b)=>a+b,0)/days.length):null,
+    avgMin: mins.length?Math.round(mins.reduce((a,b)=>a+b,0)/mins.length):null,
+    sales: fin.filter(v=>(v.productUrl||"").trim()||(Array.isArray(v.products)&&v.products.some(p=>p&&p.name))).length,
+    att: Object.values(STATE.shifts||{}).filter(s=>s&&s.user===name&&String(s.date||"").slice(0,7)===ym&&s.clockIn).length,
+    tDone: tasks.filter(t=>t.done).length,
+    tAll: tasks.length,
+  };
+}
+// 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
+function hrDayCard(u, allTasks){
+  const name=u.name, minLabel=dashMin, hm=dashHM;
+  const {s, done, wip, tasks, workMin}=hrDayStat(name, allTasks);
+  const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・工時 ${minLabel(workMin)}`:"今天還沒上線";
+  const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:center;min-width:0">
+      <span class="pill ${cls}" style="font-size:10px;flex:none">${label}</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></div>`).join(""):"";
+  const taskRows=tasks.map(t=>`<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;gap:6px;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;font-weight:600;min-width:0">${esc(t.title)}</span>
+        <span style="flex:none">${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill wa" style="font-size:10px">未完成</span>'}</span></div>
+      ${(t.report||"").trim()?`<div class="muted" style="font-size:12px;margin-top:3px">回報：${esc(t.report)}</div>`:(t.done?"":'<div class="muted" style="font-size:12px;margin-top:3px">（還沒回報）</div>')}
+    </div>`).join("");
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:15px">${esc(name)}${u.role==="intl"?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':''}</b>
+      ${dashStatusPill(s)}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">上班 ${att}</div>
+    <div class="mstat">
+      <div><div class="n ${done.length?'':'muted'}">${done.length}</div><div class="l">今日完成</div></div>
+      <div><div class="n ${wip.length?'':'muted'}">${wip.length}</div><div class="l">進行中</div></div>
+      <div><div class="n ${tasks.length&&tasks.filter(t=>t.done).length<tasks.length?'warn':''} ${tasks.length?'':'muted'}">${tasks.filter(t=>t.done).length}/${tasks.length}</div><div class="l">交辦完成</div></div>
+    </div>
+    ${list(done,"完成","ok")}${list(wip.slice(0,4),"剪輯中","wa")}
+    ${taskRows||'<p class="muted" style="font-size:12px;margin:8px 0 0">今天沒有交辦事項</p>'}
+  </div>`;
 }
 function viewHR(){
-  // 一次算好重複用（原本每次重繪要掃 5 遍影片庫）
-  const pend=hrVideoList("pending"), done=hrVideoList("done");
-  const list = HR_TAB==="pending" ? pend : done;
-  const nPend=pend.length, nDone=done.length;
-  const rows=list.map(v=>({v, c:hrCheck(v.id), flags:hrRework(v)}));
-  const nChecked=rows.filter(r=>r.c).length, nFlag=rows.filter(r=>r.flags.length).length;
-  const staff=hrStaff();
-  const row=({v, c, flags})=>{
-    const done=!!c;
-    const who=esc(v.editor||v.claimedBy||"—");
-    const fin=String(v.finishedAt||"").slice(0,10);
-    const st=dispStage(v)==="待審核" ? '<span class="pill wa" style="font-size:10px">待審核</span>'
-      : (v.reviewStatus==="通過" ? '<span class="pill ok" style="font-size:10px">已審過</span>'
-      : (v.reviewStatus==="退回" ? '<span class="pill em" style="font-size:10px">被退回</span>'
-      : `<span class="pill" style="font-size:10px">${esc(stageLabel(dispStage(v)))}</span>`));
-    const links=[v.driveFolder?'<span class="muted" style="font-size:11px">存檔✓</span>':'',
-                 v.publishedLink?'<span class="muted" style="font-size:11px">上傳✓</span>':''].filter(Boolean).join(" ");
-    return `<div class="card" style="padding:12px 14px;margin-bottom:8px;${flags.length?'border-color:var(--red)':(done?'background:var(--greenbg);border-color:var(--green)':'')}">
-      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-        <div style="min-width:0;flex:1">
-          <a href="javascript:void(0)" onclick="openVideoModal('${v.id}',false)" style="font-weight:700;font-size:15px">${esc(vidTitle(v))}</a>
-          <div class="muted" style="font-size:12px;margin-top:3px">${who}${fin?("・完成 "+esc(fin)):""} ${st} ${links}</div>
-          ${done?`<div style="font-size:12px;margin-top:4px;color:var(--green);font-weight:700">✓ 你已檢查（${esc(String(c.lastAt||"").slice(5,16).replace("T"," "))}${c.count>1?`・第 ${c.count} 次`:''}）</div>`:''}
-          ${flags.length?`<div style="font-size:12px;margin-top:4px;color:var(--red);font-weight:700">⚠ 重工提醒：${flags.map(esc).join("、")}</div>`:''}
-        </div>
-        <div class="row" style="gap:6px;flex:none;flex-wrap:wrap">
-          ${v.driveFolder?`<a class="btn sec sm" href="${esc(v.driveFolder)}" target="_blank" rel="noopener" title="開雲端資料夾：看影片檔與封面檔">☁ 雲端檔案</a>`:'<span class="muted" style="font-size:11px;align-self:center">未填雲端連結</span>'}
-          <button class="btn sec sm" onclick="openVideoModal('${v.id}',false)">看文案</button>
-          <button class="btn ${done?'sec':''} sm" onclick="hrCheckVideo('${v.id}')">${done?"再記一次":"✓ 檢查完成"}</button>
-          ${done?`<button class="btn sec sm" onclick="hrClearCheck('${v.id}')" title="清掉我的檢查紀錄">✕</button>`:''}
-        </div>
-      </div></div>`; };
-  const tabs=`<div class="vtabs">
-    <button class="vtab ${HR_TAB==="pending"?"on":""}" onclick="hrSetTab('pending')">等待審查 <span class="vtab-n">${nPend}</span></button>
-    <button class="vtab ${HR_TAB==="done"?"on":""}" onclick="hrSetTab('done')">已完成 <span class="vtab-n">${nDone}</span></button>
-  </div>`;
-  const filters=`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px">
-    <select onchange="hrSetWho(this.value)" style="width:auto;min-width:130px">
-      <option value="">全部同仁</option>${staff.map(n=>`<option ${HR_WHO===n?'selected':''}>${esc(n)}</option>`).join("")}</select>
-    <button class="btn sec sm" onclick="hrToggleMonth()">${HR_YM?"看全部月份":"只看某個月"}</button>
-    ${HR_YM?`<span class="row" style="gap:6px;align-items:center">
-      <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="hrMonthMove(-1)">‹</button>
-      <b style="font-size:14px">${HR_YM[0]} 年 ${HR_YM[1]+1} 月</b>
-      <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="hrMonthMove(1)">›</button></span>`:''}
-    <span class="pill ${nChecked===list.length&&list.length?'ok':'wa'}">已檢查 ${nChecked}/${list.length}</span>
-    ${nFlag?`<span class="pill em">⚠ 重工提醒 ${nFlag}</span>`:''}
-  </div>`;
-  return `<h2>工作審查 <span class="muted" style="font-size:13px">你自己的檢查紀錄（不會動到影片、不影響剪輯）</span></h2>
-  <div class="card" style="background:var(--panel2);border-color:var(--gold)">
-    <b style="font-size:15px">審查重點</b>
-    <div style="font-size:13px;line-height:1.9;margin-top:6px">
-      <b style="color:var(--gold-dk)">1.</b> 點「<b>☁ 雲端檔案</b>」開備份資料夾 → 裡面要有<b>影片檔</b>和<b>封面檔</b>，兩個都要在。<br>
-      <b style="color:var(--gold-dk)">2.</b> 打開影片看一遍，順便確認<b>封面</b>做得對不對。<br>
-      <b style="color:var(--gold-dk)">3.</b> 點「<b>看文案</b>」把<b>貼文文案與口播文案</b>都看過。<br>
-      <b style="color:var(--gold-dk)">4.</b> 三項都看完，再按「<b>✓ 檢查完成</b>」記錄下來。
-    </div>
-  </div>
-  ${tabs}${filters}
-  <p class="muted" style="font-size:12px;margin:0 0 10px">${HR_TAB==="pending"
-    ? "剪輯完成、還在等審的片。點片名看內容，看完按「✓ 檢查完成」記錄下來。"
-    : "已經審過或已上片的成品。"}　這只是<b>你自己的紀錄</b>，不會改到影片，剪輯那邊完全不受影響。${nFlag?`<b style="color:var(--red)">目前有 ${nFlag} 支標了重工提醒。</b>`:""}</p>
-  ${rows.map(row).join("")||'<div class="card muted">這個條件下沒有影片</div>'}
-  ${hrTeamTasksSection()}`;
-}
-// 人資也看得到每位同仁的交辦狀況與回報 —— 只能看，不能交辦、不能審查
-function hrTeamTasksSection(){
   const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
-  if(!staff.length) return "";
-  return `<h3 style="margin:30px 0 6px">團隊交辦＆回報 <span class="muted" style="font-size:13px;font-weight:400">今天的狀況（唯讀）</span></h3>
-  <p class="muted" style="font-size:12px;margin:0 0 12px">看得到大家今天在做什麼、交辦有沒有回報；交辦與審查由經理人負責，這裡不能操作。</p>
-  ${staff.map((u,i)=>flowStaffCard(u, i, allTasks, true)).join("")}`;
-}
-// 人資按「檢查完成」：只寫自己的 hrchecks，不動影片。再按一次＝累計次數（看得出重覆送）
-function hrCheckVideo(id){
-  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
-  const v=vid(id)||{}; const c=hrCheck(id);
-  const n=(c&&+c.count||0)+1;
-  if(n>1 && !confirm(`「${vidTitle(v)}」你先前已經檢查過 ${c.count} 次。\n要再記錄一次嗎？（會標成重工提醒）`)) return;
-  const hist=((c&&c.history)||[]).concat([{by:currentUser(), at:nowIso(), stage:dispStage(v)}]).slice(-20);
-  window.DB.set("hrchecks", id, {id, count:n, lastBy:currentUser(), lastAt:nowIso(), title:vidTitle(v), history:hist})
-    .then(()=>{ logA(n>1?("人資再次檢查（第 "+n+" 次）"):"人資檢查完成", vidTitle(v)); toast(n>1?("已記錄第 "+n+" 次檢查"):"已記錄檢查完成"); })
-    .catch(()=>toast("更新失敗，請稍後再試",true));
-}
-// 清掉自己的檢查紀錄（純個人紀錄，隨時可刪）
-function hrClearCheck(id){
-  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
-  const v=vid(id)||{};
-  if(!confirm(`清掉「${vidTitle(v)}」的檢查紀錄？（只是你自己的紀錄，不影響影片）`)) return;
-  window.DB.del("hrchecks", id)
-    .then(()=>{ logA("人資清除檢查紀錄", vidTitle(v)); toast("已清除"); })
-    .catch(()=>toast("刪除失敗，請稍後再試",true));
+  const ym=today.slice(0,7), minLabel=dashMin;
+  if(!staff.length) return `<h2>員工成效</h2><div class="card muted">還沒有剪輯人員</div>`;
+  const months=staff.map(u=>({u, m:hrMonthStat(u.name, allTasks, ym)}));
+  const dayDone=staff.reduce((a,u)=>a+hrDayStat(u.name, allTasks).done.length,0);
+  const dayOn=staff.filter(u=>{ const s=(STATE.shifts||{})[shiftId(u.name,today)]; return s&&s.clockIn; }).length;
+  const monDone=months.reduce((a,x)=>a+x.m.count,0);
+  const rows=months.map(({u,m})=>`<tr>
+    <td data-label="剪輯"><b>${esc(u.name)}</b>${u.role==="intl"?' <span class="muted" style="font-size:11px">海外</span>':''}</td>
+    <td data-label="完成上架">${m.count}</td>
+    <td data-label="剪片速度">${m.avgDays!=null?m.avgDays.toFixed(1)+" 天":"—"}</td>
+    <td data-label="平均工時">${minLabel(m.avgMin)}</td>
+    <td data-label="帶商品">${m.sales}</td>
+    <td data-label="出勤天數">${m.att}</td>
+    <td data-label="交辦完成">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
+  return `<h2>員工成效 <span class="muted" style="font-size:13px">只看不用操作，這裡不會動到任何資料</span></h2>
+  <div class="focusbar">
+    <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">今日出勤</span></div>
+    <div><span class="fn">${dayDone}</span><span class="fl">今日完成</span></div>
+    <div><span class="fn">${monDone}</span><span class="fl">本月完成</span></div>
+  </div>
+  <h3 style="margin:18px 0 10px">今日成效 <span class="muted" style="font-size:13px;font-weight:400">${today}（${weekdayZh(today)}）</span></h3>
+  ${staff.map(u=>hrDayCard(u, allTasks)).join("")}
+  <h3 style="margin:24px 0 10px">本月成效 <span class="muted" style="font-size:13px;font-weight:400">${+ym.slice(0,4)} 年 ${+ym.slice(5,7)} 月</span></h3>
+  <div class="card">
+    <table class="responsive"><thead><tr><th>剪輯</th><th>完成上架</th><th>剪片速度</th><th>平均工時</th><th>帶商品</th><th>出勤天數</th><th>交辦完成</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:8px">剪片速度＝從認領到完成的平均天數；平均工時＝每支片實際花的時間；帶商品＝有掛寵粉商品的片。</div>
+  </div>`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){

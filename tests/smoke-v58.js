@@ -28,7 +28,7 @@ function reset(){
   STATE={ users:[{name:"小葵",role:"editor"},{name:"阿明",role:"editor"},{name:"Regina",role:"manager"}],
     settings:{dailyTarget:4,videoTags:["舊片"],sources:["s"],postPlatforms:[],intlAccounts:[],shopeeAccounts:[],msAccounts:[],
       exchangeRates:{},contacts:["廠商A"],reviewSince:"2026-07-01"},
-    schedule:{}, logs:[], deletedVideos:[], hrchecks:{},
+    schedule:{}, logs:[], deletedVideos:[],
     tasks:{ K1:{id:"K1",user:"小葵",date:T0,title:"回覆廠商",report:"已經完成聯絡並回報後續會追蹤",done:false,assignedBy:"Regina",ack:false,createdAt:T0} },
     shifts:{}, videos:[
       {id:"V1",name:"某片",rawName:"某片",stage:"已完成",editor:"小葵",finishedAt:T0+"T05:00:00",reviewStatus:"",
@@ -53,8 +53,6 @@ const ACTIONS=[
   ["收回指派",      ()=>unassignEditor("小葵")],
   ["審片通過",      ()=>reviewVid("V1","通過")],
   ["改作業步驟",    ()=>setWorkStep("V1",2)],
-  ["人資記錄",      ()=>hrCheckVideo("V1")],
-  ["人資清紀錄",    ()=>hrClearCheck("V1")],
   ["自建工作項目",  ()=>{ fields.wp_newtask="自己的事"; createTask(); }],
   ["常用項目",      ()=>addPresetTask("影片清單整理")],
   ["新增窗口",      ()=>{ fields.ct_name="新窗口"; addContact(); }],
@@ -94,7 +92,6 @@ async function logsOf(fn){ reset();
     ["刪除交辦", ()=>delTask("K1"), "刪除交辦"],
     ["收到交辦", ()=>ackTask("K1"), "收到交辦"],
     ["交辦完成", ()=>{ STATE.tasks.K1.ack=true; taskDone("K1",true); }, "交辦工作標記完成"],
-    ["人資記錄", ()=>hrCheckVideo("V1"), "人資檢查"],
   ];
   let logged=0;
   for(const [name,fn,kw] of LOGGED){ const ls=await logsOf(fn);

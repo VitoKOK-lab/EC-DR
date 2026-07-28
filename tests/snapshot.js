@@ -22,6 +22,9 @@ global.window = { addEventListener(){}, innerWidth:1200, innerHeight:800, scroll
 global.requestAnimationFrame=(f)=>f();
 global.navigator = { onLine:true };
 global.confirm = ()=>true; global.prompt = ()=>null;
+// 凍結時間：快照才不會因為「今天是哪天」每天跑出不同結果（台灣時間 2026-07-20 12:00）
+const FROZEN = Date.parse("2026-07-20T04:00:00Z");
+Date.now = () => FROZEN;
 eval(src);
 
 // ── 固定測試資料（含各線各狀態，盡量把畫面每個分支都踩到）──
@@ -45,7 +48,6 @@ STATE = {
           T4:{id:"T4",user:"小葵",date:D,title:"影片清單整理",contact:"",report:"清單已重新排序完成",done:true,assignedBy:"",ack:true,createdAt:D+"T04:00:00",hrSeenBy:"HR小姐",hrSeenAt:D+"T18:00:00"} },
   shifts:{ ["小葵__"+D]:{id:"a",user:"小葵",date:D,clockIn:D+"T01:00:00Z",clockOut:""},
            ["阿明__"+D]:{id:"b",user:"阿明",date:D,clockIn:D+"T01:00:00Z",clockOut:D+"T10:00:00Z"} },
-  hrchecks:{ W5:{id:"W5",count:2,lastBy:"HR小姐",lastAt:D+"T20:00:00",title:"人資已記錄過的片",history:[{by:"HR小姐",at:D+"T19:00:00",stage:"已完成"},{by:"HR小姐",at:D+"T20:00:00",stage:"已上片"}]} },
   logs:[{id:"L1",at:D+"T05:00:00",user:"小葵",role:"editor",action:"已新增影片",target:"某片"}],
   deletedVideos:[{id:"X1",name:"被刪的片",rawName:"被刪的片",deleted:true,deletedBy:"小葵",deletedAt:D+"T06:00:00",tags:[],products:[],usageHistory:[],metrics:[]}],
   videos:[
@@ -92,7 +94,7 @@ const out = {};
 function snap(key, fn){ try{ out[key] = String(fn()); }catch(e){ out[key] = "THREW: " + e.message; } }
 function as(user, role){ localStorage.setItem("ecdr_user", user); localStorage.setItem("ecdr_role", role); }
 function resetUI(){ CAL_PLAT="tw"; CAL_YM=[2026,6]; INTL_CAL_YM=[2026,6]; INTL_ACCT="";
-  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}}; HR_YM=null; HR_TAB="pending"; HR_WHO="";
+  CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}};
   WORK_ZONE="shopee"; POOL_FILTER="all"; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
   VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; }
 
@@ -106,7 +108,6 @@ for (const [user, role] of ROLES) {
   for (const [name, fn] of Object.entries(VIEWS)) { resetUI(); snap(`${role}/${name}`, fn); }
   // 月排程五個平台
   for (const p of ["tw","th","shopee","en","ms"]) { resetUI(); CAL_PLAT=p; snap(`${role}/cal:${p}`, ()=>viewCal()); }
-  for (const t of ["pending","done"]) { resetUI(); HR_TAB=t; snap(`${role}/hr:${t}`, ()=>viewHR()); }
   // 二創區四個分頁
   for (const z of ["shopee","ms","en","th"]) { resetUI(); WORK_ZONE=z; snap(`${role}/zone:${z}`, ()=>createZoneCard()); }
   // 待認領六種篩選
@@ -120,8 +121,7 @@ for (const [user, role] of ROLES) {
                    thModal:()=>openIntlModal("T1v"), chShopee:()=>openChModal("shopee","P1"),
                    chMs:()=>openChModal("ms","M1"), day:()=>openDay(D), dayIntl:()=>{ INTL_ACCT="tiktok-EN"; openDayIntl(D); },
                    dayCh:()=>{ CH_CAL.shopee.acct="蝦皮店A"; openDayCh("shopee",D); },
-                   newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage(),
-                   hrChecked:()=>openVideoModal("W5",false) };
+                   newVideo:()=>newSimpleVideo(), batch:()=>batchNewFootage() };
   for (const [name, open] of Object.entries(MODALS)) { resetUI(); modalHTML=""; try{ open(); }catch(e){ modalHTML="THREW: "+e.message; } out[`${role}/modal:${name}`]=modalHTML; }
 }
 
