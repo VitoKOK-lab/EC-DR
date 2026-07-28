@@ -3,7 +3,7 @@
 // 角色：管理員（Vito）＋ 剪輯。已移除：交辦、KPI、日報、稽核、二創、商品庫。
 // 資料層走 Firestore（fb.js 提供 window.DB）；商業邏輯都在前端。
 // ===================================================================
-const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯", cs:"客服", hr:"人資"};
+const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯", cs:"員工", hr:"人資"};
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
@@ -12,7 +12,7 @@ const ROLE_TABS = {
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
-  cs:      [["work","本日工作"],["team","團隊看板"]],   // 客服：只做交辦工作與每日匯報，不碰影片
+  cs:      [["work","本日工作"],["team","團隊看板"]],   // 員工（不剪片）：只做交辦工作與每日匯報，沒有一創二創之分
   hr:      [["team","團隊看板"]],   // 人資：只看團隊看板（交辦狀況＋今日／本月成效），純檢視、沒有任何按鍵
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
@@ -254,10 +254,10 @@ function bootLogin(){
   const section=(title, list)=>{ if(!list.length) return;
     const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
     list.forEach(u=>g.appendChild(mkBtn(u))); };
-  // 分區順序：Taiwan（剪輯）→ 海外版 → 客服 → 人資 → 管理層（Regina 放最下面，靠近「管理員登入」）
+  // 分區順序：Taiwan（剪輯）→ 員工 → 海外版 → 人資 → 管理層（Regina 放最下面，靠近「管理員登入」）
   section("Taiwan", all.filter(u=>(u.role||"editor")==="editor"));
+  section("員工", all.filter(u=>u.role==="cs"));
   section("海外版", all.filter(u=>u.role==="intl"));
-  section("客服", all.filter(u=>u.role==="cs"));
   section("人資", all.filter(u=>u.role==="hr"));
   section("管理層", all.filter(u=>u.role==="manager"));
 }
@@ -876,11 +876,11 @@ function workTasksCard(tasks){
 // 員工顯示順序（所有清單共用）：一次創作 → 兩種都做 → 二次創作／海外；同組內中文名在前、英文名在後
 function staffRank(u){
   const role = u.role||"editor";
-  const c = role==="editor" ? (u.craft||"orig") : (role==="intl" ? "derived" : "other");
-  const byCraft = c==="orig" ? 0 : (c==="both" ? 1 : (c==="derived" ? 2 : 3));
-  const byIntl  = u.role==="intl" ? 1 : 0;              // 海外一律再往後
+  // 一次創作 → 兩種都做 → 二次創作 → 員工（不剪片） → 海外（一律排最後）
+  const byCraft = role==="intl" ? 5 : (role==="cs" ? 4
+    : (role==="editor" ? ((u.craft||"orig")==="orig" ? 0 : ((u.craft||"orig")==="both" ? 1 : 2)) : 3));
   const byName  = /^[A-Za-z]/.test(String(u.name||"")) ? 1 : 0;   // 英文名字排後面
-  return [byCraft, byIntl, byName];
+  return [byCraft, 0, byName];
 }
 function staffSorted(list){
   return (list||[]).slice().sort((a,b)=>{
@@ -897,9 +897,9 @@ function staffOptGroups(roles){
     ["一次創作", u=>isEd(u) && (u.craft||"orig")==="orig"],
     ["二次創作", u=>isEd(u) && (u.craft||"orig")==="derived"],
     ["兩種都做", u=>isEd(u) && (u.craft||"orig")==="both"],
+    ["員工",     u=>u.role==="cs"],
     ["海外剪輯", u=>u.role==="intl"],
     ["經理人",   u=>u.role==="manager"],
-    ["客服",     u=>u.role==="cs"],
     ["人資",     u=>u.role==="hr"],
   ];
   const used=new Set();
@@ -931,7 +931,7 @@ function isDerived(v){ return !!(v && (v.locale||v.channel)); }
 // 已封存：二創版本上片後就完成任務，不用再佔清單版面（資料仍留在資料庫）
 function isArchived(v){ return isDerived(v) && (v.stage==="已上片" || (v.stage==="已完成" && String(v.publishedLink||"").trim())); }
 // 上班計畫：自動帶出製作中影片（標天數）＋ 交辦工作 ＋ 下班匯報
-// 客服的本日工作：只有交辦工作與每日匯報，完全不碰影片
+// 不剪片的員工：本日工作只有交辦工作與每日匯報，完全不碰影片
 function viewWorkCS(me){
   const tasks=myTasks();
   const nDone=tasks.filter(t=>t.done).length;
@@ -1193,7 +1193,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       </div>`; }).join("");
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':(isCS?' <span class="muted" style="font-size:11px;font-weight:400">客服</span>':'')}</b>${dot}</div>
+        <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':(isCS?' <span class="muted" style="font-size:11px;font-weight:400">員工</span>':'')}</b>${dot}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
         ${isCS?'':`<span class="pill ${wip.length?'wa':''}" style="font-size:11px">進行中 ${wip.length}</span>
         <span class="pill ${done.length?'ok':''}" style="font-size:11px">今日完成 ${done.length}</span>
@@ -1558,7 +1558,7 @@ function teamDayCard(u, allTasks){
   const nDone=tasks.filter(t=>t.done).length;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Support":(u.role==="intl"?"Intl":"Editor"))}</span></b>
+      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="intl"?"Intl":"Editor"))}</span></b>
       ${dashStatusPill(s)}</div>
     <div class="muted" style="font-size:12px;margin-top:2px">${T("上班","Shift")} ${att}</div>
     <div class="mstat">
@@ -1593,7 +1593,6 @@ function teamNoticeCompose(staff){
     </div>`; }).join("");
   return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">📣 發出 HR 通知</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">通知會出現在對方的工作頁最上面，他按一下「收到」就好；這不是交辦，不用回報、不算他的交辦成效。</div>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
       <select id="hrn_who" style="width:auto;min-width:140px">
         <option value="__all__">全體同仁</option>
@@ -1617,7 +1616,7 @@ function viewTeam(){
   const dayTaskDone=dayStats.reduce((a,d)=>a+d.tasks.filter(t=>t.done).length,0);
   const monDone=months.reduce((a,x)=>a+x.m.count,0);
   const rows=months.map(({u,m})=>`<tr>
-    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Support":(u.role==="intl"?"Intl":"Editor"))}</span></td>
+    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="intl"?"Intl":"Editor"))}</span></td>
     <td data-label="${T("完成上架","Published")}">${u.role==="cs"?"—":m.count}</td>
     <td data-label="${T("剪片速度","Days/clip")}">${u.role==="cs"?"—":(m.avgDays!=null?m.avgDays.toFixed(1)+T(" 天"," d"):"—")}</td>
     <td data-label="${T("平均工時","Avg time")}">${u.role==="cs"?"—":minLabel(m.avgMin)}</td>
@@ -1633,12 +1632,12 @@ function viewTeam(){
     <div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>
   </div>
   <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
-  ${staff.map(u=>teamDayCard(u, allTasks)).join("")}
+  <div class="teamgrid">${staff.map(u=>teamDayCard(u, allTasks)).join("")}</div>
   <h3 style="margin:24px 0 10px">${T("本月成效","This month")} <span class="muted" style="font-size:13px;font-weight:400">${T(+ym.slice(0,4)+" 年 "+(+ym.slice(5,7))+" 月", ym)}</span></h3>
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th><th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th><th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:8px">${T("剪片速度＝從認領到完成的平均天數；平均工時＝每支片實際花的時間；帶商品＝有掛寵粉商品的片。客服不剪片，只看出勤與交辦。","Days/clip = average days from claim to finish; Avg time = actual time per clip; With product = clips carrying a product. Support staff show attendance and tasks only.")}</div>
+    <div class="muted" style="font-size:12px;margin-top:8px">${T("剪片速度＝從認領到完成的平均天數；平均工時＝每支片實際花的時間；帶商品＝有掛寵粉商品的片。不剪片的員工只看出勤與交辦。","Days/clip = average days from claim to finish; Avg time = actual time per clip; With product = clips carrying a product. Non-editing staff show attendance and tasks only.")}</div>
   </div>`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
@@ -2936,11 +2935,11 @@ function setChannelCards(s){
 // 設定：成員名單（角色、改名、重設密碼、刪除）
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>客服</b>＝只做交辦工作與每日匯報，不碰影片；<b>人資</b>＝只看團隊看板，不能操作。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>員工</b>＝只做交辦工作與每日匯報，不碰影片、沒有一創二創之分；<b>人資</b>＝只看團隊看板，不能操作。</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>負責</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
-      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="cs">客服</option><option value="hr">人資</option></select>
+      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="cs">員工</option><option value="hr">人資</option></select>
       <select id="mb_craft" style="width:auto" title="剪輯才需要分工">${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>`;
@@ -2963,13 +2962,14 @@ function viewSettings(){
       <option value="editor" ${(u.role||"editor")==="editor"?"selected":""}>剪輯</option>
       <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option>
       <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option>
-      <option value="cs" ${u.role==="cs"?"selected":""}>客服</option>
+      <option value="cs" ${u.role==="cs"?"selected":""}>員工</option>
       <option value="hr" ${u.role==="hr"?"selected":""}>人資</option></select>`;
   // 剪輯才需要分工；管理員/經理人/人資固定看全部
   const craftSel=(u)=> ["editor","intl"].includes(u.role||"editor")
     ? `<select onchange="setMemberCraft('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
         ${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}" ${craftOf(u.name)===k?"selected":""}>${l}</option>`).join("")}</select>`
-    : '<span class="muted" style="font-size:12px">全部</span>';
+    : (u.role==="cs" ? '<span class="muted" style="font-size:12px">不剪片</span>'
+                     : '<span class="muted" style="font-size:12px">全部</span>');
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label="角色">${roleSel(u)}</td>
