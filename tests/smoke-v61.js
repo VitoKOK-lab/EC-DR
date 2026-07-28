@@ -35,7 +35,7 @@ function reset(){
     settings:{dailyTarget:4,videoTags:["舊片"],sources:["s"],postPlatforms:[],
       intlAccounts:[{locale:"en",name:"acctEN"}],shopeeAccounts:["蝦皮店A"],msAccounts:["馬來A"],
       exchangeRates:{},reviewSince:"2026-07-01"},
-    schedule:{}, logs:[], hrchecks:{}, tasks:{}, shifts:{}, deletedVideos:[],
+    schedule:{}, logs:[], tasks:{}, shifts:{}, deletedVideos:[],
     videos:[
       // 一創：毛片＋已上片可拿來二創的源片
       {id:"R1",name:"待剪毛片",rawName:"待剪毛片",stage:"待處理",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},

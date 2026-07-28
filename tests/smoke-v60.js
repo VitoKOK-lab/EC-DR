@@ -28,7 +28,7 @@ function reset(){
   STATE={ users:[{name:"小葵",role:"editor"},{name:"阿明",role:"editor"}],
     settings:{dailyTarget:4,videoTags:["舊片","寵粉"],sources:["老闆自拍"],postPlatforms:[{name:"IG",utm:"ig"}],
       intlAccounts:[],shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2026-07-01"},
-    schedule:{}, logs:[], hrchecks:{}, tasks:{}, shifts:{},
+    schedule:{}, logs:[], tasks:{}, shifts:{},
     deletedVideos:[{id:"X1",name:"被刪的片",rawName:"被刪的片",deleted:true,deletedBy:"小葵",deletedAt:T0,tags:[],products:[],usageHistory:[],metrics:[]}],
     videos:[
       {id:"V1",code:"001",name:"某片",rawName:"原始名",videoCopy:"文案",stage:"剪輯中",editor:"小葵",claimedBy:"小葵",
