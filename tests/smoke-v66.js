@@ -76,7 +76,7 @@ reset(); as("小美","cs");
 ok("員工分頁＝本日工作＋團隊看板", JSON.stringify(myTabs())===JSON.stringify([["work","本日工作"],["team","團隊看板"]]));
 let w=viewWork();
 ok("員工畫面沒有毛片／影片區", !w.includes("待認領") && !w.includes("待剪") && !w.includes("我的剪輯工作") && !w.includes("建立二創"));
-ok("員工有自己的工作計畫卡", w.includes("我的今日工作計畫") && !w.includes("剪輯以外"));
+ok("員工有今天要做的事清單", w.includes("今天要做的事") && !w.includes("剪輯以外"));
 ok("員工的常用項目是客服類的", w.includes("回覆客戶訊息") && w.includes("退換貨處理") && !w.includes("剪輯當日影片"));
 ok("員工看得到交辦內容", w.includes("回覆客戶訊息") && w.includes("出貨對單"));
 ok("未接收的交辦要先按收到", w.includes("新交辦還沒看") && w.includes("ackTask('C3')"));
@@ -137,7 +137,7 @@ ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.incl
 
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
-ok("人資只有一個分頁", myTabs().length===1 && myTabs()[0][0]==="team");
+ok("人資分頁＝團隊看板＋出勤", myTabs().length===2 && myTabs()[0][0]==="team" && myTabs()[1][0]==="attend");
 let th=viewTeam();
 ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 

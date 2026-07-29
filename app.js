@@ -7,13 +7,13 @@ const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","本日工作"],["team","團隊看板"]],   // 員工（不剪片）：只做交辦工作與每日匯報，沒有一創二創之分
-  hr:      [["team","團隊看板"]],   // 人資：只看團隊看板（交辦狀況＋今日／本月成效），純檢視、沒有任何按鍵
+  hr:      [["team","團隊看板"],["attend","出勤"]],   // 人資：團隊看板（交辦狀況＋成效）＋出勤（打卡、遲到早退、月報表）
 };
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
@@ -46,14 +46,20 @@ function toast(msg, isErr){
 }
 
 // ---------- ID / 影片預設記錄 ----------
+// 文件編號產生器：時間戳（跨裝置不同）＋同一頁的遞增序號（同毫秒連按也不同）＋亂數（跨裝置保險）
+let UID_SEQ=0;
+function uid(prefix){
+  UID_SEQ=(UID_SEQ+1)%1296;
+  return prefix + Date.now().toString(36)
+       + UID_SEQ.toString(36).padStart(2,"0")
+       + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
+}
 // 影片文件 ID：一定要「跨裝置不會撞號」。
 // 舊版是掃自己這台看到的最大編號 +1 → 兩個人幾乎同時新增會算出同一個 ID，
 // 後寫的那筆會整份覆蓋前一筆（Firestore set），先建的影片就這樣無聲消失。
 // 也會撞到回收桶裡（已軟刪除、不在 STATE.videos）的舊編號。
 // 改成 時間戳(base36) + 亂數，各自產生、永不重複。
-function newVideoId(){
-  return "V" + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
-}
+function newVideoId(){ return uid("V"); }
 // 人看的編號：民國年＋月日（7 碼）＋當日序號（3 碼）。含回收桶一起掃，才不會重覆。
 function nextVideoCode(seen){
   const [Y,M,D]=today.split("-");
@@ -142,7 +148,7 @@ function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean);
   if(seg[1]==="settings") return "系統設定";
   return path||""; }
 function logA(action, target){
-  try{ if(!window.DB) return; const id="L"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+  try{ if(!window.DB) return; const id=uid("L");
     window.DB.set("logs", id, {id, at:nowIso(), user:currentUser()||"(未登入)", role:currentRole()||"",
       action:String(action||"").slice(0,80), target:String(target||"").slice(0,200)}).catch(()=>{});
   }catch(e){}
@@ -170,12 +176,15 @@ async function route(method, path, body){
     if(method==="POST"){ const name=(body.name||"").trim(), role=body.role||"editor";
       if(!name) throw new Error("請輸入名稱");
       if((STATE.users||[]).some(u=>u.name===name)) throw new Error("名稱已存在");
-      const rec={name, role, isDefault:false, pw:"0000"};
+      const rec={name, role, isDefault:false, pw:"0000", pwSet:false};   // 第一次登入會被要求自己設密碼
       if(body.craft!=null) rec.craft=body.craft;                  // 剪輯分工：一次創作／二次創作／兩種
       if(body.intlLocale!=null) rec.intlLocale=body.intlLocale;   // 海外剪輯：帳號綁定語言（en/th/ms）
       await window.DB.set("users", name, rec); return; }
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
       if(body.intlLocale!=null) patch.intlLocale=body.intlLocale;
+      if(body.pwSet!=null) patch.pwSet=!!body.pwSet;
+      if(body.workStart!=null) patch.workStart=String(body.workStart);
+      if(body.workEnd!=null) patch.workEnd=String(body.workEnd);
       await window.DB.update("users", seg[1], patch); return; }
     if(method==="DELETE"){ await window.DB.del("users", seg[1]); return; }
   }
@@ -274,7 +283,7 @@ function exitViewAs(){ VIEW_AS=null; CUR_TAB=null; buildNav(); applyState(LAST_R
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
-  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "E-Commerce Dept" : "電商部";   // 海外看英文標題
+  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "E-Commerce Workspace" : "電商部協作系統";   // 海外看英文標題
   const nav = document.getElementById("nav"); nav.innerHTML="";
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
@@ -293,8 +302,28 @@ function closeHeaderMenu(){
   const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
   pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
+// 這台電腦上次是誰登入的 —— 記起來，下次只要按「直接登入」，不用在一堆名字裡找自己
+let LOGIN_ALL=false;
+function lastUserHere(){ return localStorage.getItem("ecdr_last")||""; }
+function loginSwitchAccount(){ LOGIN_ALL=true; bootLogin(); }
+function loginQuick(){ const n=lastUserHere();
+  const u=((STATE?.users)||[]).find(x=>x.name===n); if(u) loginAs(u); else loginSwitchAccount(); }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
+  // 這台裝置上次登入過的人：只顯示他一個，按「直接登入」再輸入密碼
+  const lastName=lastUserHere();
+  const lastU=lastName? ((STATE?.users)||[]).find(x=>x.name===lastName) : null;
+  if(lastU && !LOGIN_ALL){
+    const wrap=document.createElement("div"); wrap.className="quickLogin";
+    const who=document.createElement("div"); who.className="qlName"; who.textContent=lastU.name;
+    const role=document.createElement("div"); role.className="qlRole"; role.textContent=ROLE_LABEL[lastU.role||"editor"]||"";
+    const go=document.createElement("button"); go.className="btn qlGo"; go.textContent="直接登入";
+    go.onclick=()=>loginAs(lastU);
+    const sw=document.createElement("button"); sw.className="adminLink qlSwitch"; sw.textContent="不是我，切換帳號";
+    sw.onclick=loginSwitchAccount;
+    wrap.appendChild(who); wrap.appendChild(role); wrap.appendChild(go); wrap.appendChild(sw);
+    g.appendChild(wrap); return;
+  }
   const all=staffSorted(((STATE?.users)||[]).filter(u=>["editor","manager","intl","cs","hr"].includes(u.role||"editor")));   // 一創→兩種→二創，英文名在後
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
@@ -309,11 +338,20 @@ function bootLogin(){
   section("人資", all.filter(u=>u.role==="hr"));
   section("管理層", all.filter(u=>u.role==="manager"));
 }
+// 上下班要用公司電腦打卡：一般員工不給手機登入（經理人／人資／管理員不受限，他們要能隨時處理事情）
+function pcOnlyOn(){ const s=(STATE&&STATE.settings)||{}; return s.pcOnly!==false; }
+function blockedOnMobile(role){ return pcOnlyOn() && isMobileUA() && !["manager","hr","boss"].includes(role||"editor"); }
 function loginAs(u){
+  if(blockedOnMobile(u.role)){
+    alert("請用公司電腦登入。\n\n上下班打卡要在公司電腦上進行，手機不能登入。\n（如有特殊需要請找管理員）");
+    return; }
   const want=String(u.pw==null?"0000":u.pw);
   const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
   if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
-  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null; clockIn(u.name); logA("登入","上班打卡"); applyState(LAST_RAW); }
+  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor");
+  localStorage.setItem("ecdr_last", u.name);   // 這台裝置下次直接顯示他
+  CUR_TAB=null; LOGIN_ALL=false;
+  clockIn(u.name); autoCloseOpenShifts(); logA("登入","上班打卡"); applyState(LAST_RAW); }
 // 員工自行修改密碼（需先輸入舊密碼）
 async function changeMyPw(){
   const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
@@ -326,13 +364,18 @@ async function changeMyPw(){
   const np=String(n1).trim(); if(np.length<4){ toast(T("新密碼至少 4 碼","New password needs at least 4 characters"),true); return; }
   const n2=prompt(T("請再輸入一次新密碼：","Repeat the new password:")); if(n2===null) return;
   if(String(n2).trim()!==np){ toast(T("兩次輸入不一致，請重來","Passwords don't match, try again"),true); return; }
-  await write("PUT","/api/users/"+me,{pw:np},T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
+  await write("PUT","/api/users/"+me,{pw:np,pwSet:true},T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 async function clockIn(name){
   try{ const id=shiftId(name,today); const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
     if(ex&&ex.clockIn) return;   // 已打過上班卡
-    await window.DB.set("shifts", id, {id, user:name, date:today, clockIn:nowIso(), clockOut:""});
+    const env=punchEnv(); const isNew=!isKnownDevice(name, env.dev);
+    await window.DB.set("shifts", id, {id, user:name, date:today, clockIn:nowIso(), clockOut:"",
+      inDev:env.dev, inDevUA:env.ua, inMobile:env.mobile, inNewDev:isNew, inGeo:null, autoOut:false});
+    rememberDevice(name, env);
+    // GPS 是選配：拿到再補寫，拿不到或使用者不給權限都不影響打卡
+    grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {inGeo:g}).catch(()=>{}); });
   }catch(e){}
 }
 function myShift(){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(currentUser(),today)])||null; }
@@ -420,9 +463,39 @@ function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<sp
 // ===================================================================
 // （每頁自動說明卡已於 PR #33 移除，改用頂列「新手教學」hover 模式；此處不再保留死程式）
 let LAST_RENDER_TAB=null;
+// 還在用預設密碼（或從沒自己設過）→ 進系統前一定要先改，改完才能用
+function mustSetPw(){
+  if(VIEW_AS || isOwner()) return false;
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===realUser());
+  if(!u) return false;
+  if(u.pwSet===false) return true;                       // 管理員剛重設 → 下次登入要自己再設一次
+  return String(u.pw==null?"0000":u.pw)==="0000";        // 還在用預設密碼（含完全沒設過）
+}
+function pwGateHTML(){
+  return `<div class="card" style="max-width:460px;margin:40px auto;border-color:var(--gold)">
+    <b style="font-size:18px">請先設定你自己的密碼</b>
+    <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
+      目前用的是預設密碼 <b>0000</b>，每個人都看得到。<br>設定一組只有你知道的密碼之後才能開始使用。</div>
+    <label style="margin-top:14px">新密碼（至少 4 碼）</label>
+    <input id="pwg1" type="password" autocomplete="new-password" placeholder="輸入新密碼">
+    <label style="margin-top:10px">再輸入一次</label>
+    <input id="pwg2" type="password" autocomplete="new-password" placeholder="再輸入一次" onkeydown="if(event.key==='Enter')savePwGate()">
+    <button class="btn" style="width:100%;margin-top:14px;font-size:16px;padding:12px" onclick="savePwGate()">設定密碼並開始使用</button>
+    <div class="muted" style="font-size:12px;margin-top:10px">忘記密碼時，請管理員到「設定 → 成員」幫你重設。</div>
+  </div>`;
+}
+async function savePwGate(){
+  const a=(val("pwg1")||"").trim(), b=(val("pwg2")||"").trim();
+  if(a.length<4){ toast("新密碼至少 4 碼",true); return; }
+  if(a==="0000"){ toast("不能沿用預設密碼 0000",true); return; }
+  if(a!==b){ toast("兩次輸入不一致，請重來",true); return; }
+  const okDone=await write("PUT","/api/users/"+realUser(),{pw:a,pwSet:true},"密碼已設定，開始使用吧");
+  if(okDone){ applyState(LAST_RAW); }
+}
 function render(){
   if(!STATE) return;
   const v = document.getElementById("view");
+  if(mustSetPw()){ v.classList.remove("anim"); v.innerHTML=pwGateHTML(); LAST_RENDER_TAB="__pw"; return; }
   // 同一頁重繪（新增/編輯/同步）時保留捲動位置，不跳回頂端；切換分頁則回到頂端
   const same=(LAST_RENDER_TAB===CUR_TAB);
   const sy=same?window.scrollY:0;
@@ -432,7 +505,7 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
@@ -712,7 +785,7 @@ const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理"
 function workPresets(){ return currentRole()==="cs" ? CS_PRESETS : WORK_PRESETS; }
 async function addPresetTask(title){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title, contact:"", report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()}); }
   catch(e){ toast("新增失敗，請稍後再試",true); }
 }
@@ -720,16 +793,18 @@ async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
-  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
+  const when=(val("wp_date")||"").slice(0,10) || today;      // 可以排到之後的日期，那天才會出現在待辦
+  const id=uid("T");
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:(when<today?today:when), title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
+    if(when>today) toast(isIntl?("Scheduled for "+when):("已排到 "+when+"，那天會出現在你的待辦"));
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
 async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
@@ -738,12 +813,12 @@ async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"
 async function hrNotify(){ if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
   if(!txt){ toast("請輸入通知內容",true); return; }
-  const ALL={"__all__":["editor","intl","cs"], "__editor__":["editor"], "__cs__":["cs"], "__intl__":["intl"]};
+  const ALL={"__all__":["editor","intl","cs","hr"], "__editor__":["editor"], "__cs__":["cs"], "__intl__":["intl"], "__hr__":["hr"]};
   const targets = ALL[who] ? staffNamesSorted(ALL[who]) : (who?[who]:[]);
   if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
   try{
     for(const name of targets){
-      const id="N"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36)+targets.indexOf(name);
+      const id=uid("N");
       await window.DB.set("tasks", id, {id, kind:"notice", user:name, date:today, title:txt, contact:"", report:"",
         done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     }
@@ -892,6 +967,95 @@ function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>`;
 }
+// 折疊區塊：次要的東西收進來，點了才展開
+function fold(title, count, body, open){
+  if(!body) return "";
+  return `<details class="fold" ${open?"open":""}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
+    <div class="foldbody">${body}</div></details>`;
+}
+// 我排在未來的工作（到那天才會進今日待辦）
+function myFutureTasks(){ return Object.values((STATE&&STATE.tasks)||{})
+  .filter(t=>t && !isNotice(t) && t.user===currentUser() && String(t.date||"")>today)
+  .sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
+function taskSetDate(id, d){ if(!d) return; const t=taskById(id);
+  dbUpdate("tasks", id, {date:String(d).slice(0,10)}, {action:"改工作日期", target:(t&&t.title)||id}); }
+// 今日待辦的一列
+function todoRow(kind, title, sub, actions, doneCls){
+  return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
+    <div class="tmain"><div class="ttitle">${title}</div>${sub?`<div class="tsub">${sub}</div>`:""}</div>
+    <div class="tact">${actions||""}</div></div>`;
+}
+// ── 今天要做的事：把通知、交辦、自己排的工作、手上的影片合成一條清單 ──
+function todayListCard(tasks, myWork, workBtn, undoBtn){
+  const rows=[];
+  // ① HR 通知（只要按收到）
+  const notices=myNotices();
+  notices.forEach(n=>rows.push(todoRow("📣", esc(n.title),
+    `${T("HR 通知","HR notice")}・${esc(String(n.date||"").slice(5))}`
+    + `<input id="nr_${n.id}" value="${esc(n.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+         onchange="noticeReply('${n.id}',this.value)" placeholder="${T("想回覆什麼可以寫在這裡（選填）…","Reply here (optional)…")}">`,
+    n.ack? `<span class="pill ok" style="font-size:10px">${T("已收到","Received")} ${String(n.ackAt||"").slice(11,16)}</span>`
+         : `<button class="btn sm" style="padding:4px 14px" onclick="ackTask('${n.id}')">${T("收到","Got it")}</button>`,
+    n.ack)));
+  // ② 交辦與自己排的工作
+  tasks.forEach(t=>{
+    const assigned=!!t.assignedBy, needAck=assigned&&!t.ack;
+    const can=(t.report||'').trim().length>=12;
+    const sub=[assigned?T("主管交辦","Assigned"):T("自己排的","Self"),
+               t.contact?T("窗口 ","Contact ")+esc(t.contact):""].filter(Boolean).join("・");
+    const act = needAck
+      ? `<button class="btn sm" style="padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`
+      : `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:${t.done?'var(--green)':'var(--amber)'}">
+           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'}
+             onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('完成','Done'):T('未完成','Open')}</label>
+         ${assigned?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}`;
+    const note = needAck ? "" :
+      `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+         oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
+         onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
+    const ttl=esc(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
+    rows.push(todoRow(assigned?"📌":"•", ttl, sub+note, act, t.done));
+  });
+  // ③ 手上的影片
+  myWork.forEach(v=>{
+    const days=v.stage==="剪輯中"?dayBadge(v):"";
+    rows.push(todoRow("🎬",
+      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${enSubLine(v)}`,
+      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(v.source||"")].filter(Boolean).join("・"),
+      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
+  });
+  const nOpen=rows.filter(r=>!r.includes("todo done")).length;
+  const presets=currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0 6px">
+      <span class="muted" style="font-size:12px;align-self:center">常用：</span>
+      ${workPresets().map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`;
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">${T("今天要做的事","Today")}</b>
+      ${notices.filter(n=>!n.ack).length?`<span class="pill em">📣 ${T(notices.filter(n=>!n.ack).length+" 則未讀", notices.filter(n=>!n.ack).length+" unread")}</span>`:""}
+      <span class="pill ${nOpen?'wa':'ok'}">${nOpen?T("還有 "+nOpen+" 件","„"+nOpen+" left").replace("„","")+"":T("都做完了 ✓","All done ✓")}</span></div>
+    <div style="margin-top:6px">${rows.join("")||`<div class="emptyState"><span class="es-mk">✦</span>${T("今天沒有待辦，可以到下面認領工作","Nothing today — claim something below")}</div>`}</div>
+    ${presets}
+    <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+      <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(event.key==='Enter')createTask()">
+      <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}
+      <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
+      <button class="btn sm" style="flex:none" onclick="createTask()">＋ ${T("加入","Add")}</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
+  </div>`;
+}
+// ── 之後要做（折疊）──
+function futureTasksBody(){
+  const list=myFutureTasks(); if(!list.length) return "";
+  return list.map(t=>`<div class="todo">
+    <span class="tkind">🗓</span>
+    <div class="tmain"><div class="ttitle">${esc(t.title)}</div>
+      <div class="tsub">${esc(String(t.date).slice(5))}（${weekdayZh(t.date)}）${t.assignedBy?"・"+T("主管交辦","Assigned"):""}</div></div>
+    <div class="tact">
+      <input type="date" value="${esc(t.date)}" min="${today}" style="width:auto;padding:4px 6px;font-size:12px" onchange="taskSetDate('${t.id}',this.value)">
+      ${t.assignedBy?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}
+    </div></div>`).join("");
+}
 // 上班計畫：HR 通知卡 —— 只需要按一顆小小的「收到」，不用回報、不算交辦成效
 function workNoticeCard(notices){
   if(!notices.length) return "";
@@ -946,8 +1110,8 @@ function workTasksCard(tasks){
 function staffRank(u){
   const role = u.role||"editor";
   // 一次創作 → 兩種都做 → 二次創作 → 員工（不剪片） → 海外（一律排最後）
-  const byCraft = role==="intl" ? 5 : (role==="cs" ? 4
-    : (role==="editor" ? ((u.craft||"orig")==="orig" ? 0 : ((u.craft||"orig")==="both" ? 1 : 2)) : 3));
+  const byCraft = role==="hr" ? 6 : (role==="intl" ? 5 : (role==="cs" ? 4
+    : (role==="editor" ? ((u.craft||"orig")==="orig" ? 0 : ((u.craft||"orig")==="both" ? 1 : 2)) : 3)));
   const byName  = /^[A-Za-z]/.test(String(u.name||"")) ? 1 : 0;   // 英文名字排後面
   return [byCraft, 0, byName];
 }
@@ -983,9 +1147,10 @@ const STAFF_GROUPS=[
   ["editor", "剪輯",     "Editors"],
   ["cs",     "員工",     "Staff"],
   ["intl",   "海外剪輯", "Intl editors"],
+  ["hr",     "人資",     "HR"],           // 人資自己的出勤與工作也要被記錄（由管理員考核）
 ];
 function staffByGroup(list){
-  const pool = staffSorted(list || (STATE.users||[]).filter(u=>["editor","intl","cs"].includes(u.role||"editor")));
+  const pool = staffSorted(list || (STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
   return STAFF_GROUPS.map(([role,zh,en])=>({role, zh, en, people:pool.filter(u=>(u.role||"editor")===role)}))
     .filter(g=>g.people.length);
 }
@@ -1017,6 +1182,7 @@ function viewWorkCS(me){
   const nDone=tasks.filter(t=>t.done).length;
   const nAck=tasks.filter(t=>t.assignedBy&&!t.ack).length;
   const nNoReport=tasks.filter(t=>!t.done&&!(t.report||"").trim()).length;
+  const nFuture=myFutureTasks().length;
   return `
   <h2>本日工作（${esc(me)}）</h2>
   <div class="focusbar">
@@ -1024,11 +1190,11 @@ function viewWorkCS(me){
     <div><span class="fn ${nAck?'warn':''}">${nAck}</span><span class="fl">待接收</span></div>
     <div><span class="fn ${nNoReport?'warn':''}">${nNoReport}</span><span class="fl">未回報</span></div>
   </div>
-  ${workNoticeCard(myNotices())}
-  ${workTasksCard(tasks)}
+  ${workIssueCard()}
+  ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${fold("之後要做", nFuture, futureTasksBody())}
   <div class="card" style="text-align:center">
-    <span class="pill ${tasks.length&&nDone===tasks.length?'ok':'wa'}">交辦完成 ${nDone}/${tasks.length}</span>
-    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
 }
 function viewWork(){
@@ -1089,28 +1255,27 @@ function viewWork(){
     <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
   </div>`;
+  const nFuture=myFutureTasks().length;
   return `
-  <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
+  <h2>${T("本日工作","Today's Work")}（${esc(me)}）</h2>
   ${focusBar}
-  ${workNoticeCard(myNotices())}
+  ${workIssueCard()}
   ${rejCard}
 
-  <div class="workgrid">
+  ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
-  ${workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit)}
-
-  ${workMineCard(myWork, inProg, atLimit, workBtn, undoBtn)}
-
-  ${workTasksCard(tasks)}
+  ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
+  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit))}
+  ${doesDerived()?fold(T("建立二創版本","Create a version"), null, createZoneCard()):''}
+  ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
+      ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
+          <div class="ttitle">${esc(vidTitle(v))}</div>
+          <div class="tsub">${T("完成","Done")} ${esc(String(v.finishedAt||"").slice(11,16))}・${T("剪 ","")}${editDaysLabel(v)||"-"} ${T("天","d")}</div></div></div>`).join("")
+      : "")}
 
   <div class="card" style="text-align:center">
-    <span class="pill ok">${T("今日已完成上架","Done today")} ${doneToday.length}</span>
-    <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">${T("交辦完成","Tasks")} ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
-    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
-  </div>
-
-  </div>
-  ${doesDerived()?createZoneCard():''}`
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
+  </div>`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
@@ -1161,9 +1326,287 @@ function clockOutReport(){
   showModal(T("下班匯報","Clock-out report"), body, async ()=>{ await doClockOut(); closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true; }, T("確認下班","Confirm clock-out"));
 }
 async function doClockOut(){
-  const id=shiftId(currentUser(),today);
-  try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso()});
-       else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso()}); }catch(e){}
+  const id=shiftId(currentUser(),today); const env=punchEnv();
+  try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
+       else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
+         inDev:env.dev,inDevUA:env.ua,inMobile:env.mobile,outDev:env.dev,outDevUA:env.ua,outMobile:env.mobile,autoOut:false});
+    rememberDevice(currentUser(), env);
+    grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {outGeo:g}).catch(()=>{}); });
+  }catch(e){}
+}
+// ===================================================================
+// 出勤：班表設定、打卡環境記錄、遲到早退計算、月報表
+// 打卡「只記錄不擋」—— 記下裝置、是不是手機、GPS 座標與離公司多遠，
+// 報表上標出異常，由人資自己判斷。沒有任何一種網頁打卡擋得住有心作弊。
+// ===================================================================
+const DEF_WORK={start:"09:00", end:"18:00", grace:10};
+// 這台裝置的代碼：同一台裝置幫好幾個人打卡時，報表上看得出來
+function deviceId(){
+  let d=localStorage.getItem("ecdr_dev");
+  if(!d){ d=Math.random().toString(36).slice(2,8).toUpperCase(); localStorage.setItem("ecdr_dev",d); }
+  return d;
+}
+function isMobileUA(){ return /Mobi|Android|iPhone|iPad|iPod/i.test((navigator&&navigator.userAgent)||""); }
+// 裝置摘要：作業系統＋瀏覽器。裝置代碼存在瀏覽器裡，清快取就會變；
+// 這串摘要不會變，人資對照時看得出「還是同一台 Windows 的 Chrome」還是真的換機器了。
+function devUA(){
+  const u=(navigator&&navigator.userAgent)||"";
+  const os = /Windows/i.test(u)?"Windows" : /Mac OS X|Macintosh/i.test(u)?"Mac" : /iPhone|iPad|iPod/i.test(u)?"iPhone/iPad"
+           : /Android/i.test(u)?"Android" : /Linux/i.test(u)?"Linux" : "其他";
+  const br = /Edg\//i.test(u)?"Edge" : /OPR\//i.test(u)?"Opera" : /Chrome\//i.test(u)?"Chrome"
+           : /Firefox\//i.test(u)?"Firefox" : /Safari\//i.test(u)?"Safari" : "其他";
+  return os+"・"+br;
+}
+// 這台裝置是不是這個人用過的？沒有就是「陌生裝置」
+function knownDevices(name){
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===name)||{};
+  return Array.isArray(u.devices)?u.devices:[];
+}
+function isKnownDevice(name, id){ return knownDevices(name).some(d=>d&&d.id===id); }
+// 第一次看到的裝置就自動記起來（不用核准；人資在出勤頁會看到「換了新裝置」的提醒）
+function rememberDevice(name, env){
+  if(!window.DB || isKnownDevice(name, env.dev)) return Promise.resolve(false);
+  const rec={id:env.dev, ua:env.ua, mobile:env.mobile, firstAt:nowIso()};
+  return dbArrayAdd("users", name, "devices", rec, ()=>{
+    const cur=knownDevices(name).concat([rec]);
+    return window.DB.update("users", name, {devices:cur});
+  }).then(()=>true).catch(()=>false);
+}
+// 全公司一套班表，個人可以有例外
+function workHoursOf(name){
+  const s=(STATE&&STATE.settings)||{};
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===name)||{};
+  return { start: u.workStart || s.workStart || DEF_WORK.start,
+           end:   u.workEnd   || s.workEnd   || DEF_WORK.end,
+           grace: (s.lateGraceMin!=null? +s.lateGraceMin : DEF_WORK.grace),
+           custom: !!(u.workStart||u.workEnd) };
+}
+function hhmmToMin(t){ const m=String(t||"").match(/^(\d{1,2}):(\d{2})/); return m? (+m[1]*60 + +m[2]) : null; }
+function minToHm(m){ if(m==null) return "—"; const s=m<0?"-":""; m=Math.abs(m); return s+(Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"; }
+// 兩點距離（公尺）
+function distM(a,b){
+  if(!a||!b||a.lat==null||b.lat==null) return null;
+  const R=6371000, r=x=>x*Math.PI/180;
+  const dLat=r(b.lat-a.lat), dLng=r(b.lng-a.lng);
+  const h=Math.sin(dLat/2)**2 + Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLng/2)**2;
+  return Math.round(2*R*Math.asin(Math.sqrt(h)));
+}
+// 取 GPS：拿不到就算了，絕不擋住打卡
+function grabGeo(){
+  return new Promise(res=>{
+    if(!navigator.geolocation) return res(null);
+    let done=false; const fin=(v)=>{ if(!done){ done=true; res(v); } };
+    setTimeout(()=>fin(null), 6000);
+    try{ navigator.geolocation.getCurrentPosition(
+      p=>fin({lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy||0)}),
+      ()=>fin(null), {enableHighAccuracy:false, timeout:5500, maximumAge:60000}); }catch(e){ fin(null); }
+  });
+}
+// 打卡時記下的環境
+function punchEnv(){ return {dev:deviceId(), ua:devUA(), mobile:isMobileUA()}; }
+// 一筆班次的出勤判讀
+function attendOf(sh){
+  if(!sh||!sh.clockIn) return {in:null,out:null,work:null,late:0,early:0,none:true};
+  const wh=workHoursOf(sh.user);
+  const inMin=hhmmToMin(String(sh.clockIn).slice(11,16));
+  const outMin=sh.clockOut? hhmmToMin(String(sh.clockOut).slice(11,16)) : null;
+  const sMin=hhmmToMin(wh.start), eMin=hhmmToMin(wh.end);
+  const late=(inMin!=null&&sMin!=null)? Math.max(0, inMin-sMin-wh.grace) : 0;
+  const early=(outMin!=null&&eMin!=null)? Math.max(0, eMin-outMin) : 0;
+  const work=(inMin!=null&&outMin!=null)? Math.max(0,outMin-inMin) : null;
+  return {in:sh.clockIn, out:sh.clockOut||"", work, late, early, none:false,
+          auto:!!sh.autoOut, dev:sh.inDev||"", devUA:sh.inDevUA||"", mobile:!!sh.inMobile,
+          newDev:!!sh.inNewDev, geo:sh.inGeo||null};
+}
+// 打卡地點離公司多遠（沒設公司座標就不算）
+function officeDist(geo){
+  const o=(STATE&&STATE.settings&&STATE.settings.officeGeo)||null;
+  if(!o||o.lat==null||!geo) return null;
+  return distM(geo,o);
+}
+// 昨天以前忘了打下班的，登入時自動補起來（標記為系統補登，報表上看得出來）
+async function autoCloseOpenShifts(){
+  if(VIEW_AS || !window.DB) return;
+  const me=currentUser(); if(!me) return;
+  const open=Object.values((STATE&&STATE.shifts)||{})
+    .filter(s=>s&&s.user===me&&s.clockIn&&!s.clockOut&&String(s.date||"")<today);
+  for(const s of open){
+    const wh=workHoursOf(me);
+    try{ await window.DB.update("shifts", s.id, {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}); }catch(e){}
+  }
+}
+// 出勤異常＝遲到或早退（系統補下班也算，因為當天沒打下班）
+function attIssues(sh){
+  const a=attendOf(sh); const out=[];
+  if(a.none) return out;
+  if(a.late>0) out.push("遲到 "+a.late+" 分");
+  if(a.early>0) out.push("早退 "+a.early+" 分");
+  if(a.auto) out.push("忘了打下班（系統補登）");
+  return out;
+}
+function myIssueShifts(){
+  const me=currentUser();
+  return Object.values((STATE&&STATE.shifts)||{})
+    .filter(s=>s&&s.user===me&&attIssues(s).length&&!String(s.issueNote||"").trim())
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,7);
+}
+// 員工填異常原因 → 直接寫在那天的打卡紀錄上，人資在出勤頁看得到
+function saveIssueNote(id){
+  const v=(val("isn_"+id)||"").trim();
+  if(v.length<2){ toast("請簡單說明原因",true); return; }
+  dbUpdate("shifts", id, {issueNote:v, issueAt:nowIso()}, {action:"填寫出勤異常原因", target:id});
+}
+// 工作頁最上面的異常提醒卡（有未說明的異常才出現）
+function workIssueCard(){
+  const list=myIssueShifts(); if(!list.length) return "";
+  return `<div class="card" style="border-color:var(--red)">
+    <b style="font-size:16px;color:var(--red)">⚠ ${T("出勤異常待說明","Attendance to explain")}（${list.length}）</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">${T("填一下原因，人資才知道怎麼處理。","Write the reason so HR knows how to handle it.")}</div>
+    ${list.map(s=>`<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)">
+      <div style="font-size:13.5px;font-weight:600">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）・${esc(attIssues(s).join("、"))}</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">${T("上班","In")} ${esc(String(s.clockIn||"").slice(11,16)||"—")}　${T("下班","Out")} ${esc(String(s.clockOut||"").slice(11,16)||"—")}</div>
+      <div class="row" style="gap:6px;margin-top:6px">
+        <input id="isn_${esc(s.id)}" placeholder="${T("原因（例：交通事故、看醫生、主管同意提早離開）","Reason")}" style="flex:1;min-width:0"
+          onkeydown="if(event.key==='Enter')saveIssueNote('${esc(jsEsc(s.id))}')">
+        <button class="btn sm" style="flex:none" onclick="saveIssueNote('${esc(jsEsc(s.id))}')">${T("送出","Send")}</button>
+      </div></div>`).join("")}
+  </div>`;
+}
+// 出勤頁（人資與管理員）：今日狀況 ＋ 月報表
+let ATT_YM=null;
+function attYM(){ if(!ATT_YM){ const t=new Date(Date.now()+288e5); ATT_YM=[t.getFullYear(), t.getMonth()]; } return ATT_YM; }
+function attMonthMove(n){ const [y,m0]=attYM(); let y2=y,m=m0+n; if(m<0){m=11;y2--;} if(m>11){m=0;y2++;} ATT_YM=[y2,m]; render(); }
+function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor"))); }
+// 某人某月的每日出勤
+function attRows(name, ym){
+  return Object.values((STATE&&STATE.shifts)||{})
+    .filter(s=>s&&s.user===name&&String(s.date||"").slice(0,7)===ym)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+}
+function attSum(name, ym){
+  const rows=attRows(name,ym).map(attendOf);
+  const mins=rows.map(r=>r.work).filter(x=>typeof x==="number");
+  return { days:rows.length, work:mins.reduce((a,b)=>a+b,0),
+    late:rows.filter(r=>r.late>0).length, lateMin:rows.reduce((a,r)=>a+r.late,0),
+    early:rows.filter(r=>r.early>0).length, auto:rows.filter(r=>r.auto).length,
+    noOut:attRows(name,ym).filter(s=>!s.clockOut).length };
+}
+function viewAttend(){
+  const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
+  const staff=attStaff();
+  const s=(STATE&&STATE.settings)||{};
+  const wh={start:s.workStart||DEF_WORK.start, end:s.workEnd||DEF_WORK.end, grace:(s.lateGraceMin!=null?+s.lateGraceMin:DEF_WORK.grace)};
+  // ── 今日 ──
+  const todayRows=staff.map(u=>({u, sh:(STATE.shifts||{})[shiftId(u.name,today)]||null}));
+  const arrived=todayRows.filter(r=>r.sh&&r.sh.clockIn);
+  const lateToday=arrived.filter(r=>attendOf(r.sh).late>0);
+  const notYet=todayRows.filter(r=>!r.sh||!r.sh.clockIn);
+  const todayCard=`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">今日出勤 <span class="muted" style="font-size:12px;font-weight:400">${today}（${weekdayZh(today)}）・正常班 ${esc(wh.start)}–${esc(wh.end)}</span></b>
+      <span class="row" style="gap:6px">
+        <span class="pill ok">已到 ${arrived.length}</span>
+        ${lateToday.length?`<span class="pill em">遲到 ${lateToday.length}</span>`:''}
+        ${notYet.length?`<span class="pill wa">未打卡 ${notYet.length}</span>`:''}
+        ${arrived.filter(r=>r.sh.inMobile).length?`<span class="pill em">用手機打卡 ${arrived.filter(r=>r.sh.inMobile).length}</span>`:''}
+        ${arrived.filter(r=>r.sh.inNewDev).length?`<span class="pill wa">換新裝置 ${arrived.filter(r=>r.sh.inNewDev).length}</span>`:''}
+      </span></div>
+    <table class="responsive" style="margin-top:10px">
+      <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th></tr></thead>
+      <tbody>${todayRows.map(({u,sh})=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
+        const note=String((sh&&sh.issueNote)||"").trim();
+        const hasIssue=attIssues(sh).length>0;
+        const flags=[a.late>0?`<span class="pill em" style="font-size:10px">遲到 ${a.late} 分</span>`:'',
+                     a.early>0?`<span class="pill wa" style="font-size:10px">早退 ${a.early} 分</span>`:'',
+                     a.auto?'<span class="pill" style="font-size:10px">系統補下班</span>':'',
+                     a.newDev?'<span class="pill wa" style="font-size:10px">換了新裝置</span>':'',
+                     a.mobile?'<span class="pill em" style="font-size:10px">用手機打的</span>':'',
+                     (d!=null&&d>500)?`<span class="pill em" style="font-size:10px">離公司 ${d} 公尺</span>`:''].filter(Boolean).join(" ")
+          + (hasIssue? (note?`<div style="font-size:12px;margin-top:3px"><span class="muted">說明：</span>${esc(note)}</div>`
+                            :'<div style="font-size:12px;margin-top:3px;color:var(--red)">尚未說明原因</div>') : '');
+        return `<tr>
+          <td data-label="同仁"><b>${esc(u.name)}</b>${workHoursOf(u.name).custom?' <span class="muted" style="font-size:11px">個人班表</span>':''}</td>
+          <td data-label="上班">${a.in?esc(String(a.in).slice(11,16)):'<span class="muted">—</span>'}</td>
+          <td data-label="下班">${a.out?esc(String(a.out).slice(11,16)):(a.in?'<span class="pill wa" style="font-size:10px">上班中</span>':'<span class="muted">—</span>')}</td>
+          <td data-label="工時">${minToHm(a.work)}</td>
+          <td data-label="狀況">${flags||(a.none?'<span class="muted">未打卡</span>':'<span class="pill ok" style="font-size:10px">正常</span>')}</td>
+          <td data-label="裝置">${a.in?`<span class="muted" style="font-size:11px">${esc(a.dev||"—")}${a.devUA?"・"+esc(a.devUA):""}</span>`:'<span class="muted">—</span>'}</td>
+        </tr>`; }).join("")}</tbody></table>
+  </div>`;
+  // ── 同一台裝置幫多人打卡 ──
+  const byDev={};
+  todayRows.forEach(({u,sh})=>{ const d=sh&&sh.inDev; if(d){ (byDev[d]=byDev[d]||[]).push(u.name); } });
+  const shared=Object.entries(byDev).filter(([,ns])=>ns.length>1);
+  const devCard=shared.length?`<div class="card" style="border-color:var(--red)">
+    <b style="font-size:15px;color:var(--red)">⚠ 同一台裝置幫多人打卡</b>
+    ${shared.map(([d,ns])=>`<div style="font-size:13px;margin-top:6px">裝置 <b>${esc(d)}</b>：${ns.map(esc).join("、")}（${ns.length} 人）</div>`).join("")}
+  </div>`:"";
+  // ── 換了新裝置：人資去關心一下 ──
+  const newDevs=todayRows.filter(r=>r.sh&&r.sh.inNewDev);
+  const devChangeCard=newDevs.length?`<div class="card" style="border-color:var(--gold)">
+    <b style="font-size:15px">🖥 今天有人換了新裝置</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">第一次用這台打卡。換電腦、清了瀏覽器資料、或換人操作都會出現，去確認一下就好。</div>
+    ${newDevs.map(({u,sh})=>`<div style="font-size:13px;margin-top:6px">
+      <b>${esc(u.name)}</b>　<span class="muted">${esc(sh.inDev||"")}・${esc(sh.inDevUA||"")}${sh.inMobile?"・手機":""}</span>
+      <span class="muted">（已登記 ${knownDevices(u.name).length} 台）</span></div>`).join("")}
+  </div>`:"";
+  // ── 異常說明：誰填了、誰還沒填 ──
+  const issueRows=Object.values((STATE&&STATE.shifts)||{})
+    .filter(s=>s&&String(s.date||"").slice(0,7)===ym&&attIssues(s).length)
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const noNote=issueRows.filter(s=>!String(s.issueNote||"").trim());
+  const issueCard=issueRows.length?`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">出勤異常與說明 <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1}</span></b>
+      <span class="pill ${noNote.length?'em':'ok'}">${noNote.length?`${noNote.length} 筆還沒說明`:"都說明了"}</span></div>
+    <table class="responsive" style="margin-top:10px">
+      <thead><tr><th>日期</th><th>同仁</th><th>異常</th><th>本人說明</th></tr></thead>
+      <tbody>${issueRows.slice(0,60).map(s=>`<tr>
+        <td data-label="日期">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）</td>
+        <td data-label="同仁"><b>${esc(s.user)}</b></td>
+        <td data-label="異常">${esc(attIssues(s).join("、"))}</td>
+        <td data-label="本人說明">${String(s.issueNote||"").trim()?esc(s.issueNote):'<span class="pill em" style="font-size:10px">尚未說明</span>'}</td>
+      </tr>`).join("")}</tbody></table>
+  </div>`:"";
+  // ── 月報表 ──
+  const rows=staff.map(u=>({u, s:attSum(u.name, ym)}));
+  const monthCard=`<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">月報表</b>
+      <span class="row" style="gap:6px;align-items:center">
+        <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="attMonthMove(-1)">‹</button>
+        <b style="font-size:14px">${y} 年 ${m+1} 月</b>
+        <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="attMonthMove(1)">›</button>
+      </span></div>
+    <table class="responsive" style="margin-top:10px">
+      <thead><tr><th>同仁</th><th>出勤天數</th><th>總工時</th><th>遲到</th><th>早退</th><th>沒打下班</th></tr></thead>
+      <tbody>${rows.map(({u,s})=>`<tr>
+        <td data-label="同仁"><b>${esc(u.name)}</b></td>
+        <td data-label="出勤天數">${s.days}</td>
+        <td data-label="總工時">${minToHm(s.work)}</td>
+        <td data-label="遲到" class="${s.late?'':'muted'}">${s.late?`${s.late} 次・${s.lateMin} 分`:'0'}</td>
+        <td data-label="早退" class="${s.early?'':'muted'}">${s.early||0}</td>
+        <td data-label="沒打下班" class="${s.noOut||s.auto?'':'muted'}">${s.noOut?`${s.noOut} 天未結`:(s.auto?`${s.auto} 天系統補`:'0')}</td>
+      </tr>`).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:8px">遲到＝超過上班時間 ${wh.grace} 分鐘寬限；「系統補」＝當天忘了打下班、隔天由系統以下班時間補登。</div>
+  </div>`;
+  // ── 個人明細 ──
+  const detail=staff.map(u=>{
+    const list=attRows(u.name, ym); if(!list.length) return "";
+    return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>
+      <table class="responsive" style="margin-top:8px">
+        <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th></tr></thead>
+        <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
+          const f=[a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
+                   (d!=null&&d>500)?`離公司 ${d} 公尺`:''].filter(Boolean).join("・");
+          return `<tr><td data-label="日期">${esc(String(sh.date).slice(5))}（${weekdayZh(sh.date)}）</td>
+            <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
+            <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
+            <td data-label="工時">${minToHm(a.work)}</td>
+            <td data-label="狀況" class="${f?'':'muted'}">${f?esc(f):'正常'}</td></tr>`; }).join("")}</tbody></table>
+    </div>`; }).join("");
+  return `<h2>出勤</h2>${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
+    <h3 style="margin:20px 0 10px">個人明細</h3>${detail||'<div class="card muted">這個月還沒有打卡紀錄</div>'}`;
 }
 // ===================================================================
 // 流程中控（Regina 首頁；管理員也看得到）— 手機優先、單欄
@@ -1176,7 +1619,7 @@ function fmtMD(ds){ const p=String(ds||"").split("-"); return p.length===3?`${+p
 async function flowAssign(idx, name){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
   const t=val("fa_"+idx).trim(); if(!t){ toast("請輸入要交辦的內容",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact:"", report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     const inp=document.getElementById("fa_"+idx); if(inp) inp.value="";
     toast("已交辦給 "+name+"（等他按「收到」）"); }
@@ -1233,16 +1676,13 @@ function flowReviewQueueCard(){
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
-  const reviewQueueCard=`<div class="card"${pendingReview.length?' style="border-color:var(--gold)"':''}>
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">🎞 待你審片</b><span class="pill ${pendingReview.length?'wa':'ok'}">${pendingReview.length}</span></div>
+  const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
     ${pendingReview.length?pendingReview.slice(0,20).map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
         <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
-
-  </div>`;
+  </div>`);
   return reviewQueueCard;
 }
 // 流程中控④：單一剪輯卡（上線狀態、進行中/完成、拖延警示、今日交辦與回報、一鍵交辦）
@@ -1253,7 +1693,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
     const name=u.name;
     const sh=(STATE.shifts||{})[shiftId(name,today)];
     const on=sh&&sh.clockIn, off=sh&&sh.clockOut;
-    const isCS=(u.role==="cs");
+    const isCS=(u.role==="cs"||u.role==="hr");   // 不剪片的角色：不顯示影片數字
     const dot=off?`<span class="pill" style="font-size:10px">已下班 ${String(sh.clockOut).slice(11,16)}</span>`
       : on?`<span class="pill ok" style="font-size:10px">上班中</span>`
       : `<span class="pill wa" style="font-size:10px">今天還沒上線</span>`;
@@ -1276,7 +1716,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       </div>`; }).join("");
     return `<div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':(isCS?' <span class="muted" style="font-size:11px;font-weight:400">員工</span>':'')}</b>${dot}</div>
+        <b style="font-size:15px">${esc(name)}${(u.role==="intl")?' <span class="muted" style="font-size:11px;font-weight:400">海外</span>':(isCS?` <span class="muted" style="font-size:11px;font-weight:400">${esc(ROLE_LABEL[u.role]||"")}</span>`:'')}</b>${dot}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
         ${isCS?'':`<span class="pill ${wip.length?'wa':''}" style="font-size:11px">進行中 ${wip.length}</span>
         <span class="pill ${done.length?'ok':''}" style="font-size:11px">今日完成 ${done.length}</span>
@@ -1289,7 +1729,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
         <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>`}
     </div>`; }
 function viewFlow(){
-  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs"].includes(u.role||"editor")));
+  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const g=scheduleGlance();
   const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
@@ -1303,7 +1743,7 @@ function viewFlow(){
 
   const runwayCard=flowRunwayCard(g, okRunway, pct);
 
-  const stockCard=flowStockCard(staff.filter(u=>u.role!=="cs"), pool, unassigned, stockDays);   // 毛片只指派給剪輯
+  const stockCard=flowStockCard(staff.filter(u=>!["cs","hr"].includes(u.role)), pool, unassigned, stockDays);   // 毛片只指派給剪輯
 
   const reviewQueueCard=flowReviewQueueCard();
 
@@ -1321,9 +1761,10 @@ function viewFlow(){
   </div>`;
 
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${runwayCard}${reviewQueueCard}${stockCard}
+  ${focus}${runwayCard}${stockCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
-  ${staffCards||'<p class="muted">還沒有成員</p>'}`;
+  ${staffCards||'<p class="muted">還沒有成員</p>'}
+  ${reviewQueueCard}`;
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
@@ -1590,7 +2031,7 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 // 純檢視：沒有按鍵、沒有連結、不寫任何資料。人資只有這一頁。
 // ===================================================================
 function teamStaff(){
-  return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs"].includes(u.role||"editor")));
+  return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
 }
 // 某人「今天」的成效：出勤、今日完成、進行中、交辦完成
 function teamDayStat(name, allTasks){
@@ -1635,7 +2076,7 @@ function teamTaskRow(t){
 }
 // 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
 function teamDayCard(u, allTasks){
-  const name=u.name, minLabel=dashMin, hm=dashHM, isCS=(u.role==="cs");
+  const name=u.name, minLabel=dashMin, hm=dashHM, isCS=noEdit(u);
   const {s, done, wip, tasks, notices, workMin}=teamDayStat(name, allTasks);
   const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・${T("工時","Hours")} ${minLabel(workMin)}`:T("今天還沒上線","Not clocked in yet");
   const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
@@ -1644,7 +2085,7 @@ function teamDayCard(u, allTasks){
   const nDone=tasks.filter(t=>t.done).length;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="intl"?"Intl":"Editor"))}</span></b>
+      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="hr"?"HR":(u.role==="intl"?"Intl":"Editor")))}</span></b>
       ${dashStatusPill(s)}</div>
     <div class="muted" style="font-size:12px;margin-top:2px">${T("上班","Shift")} ${att}</div>
     <div class="mstat">
@@ -1693,6 +2134,7 @@ function teamNoticeCompose(staff){
     ${rows?`<div style="margin-top:12px"><b style="font-size:13px">我發出的通知</b>${rows}</div>`:''}
   </div>`;
 }
+const noEdit=(u)=>["cs","hr"].includes(u&&u.role);   // 不剪片的角色
 function viewTeam(){
   const staff=teamStaff();
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
@@ -1706,15 +2148,15 @@ function viewTeam(){
   const dayTaskDone=dayStats.reduce((a,d)=>a+d.tasks.filter(t=>t.done).length,0);
   const monDone=months.reduce((a,x)=>a+x.m.count,0);
   const rows=months.map(({u,m})=>`<tr>
-    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="intl"?"Intl":"Editor"))}</span></td>
-    <td data-label="${T("完成上架","Published")}">${u.role==="cs"?"—":m.count}</td>
-    <td data-label="${T("剪片速度","Days/clip")}">${u.role==="cs"?"—":(m.avgDays!=null?m.avgDays.toFixed(1)+T(" 天"," d"):"—")}</td>
-    <td data-label="${T("平均工時","Avg time")}">${u.role==="cs"?"—":minLabel(m.avgMin)}</td>
-    <td data-label="${T("帶商品","With product")}">${u.role==="cs"?"—":m.sales}</td>
+    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="hr"?"HR":(u.role==="intl"?"Intl":"Editor")))}</span></td>
+    <td data-label="${T("完成上架","Published")}">${noEdit(u)?"—":m.count}</td>
+    <td data-label="${T("剪片速度","Days/clip")}">${noEdit(u)?"—":(m.avgDays!=null?m.avgDays.toFixed(1)+T(" 天"," d"):"—")}</td>
+    <td data-label="${T("平均工時","Avg time")}">${noEdit(u)?"—":minLabel(m.avgMin)}</td>
+    <td data-label="${T("帶商品","With product")}">${noEdit(u)?"—":m.sales}</td>
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `<h2>${T("團隊看板","Team Board")}</h2>
-  ${currentRole()==="hr"?teamNoticeCompose(staff):''}
+  ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     <div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>
@@ -3031,12 +3473,32 @@ function setChannelCards(s){
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>員工</b>＝只做交辦工作與每日匯報，不碰影片、沒有一創二創之分；<b>人資</b>＝只看團隊看板，不能操作。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>負責</th><th></th></tr></thead>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>負責</th><th>上下班</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="cs">員工</option><option value="hr">人資</option></select>
       <select id="mb_craft" style="width:auto" title="剪輯才需要分工">${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
+  </div>`;
+}
+// 設定：上下班時間（全公司一套；個人例外在成員清單那裡設）
+function setWorkHoursCard(s){
+  const o=s.officeGeo||{};
+  return `<div class="card"><b>上下班時間</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">全公司共用這一組；需要不同時間的同仁，在下面「成員」那一列單獨設定。</div>
+    <div class="grid cols3" style="margin-top:10px">
+      <div><label>上班時間</label><input id="set_wstart" type="time" value="${esc(s.workStart||DEF_WORK.start)}"></div>
+      <div><label>下班時間</label><input id="set_wend" type="time" value="${esc(s.workEnd||DEF_WORK.end)}"></div>
+      <div><label>遲到寬限（分鐘）</label><input id="set_grace" type="number" min="0" max="120" value="${s.lateGraceMin!=null?+s.lateGraceMin:DEF_WORK.grace}"></div>
+    </div>
+    <label style="margin-top:12px" style="display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
+    <label style="margin-top:12px">公司座標（選填，用來標出「打卡地點離公司很遠」）</label>
+    <div class="grid cols2">
+      <div><input id="set_olat" placeholder="緯度 例 25.033964" value="${o.lat!=null?esc(String(o.lat)):""}"></div>
+      <div><input id="set_olng" placeholder="經度 例 121.564468" value="${o.lng!=null?esc(String(o.lng)):""}"></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">打卡一律成功、不會被擋；系統只把裝置、是不是手機、GPS 座標記下來，出勤報表上標出異常讓人資判斷。</div>
   </div>`;
 }
 // 設定：對接窗口名單
@@ -3065,10 +3527,18 @@ function viewSettings(){
         ${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}" ${craftOf(u.name)===k?"selected":""}>${l}</option>`).join("")}</select>`
     : (u.role==="cs" ? '<span class="muted" style="font-size:12px">不剪片</span>'
                      : '<span class="muted" style="font-size:12px">全部</span>');
+  const whSel=(u)=>{ const w=workHoursOf(u.name);
+    return `<span class="row" style="gap:4px;align-items:center;flex-wrap:nowrap">
+      <input type="time" value="${esc(w.start)}" style="width:auto;padding:4px 6px;font-size:12px" onchange="setMemberHours('${esc(jsEsc(u.name))}',this.value,null)">
+      <span class="muted">–</span>
+      <input type="time" value="${esc(w.end)}" style="width:auto;padding:4px 6px;font-size:12px" onchange="setMemberHours('${esc(jsEsc(u.name))}',null,this.value)">
+      ${w.custom?`<button class="btn sec sm" style="padding:2px 7px;font-size:11px" onclick="setMemberHours('${esc(jsEsc(u.name))}','','')" title="改回全公司時間">↺</button>`:''}
+    </span>`; };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b></td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="負責">${craftSel(u)}</td>
+    <td data-label="上下班">${whSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -3096,6 +3566,7 @@ function viewSettings(){
     <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
+  ${setWorkHoursCard(s)}
   ${setIntlCard(s)}
   ${setRatesCard(s)}
   ${setChannelCards(s)}
@@ -3150,6 +3621,14 @@ async function saveSettings(){
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
   const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
+  if(document.getElementById("set_wstart")){
+    settings.workStart=(val("set_wstart")||DEF_WORK.start);
+    settings.workEnd=(val("set_wend")||DEF_WORK.end);
+    settings.lateGraceMin=Math.max(0, parseInt(val("set_grace"))||0);
+    const pcEl=document.getElementById("set_pconly"); settings.pcOnly = pcEl? !!pcEl.checked : true;
+    const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
+    settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};
+  }
   if(plats.length) settings.postPlatforms=plats;
   // 海外設定：帳號清單（語言=帳號名）＋每帳號每日目標
   if(document.getElementById("set_intlacct")){
@@ -3186,6 +3665,17 @@ function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸
 function setMemberCraft(name, craft){ if(!Object.keys(CRAFT_LABEL).includes(craft)) return;
   dbUpdate("users", name, {craft}, {action:"設定分工："+CRAFT_LABEL[craft], target:name})
     .then(ok=>{ if(ok) toast("已設定「"+name+"」負責"+CRAFT_LABEL[craft]); }); }
+// 個人班表例外：兩個都清空＝改回全公司時間
+function setMemberHours(name, start, end){
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===name)||{};
+  const patch={};
+  if(start!==null) patch.workStart=String(start||"");
+  if(end!==null)   patch.workEnd=String(end||"");
+  const ns=patch.workStart!==undefined?patch.workStart:(u.workStart||"");
+  const ne=patch.workEnd!==undefined?patch.workEnd:(u.workEnd||"");
+  const msg=(ns||ne)?("已設定「"+name+"」的上下班時間 "+(ns||"—")+"–"+(ne||"—")):("「"+name+"」改回全公司時間");
+  writeAdmin("PUT","/api/users/"+name, patch, msg);
+}
 function setMemberRole(name, role){ if(!["editor","manager","intl","cs","hr"].includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
@@ -3193,7 +3683,7 @@ function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) re
 // 主管線上重設員工密碼為 0000，員工再自行修改
 function resetMemberPw(name){
   if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
-  writeAdmin("PUT","/api/users/"+name,{pw:"0000"},"已將「"+name+"」密碼重設為 0000"); }
+  writeAdmin("PUT","/api/users/"+name,{pw:"0000",pwSet:false},"已將「"+name+"」密碼重設為 0000（他下次登入要自己重設）"); }
 function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;

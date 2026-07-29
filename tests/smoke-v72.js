@@ -129,6 +129,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   { const ids=calls.filter(c=>c[0]==="set"&&c[1]==="tasks").map(c=>c[2]);
     ok("兩次自建工作的 ID 不一樣", ids.length===2 && ids[0]!==ids[1]);
     ok("兩筆都寫進去了", Object.keys(server.tasks||{}).length===2); }
+  // 同一毫秒連開 200 個編號也不能撞（原本只有 3 碼亂數，1/900 會撞）
+  { const many=new Set(); for(let i=0;i<200;i++) many.add(uid("T"));
+    ok("同毫秒連開 200 個編號都不重覆", many.size===200); }
 
   // ── ⑧ 對接窗口新增／刪除也是原子操作 ──
   reset(); as("管理員","boss");

@@ -62,14 +62,14 @@ ok("editor work has 建立二創版本 card (shopee list)", h.includes("建立�
 WORK_ZONE="ms"; h=viewWork();
 ok("zone switch → 馬來 list", h.includes("tiktok-Malaysia"));
 WORK_ZONE="en"; h=viewWork();
-ok("zone switch → 英文 list (EN 帳號)", h.split("建立二創版本")[1].includes("tiktok-EN"));
+ok("zone switch → 英文 list (EN 帳號)", h.includes("tiktok-EN") && !h.includes("tiktok-TH"));
 WORK_ZONE="th"; h=viewWork();
-ok("zone switch → 泰文 list (TH 帳號)", h.split("建立二創版本")[1].includes("tiktok-TH"));
+ok("zone switch → 泰文 list (TH 帳號)", h.includes("tiktok-TH") && !h.includes("tiktok-EN"));
 
 // --- intl 全英文 spot checks ---
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 WORK_ZONE="shopee"; h=viewWork();
-ok("intl work: English headings, no Chinese UI labels", h.includes("Today's Work Plan") && h.includes("To claim (raw + versions)") && h.includes("Create a version") && !h.includes("上班計畫") && !h.includes("認領開始剪") && !h.includes("建立二創版本"));
+ok("intl work: English headings, no Chinese UI labels", h.includes("Today's Work") && h.includes("To claim (raw + versions)") && h.includes("Create a version") && !h.includes("上班計畫") && !h.includes("認領開始剪") && !h.includes("建立二創版本"));
 ok("intl work: task card English + translate icon", h.includes("Got it") && h.includes("文<span>A</span>"));
 h=viewVideos();
 ok("intl library English (chrome)", h.includes("Library") && h.includes("Original language") && h.includes("Chinese（") && !h.includes("影片庫") && !h.includes("原本語言"));
@@ -83,7 +83,7 @@ ok("intl shopee modal English", modalHTML.includes("Shopee version") && modalHTM
 // --- editor 仍是中文 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 h=viewWork();
-ok("editor work stays Chinese", h.includes("本日上班計畫") && h.includes("認領開始剪"));
+ok("editor work stays Chinese", h.includes("本日工作") && h.includes("認領開始剪"));
 h=viewVideos();
 ok("editor library stays Chinese", h.includes("影片庫") && h.includes("原本語言"));
 
