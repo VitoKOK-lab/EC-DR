@@ -524,6 +524,8 @@ function render(){
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
+  // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
+  if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   v.innerHTML = viewAsBanner + banner + fn();
@@ -1516,7 +1518,17 @@ function workIssueCard(){
 // 出勤頁（人資與管理員）：今日狀況 ＋ 月報表
 let ATT_YM=null;
 function attYM(){ if(!ATT_YM){ const t=new Date(Date.now()+288e5); ATT_YM=[t.getFullYear(), t.getMonth()]; } return ATT_YM; }
-function attMonthMove(n){ const [y,m0]=attYM(); let y2=y,m=m0+n; if(m<0){m=11;y2--;} if(m>11){m=0;y2++;} ATT_YM=[y2,m]; render(); }
+function attMonthMove(n){ const [y,m0]=attYM(); let y2=y,m=m0+n; if(m<0){m=11;y2--;} if(m>11){m=0;y2++;} ATT_YM=[y2,m];
+  attEnsureMonth(`${y2}-${String(m+1).padStart(2,"0")}`); render(); }
+// 打卡紀錄常駐只訂閱最近兩個月（省讀取量）。往前翻到更早的月份時，跟資料庫補讀那一個月。
+function attEnsureMonth(ym){
+  try{
+    const from=(window.DB&&window.DB.shiftsFrom)||"";
+    if(!from || !window.DB.loadShiftMonth) return;
+    if(ym > from.slice(0,7)) return;        // 整個月都在訂閱範圍內，不用補讀
+    window.DB.loadShiftMonth(ym).catch(()=>{});
+  }catch(e){}
+}
 function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor"))); }
 // 某人某月的每日出勤
 function attRows(name, ym){
