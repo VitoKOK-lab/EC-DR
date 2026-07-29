@@ -32,7 +32,8 @@ function setup(videos, shifts){
   WORK_ZONE="shopee"; POOL_FILTER="all"; VIEW_AS=null;
 }
 // 只看「我的今日工作」那張卡（不含下面的工作計畫卡）
-function myWorkCard(){ const w=viewWork(); return w.split("我的今日工作")[1].split("我的今日工作計畫")[0]; }
+// 只看「今天要做的事」那張卡（後面的折疊區塊不算）
+function myWorkCard(){ const w=viewWork(); return (w.split("今天要做的事")[1]||"").split("<details")[0]; }
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 

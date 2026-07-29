@@ -62,10 +62,10 @@ ok("intl 殼有退回鍵", h.includes(`intlDiscard('E1')`) && h.includes(`chDisc
 ok("intl 二創區選單＝四區英文標籤", h.includes(">Shopee<") && h.includes(">Malaysia<") && h.includes("English (TikTok)") && h.includes("Thai (TikTok)"));
 ok("intl 池顯示建立者(英文)", h.includes("added by Regina"));
 // 英文區的帳號下拉只列英文帳號，且 value 是全清單索引
-WORK_ZONE="en"; h=viewWork(); let zc=h.split("Create a version")[1]||"";
+WORK_ZONE="en"; h=viewWork(); let zc=h.split("Create a version").slice(-1)[0];
 ok("英文區只列 EN 帳號", zc.includes("tiktok-EN") && !zc.includes("tiktok-TH"));
 ok("帳號 option 索引對應全清單", zc.includes('value="1">tiktok-EN'));
-WORK_ZONE="th"; h=viewWork(); zc=h.split("Create a version")[1]||"";
+WORK_ZONE="th"; h=viewWork(); zc=h.split("Create a version").slice(-1)[0];
 ok("泰文區只列 TH 帳號", zc.includes("tiktok-TH") && !zc.includes("tiktok-EN"));
 ok("泰文區版本 chip 只列 TH", !zc.includes(`openIntlModal('E1')`) && zc.includes(`openIntlModal('T1')`));
 

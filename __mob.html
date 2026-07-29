@@ -129,12 +129,6 @@
     background:linear-gradient(100deg,transparent,rgba(197,179,130,.28),transparent);transform:skewX(-18deg);transition:left .5s ease}
   .userBtn:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 14px 34px rgba(138,115,56,.18)}
   .userBtn:hover::after{left:130%}
-  /* 這台裝置上次登入的人：只顯示他一個 */
-  .quickLogin{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;padding:8px 0}
-  .quickLogin .qlName{font-family:var(--serif);font-size:30px;font-weight:700;letter-spacing:2px}
-  .quickLogin .qlRole{font-size:12px;color:var(--muted);letter-spacing:.14em;margin-bottom:8px}
-  .quickLogin .qlGo{font-size:16px;padding:13px 44px;border-radius:var(--rs)}
-  .quickLogin .qlSwitch{margin-top:12px}
   .adminLink{margin-top:10px;background:none;border:none;color:var(--muted);font-size:13px;letter-spacing:.12em;border-bottom:1px solid transparent;padding:4px 2px;transition:.2s}
   .adminLink:hover{color:var(--gold-dk);border-bottom-color:var(--gold)}
   .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:5px;font-weight:500;letter-spacing:1px}
@@ -585,7 +579,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1784203200"></script>
-<script type="module" src="fb.js?v=1783940000"></script>
+<script src="app.js"></script>
+
 </body>
 </html>

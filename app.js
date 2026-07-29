@@ -296,8 +296,28 @@ function closeHeaderMenu(){
   const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
   pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
+// 這台電腦上次是誰登入的 —— 記起來，下次只要按「直接登入」，不用在一堆名字裡找自己
+let LOGIN_ALL=false;
+function lastUserHere(){ return localStorage.getItem("ecdr_last")||""; }
+function loginSwitchAccount(){ LOGIN_ALL=true; bootLogin(); }
+function loginQuick(){ const n=lastUserHere();
+  const u=((STATE?.users)||[]).find(x=>x.name===n); if(u) loginAs(u); else loginSwitchAccount(); }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
+  // 這台裝置上次登入過的人：只顯示他一個，按「直接登入」再輸入密碼
+  const lastName=lastUserHere();
+  const lastU=lastName? ((STATE?.users)||[]).find(x=>x.name===lastName) : null;
+  if(lastU && !LOGIN_ALL){
+    const wrap=document.createElement("div"); wrap.className="quickLogin";
+    const who=document.createElement("div"); who.className="qlName"; who.textContent=lastU.name;
+    const role=document.createElement("div"); role.className="qlRole"; role.textContent=ROLE_LABEL[lastU.role||"editor"]||"";
+    const go=document.createElement("button"); go.className="btn qlGo"; go.textContent="直接登入";
+    go.onclick=()=>loginAs(lastU);
+    const sw=document.createElement("button"); sw.className="adminLink qlSwitch"; sw.textContent="不是我，切換帳號";
+    sw.onclick=loginSwitchAccount;
+    wrap.appendChild(who); wrap.appendChild(role); wrap.appendChild(go); wrap.appendChild(sw);
+    g.appendChild(wrap); return;
+  }
   const all=staffSorted(((STATE?.users)||[]).filter(u=>["editor","manager","intl","cs","hr"].includes(u.role||"editor")));   // 一創→兩種→二創，英文名在後
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
@@ -322,7 +342,9 @@ function loginAs(u){
   const want=String(u.pw==null?"0000":u.pw);
   const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
   if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
-  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor"); CUR_TAB=null;
+  setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor");
+  localStorage.setItem("ecdr_last", u.name);   // 這台裝置下次直接顯示他
+  CUR_TAB=null; LOGIN_ALL=false;
   clockIn(u.name); autoCloseOpenShifts(); logA("登入","上班打卡"); applyState(LAST_RAW); }
 // 員工自行修改密碼（需先輸入舊密碼）
 async function changeMyPw(){
@@ -765,9 +787,11 @@ async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
+  const when=(val("wp_date")||"").slice(0,10) || today;      // 可以排到之後的日期，那天才會出現在待辦
   const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
-  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
+  try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:(when<today?today:when), title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
+    if(when>today) toast(isIntl?("Scheduled for "+when):("已排到 "+when+"，那天會出現在你的待辦"));
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
@@ -937,6 +961,95 @@ function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>`;
 }
+// 折疊區塊：次要的東西收進來，點了才展開
+function fold(title, count, body, open){
+  if(!body) return "";
+  return `<details class="fold" ${open?"open":""}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
+    <div class="foldbody">${body}</div></details>`;
+}
+// 我排在未來的工作（到那天才會進今日待辦）
+function myFutureTasks(){ return Object.values((STATE&&STATE.tasks)||{})
+  .filter(t=>t && !isNotice(t) && t.user===currentUser() && String(t.date||"")>today)
+  .sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
+function taskSetDate(id, d){ if(!d) return; const t=taskById(id);
+  dbUpdate("tasks", id, {date:String(d).slice(0,10)}, {action:"改工作日期", target:(t&&t.title)||id}); }
+// 今日待辦的一列
+function todoRow(kind, title, sub, actions, doneCls){
+  return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
+    <div class="tmain"><div class="ttitle">${title}</div>${sub?`<div class="tsub">${sub}</div>`:""}</div>
+    <div class="tact">${actions||""}</div></div>`;
+}
+// ── 今天要做的事：把通知、交辦、自己排的工作、手上的影片合成一條清單 ──
+function todayListCard(tasks, myWork, workBtn, undoBtn){
+  const rows=[];
+  // ① HR 通知（只要按收到）
+  const notices=myNotices();
+  notices.forEach(n=>rows.push(todoRow("📣", esc(n.title),
+    `${T("HR 通知","HR notice")}・${esc(String(n.date||"").slice(5))}`
+    + `<input id="nr_${n.id}" value="${esc(n.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+         onchange="noticeReply('${n.id}',this.value)" placeholder="${T("想回覆什麼可以寫在這裡（選填）…","Reply here (optional)…")}">`,
+    n.ack? `<span class="pill ok" style="font-size:10px">${T("已收到","Received")} ${String(n.ackAt||"").slice(11,16)}</span>`
+         : `<button class="btn sm" style="padding:4px 14px" onclick="ackTask('${n.id}')">${T("收到","Got it")}</button>`,
+    n.ack)));
+  // ② 交辦與自己排的工作
+  tasks.forEach(t=>{
+    const assigned=!!t.assignedBy, needAck=assigned&&!t.ack;
+    const can=(t.report||'').trim().length>=12;
+    const sub=[assigned?T("主管交辦","Assigned"):T("自己排的","Self"),
+               t.contact?T("窗口 ","Contact ")+esc(t.contact):""].filter(Boolean).join("・");
+    const act = needAck
+      ? `<button class="btn sm" style="padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`
+      : `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:${t.done?'var(--green)':'var(--amber)'}">
+           <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'}
+             onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('完成','Done'):T('未完成','Open')}</label>
+         ${assigned?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}`;
+    const note = needAck ? "" :
+      `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+         oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
+         onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
+    const ttl=esc(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
+    rows.push(todoRow(assigned?"📌":"•", ttl, sub+note, act, t.done));
+  });
+  // ③ 手上的影片
+  myWork.forEach(v=>{
+    const days=v.stage==="剪輯中"?dayBadge(v):"";
+    rows.push(todoRow("🎬",
+      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${enSubLine(v)}`,
+      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(v.source||"")].filter(Boolean).join("・"),
+      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
+  });
+  const nOpen=rows.filter(r=>!r.includes("todo done")).length;
+  const presets=currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0 6px">
+      <span class="muted" style="font-size:12px;align-self:center">常用：</span>
+      ${workPresets().map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`;
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">${T("今天要做的事","Today")}</b>
+      ${notices.filter(n=>!n.ack).length?`<span class="pill em">📣 ${T(notices.filter(n=>!n.ack).length+" 則未讀", notices.filter(n=>!n.ack).length+" unread")}</span>`:""}
+      <span class="pill ${nOpen?'wa':'ok'}">${nOpen?T("還有 "+nOpen+" 件","„"+nOpen+" left").replace("„","")+"":T("都做完了 ✓","All done ✓")}</span></div>
+    <div style="margin-top:6px">${rows.join("")||`<div class="emptyState"><span class="es-mk">✦</span>${T("今天沒有待辦，可以到下面認領工作","Nothing today — claim something below")}</div>`}</div>
+    ${presets}
+    <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+      <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(event.key==='Enter')createTask()">
+      <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}
+      <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
+      <button class="btn sm" style="flex:none" onclick="createTask()">＋ ${T("加入","Add")}</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
+  </div>`;
+}
+// ── 之後要做（折疊）──
+function futureTasksBody(){
+  const list=myFutureTasks(); if(!list.length) return "";
+  return list.map(t=>`<div class="todo">
+    <span class="tkind">🗓</span>
+    <div class="tmain"><div class="ttitle">${esc(t.title)}</div>
+      <div class="tsub">${esc(String(t.date).slice(5))}（${weekdayZh(t.date)}）${t.assignedBy?"・"+T("主管交辦","Assigned"):""}</div></div>
+    <div class="tact">
+      <input type="date" value="${esc(t.date)}" min="${today}" style="width:auto;padding:4px 6px;font-size:12px" onchange="taskSetDate('${t.id}',this.value)">
+      ${t.assignedBy?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}
+    </div></div>`).join("");
+}
 // 上班計畫：HR 通知卡 —— 只需要按一顆小小的「收到」，不用回報、不算交辦成效
 function workNoticeCard(notices){
   if(!notices.length) return "";
@@ -1062,6 +1175,7 @@ function viewWorkCS(me){
   const nDone=tasks.filter(t=>t.done).length;
   const nAck=tasks.filter(t=>t.assignedBy&&!t.ack).length;
   const nNoReport=tasks.filter(t=>!t.done&&!(t.report||"").trim()).length;
+  const nFuture=myFutureTasks().length;
   return `
   <h2>本日工作（${esc(me)}）</h2>
   <div class="focusbar">
@@ -1070,11 +1184,10 @@ function viewWorkCS(me){
     <div><span class="fn ${nNoReport?'warn':''}">${nNoReport}</span><span class="fl">未回報</span></div>
   </div>
   ${workIssueCard()}
-  ${workNoticeCard(myNotices())}
-  ${workTasksCard(tasks)}
+  ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${fold("之後要做", nFuture, futureTasksBody())}
   <div class="card" style="text-align:center">
-    <span class="pill ${tasks.length&&nDone===tasks.length?'ok':'wa'}">交辦完成 ${nDone}/${tasks.length}</span>
-    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
 }
 function viewWork(){
@@ -1135,29 +1248,27 @@ function viewWork(){
     <div><span class="fn ${tasks.length&&nTaskDone<tasks.length?'warn':''}">${nTaskDone}<i>/${tasks.length}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     <div><span class="fn">${pool.length}</span><span class="fl">${T("待認領","To claim")}</span></div>
   </div>`;
+  const nFuture=myFutureTasks().length;
   return `
-  <h2>${T("本日上班計畫","Today's Work Plan")}（${esc(me)}）</h2>
+  <h2>${T("本日工作","Today's Work")}（${esc(me)}）</h2>
   ${focusBar}
   ${workIssueCard()}
-  ${workNoticeCard(myNotices())}
   ${rejCard}
 
-  <div class="workgrid">
+  ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
-  ${workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit)}
-
-  ${workMineCard(myWork, inProg, atLimit, workBtn, undoBtn)}
-
-  ${workTasksCard(tasks)}
+  ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
+  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit))}
+  ${doesDerived()?fold(T("建立二創版本","Create a version"), null, createZoneCard()):''}
+  ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
+      ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
+          <div class="ttitle">${esc(vidTitle(v))}</div>
+          <div class="tsub">${T("完成","Done")} ${esc(String(v.finishedAt||"").slice(11,16))}・${T("剪 ","")}${editDaysLabel(v)||"-"} ${T("天","d")}</div></div></div>`).join("")
+      : "")}
 
   <div class="card" style="text-align:center">
-    <span class="pill ok">${T("今日已完成上架","Done today")} ${doneToday.length}</span>
-    <span class="pill ${tasks.filter(t=>t.done).length===tasks.length?'ok':'wa'}" style="margin-left:8px">${T("交辦完成","Tasks")} ${tasks.filter(t=>t.done).length}/${tasks.length}</span>
-    <div style="margin-top:14px"><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
-  </div>
-
-  </div>
-  ${doesDerived()?createZoneCard():''}`
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
+  </div>`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
