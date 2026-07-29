@@ -98,9 +98,9 @@ fields.hrn_who="小葵"; fields.hrn_txt="記得繳交勞健保資料";
   fields.hrn_who="__all__"; fields.hrn_txt="全體注意";
   await hrNotify(); await wait(20);
   const sets=calls.filter(c=>c[0]==="set"&&c[1]==="tasks");
-  ok("發給全體：每位同仁各一筆（4 人）", sets.length===4
-     && ["小葵","阿明","Anna","小美"].every(n=>sets.some(c=>c[3].user===n)));
-  ok("全體通知不含管理層與人資", !sets.some(c=>["Regina","HR小姐","管理員"].includes(c[3].user)));
+  ok("發給全體：每位同仁各一筆（含人資 5 人）", sets.length===5
+     && ["小葵","阿明","Anna","小美","HR小姐"].every(n=>sets.some(c=>c[3].user===n)));
+  ok("全體通知不含管理層與管理員", !sets.some(c=>["Regina","管理員"].includes(c[3].user)));
 
   reset(); as("HR小姐","hr"); hookDB();
   fields.hrn_who="小葵"; fields.hrn_txt="   ";

@@ -256,6 +256,32 @@ reset([]);
   await rememberDevice("小葵",{dev:"OLD1",ua:"Windows・Chrome",mobile:false}); await wait(20);
   ok("已經記過的不會重複寫", !calls.length);
 
+  // ══ v80：人資自己的出勤也要被記錄，管理員看得到 ══
+  reset([sh("HR小姐",T0,"09:35","18:00",{inDev:"HR1"}), sh("小葵",T0,"09:00","18:00",{inDev:"AB12"})],
+        {workStart:"09:00",workEnd:"18:00",lateGraceMin:10});
+  as("管理員","boss");
+  { const h4=viewAttend();
+    ok("出勤頁也列人資自己", h4.includes("HR小姐"));
+    ok("人資遲到一樣算得出來", h4.includes("遲到 25 分")); }
+  as("HR小姐","hr");
+  ok("人資自己也看得到自己那一列", viewAttend().includes("HR小姐"));
+
+  reset([sh("HR小姐",T0,"09:00","18:00")]);
+  as("管理員","boss");
+  ok("管理員看得到人資的團隊看板欄位", viewTeam().includes("HR小姐"));
+  ok("管理員也能發 HR 通知（考核人資用同一個畫面）", viewTeam().includes("發出 HR 通知"));
+  as("HR小姐","hr");
+  ok("人資自己也在團隊看板上", viewTeam().includes("HR小姐"));
+  as("小葵","editor");
+  ok("一般員工也看得到人資（大家互相知道）", viewTeam().includes("HR小姐"));
+
+  reset([]); as("Regina","manager");
+  STATE.videos=[{id:"P1",code:"",name:"待剪毛片",rawName:"x",stage:"待處理",locale:"",channel:"",
+    tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null}];
+  { const f=viewFlow();
+    ok("流程中控可以交辦人資", f.includes("交辦 HR小姐 一件事"));
+    ok("毛片不會指派給人資", !f.split('id="afp_who"')[1].split("</select>")[0].includes("HR小姐")); }
+
   // ── render 不炸 ──
   reset([sh("小葵",T0,"09:00","18:00")]);
   [["HR小姐","hr","attend"],["管理員","boss","attend"],["管理員","boss","settings"]].forEach(([u,r,tab])=>{

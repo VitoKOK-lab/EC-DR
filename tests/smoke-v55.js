@@ -77,7 +77,7 @@ let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡
 ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
 ok("兩位剪輯都列出來", h.includes("小葵") && h.includes("Anna"));
-ok("人資自己不在名單上", !h.includes("HR小姐"));
+ok("人資自己也在名單上（他也要被記錄、由管理員考核）", h.includes("HR小姐"));
 
 // ── 今日成效的數字 ──
 ok("小葵今日完成 2 支", (()=>{ const seg=h.split("小葵")[1].split("Anna")[0]; return seg.includes(">2</div><div class=\"l\">今日完成"); })());
@@ -124,7 +124,7 @@ reworkVideo("D2");
 ok("Regina 照樣能退回重剪", calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D2"));
 
 // ── 沒有剪輯人員時不會炸 ──
-reset(); STATE.users=[{name:"HR小姐",role:"hr"}];
+reset(); STATE.users=[{name:"管理員",role:"boss"}];
 ok("沒有成員時給提示", viewTeam().includes("還沒有成員"));
 
 // ── render 不炸 ──

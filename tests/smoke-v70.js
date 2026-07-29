@@ -50,8 +50,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 // ── 分組工具 ──
 reset();
 { const g=staffByGroup();
-  ok("分成三份清單", g.length===3);
-  ok("順序＝剪輯 → 員工 → 海外剪輯", JSON.stringify(g.map(x=>x.zh))===JSON.stringify(["剪輯","員工","海外剪輯"]));
+  ok("分成四份清單（含人資）", g.length===4);
+  ok("順序＝剪輯 → 員工 → 海外剪輯 → 人資", JSON.stringify(g.map(x=>x.zh))===JSON.stringify(["剪輯","員工","海外剪輯","人資"]));
   ok("剪輯組只有剪輯", g[0].people.every(u=>u.role==="editor") && g[0].people.length===2);
   ok("員工組只有不剪片的員工", g[1].people.every(u=>u.role==="cs") && g[1].people.length===2);
   ok("海外組只有海外剪輯", g[2].people.every(u=>u.role==="intl") && g[2].people.length===2);
@@ -69,14 +69,14 @@ ok("每個人都在自己的區塊裡", (()=>{
       && s2.includes("小美")&&s2.includes("阿凱")&&!s2.includes("Anna")
       && s3.includes("Anna")&&s3.includes("Ben"); })());
 ok("每個人都還是可以交辦", ["小葵","阿明","小美","阿凱","Anna","Ben"].every(n=>f.includes("交辦 "+n+" 一件事")));
-ok("交辦輸入框編號不重複", (()=>{ const ids=(f.match(/id="fa_(\d+)"/g)||[]); return new Set(ids).size===ids.length && ids.length===6; })());
+ok("交辦輸入框編號不重複", (()=>{ const ids=(f.match(/id="fa_(\d+)"/g)||[]); return new Set(ids).size===ids.length && ids.length===7; })());
 
 // ── 團隊看板：今日成效也分三份 ──
 reset(); as("小葵","editor");
 let t=viewTeam();
 ok("看板有三個小標", t.includes("剪輯（2）") && t.includes("員工（2）") && t.includes("海外剪輯（2）"));
 ok("看板小標順序一致", ascending(order(t,["剪輯（2）","員工（2）","海外剪輯（2）"])));
-ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===3);
+ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===4);
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 
 // ── HR 通知：收件人分清單 ──
@@ -85,7 +85,8 @@ let h=viewTeam();
 { const sel=h.split('id="hrn_who"')[1].split("</select>")[0];
   ok("有全體同仁", sel.includes('value="__all__"'));
   ok("可以只發給全體剪輯／員工／海外", sel.includes('value="__editor__"') && sel.includes('value="__cs__"') && sel.includes('value="__intl__"'));
-  ok("個人名單分三組", sel.includes('label="剪輯"') && sel.includes('label="員工"') && sel.includes('label="海外剪輯"'));
+  ok("個人名單分四組（含人資）", sel.includes('label="剪輯"') && sel.includes('label="員工"') && sel.includes('label="海外剪輯"') && sel.includes('label="人資"'));
+  ok("每一個群組都送得出去", ["__editor__","__cs__","__intl__","__hr__"].every(k=>sel.includes('value="'+k+'"')));
   ok("分組順序：剪輯→員工→海外", ascending(order(sel,['label="剪輯"','label="員工"','label="海外剪輯"']))); }
 
 // ── HR 看得到回覆 ──
@@ -137,7 +138,7 @@ ok("看板的通知列顯示回覆", t.includes("我下週一交") && t.includes
   fields.hrn_who="__all__"; fields.hrn_txt="全體";
   await hrNotify(); await wait(20);
   sets=calls.filter(c=>c[0]==="set"&&c[1]==="tasks");
-  ok("全體＝六個人", sets.length===6);
+  ok("全體＝含人資共七個人", sets.length===7);
 
   // ── render 不炸 ──
   reset(); hookDB();
