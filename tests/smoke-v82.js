@@ -61,8 +61,11 @@ ok("拿不到 IndexedDB 時退回記憶體快取，不會整個掛掉",
 ok("開場不再訂閱 logs", !/onSnapshot\(query\(collection\(db,\s*"logs"/.test(
      fbSrc.split("即時訂閱")[1]||""));
 ok("logs 改成 watchLogs() 裡才訂閱",
-   /watchLogs\(\)\s*\{[\s\S]*onSnapshot\(query\(collection\(db,\s*"logs"/.test(fbSrc));
-ok("watchLogs 只會訂閱一次", /if\s*\(logsOn\)\s*return;\s*logsOn\s*=\s*true;/.test(fbSrc));
+   /watchLogs\(n\)\s*\{[\s\S]*onSnapshot\(query\(collection\(db,\s*"logs"/.test(fbSrc));
+// v85：可以用更大的 n 再叫一次來查更早的；同樣的數量不重訂，換數量時舊的要先關掉
+ok("同樣的數量不會重複訂閱", /if\s*\(logsUnsub\s*&&\s*want\s*===\s*logsLimit\)\s*return false;/.test(fbSrc));
+ok("換數量時先關掉舊訂閱，不會變成兩條", /if\s*\(logsUnsub\)\s*\{\s*try\s*\{\s*logsUnsub\(\)/.test(fbSrc));
+ok("查更早的有上限，不會一次拉整個集合", /Math\.min\(5000/.test(fbSrc));
 ok("shifts 訂閱有加時間範圍", /onSnapshot\(query\(collection\(db,\s*"shifts"\),\s*where\("date",\s*">=",\s*SHIFTS_FROM\)\)/.test(fbSrc));
 ok("shifts 訂閱窗是 62 天", /SHIFT_WINDOW_DAYS\s*=\s*62/.test(fbSrc));
 ok("補讀舊月份用 getDocs（讀一次，不建立訂閱）",
