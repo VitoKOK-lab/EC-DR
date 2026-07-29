@@ -148,6 +148,18 @@ ok("過去的不會回到今天（維持原本行為）", !todayCard().includes(
     global.document.getElementById=_get; global.document.createElement=_create;
     localStorage.removeItem("ecdr_last"); LOGIN_ALL=false; }
 
+  // ══ Regina 的「待你審片」收折並移到最下面 ══
+  { reset([], [{id:"V1",code:"2607292",name:"待審的片",rawName:"x",stage:"已完成",editor:"健加",
+      finishedAt:T0+"T05:00:00",reviewStatus:"",publishedLink:"",locale:"",channel:"",
+      tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null}]);
+    as("Regina","manager");
+    const h=viewFlow();
+    ok("待你審片改成折疊", h.includes('<summary>🎞 待你審片<span class="n">1</span>'));
+    ok("預設是收起來的", !/待你審片[\s\S]{0,80}open/.test(h));
+    ok("排在團隊交辦下面", h.indexOf("待你審片")>h.indexOf("團隊交辦＆回報"));
+    ok("排在毛片庫存下面", h.indexOf("待你審片")>h.indexOf("毛片庫存"));
+    ok("展開後看得到片子與審片鍵", h.includes("待審的片") && h.includes("審片")); }
+
   // ── render 不炸 ──
   reset([task("K1")], [vid_("V1",{stage:"剪輯中",claimedBy:"小葵",editor:"小葵",claimedAt:T0+"T01:00:00"})]);
   [["小葵","editor"],["小美","cs"]].forEach(([u,r])=>{

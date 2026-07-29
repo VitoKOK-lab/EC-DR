@@ -1675,16 +1675,13 @@ function flowReviewQueueCard(){
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
-  const reviewQueueCard=`<div class="card"${pendingReview.length?' style="border-color:var(--gold)"':''}>
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">🎞 待你審片</b><span class="pill ${pendingReview.length?'wa':'ok'}">${pendingReview.length}</span></div>
+  const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
     ${pendingReview.length?pendingReview.slice(0,20).map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
         <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
-
-  </div>`;
+  </div>`);
   return reviewQueueCard;
 }
 // 流程中控④：單一剪輯卡（上線狀態、進行中/完成、拖延警示、今日交辦與回報、一鍵交辦）
@@ -1763,9 +1760,10 @@ function viewFlow(){
   </div>`;
 
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${runwayCard}${reviewQueueCard}${stockCard}
+  ${focus}${runwayCard}${stockCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
-  ${staffCards||'<p class="muted">還沒有成員</p>'}`;
+  ${staffCards||'<p class="muted">還沒有成員</p>'}
+  ${reviewQueueCard}`;
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
