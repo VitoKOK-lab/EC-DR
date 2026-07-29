@@ -274,7 +274,7 @@ function exitViewAs(){ VIEW_AS=null; CUR_TAB=null; buildNav(); applyState(LAST_R
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
-  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "E-Commerce Dept" : "電商部";   // 海外看英文標題
+  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "E-Commerce Workspace" : "電商部協作系統";   // 海外看英文標題
   const nav = document.getElementById("nav"); nav.innerHTML="";
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;

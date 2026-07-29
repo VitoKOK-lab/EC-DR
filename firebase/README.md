@@ -1,4 +1,4 @@
-# Firebase 設定 — 電商部
+# Firebase 設定 — 電商部協作系統
 
 資料放 Firebase Firestore，多裝置即時同步。
 **網站本身由 GitHub Pages 服務 repo 根目錄**（見上層 [`README.md`](../README.md)）；
