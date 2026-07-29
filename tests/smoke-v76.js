@@ -31,8 +31,8 @@ const sh=(user,date,inT,outT,extra)=>Object.assign({id:user+"__"+date,user,date,
   clockIn:inT?date+"T"+inT+":00":"", clockOut:outT?date+"T"+outT+":00":""},extra||{});
 function reset(shifts, settings, users){
   calls=[]; toasts=[]; fields={}; ATT_YM=null;
-  STATE={ users: users||[{name:"小葵",role:"editor",craft:"orig"},{name:"阿明",role:"editor",craft:"orig"},
-                         {name:"小美",role:"cs"},{name:"HR小姐",role:"hr"},{name:"管理員",role:"boss"}],
+  STATE={ users: users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},{name:"阿明",role:"editor",craft:"orig",pw:"x",pwSet:true},
+                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"}],
     settings: Object.assign({dailyTarget:4,videoTags:[],sources:["s"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"}, settings||{}),
     schedule:{}, logs:[], tasks:{}, deletedVideos:[], videos:[],
@@ -165,6 +165,96 @@ reset([]);
   reset([], {}); as("管理員","boss");
   setMemberHours("小葵","",""); await wait(20);
   ok("清空＝改回全公司時間", calls.some(x=>x[0]==="update"&&x[1]==="users"&&x[3].workStart===""&&x[3].workEnd===""));
+
+  // ══ v77：不讓手機登入 ══
+  reset([]);
+  { let alerted=""; const _a=global.alert; global.alert=(m)=>{alerted=String(m);};
+    ok("手機不能用員工帳號登入", (()=>{ loginAs({name:"小葵",role:"editor",pw:"x"});
+      return alerted.includes("請用公司電腦登入") && localStorage.getItem("ecdr_user")!=="小葵"; })());
+    alerted=""; global.prompt=()=>"x";
+    ok("經理人不受限（Regina 手機優先）", (()=>{ loginAs({name:"Regina",role:"manager",pw:"x"}); return alerted===""; })());
+    alerted=""; reset([], {pcOnly:false});
+    ok("關掉設定後手機就能登入", (()=>{ loginAs({name:"小葵",role:"editor",pw:"x"}); return alerted===""; })());
+    global.prompt=()=>null; global.alert=_a; }
+
+  // ══ v77：第一次登入強制改密碼 ══
+  reset([], {}, [{name:"小葵",role:"editor",pw:"0000"},{name:"阿明",role:"editor",pw:"abcd",pwSet:true},
+                 {name:"小美",role:"cs",pw:"abcd",pwSet:false},{name:"Anna",role:"intl",pw:"abcd"}]);
+  as("小葵","editor"); ok("還在用 0000 → 要先改密碼", mustSetPw()===true);
+  as("阿明","editor"); ok("已經自己設過 → 不用再改", mustSetPw()===false);
+  as("小美","cs");     ok("管理員剛重設 → 要再設一次", mustSetPw()===true);
+  as("Anna","intl");   ok("改過但沒有 pwSet 記號 → 不打擾他", mustSetPw()===false);
+  as("管理員","boss"); ok("管理員登入不受限", mustSetPw()===false);
+  as("小葵","editor"); VIEW_AS="小葵"; ok("員工視角不會被擋", mustSetPw()===false); VIEW_AS=null;
+
+  as("小葵","editor"); CUR_TAB="work"; render();
+  ok("沒設密碼前只看得到設定密碼的畫面", viewEl.innerHTML.includes("請先設定你自己的密碼") && !viewEl.innerHTML.includes("本日上班計畫"));
+  fields.pwg1="1234"; fields.pwg2="1234";
+  await savePwGate(); await wait(30);
+  ok("設定密碼會寫入並標記已設定",
+     calls.some(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵"&&x[3].pw==="1234"&&x[3].pwSet===true));
+  calls.length=0; fields.pwg1="0000"; fields.pwg2="0000"; await savePwGate(); await wait(20);
+  ok("不能沿用 0000", !calls.length && toasts.some(t=>t.includes("不能沿用預設密碼")));
+  calls.length=0; fields.pwg1="12"; fields.pwg2="12"; await savePwGate(); await wait(20);
+  ok("至少 4 碼", !calls.length && toasts.some(t=>t.includes("至少 4 碼")));
+  calls.length=0; fields.pwg1="1234"; fields.pwg2="5678"; await savePwGate(); await wait(20);
+  ok("兩次要一致", !calls.length && toasts.some(t=>t.includes("兩次輸入不一致")));
+
+  // ══ v77：出勤異常要填原因 ══
+  reset([sh("小葵",T0,"09:30","18:00")], {workStart:"09:00",workEnd:"18:00",lateGraceMin:10},
+        [{name:"小葵",role:"editor",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true}]);
+  as("小葵","editor");
+  ok("遲到算異常", attIssues(STATE.shifts["小葵__"+T0]).some(x=>x.includes("遲到")));
+  ok("工作頁跳出待說明提醒", viewWork().includes("出勤異常待說明") && viewWork().includes("saveIssueNote("));
+  fields["isn_小葵__"+T0]="路上car禍改道";
+  saveIssueNote("小葵__"+T0); await wait(20);
+  ok("填了原因會寫進那天的打卡紀錄",
+     calls.some(x=>x[0]==="update"&&x[1]==="shifts"&&x[3].issueNote==="路上car禍改道"&&x[3].issueAt));
+  calls.length=0; fields["isn_小葵__"+T0]="x"; saveIssueNote("小葵__"+T0); await wait(20);
+  ok("原因太短不給送", !calls.length && toasts.some(t=>t.includes("請簡單說明原因")));
+
+  reset([sh("小葵",T0,"09:00","18:00")], {workStart:"09:00",workEnd:"18:00",lateGraceMin:10},
+        [{name:"小葵",role:"editor",pw:"x",pwSet:true}]);
+  as("小葵","editor");
+  ok("正常出勤不會跳提醒", !viewWork().includes("出勤異常待說明"));
+  reset([sh("小葵",T0,"09:30","18:00",{issueNote:"看醫生"})], {workStart:"09:00",workEnd:"18:00",lateGraceMin:10},
+        [{name:"小葵",role:"editor",pw:"x",pwSet:true}]);
+  as("小葵","editor");
+  ok("填過就不再跳", !viewWork().includes("出勤異常待說明"));
+
+  // 人資看得到說明與未說明
+  reset([sh("小葵",T0,"09:30","18:00",{issueNote:"看醫生"}), sh("阿明",T0,"09:40","18:00")],
+        {workStart:"09:00",workEnd:"18:00",lateGraceMin:10});
+  as("HR小姐","hr"); ATT_YM=[+T0.slice(0,4), +T0.slice(5,7)-1];
+  { const h2=viewAttend();
+    ok("人資看得到本人說明", h2.includes("出勤異常與說明") && h2.includes("看醫生"));
+    ok("人資看得到誰還沒說明", h2.includes("尚未說明") && h2.includes("1 筆還沒說明")); }
+
+  // ══ v77：換新裝置提醒 ══
+  reset([sh("小葵",T0,"09:00","18:00",{inDev:"NEW1",inDevUA:"Windows・Chrome",inNewDev:true}),
+         sh("阿明",T0,"09:00","18:00",{inDev:"OLD1",inDevUA:"Windows・Chrome",inNewDev:false})],
+        {workStart:"09:00",workEnd:"18:00"});
+  as("HR小姐","hr");
+  { const h3=viewAttend();
+    ok("換新裝置會提醒人資", h3.includes("今天有人換了新裝置") && h3.includes("小葵"));
+    ok("沒換裝置的不會被列", !h3.split("今天有人換了新裝置")[1].split("</div>\n  </div>")[0].includes("阿明"));
+    ok("看得到是什麼機器", h3.includes("Windows・Chrome")); }
+  reset([sh("小葵",T0,"09:00","18:00",{inDev:"OLD1",inNewDev:false})]);
+  as("HR小姐","hr");
+  ok("都是舊裝置就不提醒", !viewAttend().includes("今天有人換了新裝置"));
+  reset([sh("小葵",T0,"09:00","18:00",{inDev:"D1",inMobile:true})]);
+  as("HR小姐","hr");
+  ok("用手機打卡會標出來", viewAttend().includes("用手機打的"));
+
+  // 裝置自動記起來、不會重複記
+  reset([], {}, [{name:"小葵",role:"editor",pw:"x",pwSet:true,devices:[{id:"OLD1",ua:"Windows・Chrome"}]}]);
+  ok("認得已登記的裝置", isKnownDevice("小葵","OLD1")===true && isKnownDevice("小葵","XX")===false);
+  await rememberDevice("小葵",{dev:"NEW9",ua:"Mac・Safari",mobile:false}); await wait(20);
+  ok("第一次用的裝置會自動記起來",
+     calls.some(x=>(x[0]==="arrayAdd"||x[0]==="update")&&x[1]==="users"&&x[2]==="小葵"));
+  calls.length=0;
+  await rememberDevice("小葵",{dev:"OLD1",ua:"Windows・Chrome",mobile:false}); await wait(20);
+  ok("已經記過的不會重複寫", !calls.length);
 
   // ── render 不炸 ──
   reset([sh("小葵",T0,"09:00","18:00")]);

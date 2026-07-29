@@ -146,6 +146,9 @@
 | `name` | string | 名字（= 文件 ID） |
 | `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面）／`cs`（員工：被交辦工作＋每日匯報，不剪片、沒有一創二創之分）／`hr`（人資：只看團隊看板，純檢視、不能操作） |
 | `workStart` / `workEnd` | string | 個人上下班時間（`HH:MM`）。**空＝用全公司那一組**（`settings.workStart/workEnd`） |
+| `pw` | string | 登入密碼（新成員預設 `0000`） |
+| `pwSet` | boolean | 已自己設過密碼。**還是 `0000` 或 `pwSet:false` 的人，登入後會被擋在「請先設定密碼」畫面，設完才能用** |
+| `devices` | object[] | 用過的打卡裝置 `{id, ua, mobile, firstAt}`。**第一次用就自動記起來，不需要核准**；換新裝置時出勤頁會提醒人資 |
 | `craft` | string | 剪輯分工：`orig`（一次創作：毛片/原創）／`derived`（二次創作：蝦皮·馬來·英·泰版本）／`both`（兩種都做）。未設定時：一般剪輯＝`orig`、海外剪輯＝`derived`；管理員/經理人/人資固定看全部 |
 | `intlLocale` | string | 海外剪輯綁定語言 | `en`／`th`／`ms`（僅 `role=intl` 用；未設定＝`en`）。帳號綁語言：只做/只看該語言 |
 | `isDefault` | boolean | 系統預設旗標 |
@@ -223,6 +226,9 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `autoOut` | boolean | 這筆下班是系統補登的（當天忘了打，隔天登入時以下班時間補上） |
 | `inDev` / `outDev` | string | 打卡裝置代碼（瀏覽器產生並記在該裝置上）。同一台裝置幫多人打卡時，出勤頁會示警 |
 | `inMobile` / `outMobile` | boolean | 是不是用手機打的 |
+| `inDevUA` / `outDevUA` | string | 裝置摘要，例 `Windows・Chrome`。裝置代碼清快取會變，這串不會，人資對照時看得出是不是同一台機器 |
+| `inNewDev` | boolean | 這個人第一次用這台裝置打卡（出勤頁會提醒人資去關心） |
+| `issueNote` / `issueAt` | string | 遲到／早退／忘了打下班時，**本人填的原因**與填寫時間 |
 | `inGeo` / `outGeo` | object | 打卡當下的座標 `{lat,lng,acc}`；拿不到或使用者不授權就是 `null`，**不影響打卡** |
 
 > **打卡「只記錄不擋」（v76 起）**：沒有任何一種網頁打卡擋得住有心作弊 ——
@@ -260,6 +266,7 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `reviewSince` | string | 審片流程上線日 `YYYY-MM-DD`；這天之前完成的舊片不列入待審核（預設 `2026-07-27`） |
 | `workStart` / `workEnd` | string | **全公司**上下班時間 `HH:MM`（預設 09:00 / 18:00）；個人例外放在 `users.workStart/workEnd` |
 | `lateGraceMin` | number | 遲到寬限分鐘（預設 10）。超過上班時間 + 寬限才算遲到 |
+| `pcOnly` | boolean | 只能用電腦登入（預設 `true`）。一般員工用手機會被擋在登入頁；經理人／人資／管理員不受限 |
 | `officeGeo` | object | 公司座標 `{lat,lng}`（選填）。有填才會在出勤頁標出「打卡地點離公司 N 公尺」 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `intlAccounts` | object[] | 海外 TikTok 帳號清單，每筆 `{locale, name}`（en/th/ms ＋ 帳號名）；建立在地化版本時挑帳號用 |
