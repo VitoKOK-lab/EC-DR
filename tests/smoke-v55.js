@@ -1,4 +1,4 @@
-// 團隊看板：每個人的「今日成效」與「本月成效」，純檢視、沒有任何按鍵；人資只有這一頁（v66）
+// 團隊看板：每個人的「今日成效」與「本月成效」；除了篩選之外不能操作任何東西。人資只有這一頁（v66）
 const fs=require("fs"), path=require("path");
 let src=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8").replace(/^let /gm,"");
 const el=()=>({value:"",innerHTML:"",textContent:"",className:"",style:{},
@@ -100,7 +100,11 @@ ok("出勤天數算得出來", h.includes('data-label="出勤天數">1<'));
 ok("沒有按鈕", !h.includes("<button"));
 ok("沒有 onclick", !h.includes("onclick"));
 ok("沒有連結", !h.includes("<a "));
-ok("沒有輸入框／下拉", !h.includes("<input") && !h.includes("<select"));
+// v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項，沒有別的輸入
+ok("只有篩選用的下拉與搜尋框", (h.match(/<select|<input/g)||[]).length===2
+   && h.includes("teamSetGroup(") && h.includes("teamSetQ("));
+ok("沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
+   "assignTaskSel(","hrNotify(","ackTask(","editVideo(","noticeReply(","msgReply("].every(f=>!h.includes(f)));
 ok("沒有審核／交辦／檢查的動作", !h.includes("reviewVid(") && !h.includes("flowAssign(") && !h.includes("hrCheckVideo"));
 // ── 人資的看板多一張「發 HR 通知」卡，其餘一樣是唯讀 ──
 localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr");

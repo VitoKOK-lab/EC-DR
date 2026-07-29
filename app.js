@@ -838,14 +838,43 @@ function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改
     : window.DB.setSettings({contacts:cur})
   ).then(()=>toast("已改為「"+nn+"」")).catch(()=>toast("修改失敗",true)); }
 // 常用工作項目：一鍵加入當日工作計畫（HR 每日確認會看到這些）
+// ── 每日固定工作範本（v85）──────────────────────────────────────
+// 本來寫死在程式裡，改成管理員可以在「設定」自己維護：
+//   settings.dailyTemplates = [{t:"標題", r:"editor"|"cs"|"intl"|"all"}]
+// 沒設定時沿用下面這兩組預設，行為跟以前一樣。
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
-function workPresets(){ return currentRole()==="cs" ? CS_PRESETS : WORK_PRESETS; }
+const TPL_ROLES=[["all","全部"],["editor","剪輯"],["cs","員工"],["intl","海外剪輯"]];
+function dailyTemplates(){
+  const s=(STATE&&STATE.settings&&STATE.settings.dailyTemplates);
+  if(Array.isArray(s) && s.length) return s.filter(x=>x&&String(x.t||"").trim());
+  return WORK_PRESETS.map(t=>({t, r:"editor"})).concat(CS_PRESETS.map(t=>({t, r:"cs"})));
+}
+// 我這個角色的固定工作
+function workPresets(){
+  const r=currentRole();
+  return dailyTemplates().filter(x=>x.r==="all"||x.r===r).map(x=>String(x.t).trim());
+}
+// 今天已經有的（不管是自己加的還是主管交辦的）就不要重複帶入
+function presetPending(){
+  const have=new Set(myTasks().map(t=>String(t.title||"").trim()));
+  return workPresets().filter(t=>!have.has(t));
+}
 async function addPresetTask(title){
-  if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
   const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title, contact:"", report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()}); }
-  catch(e){ toast("新增失敗，請稍後再試",true); }
+  catch(e){ toast(T("新增失敗，請稍後再試","Failed to add, try again"),true); }
+}
+// 一次把今天還沒有的固定工作全部帶進待辦
+async function addAllPresets(){
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  const list=presetPending();
+  if(!list.length){ toast(T("今天的固定工作都已經在清單裡了","All daily items are already on your list")); return; }
+  BULK_BUSY=true; let n=0;
+  try{ for(const t of list){ await addPresetTask(t); n++; } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  toast(T("已帶入 "+n+" 件固定工作", "Added "+n+" daily items"));
 }
 async function createTask(){ const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
@@ -1133,9 +1162,12 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
-  const presets=currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0 6px">
-      <span class="muted" style="font-size:12px;align-self:center">常用：</span>
-      ${workPresets().map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`;
+  // 每日固定工作：今天還沒帶進來的才顯示；全部帶完了這一排就消失
+  const pend=presetPending();
+  const presets=!pend.length?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0 6px">
+      <span class="muted" style="font-size:12px;align-self:center">${T("每日固定：","Daily:")}</span>
+      ${pend.map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}
+      ${pend.length>1?`<button class="btn sm" style="padding:4px 10px;font-size:12px" onclick="addAllPresets()">${T("全部帶入","Add all")}（${pend.length}）</button>`:""}</div>`;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">${T("今天要做的事","Today")}</b>
@@ -2376,11 +2408,35 @@ function teamNoticeCompose(staff){
   </div>`;
 }
 const noEdit=(u)=>["cs","hr"].includes(u&&u.role);   // 不剪片的角色
+// ── 團隊看板的篩選（v85）：22 個人一次看太長，先縮到自己要看的那一群 ──
+// 只是換個看法，不會改到任何資料；看板上依然沒有任何會動到資料的按鍵。
+let TEAM_GROUP="all", TEAM_Q="";
+function teamSetGroup(v){ TEAM_GROUP=String(v||"all"); render(); }
+function teamSetQ(v){ TEAM_Q=String(v||"").trim(); render(); }
+function teamFilter(list){
+  return (list||[]).filter(u=>{
+    if(TEAM_GROUP!=="all" && (u.role||"editor")!==TEAM_GROUP) return false;
+    if(TEAM_Q && !String(u.name||"").toLowerCase().includes(TEAM_Q.toLowerCase())) return false;
+    return true; });
+}
+function teamFilterBar(all, shown){
+  const opt=(k,zh,en)=>`<option value="${k}" ${TEAM_GROUP===k?"selected":""}>${T(zh,en)}（${k==="all"?all.length:all.filter(u=>(u.role||"editor")===k).length}）</option>`;
+  return `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 4px">
+    <select style="width:auto" onchange="teamSetGroup(this.value)">
+      ${opt("all","全部","Everyone")}${opt("editor","剪輯","Editors")}${opt("cs","員工","Staff")}${opt("intl","海外剪輯","Intl")}${opt("hr","人資","HR")}</select>
+    <input value="${esc(TEAM_Q)}" placeholder="${T("找人…","Find someone…")}" style="flex:1;min-width:110px"
+      onchange="teamSetQ(this.value)" onkeydown="if(event.key==='Enter')teamSetQ(this.value)">
+    ${(TEAM_GROUP!=="all"||TEAM_Q)?`<span class="muted" style="font-size:12px">${T("顯示 "+shown.length+" / "+all.length+" 人","Showing "+shown.length+" of "+all.length)}</span>`:""}
+  </div>`;
+}
 function viewTeam(){
-  const staff=teamStaff();
+  const everyone=teamStaff();
+  const staff=teamFilter(everyone);
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const ym=today.slice(0,7), minLabel=dashMin;
-  if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
+  if(!everyone.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
+  if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2>${teamFilterBar(everyone, staff)}
+    <div class="card muted">${T("沒有符合的人","Nobody matches")}</div>`;
   const months=staff.map(u=>({u, m:teamMonthStat(u.name, allTasks, ym)}));
   const dayStats=staff.map(u=>teamDayStat(u.name, allTasks));
   const dayDone=dayStats.reduce((a,d)=>a+d.done.length,0);
@@ -2400,6 +2456,7 @@ function viewTeam(){
   ${currentRole()==="hr"?msgInboxCard():''}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
   ${currentRole()==="hr"?myMsgFold():''}
+  ${teamFilterBar(everyone, staff)}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     <div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>
@@ -2814,17 +2871,63 @@ function purgeVideo(id){ const v=vidLocal(id)||{};
   if(!confirm("永久刪除「"+vidTitle(v)+"」？此動作無法復原。")) return;
   write("DELETE","/api/videos/"+id+"/purge",{},"已永久刪除「"+vidTitle(v)+"」"); }
 // 操作紀錄（管理員）：誰・何時・做了什麼・對象
+// ── 操作紀錄的查詢條件（v85）──
+let LOG_Q="", LOG_WHO="", LOG_FROM="", LOG_TO="";
+function logSetQ(v){ LOG_Q=String(v||"").trim(); render(); }
+function logSetWho(v){ LOG_WHO=String(v||""); render(); }
+function logSetFrom(v){ LOG_FROM=String(v||"").slice(0,10); render(); }
+function logSetTo(v){ LOG_TO=String(v||"").slice(0,10); render(); }
+function logClear(){ LOG_Q=""; LOG_WHO=""; LOG_FROM=""; LOG_TO=""; render(); }
+function logHasFilter(){ return !!(LOG_Q||LOG_WHO||LOG_FROM||LOG_TO); }
+// 再往前多載一些。只有管理員按得到，一次只多讀那幾百筆。
+function logMore(){
+  const cur=(window.DB&&window.DB.logsLimit)?window.DB.logsLimit():300;
+  if(window.DB&&window.DB.watchLogs){ window.DB.watchLogs(cur+700); toast("正在載入更早的紀錄…"); }
+}
+function logMatch(l){
+  const day=String(l.at||"").slice(0,10);
+  if(LOG_FROM && day<LOG_FROM) return false;
+  if(LOG_TO   && day>LOG_TO)   return false;
+  if(LOG_WHO  && l.user!==LOG_WHO) return false;
+  if(LOG_Q){ const hay=[l.user,l.action,l.target,ROLE_LABEL[l.role]||l.role].join(" ").toLowerCase();
+    if(!hay.includes(LOG_Q.toLowerCase())) return false; }
+  return true;
+}
 function viewLog(){
-  const logs=((STATE&&STATE.logs)||[]).slice().sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
-  const rows=logs.map(l=>`<tr>
+  const all=((STATE&&STATE.logs)||[]).slice().sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  const logs=all.filter(logMatch);
+  const shown=logs.slice(0,400);
+  const who=Array.from(new Set(all.map(l=>l.user).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b)));
+  const loaded=(window.DB&&window.DB.logsLimit)?window.DB.logsLimit():300;
+  const rows=shown.map(l=>`<tr>
     <td data-label="時間">${esc((l.at||"").replace("T"," "))}</td>
     <td data-label="誰"><b>${esc(l.user||"")}</b> <span class="muted" style="font-size:11px">${esc(ROLE_LABEL[l.role]||l.role||"")}</span></td>
     <td data-label="動作">${esc(l.action||"")}</td>
     <td data-label="對象">${esc(l.target||"")}</td></tr>`).join("");
+  const empty = all.length ? "沒有符合條件的紀錄" : "目前沒有紀錄";
   return `<h2>操作紀錄</h2>
-    <div class="card"><div class="${logs.length>10?'vidscroll':''}">
+    <div class="card">
+      <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="lg_q" value="${esc(LOG_Q)}" placeholder="搜尋人名、動作、對象…" style="flex:2;min-width:150px"
+          onchange="logSetQ(this.value)" onkeydown="if(event.key==='Enter')logSetQ(this.value)">
+        <select id="lg_who" style="width:auto" onchange="logSetWho(this.value)">
+          <option value="">全部的人</option>
+          ${who.map(n=>`<option value="${esc(n)}" ${LOG_WHO===n?"selected":""}>${esc(n)}</option>`).join("")}</select>
+        <span class="row" style="gap:6px;flex-wrap:nowrap;align-items:center;flex:1 1 235px;min-width:235px">
+          <input id="lg_from" type="date" value="${esc(LOG_FROM)}" style="flex:1;min-width:0" title="從哪一天" onchange="logSetFrom(this.value)">
+          <span class="muted" style="flex:none">–</span>
+          <input id="lg_to" type="date" value="${esc(LOG_TO)}" style="flex:1;min-width:0" title="到哪一天" onchange="logSetTo(this.value)">
+        </span>
+        ${logHasFilter()?`<button class="btn sec sm" style="flex:none" onclick="logClear()">清除</button>`:""}
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:8px">
+        ${logHasFilter()?`符合 <b>${logs.length}</b> 筆`:`共 <b>${all.length}</b> 筆`}${logs.length>shown.length?`（只顯示最近 ${shown.length} 筆）`:""}
+        ・已載入最近 ${all.length} 筆紀錄
+        <button class="btn sec sm" style="padding:2px 9px;font-size:11px;margin-left:6px" onclick="logMore()">載入更早的</button>
+      </div>
+      <div class="${shown.length>10?'vidscroll':''}" style="margin-top:8px">
       <table class="responsive"><thead><tr><th>時間</th><th>誰</th><th>動作</th><th>對象</th></tr></thead>
-      <tbody>${rows||`<tr><td colspan="4" class="muted">目前沒有紀錄</td></tr>`}</tbody></table>
+      <tbody>${rows||`<tr><td colspan="4" class="muted">${empty}</td></tr>`}</tbody></table>
     </div></div>`;
 }
 // 回收桶（管理員）：被刪除的影片可復原或永久刪除
@@ -3734,7 +3837,13 @@ function setWorkHoursCard(s){
       <div><label>下班時間</label><input id="set_wend" type="time" value="${esc(s.workEnd||DEF_WORK.end)}"></div>
       <div><label>遲到寬限（分鐘）</label><input id="set_grace" type="number" min="0" max="120" value="${s.lateGraceMin!=null?+s.lateGraceMin:DEF_WORK.grace}"></div>
     </div>
-    <label style="margin-top:12px">全公司出勤起算日（選填）</label>
+    <label style="margin-top:14px">每日固定工作（一行一件，格式「角色=工作內容」）</label>
+    <textarea id="set_tpl" rows="6" placeholder="剪輯=剪輯當日影片&#10;員工=回覆客戶訊息&#10;全部=填寫今日工作日誌">${esc(dailyTemplates().map(x=>{
+      const r=(TPL_ROLES.find(p=>p[0]===x.r)||TPL_ROLES[0])[1]; return r+"="+String(x.t).trim(); }).join("\n"))}</textarea>
+    <div class="muted" style="font-size:12px;margin-top:4px">角色可填：${TPL_ROLES.map(p=>p[1]).join("／")}。沒寫「＝」就當作全部。
+      這些會出現在該角色的工作頁上方，按一下就加進今天的待辦；當天已經有同名的就不再出現。</div>
+
+    <label style="margin-top:14px">全公司出勤起算日（選填）</label>
     <div class="row" style="gap:8px;align-items:center">
       <input id="set_attstart" type="date" value="${esc(s.attendStart||"")}" style="max-width:180px">
       <span class="muted" style="font-size:12px">留白＝各人從自己設定密碼那天起算。填了就以這一天為準（兩者取比較晚的）。這一天之前的打卡只留著參考，不算遲到早退。</span>
@@ -3878,6 +3987,11 @@ async function saveSettings(){
     settings.workEnd=(val("set_wend")||DEF_WORK.end);
     settings.lateGraceMin=Math.max(0, parseInt(val("set_grace"))||0);
     settings.attendStart=(val("set_attstart")||"").trim();
+    // 每日固定工作：一行一件，「角色=內容」；角色寫錯或沒寫都當作「全部」
+    settings.dailyTemplates=(val("set_tpl")||"").split("\n").map(line=>{
+      const i=line.indexOf("="); const label=(i>=0?line.slice(0,i):"").trim(); const t=(i>=0?line.slice(i+1):line).trim();
+      const hit=TPL_ROLES.find(p=>p[1]===label||p[0]===label);
+      return {t, r:hit?hit[0]:"all"}; }).filter(x=>x.t);
     const pcEl=document.getElementById("set_pconly"); settings.pcOnly = pcEl? !!pcEl.checked : true;
     const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
     settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};

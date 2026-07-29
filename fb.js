@@ -102,11 +102,17 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
 
     // ── 按需載入：這兩件只有少數人偶爾要看，不值得每個人每次開系統都下載 ──
     // 操作紀錄只有管理員看得到，卻是 300 筆。改成他點進「操作紀錄」才訂閱。
-    watchLogs() {
-      if (logsOn) return; logsOn = true;
-      onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(300)),
+    // 要查更早的就用更大的 n 再呼叫一次（舊的訂閱會先關掉，不會變成兩條）。
+    watchLogs(n) {
+      const want = Math.max(1, Math.min(5000, +n || logsLimit));
+      if (logsUnsub && want === logsLimit) return false;
+      logsLimit = want;
+      if (logsUnsub) { try { logsUnsub(); } catch (e) {} }
+      logsUnsub = onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(want)),
         q => { raw.logs = q.docs.map(d => d.data()); push(); });
+      return true;
     },
+    logsLimit: () => logsLimit,
     // 常駐訂閱的起始日；app.js 用它判斷某個月份要不要另外補讀
     shiftsFrom: SHIFTS_FROM,
     // 補讀某個月的打卡紀錄（只讀一次，不建立訂閱）。回傳有沒有真的去讀。
@@ -120,7 +126,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       return true;
     },
   };
-  let logsOn = false;
+  let logsUnsub = null, logsLimit = 300;
 
   signInAnonymously(auth).catch(e => { if (window.__authError) window.__authError(e.message); });
 

@@ -127,7 +127,11 @@ ok("不剪片的員工那欄影片數字用 — 帶過", t.includes('data-label=
 ok("頂部摘要有交辦完成", t.includes("交辦完成"));
 ok("純檢視：沒有按鈕", !t.includes("<button"));
 ok("純檢視：沒有 onclick", !t.includes("onclick"));
-ok("純檢視：沒有輸入框", !t.includes("<input") && !t.includes("<select"));
+// v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項
+ok("純檢視：只有篩選用的下拉與搜尋框", (t.match(/<select|<input/g)||[]).length===2
+   && t.includes("teamSetGroup(") && t.includes("teamSetQ("));
+ok("純檢視：沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
+   "assignTaskSel(","hrNotify(","ackTask(","editVideo("].every(f=>!t.includes(f)));
 
 // ── 海外看板全英文 ──
 reset(); as("Anna","intl");
