@@ -36,7 +36,7 @@ function reset(shifts, settings, users){
   calls=[]; toasts=[]; fields={}; ATT_YM=null;
   STATE={ users: (users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},{name:"阿明",role:"editor",craft:"orig",pw:"x",pwSet:true},
                          {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"}])
-                 .map(u=>Object.assign({pwAt:PWAT}, u)),
+                 .map(u=>Object.assign({pwAt:PWAT, pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA=="}, u)),
     settings: Object.assign({dailyTarget:4,videoTags:[],sources:["s"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"}, settings||{}),
     schedule:{}, logs:[], tasks:{}, deletedVideos:[], videos:[],
@@ -181,27 +181,33 @@ reset([]);
     ok("關掉設定後手機就能登入", (()=>{ loginAs({name:"小葵",role:"editor",pw:"x"}); return alerted===""; })());
     global.prompt=()=>null; global.alert=_a; }
 
-  // ══ v77：第一次登入強制改密碼 ══
-  reset([], {}, [{name:"小葵",role:"editor",pw:"0000"},{name:"阿明",role:"editor",pw:"abcd",pwSet:true},
-                 {name:"小美",role:"cs",pw:"abcd",pwSet:false},{name:"Anna",role:"intl",pw:"abcd"}]);
-  as("小葵","editor"); ok("還在用 0000 → 要先改密碼", mustSetPw()===true);
-  as("阿明","editor"); ok("已經自己設過 → 不用再改", mustSetPw()===false);
+  // ══ v77＋v84：第一次登入強制設密碼（v84 起改成「沒有 pwHash 的一律要重設」）══
+  reset([], {}, [{name:"小葵",role:"editor",pw:"0000",pwHash:""},{name:"阿明",role:"editor",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true},
+                 {name:"小美",role:"cs",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:false},{name:"Anna",role:"intl",pw:"abcd",pwHash:""}]);
+  as("小葵","editor"); ok("還在用 0000 → 要先設密碼", mustSetPw()===true);
+  as("阿明","editor"); ok("已經設好雜湊密碼 → 不用再改", mustSetPw()===false);
   as("小美","cs");     ok("管理員剛重設 → 要再設一次", mustSetPw()===true);
-  as("Anna","intl");   ok("改過但沒有 pwSet 記號 → 不打擾他", mustSetPw()===false);
+  as("Anna","intl");   ok("舊制的明文密碼 → v84 起也要重設一次", mustSetPw()===true);
   as("管理員","boss"); ok("管理員登入不受限", mustSetPw()===false);
   as("小葵","editor"); VIEW_AS="小葵"; ok("員工視角不會被擋", mustSetPw()===false); VIEW_AS=null;
 
   as("小葵","editor"); CUR_TAB="work"; render();
   ok("沒設密碼前只看得到設定密碼的畫面", viewEl.innerHTML.includes("請先設定你自己的密碼") && !viewEl.innerHTML.includes("本日上班計畫"));
-  fields.pwg1="1234"; fields.pwg2="1234";
+  ok("關卡寫的是至少 6 碼", viewEl.innerHTML.includes("至少 6 碼"));
+  fields.pwg1="a12345"; fields.pwg2="a12345";
   await savePwGate(); await wait(30);
-  ok("設定密碼會寫入並標記已設定",
-     calls.some(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵"&&x[3].pw==="1234"&&x[3].pwSet===true));
+  { // 前面 rememberDevice 也會 update users，所以要挑出設密碼那一筆
+    const c=calls.filter(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵"&&x[3].pwSet!==undefined).pop();
+    ok("設定密碼會寫入雜湊並標記已設定",
+       !!c && /^pbkdf2\$\d+\$/.test(c[3].pwHash||"") && c[3].pwSet===true);
+    ok("同時把明文清掉", !!c && c[3].pw===""); }
   calls.length=0; fields.pwg1="0000"; fields.pwg2="0000"; await savePwGate(); await wait(20);
-  ok("不能沿用 0000", !calls.length && toasts.some(t=>t.includes("不能沿用預設密碼")));
-  calls.length=0; fields.pwg1="12"; fields.pwg2="12"; await savePwGate(); await wait(20);
-  ok("至少 4 碼", !calls.length && toasts.some(t=>t.includes("至少 4 碼")));
-  calls.length=0; fields.pwg1="1234"; fields.pwg2="5678"; await savePwGate(); await wait(20);
+  ok("不能沿用 0000（長度就不夠）", !calls.length && toasts.some(t=>t.includes("至少 6 碼")));
+  calls.length=0; fields.pwg1="000000"; fields.pwg2="000000"; await savePwGate(); await wait(20);
+  ok("不能用全部是 0 的密碼", !calls.length && toasts.some(t=>t.includes("全部是 0")));
+  calls.length=0; fields.pwg1="12345"; fields.pwg2="12345"; await savePwGate(); await wait(20);
+  ok("至少 6 碼", !calls.length && toasts.some(t=>t.includes("至少 6 碼")));
+  calls.length=0; fields.pwg1="a12345"; fields.pwg2="b67890"; await savePwGate(); await wait(20);
   ok("兩次要一致", !calls.length && toasts.some(t=>t.includes("兩次輸入不一致")));
 
   // ══ v77：出勤異常要填原因 ══

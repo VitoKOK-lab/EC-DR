@@ -26,8 +26,8 @@ const plus=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
 const YESTER=plus(-1), NEXTWK=plus(7);
 function reset(tasks, videos, users){
   calls=[]; toasts=[]; fields={};
-  STATE={ users: users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},
-                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"Regina",role:"manager",pw:"x",pwSet:true}],
+  STATE={ users: users||[{name:"小葵",role:"editor",craft:"orig",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true},
+                         {name:"小美",role:"cs",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true},{name:"Regina",role:"manager",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true}],
     settings:{dailyTarget:4,videoTags:["舊片"],sources:["老闆自拍"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:["廠商A"],reviewSince:"2020-01-01"},
     schedule:{}, logs:[], shifts:{}, deletedVideos:[],
@@ -120,7 +120,7 @@ ok("過去的不會回到今天（維持原本行為）", !todayCard().includes(
 
   // ── 海外看到的是英文 ──
   reset([task("K1",{user:"Anna",title:"task one"})], [],
-        [{name:"Anna",role:"intl",pw:"x",pwSet:true}]);
+        [{name:"Anna",role:"intl",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true}]);
   as("Anna","intl");
   { const h=viewWork();
     ok("海外的清單標題是英文", h.includes("Today's Work") && h.includes(">Today<"));

@@ -182,6 +182,7 @@ async function route(method, path, body){
       await window.DB.set("users", name, rec); return; }
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
       if(body.intlLocale!=null) patch.intlLocale=body.intlLocale;
+      if(body.pwHash!=null) patch.pwHash=String(body.pwHash);   // 只存雜湊，明文一律寫成 ""
       if(body.pwSet!=null) patch.pwSet=!!body.pwSet;
       if(body.pwAt!=null) patch.pwAt=String(body.pwAt);          // 出勤起算時間（只寫第一次）
       if(body.flexHours!=null) patch.flexHours=!!body.flexHours; // 變動工時：不判遲到早退
@@ -343,13 +344,46 @@ function bootLogin(){
 // 上下班要用公司電腦打卡：一般員工不給手機登入（經理人／人資／管理員不受限，他們要能隨時處理事情）
 function pcOnlyOn(){ const s=(STATE&&STATE.settings)||{}; return s.pcOnly!==false; }
 function blockedOnMobile(role){ return pcOnlyOn() && isMobileUA() && !["manager","hr","boss"].includes(role||"editor"); }
-function loginAs(u){
+// ---------- 密碼：只存雜湊，不存明文（v84）----------
+// PBKDF2-SHA256＋每人一組隨機鹽。算得出來、推不回去 ——
+// 就算整個資料庫被讀走，也拿不到任何人的真實密碼。
+// 格式：pbkdf2$<次數>$<鹽 base64>$<雜湊 base64>
+const PW_ITER=210000;           // 每猜一次都要跑這麼多輪，暴力破解才會慢下來
+const PW_MIN=6;                 // 最少 6 碼（舊制是 4 碼，v84 起全員重設）
+const pwB64=(buf)=>btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(buf))));
+const pwUnb64=(s)=>Uint8Array.from(atob(String(s)), c=>c.charCodeAt(0));
+async function pwDerive(pw, salt, iter){
+  const key=await crypto.subtle.importKey("raw", new TextEncoder().encode(String(pw)), "PBKDF2", false, ["deriveBits"]);
+  return pwB64(await crypto.subtle.deriveBits({name:"PBKDF2", salt, iterations:iter, hash:"SHA-256"}, key, 256));
+}
+async function pwMakeHash(pw){
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  return "pbkdf2$"+PW_ITER+"$"+pwB64(salt)+"$"+await pwDerive(pw, salt, PW_ITER);
+}
+async function pwVerifyHash(pw, stored){
+  const p=String(stored||"").split("$");
+  if(p.length!==4 || p[0]!=="pbkdf2" || !(+p[1]>0)) return false;
+  try{ return (await pwDerive(pw, pwUnb64(p[2]), +p[1]))===p[3]; }catch(e){ return false; }
+}
+// 登入時驗證：已經是雜湊就比對雜湊；還沒轉換的舊帳號才比對明文。
+// 舊帳號驗證過之後照樣會被「請設定新密碼」擋下來，設完就只剩雜湊。
+async function pwCheck(u, input){
+  if(u && u.pwHash) return pwVerifyHash(input, u.pwHash);
+  return input===String((u&&u.pw)==null?"0000":u.pw);
+}
+// 新密碼的規定（設定密碼與自行修改共用同一套）
+function pwRuleError(a, b){
+  if(a.length<PW_MIN) return T("新密碼至少 "+PW_MIN+" 碼","New password needs at least "+PW_MIN+" characters");
+  if(/^0+$/.test(a))  return T("不能用全部是 0 的密碼","Can't use all zeros");
+  if(b!=null && a!==b) return T("兩次輸入不一致，請重來","Passwords don't match, try again");
+  return "";
+}
+async function loginAs(u){
   if(blockedOnMobile(u.role)){
     alert("請用公司電腦登入。\n\n上下班打卡要在公司電腦上進行，手機不能登入。\n（如有特殊需要請找管理員）");
     return; }
-  const want=String(u.pw==null?"0000":u.pw);
   const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
-  if(String(pw).trim()!==want){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
+  if(!await pwCheck(u, String(pw).trim())){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
   setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor");
   localStorage.setItem("ecdr_last", u.name);   // 這台裝置下次直接顯示他
   CUR_TAB=null; LOGIN_ALL=false;
@@ -361,7 +395,7 @@ function ensurePwAt(u){
   try{
     if(!u || u.pwAt || !window.DB) return;
     if(u.pwSet===false) return;
-    if(String(u.pw==null?"0000":u.pw)==="0000") return;
+    if(!u.pwHash) return;              // 還沒設好自己的密碼 → 等他設完，那一刻才是起算點
     window.DB.update("users", u.name, {pwAt:nowIso()}).catch(()=>{});
   }catch(e){}
 }
@@ -370,14 +404,13 @@ async function changeMyPw(){
   const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
   const T=(zh,en)=>currentRole()==="intl"?en:zh;   // 海外剪輯看英文提示
   if(!u){ toast(T("找不到你的帳號","Account not found"),true); return; }
-  const cur=String(u.pw==null?"0000":u.pw);
-  const old=prompt(T("請輸入目前密碼（預設 0000）：","Current password (default 0000):")); if(old===null) return;
-  if(String(old).trim()!==cur){ toast(T("目前密碼錯誤","Wrong current password"),true); return; }
-  const n1=prompt(T("請設定新密碼（至少 4 碼）：","New password (at least 4 characters):")); if(n1===null) return;
-  const np=String(n1).trim(); if(np.length<4){ toast(T("新密碼至少 4 碼","New password needs at least 4 characters"),true); return; }
+  const old=prompt(T("請輸入目前密碼：","Current password:")); if(old===null) return;
+  if(!await pwCheck(u, String(old).trim())){ toast(T("目前密碼錯誤","Wrong current password"),true); return; }
+  const n1=prompt(T("請設定新密碼（至少 "+PW_MIN+" 碼）：","New password (at least "+PW_MIN+" characters):")); if(n1===null) return;
+  const np=String(n1).trim();
   const n2=prompt(T("請再輸入一次新密碼：","Repeat the new password:")); if(n2===null) return;
-  if(String(n2).trim()!==np){ toast(T("兩次輸入不一致，請重來","Passwords don't match, try again"),true); return; }
-  const body={pw:np, pwSet:true};
+  const err=pwRuleError(np, String(n2).trim()); if(err){ toast(err,true); return; }
+  const body={pwHash: await pwMakeHash(np), pw:"", pwSet:true};
   if(!u.pwAt) body.pwAt=nowIso();   // 只有第一次設密碼才是出勤起算點
   await write("PUT","/api/users/"+me,body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
@@ -483,15 +516,15 @@ function mustSetPw(){
   if(VIEW_AS || isOwner()) return false;
   const u=((STATE&&STATE.users)||[]).find(x=>x.name===realUser());
   if(!u) return false;
-  if(u.pwSet===false) return true;                       // 管理員剛重設 → 下次登入要自己再設一次
-  return String(u.pw==null?"0000":u.pw)==="0000";        // 還在用預設密碼（含完全沒設過）
+  if(u.pwSet===false) return true;      // 管理員剛重設 → 下次登入要自己再設一次
+  return !u.pwHash;                     // 還沒轉成雜湊（舊制的 4 碼或預設 0000）→ 全員重設一次
 }
 function pwGateHTML(){
   return `<div class="card" style="max-width:460px;margin:40px auto;border-color:var(--gold)">
     <b style="font-size:18px">請先設定你自己的密碼</b>
     <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
-      目前用的是預設密碼 <b>0000</b>，每個人都看得到。<br>設定一組只有你知道的密碼之後才能開始使用。</div>
-    <label style="margin-top:14px">新密碼（至少 4 碼）</label>
+      設定一組只有你知道的密碼之後才能開始使用。<br>系統不會保留你的密碼原文，忘記只能請管理員重設。</div>
+    <label style="margin-top:14px">新密碼（至少 ${PW_MIN} 碼）</label>
     <input id="pwg1" type="password" autocomplete="new-password" placeholder="輸入新密碼">
     <label style="margin-top:10px">再輸入一次</label>
     <input id="pwg2" type="password" autocomplete="new-password" placeholder="再輸入一次" onkeydown="if(event.key==='Enter')savePwGate()">
@@ -501,12 +534,12 @@ function pwGateHTML(){
 }
 async function savePwGate(){
   const a=(val("pwg1")||"").trim(), b=(val("pwg2")||"").trim();
-  if(a.length<4){ toast("新密碼至少 4 碼",true); return; }
-  if(a==="0000"){ toast("不能沿用預設密碼 0000",true); return; }
-  if(a!==b){ toast("兩次輸入不一致，請重來",true); return; }
-  const body={pw:a, pwSet:true};
-  // 出勤從這一刻開始算。第二次改密碼不會重設，否則等於把之前的出勤洗掉。
+  const err=pwRuleError(a,b); if(err){ toast(err,true); return; }
   const u=((STATE&&STATE.users)||[]).find(x=>x.name===realUser());
+  if(await pwCheck(u, a)){ toast("不能沿用原本的密碼",true); return; }
+  // pw:"" ＝ 把明文清掉；之後只留 pwHash
+  const body={pwHash: await pwMakeHash(a), pw:"", pwSet:true};
+  // 出勤從這一刻開始算。第二次改密碼不會重設，否則等於把之前的出勤洗掉。
   if(!(u&&u.pwAt)) body.pwAt=nowIso();
   const okDone=await write("PUT","/api/users/"+realUser(),body,"密碼已設定，開始使用吧");
   if(okDone){ applyState(LAST_RAW); }
@@ -3907,7 +3940,8 @@ function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) re
 // 主管線上重設員工密碼為 0000，員工再自行修改
 function resetMemberPw(name){
   if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
-  writeAdmin("PUT","/api/users/"+name,{pw:"0000",pwSet:false},"已將「"+name+"」密碼重設為 0000（他下次登入要自己重設）"); }
+  // pwHash 清空 → 他下次登入用 0000 進來，然後一定會被「請設定新密碼」擋住
+  writeAdmin("PUT","/api/users/"+name,{pw:"0000",pwHash:"",pwSet:false},"已將「"+name+"」密碼重設為 0000（他下次登入要自己重設）"); }
 function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
