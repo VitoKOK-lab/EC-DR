@@ -96,12 +96,12 @@ function as(user, role){ localStorage.setItem("ecdr_user", user); localStorage.s
 function resetUI(){ CAL_PLAT="tw"; CAL_YM=[2026,6]; INTL_CAL_YM=[2026,6]; INTL_ACCT="";
   CH_CAL={shopee:{ym:[2026,6],acct:""},ms:{ym:[2026,6],acct:""}};
   WORK_ZONE="shopee"; POOL_FILTER="all"; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
-  VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; }
+  VID_Q=""; INTL_Q=""; CH_Q={shopee:"",ms:""}; SHIFT_DATE=D; VIEW_AS=null; ATT_YM=null; }
 
 const ROLES = [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"],["HR小姐","hr"],["小美","cs"]];
 const VIEWS = { dashboard:()=>viewDashboard(), flow:()=>viewFlow(), work:()=>viewWork(), videos:()=>viewVideos(),
                 cal:()=>viewCal(), settings:()=>viewSettings(), log:()=>viewLog(), trash:()=>viewTrash(), perf:()=>viewPerf(),
-                team:()=>viewTeam() };
+                team:()=>viewTeam(), attend:()=>viewAttend() };
 
 for (const [user, role] of ROLES) {
   as(user, role);

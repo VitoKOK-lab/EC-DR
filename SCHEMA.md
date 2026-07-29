@@ -148,6 +148,8 @@
 | `workStart` / `workEnd` | string | 個人上下班時間（`HH:MM`）。**空＝用全公司那一組**（`settings.workStart/workEnd`） |
 | `pw` | string | 登入密碼（新成員預設 `0000`） |
 | `pwSet` | boolean | 已自己設過密碼。**還是 `0000` 或 `pwSet:false` 的人，登入後會被擋在「請先設定密碼」畫面，設完才能用** |
+| `pwAt` | string(ISO) | **第一次**設好自己的密碼那一刻＝這個人的**出勤起算時間**。這天之前的打卡只留著參考，不判遲到早退。第二次以後改密碼不會覆蓋它；在這個欄位出現之前就改過密碼的舊帳號，下次登入時由 `ensurePwAt()` 自動補上 |
+| `flexHours` | boolean | 變動工時：只記上下班與工時，**不判遲到早退**。未設定時 `role=hr` 視為 `true`、其他人 `false`（管理員可在設定 → 成員逐一調整） |
 | `devices` | object[] | 用過的打卡裝置 `{id, ua, mobile, firstAt}`。**第一次用就自動記起來，不需要核准**；換新裝置時出勤頁會提醒人資 |
 | `craft` | string | 剪輯分工：`orig`（一次創作：毛片/原創）／`derived`（二次創作：蝦皮·馬來·英·泰版本）／`both`（兩種都做）。未設定時：一般剪輯＝`orig`、海外剪輯＝`derived`；管理員/經理人/人資固定看全部 |
 | `intlLocale` | string | 海外剪輯綁定語言 | `en`／`th`／`ms`（僅 `role=intl` 用；未設定＝`en`）。帳號綁語言：只做/只看該語言 |
@@ -236,6 +238,11 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 > 只把裝置、是不是手機、座標與離公司多遠記下來，在出勤頁標出異常讓人資判斷。
 > 要改成「擋」只需要在打卡前加條件，資料結構不用動。
 
+> **什麼時候開始算遲到早退（v81 起）**：`shifts` 一直照實記，但**判定**要通過 `attendCounted()`：
+> 那天必須 ≥ `attendStartOf(user)`（＝`users.pwAt` 與 `settings.attendStart` 取較晚者），
+> 而且那個人不是變動工時（`users.flexHours`）。不通過就是 `late=0 / early=0`、`attIssues()` 回空陣列，
+> 畫面上寫「未列入計算」。**正式啟用前的舊紀錄因此自動不算，不需要去刪資料。**
+
 
 > 單片工時（認領→完成）由 `videos.claimedAt`／`finishedAt`／`durationMin` 衍生，亦只給管理員看（「工時/KPI」頁）。
 
@@ -266,6 +273,7 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `reviewSince` | string | 審片流程上線日 `YYYY-MM-DD`；這天之前完成的舊片不列入待審核（預設 `2026-07-27`） |
 | `workStart` / `workEnd` | string | **全公司**上下班時間 `HH:MM`（預設 09:00 / 18:00）；個人例外放在 `users.workStart/workEnd` |
 | `lateGraceMin` | number | 遲到寬限分鐘（預設 10）。超過上班時間 + 寬限才算遲到 |
+| `attendStart` | string | **全公司**出勤起算日 `YYYY-MM-DD`（選填）。留白＝各人以自己的 `users.pwAt` 起算；有填則兩者**取比較晚**的那一天 |
 | `pcOnly` | boolean | 只能用電腦登入（預設 `true`）。一般員工用手機會被擋在登入頁；經理人／人資／管理員不受限 |
 | `officeGeo` | object | 公司座標 `{lat,lng}`（選填）。有填才會在出勤頁標出「打卡地點離公司 N 公尺」 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
