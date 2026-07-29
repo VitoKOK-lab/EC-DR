@@ -183,6 +183,8 @@ async function route(method, path, body){
     if(method==="PUT"){ const patch={}; if(body.role!=null) patch.role=body.role; if(body.pw!=null) patch.pw=String(body.pw);
       if(body.intlLocale!=null) patch.intlLocale=body.intlLocale;
       if(body.pwSet!=null) patch.pwSet=!!body.pwSet;
+      if(body.pwAt!=null) patch.pwAt=String(body.pwAt);          // 出勤起算時間（只寫第一次）
+      if(body.flexHours!=null) patch.flexHours=!!body.flexHours; // 變動工時：不判遲到早退
       if(body.workStart!=null) patch.workStart=String(body.workStart);
       if(body.workEnd!=null) patch.workEnd=String(body.workEnd);
       await window.DB.update("users", seg[1], patch); return; }
@@ -351,7 +353,18 @@ function loginAs(u){
   setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor");
   localStorage.setItem("ecdr_last", u.name);   // 這台裝置下次直接顯示他
   CUR_TAB=null; LOGIN_ALL=false;
+  ensurePwAt(u);
   clockIn(u.name); autoCloseOpenShifts(); logA("登入","上班打卡"); applyState(LAST_RAW); }
+// 出勤起算點補登：在加這個功能之前就自己改過密碼的人沒有 pwAt，
+// 那就以他這次登入當起算點。還在用預設密碼的人不補，等他改密碼那一刻才開始算。
+function ensurePwAt(u){
+  try{
+    if(!u || u.pwAt || !window.DB) return;
+    if(u.pwSet===false) return;
+    if(String(u.pw==null?"0000":u.pw)==="0000") return;
+    window.DB.update("users", u.name, {pwAt:nowIso()}).catch(()=>{});
+  }catch(e){}
+}
 // 員工自行修改密碼（需先輸入舊密碼）
 async function changeMyPw(){
   const me=currentUser(); const u=(STATE.users||[]).find(x=>x.name===me);
@@ -364,7 +377,9 @@ async function changeMyPw(){
   const np=String(n1).trim(); if(np.length<4){ toast(T("新密碼至少 4 碼","New password needs at least 4 characters"),true); return; }
   const n2=prompt(T("請再輸入一次新密碼：","Repeat the new password:")); if(n2===null) return;
   if(String(n2).trim()!==np){ toast(T("兩次輸入不一致，請重來","Passwords don't match, try again"),true); return; }
-  await write("PUT","/api/users/"+me,{pw:np,pwSet:true},T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
+  const body={pw:np, pwSet:true};
+  if(!u.pwAt) body.pwAt=nowIso();   // 只有第一次設密碼才是出勤起算點
+  await write("PUT","/api/users/"+me,body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 async function clockIn(name){
@@ -489,7 +504,11 @@ async function savePwGate(){
   if(a.length<4){ toast("新密碼至少 4 碼",true); return; }
   if(a==="0000"){ toast("不能沿用預設密碼 0000",true); return; }
   if(a!==b){ toast("兩次輸入不一致，請重來",true); return; }
-  const okDone=await write("PUT","/api/users/"+realUser(),{pw:a,pwSet:true},"密碼已設定，開始使用吧");
+  const body={pw:a, pwSet:true};
+  // 出勤從這一刻開始算。第二次改密碼不會重設，否則等於把之前的出勤洗掉。
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===realUser());
+  if(!(u&&u.pwAt)) body.pwAt=nowIso();
+  const okDone=await write("PUT","/api/users/"+realUser(),body,"密碼已設定，開始使用吧");
   if(okDone){ applyState(LAST_RAW); }
 }
 function render(){
@@ -1372,6 +1391,9 @@ function rememberDevice(name, env){
     return window.DB.update("users", name, {devices:cur});
   }).then(()=>true).catch(()=>false);
 }
+// 變動工時：沒有固定上下班時間，所以不判遲到早退，只記上下班與工時。
+// 人資屬於變動工時（他要配合面試、勞健保、外出辦事），管理員可以在設定裡改。
+function isFlexUser(u){ return !!(u && (u.flexHours!=null ? u.flexHours : u.role==="hr")); }
 // 全公司一套班表，個人可以有例外
 function workHoursOf(name){
   const s=(STATE&&STATE.settings)||{};
@@ -1379,7 +1401,23 @@ function workHoursOf(name){
   return { start: u.workStart || s.workStart || DEF_WORK.start,
            end:   u.workEnd   || s.workEnd   || DEF_WORK.end,
            grace: (s.lateGraceMin!=null? +s.lateGraceMin : DEF_WORK.grace),
-           custom: !!(u.workStart||u.workEnd) };
+           custom: !!(u.workStart||u.workEnd),
+           flex: isFlexUser(u) };
+}
+// 出勤從哪一天開始算：以「他自己設好密碼」那天為準（pwAt）。
+// 正式啟用前的打卡留著當參考，但不判遲到早退。
+// 管理員另外可以在設定填一個全公司起算日，兩者取比較晚的那一天。
+function attendStartOf(name){
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===name)||{};
+  const s=(STATE&&STATE.settings)||{};
+  const mine=String(u.pwAt||"").slice(0,10), all=String(s.attendStart||"").slice(0,10);
+  if(mine&&all) return mine>all?mine:all;
+  return mine||all||null;     // 都沒有＝還沒開始算
+}
+function attendCounted(sh){
+  if(!sh||!sh.date) return false;
+  const st=attendStartOf(sh.user);
+  return !!st && String(sh.date)>=st;
 }
 function hhmmToMin(t){ const m=String(t||"").match(/^(\d{1,2}):(\d{2})/); return m? (+m[1]*60 + +m[2]) : null; }
 function minToHm(m){ if(m==null) return "—"; const s=m<0?"-":""; m=Math.abs(m); return s+(Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"; }
@@ -1411,10 +1449,13 @@ function attendOf(sh){
   const inMin=hhmmToMin(String(sh.clockIn).slice(11,16));
   const outMin=sh.clockOut? hhmmToMin(String(sh.clockOut).slice(11,16)) : null;
   const sMin=hhmmToMin(wh.start), eMin=hhmmToMin(wh.end);
-  const late=(inMin!=null&&sMin!=null)? Math.max(0, inMin-sMin-wh.grace) : 0;
-  const early=(outMin!=null&&eMin!=null)? Math.max(0, eMin-outMin) : 0;
+  // 沒列入計算（正式啟用前）或變動工時 → 只留時間與工時，不判遲到早退
+  const judge=attendCounted(sh) && !wh.flex;
+  const late=(judge&&inMin!=null&&sMin!=null)? Math.max(0, inMin-sMin-wh.grace) : 0;
+  const early=(judge&&outMin!=null&&eMin!=null)? Math.max(0, eMin-outMin) : 0;
   const work=(inMin!=null&&outMin!=null)? Math.max(0,outMin-inMin) : null;
   return {in:sh.clockIn, out:sh.clockOut||"", work, late, early, none:false,
+          counted:attendCounted(sh), flex:wh.flex,
           auto:!!sh.autoOut, dev:sh.inDev||"", devUA:sh.inDevUA||"", mobile:!!sh.inMobile,
           newDev:!!sh.inNewDev, geo:sh.inGeo||null};
 }
@@ -1438,7 +1479,7 @@ async function autoCloseOpenShifts(){
 // 出勤異常＝遲到或早退（系統補下班也算，因為當天沒打下班）
 function attIssues(sh){
   const a=attendOf(sh); const out=[];
-  if(a.none) return out;
+  if(a.none || !a.counted) return out;   // 正式啟用（他設好密碼）之前的紀錄只做參考，不算異常
   if(a.late>0) out.push("遲到 "+a.late+" 分");
   if(a.early>0) out.push("早退 "+a.early+" 分");
   if(a.auto) out.push("忘了打下班（系統補登）");
@@ -1491,6 +1532,56 @@ function attSum(name, ym){
     early:rows.filter(r=>r.early>0).length, auto:rows.filter(r=>r.auto).length,
     noOut:attRows(name,ym).filter(s=>!s.clockOut).length };
 }
+// 名字後面的班別小字。誰還沒起算在「今日出勤」標題統一講一次，不用每一列都掛。
+function shiftTag(name){
+  const w=workHoursOf(name);
+  if(w.flex) return ' <span class="pill" style="font-size:10px">變動工時</span>';
+  if(w.custom) return ' <span class="muted" style="font-size:11px">個人班表 '+esc(w.start)+'–'+esc(w.end)+'</span>';
+  return "";
+}
+// 自己的出勤：人資看得到自己每天幾點上下班、這個月累積多少工時
+function myAttendCard(){
+  const me=currentUser();
+  const u=((STATE&&STATE.users)||[]).find(x=>x.name===me);
+  if(!u || !["editor","intl","cs","hr"].includes(u.role||"")) return "";   // 管理員不打卡
+  const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
+  const w=workHoursOf(me), st=attendStartOf(me);
+  const a=attendOf((STATE.shifts||{})[shiftId(me,today)]||null);
+  const s=attSum(me, ym);
+  const cell=(v,l,muted)=>`<div><div class="n ${muted?'muted':''}">${v}</div><div class="l">${l}</div></div>`;
+  return `<div class="card" style="border-color:var(--gold)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">我的出勤 <span class="muted" style="font-size:12px;font-weight:400">${esc(me)}</span></b>
+      <span class="muted" style="font-size:12px">${w.flex?"變動工時（不判遲到早退，只記工時）":"正常班 "+esc(w.start)+"–"+esc(w.end)}</span></div>
+    <div class="mstat" style="margin-top:10px">
+      ${cell(a.in?esc(String(a.in).slice(11,16)):"—","今天上班",!a.in)}
+      ${cell(a.out?esc(String(a.out).slice(11,16)):(a.in?"上班中":"—"),"今天下班",!a.out)}
+      ${cell(minToHm(a.work),"今天工時",a.work==null)}
+      ${cell(minToHm(s.work),`${m+1} 月累計工時`,!s.work)}
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:8px">
+      ${m+1} 月出勤 ${s.days} 天${w.flex?"":`・遲到 ${s.late} 次・早退 ${s.early} 次`}${s.noOut?`・${s.noOut} 天沒打下班`:""}
+      ${st?`　<span style="opacity:.75">出勤自 ${esc(st)} 起算</span>`:'　<span style="opacity:.75">還沒開始起算（設定密碼後才開始）</span>'}</div>
+    ${attRows(me,ym).length?`<details class="fold" style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
+      <div class="foldbody">${attDetailTable(me, ym)}</div></details>`:""}
+  </div>`;
+}
+// 一個人某個月的每日出勤明細表（個人明細與「我的出勤」共用）
+function attDetailTable(name, ym){
+  const list=attRows(name, ym);
+  return `<table class="responsive" style="margin-top:8px">
+    <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th></tr></thead>
+    <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
+      const f=!a.counted ? "未列入計算"
+        : [a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
+           (d!=null&&d>500)?`離公司 ${d} 公尺`:''].filter(Boolean).join("・");
+      const normal=a.counted&&!f;
+      return `<tr><td data-label="日期">${esc(String(sh.date).slice(5))}（${weekdayZh(sh.date)}）</td>
+        <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
+        <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
+        <td data-label="工時">${minToHm(a.work)}</td>
+        <td data-label="狀況" class="${normal?'':'muted'}">${normal?'正常':esc(f)}</td></tr>`; }).join("")}</tbody></table>`;
+}
 function viewAttend(){
   const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
   const staff=attStaff();
@@ -1511,6 +1602,8 @@ function viewAttend(){
         ${arrived.filter(r=>r.sh.inMobile).length?`<span class="pill em">用手機打卡 ${arrived.filter(r=>r.sh.inMobile).length}</span>`:''}
         ${arrived.filter(r=>r.sh.inNewDev).length?`<span class="pill wa">換新裝置 ${arrived.filter(r=>r.sh.inNewDev).length}</span>`:''}
       </span></div>
+    ${(()=>{ const ns=staff.filter(u=>!attendStartOf(u.name));
+      return ns.length?`<div class="muted" style="font-size:12px;margin-top:6px">尚未起算 ${ns.length} 人（${ns.map(u=>esc(u.name)).join("、")}）—— 他們設好自己的密碼之後才開始計算遲到早退。</div>`:""; })()}
     <table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th></tr></thead>
       <tbody>${todayRows.map(({u,sh})=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
@@ -1524,12 +1617,15 @@ function viewAttend(){
                      (d!=null&&d>500)?`<span class="pill em" style="font-size:10px">離公司 ${d} 公尺</span>`:''].filter(Boolean).join(" ")
           + (hasIssue? (note?`<div style="font-size:12px;margin-top:3px"><span class="muted">說明：</span>${esc(note)}</div>`
                             :'<div style="font-size:12px;margin-top:3px;color:var(--red)">尚未說明原因</div>') : '');
+        const state = a.none ? '<span class="muted">未打卡</span>'
+          : !a.counted ? '<span class="muted">未列入計算</span>'
+          : '<span class="pill ok" style="font-size:10px">正常</span>';
         return `<tr>
-          <td data-label="同仁"><b>${esc(u.name)}</b>${workHoursOf(u.name).custom?' <span class="muted" style="font-size:11px">個人班表</span>':''}</td>
+          <td data-label="同仁"><b>${esc(u.name)}</b>${shiftTag(u.name)}</td>
           <td data-label="上班">${a.in?esc(String(a.in).slice(11,16)):'<span class="muted">—</span>'}</td>
           <td data-label="下班">${a.out?esc(String(a.out).slice(11,16)):(a.in?'<span class="pill wa" style="font-size:10px">上班中</span>':'<span class="muted">—</span>')}</td>
           <td data-label="工時">${minToHm(a.work)}</td>
-          <td data-label="狀況">${flags||(a.none?'<span class="muted">未打卡</span>':'<span class="pill ok" style="font-size:10px">正常</span>')}</td>
+          <td data-label="狀況">${flags||state}</td>
           <td data-label="裝置">${a.in?`<span class="muted" style="font-size:11px">${esc(a.dev||"—")}${a.devUA?"・"+esc(a.devUA):""}</span>`:'<span class="muted">—</span>'}</td>
         </tr>`; }).join("")}</tbody></table>
   </div>`;
@@ -1580,32 +1676,24 @@ function viewAttend(){
       </span></div>
     <table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>出勤天數</th><th>總工時</th><th>遲到</th><th>早退</th><th>沒打下班</th></tr></thead>
-      <tbody>${rows.map(({u,s})=>`<tr>
-        <td data-label="同仁"><b>${esc(u.name)}</b></td>
+      <tbody>${rows.map(({u,s})=>{ const flex=workHoursOf(u.name).flex; return `<tr>
+        <td data-label="同仁"><b>${esc(u.name)}</b>${shiftTag(u.name)}</td>
         <td data-label="出勤天數">${s.days}</td>
         <td data-label="總工時">${minToHm(s.work)}</td>
-        <td data-label="遲到" class="${s.late?'':'muted'}">${s.late?`${s.late} 次・${s.lateMin} 分`:'0'}</td>
-        <td data-label="早退" class="${s.early?'':'muted'}">${s.early||0}</td>
+        <td data-label="遲到" class="${!flex&&s.late?'':'muted'}">${flex?'—':(s.late?`${s.late} 次・${s.lateMin} 分`:'0')}</td>
+        <td data-label="早退" class="${!flex&&s.early?'':'muted'}">${flex?'—':(s.early||0)}</td>
         <td data-label="沒打下班" class="${s.noOut||s.auto?'':'muted'}">${s.noOut?`${s.noOut} 天未結`:(s.auto?`${s.auto} 天系統補`:'0')}</td>
-      </tr>`).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>
-    <div class="muted" style="font-size:12px;margin-top:8px">遲到＝超過上班時間 ${wh.grace} 分鐘寬限；「系統補」＝當天忘了打下班、隔天由系統以下班時間補登。</div>
+      </tr>`; }).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:8px">遲到＝超過上班時間 ${wh.grace} 分鐘寬限；「系統補」＝當天忘了打下班、隔天由系統以下班時間補登。<br>
+      每個人從「自己設定密碼」那天起才開始計算遲到早退，之前的打卡只留著參考。變動工時的人只算工時，遲到早退顯示「—」。</div>
   </div>`;
   // ── 個人明細 ──
   const detail=staff.map(u=>{
-    const list=attRows(u.name, ym); if(!list.length) return "";
-    return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>
-      <table class="responsive" style="margin-top:8px">
-        <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th></tr></thead>
-        <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
-          const f=[a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
-                   (d!=null&&d>500)?`離公司 ${d} 公尺`:''].filter(Boolean).join("・");
-          return `<tr><td data-label="日期">${esc(String(sh.date).slice(5))}（${weekdayZh(sh.date)}）</td>
-            <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
-            <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
-            <td data-label="工時">${minToHm(a.work)}</td>
-            <td data-label="狀況" class="${f?'':'muted'}">${f?esc(f):'正常'}</td></tr>`; }).join("")}</tbody></table>
+    if(!attRows(u.name, ym).length) return "";
+    return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>${shiftTag(u.name)}
+      ${attDetailTable(u.name, ym)}
     </div>`; }).join("");
-  return `<h2>出勤</h2>${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
+  return `<h2>出勤</h2>${myAttendCard()}${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
     <h3 style="margin:20px 0 10px">個人明細</h3>${detail||'<div class="card muted">這個月還沒有打卡紀錄</div>'}`;
 }
 // ===================================================================
@@ -3491,6 +3579,11 @@ function setWorkHoursCard(s){
       <div><label>下班時間</label><input id="set_wend" type="time" value="${esc(s.workEnd||DEF_WORK.end)}"></div>
       <div><label>遲到寬限（分鐘）</label><input id="set_grace" type="number" min="0" max="120" value="${s.lateGraceMin!=null?+s.lateGraceMin:DEF_WORK.grace}"></div>
     </div>
+    <label style="margin-top:12px">全公司出勤起算日（選填）</label>
+    <div class="row" style="gap:8px;align-items:center">
+      <input id="set_attstart" type="date" value="${esc(s.attendStart||"")}" style="max-width:180px">
+      <span class="muted" style="font-size:12px">留白＝各人從自己設定密碼那天起算。填了就以這一天為準（兩者取比較晚的）。這一天之前的打卡只留著參考，不算遲到早退。</span>
+    </div>
     <label style="margin-top:12px" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
     <label style="margin-top:12px">公司座標（選填，用來標出「打卡地點離公司很遠」）</label>
@@ -3528,14 +3621,18 @@ function viewSettings(){
     : (u.role==="cs" ? '<span class="muted" style="font-size:12px">不剪片</span>'
                      : '<span class="muted" style="font-size:12px">全部</span>');
   const whSel=(u)=>{ const w=workHoursOf(u.name);
-    return `<span class="row" style="gap:4px;align-items:center;flex-wrap:nowrap">
+    const flexBox=`<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
+      <input type="checkbox" ${w.flex?"checked":""} style="width:auto;margin:0" onchange="setMemberFlex('${esc(jsEsc(u.name))}',this.checked)">變動工時</label>`;
+    if(w.flex) return `<span class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:12px">不判遲到早退</span>${flexBox}</span>`;
+    return `<span class="row" style="gap:4px;align-items:center;flex-wrap:wrap">
       <input type="time" value="${esc(w.start)}" style="width:auto;padding:4px 6px;font-size:12px" onchange="setMemberHours('${esc(jsEsc(u.name))}',this.value,null)">
       <span class="muted">–</span>
       <input type="time" value="${esc(w.end)}" style="width:auto;padding:4px 6px;font-size:12px" onchange="setMemberHours('${esc(jsEsc(u.name))}',null,this.value)">
       ${w.custom?`<button class="btn sec sm" style="padding:2px 7px;font-size:11px" onclick="setMemberHours('${esc(jsEsc(u.name))}','','')" title="改回全公司時間">↺</button>`:''}
+      ${flexBox}
     </span>`; };
   const memberRows=members.map(u=>`<tr>
-    <td data-label="名字"><b>${esc(u.name)}</b></td>
+    <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="負責">${craftSel(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
@@ -3625,6 +3722,7 @@ async function saveSettings(){
     settings.workStart=(val("set_wstart")||DEF_WORK.start);
     settings.workEnd=(val("set_wend")||DEF_WORK.end);
     settings.lateGraceMin=Math.max(0, parseInt(val("set_grace"))||0);
+    settings.attendStart=(val("set_attstart")||"").trim();
     const pcEl=document.getElementById("set_pconly"); settings.pcOnly = pcEl? !!pcEl.checked : true;
     const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
     settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};
@@ -3676,6 +3774,10 @@ function setMemberHours(name, start, end){
   const msg=(ns||ne)?("已設定「"+name+"」的上下班時間 "+(ns||"—")+"–"+(ne||"—")):("「"+name+"」改回全公司時間");
   writeAdmin("PUT","/api/users/"+name, patch, msg);
 }
+// 變動工時：沒有固定上下班，只記工時，不判遲到早退（人資預設就是）
+function setMemberFlex(name, on){
+  writeAdmin("PUT","/api/users/"+name,{flexHours:!!on},
+    on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
 function setMemberRole(name, role){ if(!["editor","manager","intl","cs","hr"].includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;

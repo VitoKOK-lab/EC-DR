@@ -29,10 +29,14 @@ const YESTER=new Date(Date.now()+288e5-864e5).toISOString().slice(0,10);
 const YM=T0.slice(0,7);
 const sh=(user,date,inT,outT,extra)=>Object.assign({id:user+"__"+date,user,date,
   clockIn:inT?date+"T"+inT+":00":"", clockOut:outT?date+"T"+outT+":00":""},extra||{});
+// v81 起：出勤只從「自己設好密碼」那天（users.pwAt）之後才算遲到早退。
+// 這一份測的是判定本身，所以每個人都先給一個很早的起算日；起算日的行為在 smoke-v81 測。
+const PWAT="2020-01-01T00:00:00";
 function reset(shifts, settings, users){
   calls=[]; toasts=[]; fields={}; ATT_YM=null;
-  STATE={ users: users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},{name:"阿明",role:"editor",craft:"orig",pw:"x",pwSet:true},
-                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"}],
+  STATE={ users: (users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},{name:"阿明",role:"editor",craft:"orig",pw:"x",pwSet:true},
+                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"}])
+                 .map(u=>Object.assign({pwAt:PWAT}, u)),
     settings: Object.assign({dailyTarget:4,videoTags:[],sources:["s"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"}, settings||{}),
     schedule:{}, logs:[], tasks:{}, deletedVideos:[], videos:[],
@@ -262,7 +266,9 @@ reset([]);
   as("管理員","boss");
   { const h4=viewAttend();
     ok("出勤頁也列人資自己", h4.includes("HR小姐"));
-    ok("人資遲到一樣算得出來", h4.includes("遲到 25 分")); }
+    // v81：人資是變動工時，只記上下班與工時，不判遲到早退
+    ok("人資不算遲到（變動工時）", !h4.includes("遲到 25 分") && h4.includes("變動工時"));
+    ok("人資的上下班時間照樣看得到", h4.includes("09:35") && h4.includes("18:00")); }
   as("HR小姐","hr");
   ok("人資自己也看得到自己那一列", viewAttend().includes("HR小姐"));
 
