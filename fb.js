@@ -6,7 +6,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-         getFirestore, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit,
+         getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot,
+         query, where, orderBy, limit,
          arrayUnion, arrayRemove, increment }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
@@ -55,13 +56,32 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   if (window.__needSetup) window.__needSetup();
 } else {
   const app = initializeApp(firebaseConfig);
-  // 本機快取：重新整理／重開時優先用快取，伺服器只傳「有變動」的文件 → 大幅降低讀取數
-  // 一般記憶體快取（不持久化到 IndexedDB）→ 每次載入都抓最新，避免舊資料殘留造成不同步
-  const db = getFirestore(app);
+  // 本機快取寫進 IndexedDB：重新整理／隔天重開時先用快取畫面，伺服器只補「有變動」的文件。
+  // 這是讀取量的關鍵 —— 用記憶體快取的話，每個人每次重新整理都要把整個資料庫重下載一次
+  // （22 個人 × 每天開關幾次 × 上千筆文件，一天就把免費額度 5 萬次讀取燒光）。
+  // 即時性不受影響：onSnapshot 照樣連著伺服器，別人一改還是 ~1 秒同步過來。
+  // 無痕視窗或瀏覽器不給 IndexedDB 時會丟例外 → 退回記憶體快取，功能一樣只是比較耗讀取。
+  let db;
+  try {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
+  } catch (e) {
+    db = getFirestore(app);
+  }
   const auth = getAuth(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
   const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
+  // 打卡紀錄會一直長（22 人 × 每個工作天一筆），全部訂閱等於每年多幾千筆要同步。
+  // 常駐只訂閱最近 62 天（＝本月＋上個月，薪資報表要用的範圍）；
+  // 人資往前翻更早的月份時，再由 loadShiftMonth() 一次性補讀那個月。
+  const SHIFT_WINDOW_DAYS = 62;
+  const SHIFTS_FROM = new Date(Date.now() + 288e5 - SHIFT_WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+  const shiftsLive = {};        // 訂閱窗內（會即時更新）
+  const shiftsOld  = {};        // 另外補讀的舊月份（讀一次就好，不會再變）
+  const loadedMonths = new Set();
+  function mergeShifts() { raw.shifts = Object.assign({}, shiftsOld, shiftsLive); }
   // 直接傳參照即可：app.js 的 decorate() 收到後會立刻深拷貝一份自用，
   // 這裡再拷一次等於每次同步都全量複製兩遍（影片多時手機會有感），故省略。
   function push() { if (window.__onState) window.__onState(raw); }
@@ -79,7 +99,28 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     arrayAdd:    (c, id, field, val) => setDoc(doc(db, c, id), { [field]: arrayUnion(val) },  { merge: true }),
     arrayDel:    (c, id, field, val) => setDoc(doc(db, c, id), { [field]: arrayRemove(val) }, { merge: true }),
     bump:        (c, id, field, n)   => setDoc(doc(db, c, id), { [field]: increment(n) },     { merge: true }),
+
+    // ── 按需載入：這兩件只有少數人偶爾要看，不值得每個人每次開系統都下載 ──
+    // 操作紀錄只有管理員看得到，卻是 300 筆。改成他點進「操作紀錄」才訂閱。
+    watchLogs() {
+      if (logsOn) return; logsOn = true;
+      onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(300)),
+        q => { raw.logs = q.docs.map(d => d.data()); push(); });
+    },
+    // 常駐訂閱的起始日；app.js 用它判斷某個月份要不要另外補讀
+    shiftsFrom: SHIFTS_FROM,
+    // 補讀某個月的打卡紀錄（只讀一次，不建立訂閱）。回傳有沒有真的去讀。
+    async loadShiftMonth(ym) {
+      if (!/^\d{4}-\d{2}$/.test(String(ym || "")) || loadedMonths.has(ym)) return false;
+      loadedMonths.add(ym);
+      const s = await getDocs(query(collection(db, "shifts"),
+        where("date", ">=", ym + "-01"), where("date", "<=", ym + "-31")));
+      s.docs.forEach(d => { shiftsOld[d.id] = d.data(); });
+      mergeShifts(); push();
+      return true;
+    },
   };
+  let logsOn = false;
 
   signInAnonymously(auth).catch(e => { if (window.__authError) window.__authError(e.message); });
 
@@ -117,8 +158,12 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "videos"),   q => { raw.videos   = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
-    onSnapshot(collection(db, "shifts"),   q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.shifts = s; push(); });
-    // 操作紀錄（稽核用）：只訂閱最近 300 筆，避免無限成長
-    onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(300)), q => { raw.logs = q.docs.map(d => d.data()); push(); });
+    // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀
+    onSnapshot(query(collection(db, "shifts"), where("date", ">=", SHIFTS_FROM)), q => {
+      Object.keys(shiftsLive).forEach(k => delete shiftsLive[k]);
+      q.docs.forEach(d => shiftsLive[d.id] = d.data());
+      mergeShifts(); push();
+    });
+    // 操作紀錄（稽核用）：只有管理員看，改成點進去才訂閱（見 window.DB.watchLogs）
   });
 }

@@ -274,6 +274,7 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `workStart` / `workEnd` | string | **全公司**上下班時間 `HH:MM`（預設 09:00 / 18:00）；個人例外放在 `users.workStart/workEnd` |
 | `lateGraceMin` | number | 遲到寬限分鐘（預設 10）。超過上班時間 + 寬限才算遲到 |
 | `attendStart` | string | **全公司**出勤起算日 `YYYY-MM-DD`（選填）。留白＝各人以自己的 `users.pwAt` 起算；有填則兩者**取比較晚**的那一天 |
+
 | `pcOnly` | boolean | 只能用電腦登入（預設 `true`）。一般員工用手機會被擋在登入頁；經理人／人資／管理員不受限 |
 | `officeGeo` | object | 公司座標 `{lat,lng}`（選填）。有填才會在出勤頁標出「打卡地點離公司 N 公尺」 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
@@ -311,3 +312,26 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 - **CI**：`.github/workflows/tests.yml` 在每次 push／PR 自動跑同一支腳本。
 - **語言洩漏掃描**：`tests/audit-lang.js` 把測試資料全換成英數，掃 intl 視角殘留的中文與中文視角殘留的英文 UI 詞；
   標籤（寵粉／珠寶介紹…）與階段內部值屬設計例外，已列在該檔的 `ALLOW` 清單。
+
+---
+
+## 讀取量與訂閱策略（v82）
+
+Firestore 是**按「讀了幾筆文件」計費**的，不是按流量。這一節寫下每一筆訂閱為什麼長這樣，
+改動前請先算一次「22 個人 × 每天開關幾次 × 這一次要讀幾筆」。
+
+| 集合 | 怎麼訂閱 | 為什麼 |
+|---|---|---|
+| `meta/settings` | 常駐（1 筆） | 每個畫面都要用 |
+| `users` | 常駐全量 | 22 筆，很小 |
+| `videos` | 常駐全量 | 目前 407 筆，是最大宗。所有角色的畫面都要用，沒辦法只讀一部分 |
+| `schedule` | 常駐全量 | 一天一筆，很小 |
+| `tasks` | 常駐全量 | 交辦與 HR 通知，要即時 |
+| `shifts` | **常駐只訂閱最近 62 天**；更早的月份由 `window.DB.loadShiftMonth(ym)` 補讀一次 | 22 人 × 每個工作天一筆，一年會長到 5,000 筆以上。62 天＝本月＋上個月，薪資報表要的範圍 |
+| `logs` | **點進「操作紀錄」才訂閱**（`window.DB.watchLogs()`），最近 300 筆 | 只有管理員看得到，卻要 300 筆。以前是每個人一進系統就白讀 300 筆 |
+
+**本機快取（最關鍵的一項）**：`initializeFirestore(app, {localCache: persistentLocalCache(...)})`
+把快取寫進 IndexedDB。重新整理或隔天重開時先用快取畫面，伺服器只補「有變動」的文件。
+**不要改回 `getFirestore(app)`** —— 那是記憶體快取，等於每個人每次重新整理都把整個資料庫重下載一次。
+即時性不受影響：`onSnapshot` 照樣連著伺服器，別人一改還是 ~1 秒同步過來。
+無痕視窗或瀏覽器不給 IndexedDB 時會丟例外，已經 try/catch 退回記憶體快取。
