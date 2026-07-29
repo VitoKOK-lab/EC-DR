@@ -46,14 +46,20 @@ function toast(msg, isErr){
 }
 
 // ---------- ID / 影片預設記錄 ----------
+// 文件編號產生器：時間戳（跨裝置不同）＋同一頁的遞增序號（同毫秒連按也不同）＋亂數（跨裝置保險）
+let UID_SEQ=0;
+function uid(prefix){
+  UID_SEQ=(UID_SEQ+1)%1296;
+  return prefix + Date.now().toString(36)
+       + UID_SEQ.toString(36).padStart(2,"0")
+       + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
+}
 // 影片文件 ID：一定要「跨裝置不會撞號」。
 // 舊版是掃自己這台看到的最大編號 +1 → 兩個人幾乎同時新增會算出同一個 ID，
 // 後寫的那筆會整份覆蓋前一筆（Firestore set），先建的影片就這樣無聲消失。
 // 也會撞到回收桶裡（已軟刪除、不在 STATE.videos）的舊編號。
 // 改成 時間戳(base36) + 亂數，各自產生、永不重複。
-function newVideoId(){
-  return "V" + Date.now().toString(36) + Math.floor(Math.random()*46656).toString(36).padStart(3,"0");
-}
+function newVideoId(){ return uid("V"); }
 // 人看的編號：民國年＋月日（7 碼）＋當日序號（3 碼）。含回收桶一起掃，才不會重覆。
 function nextVideoCode(seen){
   const [Y,M,D]=today.split("-");
@@ -142,7 +148,7 @@ function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean);
   if(seg[1]==="settings") return "系統設定";
   return path||""; }
 function logA(action, target){
-  try{ if(!window.DB) return; const id="L"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36);
+  try{ if(!window.DB) return; const id=uid("L");
     window.DB.set("logs", id, {id, at:nowIso(), user:currentUser()||"(未登入)", role:currentRole()||"",
       action:String(action||"").slice(0,80), target:String(target||"").slice(0,200)}).catch(()=>{});
   }catch(e){}
@@ -779,7 +785,7 @@ const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理"
 function workPresets(){ return currentRole()==="cs" ? CS_PRESETS : WORK_PRESETS; }
 async function addPresetTask(title){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title, contact:"", report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()}); }
   catch(e){ toast("新增失敗，請稍後再試",true); }
 }
@@ -788,7 +794,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
   const when=(val("wp_date")||"").slice(0,10) || today;      // 可以排到之後的日期，那天才會出現在待辦
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:(when<today?today:when), title:t, contact, report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     if(when>today) toast(isIntl?("Scheduled for "+when):("已排到 "+when+"，那天會出現在你的待辦"));
@@ -798,7 +804,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
 async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     if(contact) rememberContact(contact);
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
@@ -812,7 +818,7 @@ async function hrNotify(){ if(dbBlocked()) return;
   if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
   try{
     for(const name of targets){
-      const id="N"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36)+targets.indexOf(name);
+      const id=uid("N");
       await window.DB.set("tasks", id, {id, kind:"notice", user:name, date:today, title:txt, contact:"", report:"",
         done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     }
@@ -1612,7 +1618,7 @@ function fmtMD(ds){ const p=String(ds||"").split("-"); return p.length===3?`${+p
 async function flowAssign(idx, name){
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
   const t=val("fa_"+idx).trim(); if(!t){ toast("請輸入要交辦的內容",true); return; }
-  const id="T"+Date.now().toString(36)+Math.floor(Math.random()*900).toString(36);
+  const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact:"", report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
     const inp=document.getElementById("fa_"+idx); if(inp) inp.value="";
     toast("已交辦給 "+name+"（等他按「收到」）"); }
