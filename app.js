@@ -760,10 +760,14 @@ function dbDel(coll, id, log){ return dbWrite("del", coll, id, null, log); }
 function taskById(id){ return Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id)||null; }
 // HR 通知與交辦共用 tasks 集合，用 kind 分流：kind==="notice" 是 HR 通知（只要按「收到」，不用回報、不計交辦成效）
 function isNotice(t){ return !!(t && t.kind==="notice"); }
-function realTasks(list){ return (list||[]).filter(t=>t && !isNotice(t)); }
+function isMsg(t){ return !!(t && t.kind==="msg"); }        // 員工主動發給人資／主管的訊息
+// 一般交辦與自己排的工作＝沒有 kind 的那些。用「正面判斷」而不是逐一排除，
+// 以後再多一種 kind 也不會漏掉，混進交辦成效的數字裡。
+function isTask(t){ return !!(t && !t.kind); }
+function realTasks(list){ return (list||[]).filter(isTask); }
 function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isNotice); }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>t && !isNotice(t) && t.user===currentUser() && t.date===today)
+  .filter(t=>isTask(t) && t.user===currentUser() && t.date===today)
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
 // 我的 HR 通知：今天發的，加上以前發但我還沒按「收到」的（不會漏看）
 function myNotices(){ return allNotices()
@@ -883,6 +887,56 @@ async function unassignEditor(name){
 function ackTask(id){ const t=taskById(id);
   dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:isNotice(t)?"收到 HR 通知":"收到交辦工作", target:(t&&t.title)||id}); }
 function noticeReply(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }
+
+// ── 員工主動發訊息給人資或主管（v83）──────────────────────────────
+// 交辦與 HR 通知都是「由上往下」，員工只能在既有的事情上回應。
+// 這裡讓員工可以自己起一個頭：選人資或主管，寫一句話，對方一定要回。
+// 沒有訊息時畫面上完全不會出現任何東西（收件卡整張不渲染）。
+function allMsgs(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isMsg); }
+const msgSort=(a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""));
+function myMsgs(){ return allMsgs().filter(m=>m.user===currentUser()).sort(msgSort); }
+// 誰收得到：人資收 to==="hr"、經理人收 to==="boss"；
+// 管理員兩種都收得到（人資由管理員考核，看得到人資的一切）
+function msgInboxFor(role){
+  return role==="hr" ? ["hr"] : role==="manager" ? ["boss"] : role==="boss" ? ["hr","boss"] : [];
+}
+function msgsForMe(){
+  const want=msgInboxFor(currentRole()); if(!want.length) return [];
+  return allMsgs().filter(m=>want.includes(m.to||"boss")).sort(msgSort);
+}
+const msgOpen=(m)=>!String((m&&m.reply)||"").trim();      // 還沒被回覆
+async function sendMsg(){
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  const to=(val("msg_to")||"hr")==="boss"?"boss":"hr";
+  const t=(val("msg_txt")||"").trim();
+  if(!t){ toast(T("請先寫下你想說的事","Write your message first"),true); return; }
+  const id=uid("M");
+  try{ await window.DB.set("tasks", id, {id, kind:"msg", user:currentUser(), to, date:today,
+        title:t, reply:"", replyBy:"", replyAt:"", seen:false, createdAt:nowIso()});
+    const i=document.getElementById("msg_txt"); if(i) i.value="";
+    toast(to==="hr"?T("已送出給人資，等他回覆","Sent to HR"):T("已送出給主管，等他回覆","Sent to your manager"));
+    logA("發訊息給"+(to==="hr"?"人資":"主管"), t.slice(0,40));
+  }catch(e){ toast(T("送出失敗，請稍後再試","Failed to send, try again"),true); }
+}
+// 人資／主管回覆
+function msgReply(id){
+  const v=(val("mr_"+id)||"").trim();
+  if(v.length<2){ toast("請簡單回覆一下",true); return; }
+  const m=taskById(id);
+  dbUpdate("tasks", id, {reply:v, replyBy:currentUser(), replyAt:nowIso(), seen:false},
+    {action:"回覆同仁來訊", target:(m&&m.user)||id});
+}
+// 發訊的人看過回覆了 → 清掉小紅點
+function msgSeen(id){ if(VIEW_AS) return;
+  dbUpdate("tasks", id, {seen:true}, {action:"已看過回覆", target:id}); }
+// 還沒被回覆之前可以自己收回
+function msgDel(id){
+  const m=taskById(id); if(!m) return;
+  if(m.user!==currentUser()){ toast(T("只能收回自己發的訊息","You can only withdraw your own message"),true); return; }
+  if(!msgOpen(m)){ toast(T("對方已經回覆了，不能收回","Already answered — can't withdraw"),true); return; }
+  if(!confirm(T("收回這則訊息？","Withdraw this message?"))) return;
+  dbDel("tasks", id, {action:"收回訊息", target:id});
+}
 function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -996,7 +1050,7 @@ function fold(title, count, body, open){
 }
 // 我排在未來的工作（到那天才會進今日待辦）
 function myFutureTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>t && !isNotice(t) && t.user===currentUser() && String(t.date||"")>today)
+  .filter(t=>isTask(t) && t.user===currentUser() && String(t.date||"")>today)
   .sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
 function taskSetDate(id, d){ if(!d) return; const t=taskById(id);
   dbUpdate("tasks", id, {date:String(d).slice(0,10)}, {action:"改工作日期", target:(t&&t.title)||id}); }
@@ -1063,6 +1117,58 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
       <button class="btn sm" style="flex:none" onclick="createTask()">＋ ${T("加入","Add")}</button>
     </div>
     <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
+  </div>`;
+}
+// ── 找主管／人資說一件事（折疊成一行；有回覆沒看過才亮紅點）──
+function myMsgFold(){
+  const list=myMsgs();
+  const unseen=list.filter(m=>!msgOpen(m) && !m.seen).length;
+  const who=(m)=>m.to==="boss"?T("主管","Manager"):T("人資","HR");
+  const rows=list.slice(0,12).map(m=>{
+    const answered=!msgOpen(m);
+    return `<div class="todo ${answered&&m.seen?'done':''}"><span class="tkind">${answered?"💬":"📨"}</span>
+      <div class="tmain"><div class="ttitle">${esc(m.title)}</div>
+        <div class="tsub">${T("給","To")} ${who(m)}・${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}
+          ${answered?`<div style="margin-top:4px"><b>${esc(m.replyBy||"")}</b> ${T("回覆","replied")}
+             <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span>：${esc(m.reply)}</div>`
+                    :`<div style="margin-top:4px" class="muted">${T("等對方回覆中…","Waiting for a reply…")}</div>`}</div></div>
+      <div class="tact">${answered
+        ? (m.seen?`<span class="pill ok" style="font-size:10px">${T("已回覆","Answered")}</span>`
+                 :`<button class="btn sm" style="padding:4px 12px" onclick="msgSeen('${m.id}')">${T("知道了","OK")}</button>`)
+        : `<button class="btn sec sm" style="padding:3px 9px" onclick="msgDel('${m.id}')">✕</button>`}</div></div>`;
+  }).join("");
+  // 人資自己也是員工，但他不能發給自己 → 只留「主管」
+  const toSel = currentRole()==="hr"
+    ? `<select id="msg_to" style="width:auto"><option value="boss">主管</option></select>`
+    : `<select id="msg_to" style="width:auto"><option value="hr">${T("人資","HR")}</option><option value="boss">${T("主管","Manager")}</option></select>`;
+  const body=`<div class="row" style="gap:6px;flex-wrap:wrap">
+      ${toSel}
+      <input id="msg_txt" placeholder="${T("想說的事（請假、反映問題、需要什麼…）","What's on your mind…")}" style="flex:2;min-width:150px"
+        onkeydown="if(event.key==='Enter')sendMsg()">
+      <button class="btn sm" style="flex:none" onclick="sendMsg()">${T("送出","Send")}</button>
+    </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`;
+  return fold(T("找主管／人資說一件事","Message HR / manager"), unseen||null, body, false);
+}
+// ── 同仁來訊（人資／主管）：沒有訊息就整張卡都不出現 ──
+function msgInboxCard(){
+  const list=msgsForMe(); if(!list.length) return "";
+  const open=list.filter(msgOpen);
+  const label=(m)=>m.to==="boss"?"給主管":"給人資";
+  return `<div class="card"${open.length?' style="border-color:var(--gold)"':''}>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">📨 同仁來訊</b>
+      <span class="pill ${open.length?'em':'ok'}">${open.length?open.length+" 則待回覆":"都回覆了"}</span></div>
+    ${list.slice(0,20).map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
+      <div style="font-size:13.5px"><b>${esc(m.user)}</b>
+        <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}${currentRole()==="boss"?"・"+label(m):""}</span></div>
+      <div style="margin-top:3px">${esc(m.title)}</div>
+      ${msgOpen(m)
+        ? `<div class="row" style="gap:6px;margin-top:6px">
+             <input id="mr_${m.id}" placeholder="回覆他…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')msgReply('${m.id}')">
+             <button class="btn sm" style="flex:none" onclick="msgReply('${m.id}')">回覆</button></div>`
+        : `<div style="margin-top:4px;font-size:13px"><span class="muted">${esc(m.replyBy||"")} 回覆：</span>${esc(m.reply)}
+             <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span></div>`}
+    </div>`).join("")}
   </div>`;
 }
 // ── 之後要做（折疊）──
@@ -1214,6 +1320,7 @@ function viewWorkCS(me){
   ${workIssueCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
   ${fold("之後要做", nFuture, futureTasksBody())}
+  ${myMsgFold()}
   <div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
@@ -1286,6 +1393,7 @@ function viewWork(){
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
+  ${myMsgFold()}
   ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit))}
   ${doesDerived()?fold(T("建立二創版本","Create a version"), null, createZoneCard()):''}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
@@ -1861,7 +1969,7 @@ function viewFlow(){
   </div>`;
 
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${runwayCard}${stockCard}
+  ${focus}${msgInboxCard()}${runwayCard}${stockCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
   ${staffCards||'<p class="muted">還沒有成員</p>'}
   ${reviewQueueCard}`;
@@ -2256,7 +2364,9 @@ function viewTeam(){
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `<h2>${T("團隊看板","Team Board")}</h2>
+  ${currentRole()==="hr"?msgInboxCard():''}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
+  ${currentRole()==="hr"?myMsgFold():''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     <div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>
