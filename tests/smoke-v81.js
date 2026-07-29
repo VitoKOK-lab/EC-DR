@@ -47,6 +47,8 @@ const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecd
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
+// 設密碼那一筆（rememberDevice 也會 update users，不能用 find 抓第一筆）
+const pwCall=()=>calls.filter(x=>x[0]==="update"&&x[1]==="users"&&x[3]&&x[3].pwSet!==undefined).pop();
 const late = (u,date,inT,outT)=>attendOf(STATE.shifts[u+"__"+date]||sh(u,date,inT,outT));
 
 // ══ ① 沒設過密碼的人：完全不算 ══
@@ -152,48 +154,50 @@ ok("管理員自己不打卡，沒有「我的出勤」", !viewAttend().includes
 (async()=>{
   reset([], WORK, [{name:"小葵",role:"editor",pw:"0000"},{name:"管理員",role:"boss"}]);
   as("小葵","editor");
-  fields.pwg1="1234"; fields.pwg2="1234";
-  await savePwGate(); await wait(30);
-  { const c=calls.find(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵");
-    ok("設定密碼會寫下起算時間", !!c && !!c[3].pwAt && c[3].pw==="1234" && c[3].pwSet===true); }
+  fields.pwg1="a12345"; fields.pwg2="a12345";
+  await savePwGate(); await wait(60);
+  { const c=pwCall();
+    ok("設定密碼會寫下起算時間", !!c && !!c[3].pwAt && !!c[3].pwHash && c[3].pwSet===true); }
 
   // 第二次改密碼不會重設起算時間（否則等於把之前的出勤洗掉）
-  reset([], WORK, [{name:"小葵",role:"editor",pw:"1234",pwSet:true,pwAt:"2026-01-05T09:00:00"},{name:"管理員",role:"boss"}]);
+  reset([], WORK, [{name:"小葵",role:"editor",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true,pwAt:"2026-01-05T09:00:00"},{name:"管理員",role:"boss"}]);
   as("小葵","editor");
-  fields.pwg1="5678"; fields.pwg2="5678";
-  await savePwGate(); await wait(30);
-  { const c=calls.find(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵");
+  fields.pwg1="b56789"; fields.pwg2="b56789";
+  await savePwGate(); await wait(60);
+  { const c=pwCall();
     ok("再改一次密碼不會重設起算時間", !!c && c[3].pwAt===undefined); }
 
   reset([], WORK, [{name:"小葵",role:"editor",pw:"1234",pwSet:true,pwAt:"2026-01-05T09:00:00"},{name:"管理員",role:"boss"}]);
-  as("小葵","editor"); global.prompt=(m)=>String(m).includes("目前")?"1234":"9999";
-  await changeMyPw(); await wait(30);
-  { const c=calls.find(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵");
+  as("小葵","editor"); global.prompt=(m)=>String(m).includes("目前")?"1234":"c99999";
+  await changeMyPw(); await wait(60);
+  { const c=pwCall();
     ok("自行改密碼也不會重設起算時間", !!c && c[3].pwAt===undefined); }
   reset([], WORK, [{name:"小葵",role:"editor",pw:"1234",pwSet:true},{name:"管理員",role:"boss"}]);
   as("小葵","editor");
-  await changeMyPw(); await wait(30);
-  { const c=calls.find(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="小葵");
+  await changeMyPw(); await wait(60);
+  { const c=pwCall();
     ok("本來就沒有起算時間 → 這次補上", !!c && !!c[3].pwAt); }
   global.prompt=()=>null;
 
   // ══ 舊帳號自癒：早就改過密碼、但還沒有起算時間 → 這次登入當起算點 ══
-  reset([], WORK, [{name:"Asmeer",role:"intl",pw:"2387"},{name:"小新",role:"editor",pw:"0000"},
-                   {name:"小美",role:"cs",pw:"abcd",pwSet:false},{name:"管理員",role:"boss"}]);
+  reset([], WORK, [{name:"Asmeer",role:"intl",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA=="},{name:"小新",role:"editor",pw:"0000"},
+                   {name:"小美",role:"cs",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:false},{name:"管理員",role:"boss"}]);
   ensurePwAt(STATE.users[0]); await wait(20);
-  ok("改過密碼但沒有起算時間 → 登入時補上",
+  ok("已設好密碼但沒有起算時間 → 登入時補上",
      calls.some(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="Asmeer"&&x[3].pwAt));
   calls.length=0; ensurePwAt(STATE.users[1]); await wait(20);
-  ok("還在用 0000 的不補（等他自己設密碼）", !calls.length);
+  ok("還沒設好自己密碼的不補（等他設完）", !calls.length);
   calls.length=0; ensurePwAt(STATE.users[2]); await wait(20);
   ok("被管理員重設過的也不補", !calls.length);
-  calls.length=0; ensurePwAt({name:"X",pw:"abcd",pwAt:"2026-01-01T00:00:00"}); await wait(20);
+  calls.length=0; ensurePwAt({name:"X",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwAt:"2026-01-01T00:00:00"}); await wait(20);
   ok("已經有起算時間就不動它", !calls.length);
   calls.length=0; ensurePwAt(null); await wait(20);
   ok("沒有這個人也不會炸", !calls.length);
-  reset([], WORK, [{name:"Asmeer",role:"intl",pw:"2387"},{name:"管理員",role:"boss"}]);
-  global.prompt=()=>"2387";
-  loginAs(STATE.users[0]); await wait(20);
+  // 這一段要真的登入，所以雜湊得是「2387」算出來的真貨
+  reset([], WORK, [{name:"Asmeer",role:"intl"},{name:"管理員",role:"boss"}]);
+  STATE.users[0].pwHash=await pwMakeHash("2387");
+  calls.length=0; global.prompt=()=>"2387";
+  await loginAs(STATE.users[0]); await wait(60);
   ok("實際登入就會補上起算時間",
      calls.some(x=>x[0]==="update"&&x[1]==="users"&&x[2]==="Asmeer"&&x[3].pwAt));
   global.prompt=()=>null;
