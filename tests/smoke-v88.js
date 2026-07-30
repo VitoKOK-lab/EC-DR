@@ -121,9 +121,11 @@ reset(LIB); as("Anna","intl");
 reset(LIB); as("管理員","boss");
 ok("儀表板的「剪完未排程」還是 1（N1）",
    (STATE.videos||[]).filter(v=>!v.locale && !v.channel && vidSegment(v)==="newNoSched").length===1);
+// v89 起：還沒拍的不進待認領（認領了也沒毛片可剪）
 reset(LIB); as("小葵","editor");
-ok("剪輯的待認領照舊看得到（有文案未拍的還是在池子裡）",
-   viewWork().includes("claimVid('S1')") && viewWork().includes("claimVid('R1')"));
+{ const w=viewWork();
+  ok("有文案未拍片的不進待認領", !w.includes("claimVid('S1')") && !w.includes("claimVid('S2')"));
+  ok("有毛片的照舊可以認領", w.includes("claimVid('R1')")); }
 
 // ══ render 不炸 ══
 reset(LIB);

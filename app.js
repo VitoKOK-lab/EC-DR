@@ -427,10 +427,20 @@ async function clockIn(name){
   }catch(e){}
 }
 function myShift(){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(currentUser(),today)])||null; }
-function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
-  const want=String((STATE.settings&&STATE.settings.adminPassword)||"1234");
+// 管理員密碼也只存雜湊（v89）。第一次用舊密碼登入成功時當場轉換，你不會察覺。
+async function adminPwCheck(input){
+  const s=(STATE&&STATE.settings)||{};
+  if(String(s.adminPwHash||"").trim()) return pwVerifyHash(input, s.adminPwHash);
+  return input===String(s.adminPassword==null?"1234":s.adminPassword);
+}
+async function ownerLogin(){ if(!STATE){ toast("連線中，請稍候再試",true); return; }
   const pw=prompt("請輸入管理員密碼："); if(pw===null) return;
-  if(String(pw).trim()!==want){ toast("密碼錯誤",true); return; }
+  const p=String(pw).trim();
+  if(!await adminPwCheck(p)){ toast("密碼錯誤",true); return; }
+  // 還是舊的明文 → 這一刻已經驗證過了，直接換成雜湊、把明文清掉
+  if(!String((STATE.settings&&STATE.settings.adminPwHash)||"").trim()){
+    try{ await window.DB.setSettings({adminPwHash: await pwMakeHash(p), adminPassword:""}); }catch(e){}
+  }
   setUser(ADMIN_NAME); localStorage.setItem("ecdr_role","boss"); CUR_TAB=null; logA("管理員登入",""); applyState(LAST_RAW); }
 // 登出：跳回登入頁
 function logout(){ showGoodbye(); }
@@ -1411,7 +1421,8 @@ function viewWork(){
   // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
   // 依分工過濾：一創只看毛片/原創、二創只看各平台語言版本（兩種都做的看全部）
   const craftOK=(v)=> isDerived(v) ? doesDerived() : doesOrig();
-  const pool = (STATE.videos||[]).filter(v=>craftOK(v) && v.stage==="待處理" && (v.assignedTo===me || !v.assignedTo))
+  // 還沒拍的（只有文案）不放進待認領：認領了也沒毛片可剪
+  const pool = (STATE.videos||[]).filter(v=>craftOK(v) && v.stage==="待處理" && !vidNotShot(v) && (v.assignedTo===me || !v.assignedTo))
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
   // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
@@ -2712,10 +2723,12 @@ function vidIsOld(v){
 // 毛片連結才是「這支真的拍出來了」的訊號；實際資料裡待剪的 58 支有 57 支都填了。
 const vidHasScript=(v)=>!!String(v&&v.videoCopy||"").trim();
 const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
+// 文案寫好了但還沒拍 → 剪輯認領了也沒東西可剪，所以不放進待認領（v89）
+const vidNotShot=(v)=>vidHasScript(v) && !vidHasRaw(v);
 function vidSegment(v){
   if(vidIsOld(v)) return "old";                                  // ⑥ 已剪・過排程
   if(!isPublished(v)){
-    if(vidHasScript(v) && !vidHasRaw(v)) return "script";        // ① 有文案・未拍片
+    if(vidNotShot(v)) return "script";                           // ① 有文案・未拍片
     return v.scheduledDate ? "rawSched" : "rawNoSched";          // ②未剪未排 ③未剪有排
   }
   return v.scheduledDate ? "newSched" : "newNoSched";            // ④已剪未排 ⑤已剪有排未過
@@ -3956,7 +3969,8 @@ function viewSettings(){
     <label style="margin-top:12px">Shopline 網址</label>
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
     <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
-    <input id="set_pw" value="${esc(s.adminPassword||'1234')}" placeholder="管理員登入密碼">
+    <input id="set_pw" type="password" autocomplete="new-password" placeholder="要改才填，留空＝維持原本的密碼">
+    <div class="muted" style="font-size:12px;margin-top:4px">系統只留密碼的雜湊、不留原文，所以這裡不會顯示你目前的密碼。忘記的話只能從資料庫改。</div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   ${setWorkHoursCard(s)}
@@ -4013,7 +4027,12 @@ async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
-  const pw=(val("set_pw")||"").trim(); if(pw) settings.adminPassword=pw; // 空白則沿用舊密碼
+  // 管理員密碼：留空＝不改；要改的話存雜湊、把明文清掉（跟員工密碼同一套規則）
+  const pw=(val("set_pw")||"").trim();
+  if(pw){
+    const err=pwRuleError(pw); if(err){ toast("管理員密碼："+err,true); return; }
+    settings.adminPwHash=await pwMakeHash(pw); settings.adminPassword="";
+  }
   if(document.getElementById("set_wstart")){
     settings.workStart=(val("set_wstart")||DEF_WORK.start);
     settings.workEnd=(val("set_wend")||DEF_WORK.end);

@@ -383,9 +383,11 @@ v84 上線時沒有人有 `pwHash`，所以**全員下次登入都會被要求�
   否則舊雜湊還在，重設等於沒用。
 - 雜湊要靠 `crypto.subtle`，只在 HTTPS 或 localhost 底下才有。GitHub Pages 是 HTTPS，沒問題。
 
-**還沒處理的**：`settings.adminPassword`（管理員自己的登入密碼）**仍然是明文**，
-而且會被印在「設定」頁的輸入框裡。要一起改的話，設定頁就不能再顯示原本的密碼
-（忘記就只能從資料庫改），這是刻意留下的取捨。
+**管理員密碼（v89 起也只存雜湊）**：`settings.adminPwHash`，同一套 `pwMakeHash`／`pwVerifyHash`。
+`adminPwCheck()` 有雜湊就比對雜湊、沒有才比對舊的 `settings.adminPassword`（預設 `1234`）；
+用舊密碼登入成功的那一刻 `ownerLogin()` 直接換成雜湊、把 `adminPassword` 寫成 `""`。
+設定頁那一格因此**不再顯示目前的密碼**（`type="password"`、留空＝不改）——
+忘記的話只能從資料庫改，這是雜湊的必然代價。
 
 ---
 
