@@ -86,7 +86,7 @@ reset(LIB); as("Regina","manager");
   ok("數字是 2", tabN(h,"有文案・未拍片")===2);
   ok("待剪・未排程剩 1（S1 S2 被移走了）", tabN(h,"待剪・未排程")===1);
   ok("原本的五個分頁都還在",
-     ["待剪・未排程","待剪・已排程","剪完・未排程","剪完・已排程","舊片"].every(x=>h.includes(x))); }
+     ["待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"].every(x=>h.includes(x))); }
 reset(LIB); as("Regina","manager"); VID_VIEW="script";
 ok("點進去只列有文案未拍片的", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2","N1","O1"]))===JSON.stringify(["S1","S2"]));
 reset(LIB); as("Regina","manager"); VID_VIEW="rawNoSched";
