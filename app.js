@@ -1076,15 +1076,20 @@ function workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit){
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="font-size:16px">${T("待認領（毛片＋二創版本）","To claim (raw + versions)")}</b>
-      <span class="pill ${pool.length?'ok':'wa'}">${POOL_FILTER==="all"?pool.length:poolShown.length+"/"+pool.length}</span>
+      <span class="pill ${poolShown.length?'ok':'wa'}">${(POOL_FILTER==="all"&&!POOL_Q)?pool.length:poolShown.length+"/"+pool.length}</span>
     </div>
     <div class="vtabs" style="margin-top:10px">${poolCats.map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')">${l} <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join("")}</div>
+    <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+      <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、來源…）","Find a video (name, code, source…)")}"
+        style="flex:1;min-width:150px" onchange="setPoolQ(this.value)" onkeydown="if(event.key==='Enter')setPoolQ(this.value)">
+      ${POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="setPoolQ('')">${T("清除","Clear")}</button>`:""}
+    </div>
     <div style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
         <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${(v.locale||v.channel)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest")}</td></tr>`}</tbody></table>
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`}</tbody></table>
     </div>
     ${atLimit?`<p class="muted" style="font-size:12px;margin:6px 0 0"><span style="color:var(--red)">${T("你已有 3 支製作中，先完成幾支再領","You have 3 in progress — finish some before claiming more")}</span></p>`:''}
   </div>`;
@@ -1406,8 +1411,10 @@ function viewWork(){
       return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
   // 快選：不同平台/語系一鍵過濾（含數量）；超過 5 條時改用捲動視窗（見下方 max-height）
   const poolCats=[["all",T("全部","All")],["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文","English")],["th",T("泰文","Thai")]];
-  const poolCnt={all:pool.length}; pool.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
-  const poolShown=POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER);
+  // 快選上的數字跟著搜尋一起變 —— 搜「珠寶」時就看得出各類各有幾支符合
+  const poolHit=pool.filter(poolMatch);
+  const poolCnt={all:poolHit.length}; poolHit.forEach(v=>{ const k=poolCat(v); poolCnt[k]=(poolCnt[k]||0)+1; });
+  const poolShown=(POOL_FILTER==="all"?pool:pool.filter(v=>poolCat(v)===POOL_FILTER)).filter(poolMatch);
   // 「這支是不是我的」：以剪輯人員為準；剪輯人員沒填時退回看認領人（避免完成後從自己的清單消失）
   const isMine=(v)=> v.editor===me || (!v.editor && v.claimedBy===me);
   const doneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
@@ -1477,6 +1484,17 @@ function setWorkZone(z){ WORK_ZONE=z; render(); }
 // 待認領快選：all=全部、tw=台灣毛片/原本、shopee/ms=平台殼、en/th=語言殼
 let POOL_FILTER="all";
 function setPoolFilter(k){ POOL_FILTER=k; render(); }
+// 待認領的搜尋（v86）：影片變多了，快選分類之外還要能直接找
+let POOL_Q="";
+function setPoolQ(v){ POOL_Q=String(v||"").trim(); render(); }
+// 比對片名、編號、來源、標籤、平台／語言 —— 剪輯記得哪個字就能找到
+function poolMatch(v){
+  if(!POOL_Q) return true;
+  const q=POOL_Q.toLowerCase();
+  return [v.code, v.name, v.rawName, v.nameEn, v.source, v.channel, v.locale,
+          Array.isArray(v.tags)?v.tags.join(" "):""]
+    .filter(Boolean).join(" ").toLowerCase().includes(q);
+}
 function poolCat(v){ return (v.channel&&CHANNELS[v.channel])?v.channel:(v.locale||"tw"); }
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
