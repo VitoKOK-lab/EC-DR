@@ -134,7 +134,8 @@ function dayBreakdown(date){ const list=dayVideoList(date);
 function inProgressCount(name, bucket){ bucket=bucket||(x=>true);
   return (STATE.videos||[]).filter(v=>v.stage==="剪輯中"&&(v.claimedBy===name||v.editor===name)&&bucket(v)).length; }
 function myInProgressCount(bucket){ return inProgressCount(currentUser(), bucket); }
-// 新片＝剪好還沒上傳（預排上片日尚未到）；舊片＝過了預排上片日（已上傳，可重播）
+// 新片＝該做的都做完、也上傳好了，排進上片日等著播出（預排上片日還沒到）
+// 舊片＝過了預排上片日（已經播過，可以重播）
 // 是否已過預排上片日（→ 已上傳、視為舊片，可重播）
 function airedPast(v){ const d=String(v.scheduledDate||"").slice(0,10); return !!d && d < today; }
 
