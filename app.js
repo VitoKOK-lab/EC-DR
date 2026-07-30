@@ -2707,12 +2707,20 @@ function vidIsOld(v){
   return isPublished(v) && airedPast(v);   // 必須「已完成」＋過了排程日才算舊片（剪太慢過期但沒剪完的不算）
 }
 // 影片庫五分段（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
+// 有寫文案、但毛片還沒拍（沒有毛片雲端連結）——「待剪」的前一站
+// 為什麼用「有沒有毛片雲端連結」判斷：原始片名每一支都有（新增時必填），
+// 毛片連結才是「這支真的拍出來了」的訊號；實際資料裡待剪的 58 支有 57 支都填了。
+const vidHasScript=(v)=>!!String(v&&v.videoCopy||"").trim();
+const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
 function vidSegment(v){
-  if(vidIsOld(v)) return "old";                                  // ⑤ 已剪・過排程
-  if(!isPublished(v)) return v.scheduledDate ? "rawSched" : "rawNoSched";  // ①未剪未排 ②未剪有排
-  return v.scheduledDate ? "newSched" : "newNoSched";            // ③已剪未排 ④已剪有排未過
+  if(vidIsOld(v)) return "old";                                  // ⑥ 已剪・過排程
+  if(!isPublished(v)){
+    if(vidHasScript(v) && !vidHasRaw(v)) return "script";        // ① 有文案・未拍片
+    return v.scheduledDate ? "rawSched" : "rawNoSched";          // ②未剪未排 ③未剪有排
+  }
+  return v.scheduledDate ? "newSched" : "newNoSched";            // ④已剪未排 ⑤已剪有排未過
 }
-function vidOrderRank(v){ return {rawNoSched:1, rawSched:2, newNoSched:3, newSched:4, old:5}[vidSegment(v)] || 9; }
+function vidOrderRank(v){ return {script:0, rawNoSched:1, rawSched:2, newNoSched:3, newSched:4, old:5}[vidSegment(v)] ?? 9; }
 // 同類排序鍵：有排程用預排上片日；沒排程的排在後面、用編號(上傳先後)
 function vidSortVal(v){ return v.scheduledDate ? String(v.scheduledDate).slice(0,10) : ("9999-"+String(v.id)); }
 // 影片的顯示標籤（去重）：文案類型 + 其他標籤
@@ -2849,7 +2857,7 @@ function viewVideos(){
       ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}（${langCount[k]||0}）</option>`).join("")}
     </select></div>`;
   const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
-  const seg={rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
+  const seg={script:0,rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
   const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
   // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
   const viewList=all.filter(v=> vidSegment(v)===VID_VIEW);
@@ -2864,6 +2872,7 @@ function viewVideos(){
   <div class="card">
     ${langSel}
     <div class="vtabs">
+      ${tab("script",T("有文案・未拍片","Script · not shot"),seg.script)}
       ${tab("rawNoSched",T("待剪・未排程","Raw · unscheduled"),seg.rawNoSched)}
       ${tab("rawSched",T("待剪・已排程","Raw · scheduled"),seg.rawSched)}
       ${tab("newNoSched",T("剪完・未排程","Done · unscheduled"),seg.newNoSched)}
