@@ -2889,7 +2889,7 @@ function viewVideos(){
       ${tab("rawNoSched",T("待剪・未排程","Raw · unscheduled"),seg.rawNoSched)}
       ${tab("rawSched",T("待剪・已排程","Raw · scheduled"),seg.rawSched)}
       ${tab("newNoSched",T("剪完・未排程","Done · unscheduled"),seg.newNoSched)}
-      ${tab("newSched",T("剪完・已排程","Done · scheduled"),seg.newSched)}
+      ${tab("newSched",T("新片完成","New"),seg.newSched)}
       ${tab("old",T("舊片","Old"),seg.old)}
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">

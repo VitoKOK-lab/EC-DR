@@ -69,7 +69,7 @@ const LIB=[ v_("S1",{videoCopy:"口播"}), v_("R1",{rawLink:"http://d"}),
 reset(LIB); as("Regina","manager");
 { const h=viewVideos();
   ok("影片庫分頁的名稱包在 span 裡", h.includes("<span>有文案・未拍片</span> <span class=\"vtab-n\">"));
-  ok("六個分頁都在", ["有文案・未拍片","待剪・未排程","待剪・已排程","剪完・未排程","剪完・已排程","舊片"]
+  ok("六個分頁都在", ["有文案・未拍片","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
      .every(x=>h.includes("<span>"+x+"</span>")));
   ok("每個分頁都各自帶一個數字", (h.match(/<span class="vtab-n">/g)||[]).length>=6);
   ok("選中的還是有 on", h.includes('class="vtab on"')); }
