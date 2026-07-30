@@ -2081,7 +2081,13 @@ const dashDur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const
 const dashMin=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
 const dashStatusPill=(s)=> !s||!s.clockIn ? `<span class="pill em">${T("未上班","Off")}</span>`
     : (s.clockOut?`<span class="pill ok">${T("已下班","Clocked out")}</span>`:`<span class="pill wa">${T("上班中","On shift")}</span>`);
-const dashVLine=(v,extra)=>`<div style="margin:5px 0">• <a href="javascript:void(0)" onclick="editVideo('${v.id}')">${esc(vidTitle(v))}</a>${extra||""}</div>`;
+// 一支影片一行：片名太長就用「…」截掉，後面的狀態與工時一定看得到，不會被擠到下一行。
+// 想看完整片名點進去就有。
+const dashVLine=(v,extra)=>`<div style="margin:5px 0;display:flex;gap:6px;align-items:baseline">
+  <a href="javascript:void(0)" onclick="editVideo('${v.id}')"
+     style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+     title="${esc(vidTitle(v))}">• ${esc(vidTitle(v))}</a>
+  ${extra?`<span style="flex:none;white-space:nowrap">${extra}</span>`:""}</div>`;
 
 // 每位剪輯在「所選日期」的當日明細（各線合併計入，跟該剪輯自己的上班計畫一致）
 function dashEditorRows(editors, shifts, allTasks, D, isToday){
@@ -4145,7 +4151,14 @@ function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; 
 function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||""); }
 // 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主
 function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""); }
-function vidTitle(v){ const t=zhTW((v&&(v.name||v.rawName))||"(未命名)"); const c=vidCode(v); return c?(c+" "+t):t; }
+// 清單上顯示的片名：把後面那一長串 #標籤 去掉，只留看得懂是哪一支的部分。
+// 標籤是貼文用的，在清單裡只會把每一列撐成兩三行。完整的貼文文案在影片詳情
+// 與編輯框裡照樣看得到（那兩處直接讀 v.name，不經過這裡），資料本身也不動。
+function vidTitle(v){
+  const raw=zhTW((v&&(v.name||v.rawName))||"");
+  const t=stripHash(raw) || raw || "(未命名)";   // 整串都是標籤時退回原文，不要變成空的
+  const c=vidCode(v); return c?(c+" "+t):t;
+}
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
 // 商品列：最多 4 個，每個 品名(下拉)+單價(手動)
