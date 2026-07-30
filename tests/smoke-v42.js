@@ -41,7 +41,7 @@ localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","ed
 POOL_FILTER="all"; WORK_ZONE="shopee";
 let h=viewWork();
 ok("快選列存在（六類＋計數）", h.includes("setPoolFilter('all')") && h.includes("setPoolFilter('tw')") && h.includes("setPoolFilter('shopee')") && h.includes("setPoolFilter('ms')") && h.includes("setPoolFilter('en')") && h.includes("setPoolFilter('th')"));
-ok("全部計數=6", h.includes(`>${T("全部","All")} <span class="vtab-n">6</span>`));
+ok("全部計數=6", h.includes(`<span>${T("全部","All")}</span> <span class="vtab-n">6</span>`));
 ok("全部顯示所有項目", h.includes("中文毛片一") && h.includes("EN shell") && h.includes("SHP shell"));
 POOL_FILTER="tw"; h=viewWork();
 ok("篩中文毛片：只剩原本", h.includes("中文毛片一") && h.includes("中文毛片二") && !h.includes("EN shell") && !h.includes("SHP shell") && !h.includes("MS shell"));
@@ -57,7 +57,7 @@ ok("空類別顯示引導文字", h.includes("這一類目前沒有可認領的�
 // intl 英文標籤
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 POOL_FILTER="all"; h=viewWork();
-ok("intl 快選英文標籤", h.includes(">All <span") && h.includes(">Chinese raw <span") && h.includes(">Thai <span"));
+ok("intl 快選英文標籤", h.includes("<span>All</span> <span") && h.includes("<span>Chinese raw</span> <span") && h.includes("<span>Thai</span> <span"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

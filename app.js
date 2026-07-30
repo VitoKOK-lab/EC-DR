@@ -1093,7 +1093,7 @@ function workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit){
       <b style="font-size:16px">${T("待認領（毛片＋二創版本）","To claim (raw + versions)")}</b>
       <span class="pill ${poolShown.length?'ok':'wa'}">${(POOL_FILTER==="all"&&!POOL_Q)?pool.length:poolShown.length+"/"+pool.length}</span>
     </div>
-    <div class="vtabs" style="margin-top:10px">${poolCats.map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')">${l} <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join("")}</div>
+    <div class="vtabs" style="margin-top:10px">${poolCats.map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')"><span>${l}</span> <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join("")}</div>
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
       <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、來源…）","Find a video (name, code, source…)")}"
         style="flex:1;min-width:150px" onchange="setPoolQ(this.value)" onkeydown="if(event.key==='Enter')setPoolQ(this.value)">
@@ -2871,7 +2871,7 @@ function viewVideos(){
     </select></div>`;
   const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
   const seg={script:0,rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
-  const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')">${label} <span class="vtab-n">${n}</span></button>`;
+  const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
   // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
   const viewList=all.filter(v=> vidSegment(v)===VID_VIEW);
   const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
