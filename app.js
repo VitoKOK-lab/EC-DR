@@ -1048,7 +1048,11 @@ function workReviewCard(me){
       ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
         <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
         ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
-    ${approvedTodo.length?`<div style="margin-top:10px"><b style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}（${approvedTodo.length}）</b>
+    ${approvedTodo.length?`<details class="fold" style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
+      // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
+      (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
+        return n?`<span class="pill em" style="font-size:10px;margin-left:6px">${T(n+" 支還缺連結", n+" need links")}</span>`:""; })()
+      }</summary><div class="foldbody">
       ${approvedTodo.map(v=>{ const who=`${esc(v.reviewedBy||"Regina")} ${T("已審過","approved")}${v.reviewedAt?("・"+esc(String(v.reviewedAt).slice(0,10))):''}`;
         if(!linksDone(v)) return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
           <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
@@ -1056,7 +1060,8 @@ function workReviewCard(me){
         return `<div style="margin-top:6px;padding:9px;background:var(--greenbg);border-radius:5px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
           <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
           <span class="muted" style="font-size:12px"> ${who}・${T("連結都補齊了","links all set")}</span></span>
-          <button class="btn sec sm" style="flex:none" onclick="ackReviewedVid('${v.id}')" title="${T("收起這則通知","Dismiss this notice")}">${T("知道了","Got it")}</button></div>`; }).join("")}</div>`:''}
+          <button class="btn sec sm" style="flex:none" onclick="ackReviewedVid('${v.id}')" title="${T("收起這則通知","Dismiss this notice")}">${T("知道了","Got it")}</button></div>`; }).join("")}
+      </div></details>`:''}
     ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
         <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
