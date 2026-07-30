@@ -25,7 +25,7 @@ STATE = {
     shopeeAccounts:["蝦皮店A"], msAccounts:["tiktok-Malaysia"], exchangeRates:{} },
   schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
   videos:[
-    {id:"S1",name:"黃金原本",rawName:"黃金原本",nameEn:"Golden original #gold",videoCopy:"黃金文案",videoCopyEn:"Golden copy EN",stage:"待處理",locale:"",channel:"",origLang:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"S1",name:"黃金原本",rawName:"黃金原本",nameEn:"Golden original #gold",videoCopy:"黃金文案",videoCopyEn:"Golden copy EN",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",origLang:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"S2",name:"已上片源片",rawName:"已上片源片",nameEn:"Published source",stage:"已上片",published:true,tags:["舊片"],publishedLink:"http://x",finishedAt:"2020-01-01T00:00:00Z",locale:"",channel:"",usageHistory:[],products:[],metrics:[]},
     {id:"E1",name:"EN version title",rawName:"已上片源片",stage:"待處理",locale:"en",sourceVideoId:"S2",account:"tiktok-EN",createdBy:"Regina",createdAt:"2026-07-01T00:00:00Z",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"T1",name:"TH version title",rawName:"已上片源片",stage:"待處理",locale:"th",sourceVideoId:"S2",account:"tiktok-TH",usageHistory:[],tags:[],products:[],metrics:[]},
