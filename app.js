@@ -1104,6 +1104,17 @@ function workReviewCard(me){
 // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
 function dayBadge(v){ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
   return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b==="新"?T("新","New"):b}</span>`; }
+// 天數是「管理用」的資訊 —— 給管理員／經理人／人資看誰卡住了，剪輯自己的工作頁不顯示
+// （盯著自己的天數只會有壓力，對他要做的事沒有幫助）。
+// 員工視角（VIEW_AS）＝預覽員工看到的畫面，所以也不顯示。
+function canSeeEditDays(){ return !VIEW_AS && ["boss","manager","hr"].includes(currentRole()); }
+// 小字版：主管／人資的清單很密，用一行小字標天數，顏色照樣會警示
+function daySmall(v){
+  if(!v || v.stage!=="剪輯中" || !canSeeEditDays()) return "";
+  const b=claimDayBadge(v), n=(b==="新")?1:(+b);
+  const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--muted)');
+  return ` <span style="font-size:11px;flex:none;color:${col};font-weight:${n>=2?700:400}">${b==="新"?T("今天領","new"):T("第 "+b+" 天","d"+b)}</span>`;
+}
 // 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
 function shpBadge(v){ return (v.channel&&CHANNELS[v.channel])
   ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
@@ -1197,7 +1208,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   });
   // ③ 手上的影片
   myWork.forEach(v=>{
-    const days=v.stage==="剪輯中"?dayBadge(v):"";
+    const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
       `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
@@ -2135,7 +2146,7 @@ function dashEditorCard(e, isToday){
     const att=e.s&&e.s.clockIn? `${hm(e.s.clockIn)}–${e.s.clockOut?hm(e.s.clockOut):'…'}　工時 ${dur(e.s.clockIn,e.s.clockOut||(isToday?nowIso():e.s.clockIn))}` : '—';
     const doneHTML=e.done.length? e.done.map(v=>vline(v,` <span class="pill ok" style="font-size:10px">完成</span> <span class="muted" style="font-size:12px">剪 ${editDaysLabel(v)||'-'} 天・工時 ${minLabel(v.durationMin)}</span>`)).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">當日無完成</div>';
-    const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>')).join("")
+    const wipHTML=isToday?(e.wip.length? e.wip.map(v=>vline(v,' <span class="pill wa" style="font-size:10px">進行中</span>'+daySmall(v))).join("")
         : '<div class="muted" style="font-size:13px;margin-top:4px">目前無進行中</div>'):'';
     const ackPill=(t)=> t.assignedBy ? (t.ack?' <span class="pill ok" style="font-size:10px">已接收</span>':' <span class="pill em" style="font-size:10px">尚未接收</span>') : '';
     const taskHTML=e.tasks.length? e.tasks.map((t,ti)=>`<div style="margin:5px 0"><b style="color:var(--muted)">${ti+1}.</b> ${esc(t.title)}${t.assignedBy?' <span class="muted" style="font-size:11px">[指派]</span>':''}${t.done?'':ackPill(t)} ${t.done?'<span class="pill ok" style="font-size:10px">完成</span>':'<span class="pill em" style="font-size:10px">未完成</span>'}${t.contact?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">對接窗口：<b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}${t.report?`<div class="muted" style="font-size:12px;margin:1px 0 0 16px">回報：${esc(t.report)}</div>`:'<div class="muted" style="font-size:12px;margin:1px 0 0 16px">（未填回報）</div>'}</div>`).join("")
@@ -2416,7 +2427,7 @@ function teamDayCard(u, allTasks){
   const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・${T("工時","Hours")} ${minLabel(workMin)}`:T("今天還沒上線","Not clocked in yet");
   const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
       <span class="pill ${cls}" style="font-size:10px;flex:none">${label}</span>
-      <span class="linetitle">${esc(vidTitle(v))}</span></div>`).join(""):"";
+      <span class="linetitle">${esc(vidTitle(v))}</span>${daySmall(v)}</div>`).join(""):"";
   const nDone=tasks.filter(t=>t.done).length;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
