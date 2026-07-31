@@ -68,7 +68,7 @@ ok("月排程選單用 馬來西亞", h.includes(">馬來西亞<"));
 WORK_ZONE="shopee"; h=viewWork();
 ok("建立二創版本選單用 馬來西亞", h.includes(">馬來西亞<"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-h=viewVideos(); const a=h.includes("Malaysia（");
+h=viewVideos(); const a=h.includes("Malaysia (");
 CAL_PLAT="tw"; h=viewCal(); const b=h.includes(">Malaysia<");
 WORK_ZONE="shopee"; h=viewWork(); const c=h.includes(">Malaysia<");
 ok("intl 三處都用 Malaysia（一致）", a && b && c);

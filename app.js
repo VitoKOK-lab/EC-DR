@@ -31,6 +31,25 @@ function currentRole(){
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
 // 雙語：海外剪輯(intl)看英文、其他角色看中文（海外員工看到的畫面都要是英文）
 function T(zh,en){ return currentRole()==="intl" ? en : zh; }
+// 標點也要跟著語言走：中文用全形（）＋，英文用半形 () +
+function paren(x){ return T("（"+x+"）"," ("+x+")"); }
+function PLUS(){ return T("＋","+"); }
+// 「看起來像介面、其實是設定資料」的中文詞（標籤、片源、影片類型）：
+// 海外剪輯看到的畫面全是英文，這些混在裡面就很突兀。內建常見的幾個；
+// 管理員可以在設定用「中文=English」自己加或改（settings.dataEn）。
+// 沒有對照的就照原樣顯示 —— 品牌名、人名不硬翻。
+const DATA_EN={
+  "新片":"New","舊片":"Old","寵粉":"Fan perks","代理招商":"Agent recruiting","銷售":"Sales",
+  "教育":"Education","個人成長":"Personal growth","珠寶介紹":"Jewelry","子女傳承":"Family legacy",
+  "行業揭密":"Industry insider","經典語錄":"Quotes","生活分享":"Lifestyle","異國文化":"Culture",
+  "行銷活動":"Campaign","流量型":"Reach","帶貨型":"Selling","官方IP":"Official IP",
+};
+function dataLabel(x){
+  const t=String(x==null?"":x).trim();
+  if(!t || currentRole()!=="intl") return t;
+  const custom=(STATE&&STATE.settings&&STATE.settings.dataEn)||{};
+  return custom[t] || DATA_EN[t] || t;
+}
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
@@ -516,7 +535,7 @@ function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2t
 function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 // 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
-function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`; }
+function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(dataLabel(t))}</span>`; }
 
 // ===================================================================
 // 畫面路由
@@ -1104,7 +1123,7 @@ function workPoolCard(pool, poolShown, poolCats, poolCnt, me, atLimit){
     <div style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody>${poolShown.map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${(v.locale||v.channel)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${(v.locale||v.channel)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" ${atLimit?'disabled style="opacity:.5;cursor:not-allowed"':''} title="${atLimit?T('你已有 3 支在剪，完成一支才能再領（排隊中）','You already have 3 in progress — finish one first'):T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${atLimit?T('排隊中','Queued'):T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`}</tbody></table>
     </div>
@@ -1121,7 +1140,7 @@ function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
     <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">${T("天數","Days")}</th><th>${T("影片","Video")}</th><th style="width:200px">${T("狀態","Status")}</th></tr></thead>
     <tbody>${myWork.map(v=>`<tr>
         <td data-label="${T("天數","Days")}">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(v.source||"")}</span>${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${enSubLine(v)}</td>
         <td data-label="${T("狀態","Status")}"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
   </div>`;
@@ -1180,7 +1199,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     const days=v.stage==="剪輯中"?dayBadge(v):"";
     rows.push(todoRow("🎬",
       `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${enSubLine(v)}`,
-      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(v.source||"")].filter(Boolean).join("・"),
+      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
@@ -1201,7 +1220,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
       <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(event.key==='Enter')createTask()">
       <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}
       <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
-      <button class="btn sm" style="flex:none" onclick="createTask()">＋ ${T("加入","Add")}</button>
+      <button class="btn sm" style="flex:none" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button>
     </div>
     <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
   </div>`;
@@ -1316,7 +1335,7 @@ function workTasksCard(tasks){
     ${currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 8px">
       <span class="muted" style="font-size:12px;align-self:center">常用：</span>
       ${workPresets().map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`}
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">＋ ${T("加入","Add")}</button></div>
+    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button></div>
   </div>`;
 }
 // ===================================================================
@@ -1475,7 +1494,7 @@ function viewWork(){
   </div>`;
   const nFuture=myFutureTasks().length;
   return `
-  <h2>${T("本日工作","Today's Work")}（${esc(me)}）</h2>
+  <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
   ${focusBar}
   ${workIssueCard()}
   ${rejCard}
@@ -2462,7 +2481,7 @@ function teamFilter(list){
     return true; });
 }
 function teamFilterBar(all, shown){
-  const opt=(k,zh,en)=>`<option value="${k}" ${TEAM_GROUP===k?"selected":""}>${T(zh,en)}（${k==="all"?all.length:all.filter(u=>(u.role||"editor")===k).length}）</option>`;
+  const opt=(k,zh,en)=>`<option value="${k}" ${TEAM_GROUP===k?"selected":""}>${T(zh,en)}${paren(k==="all"?all.length:all.filter(u=>(u.role||"editor")===k).length)}</option>`;
   return `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 4px">
     <select style="width:auto" onchange="teamSetGroup(this.value)">
       ${opt("all","全部","Everyone")}${opt("editor","剪輯","Editors")}${opt("cs","員工","Staff")}${opt("intl","海外剪輯","Intl")}${opt("hr","人資","HR")}</select>
@@ -2506,7 +2525,7 @@ function viewTeam(){
     <div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>
   </div>
   <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
-  ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}（${g.people.length}）</h4>
+  ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
     <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
   <h3 style="margin:24px 0 10px">${T("本月成效","This month")} <span class="muted" style="font-size:13px;font-weight:400">${T(+ym.slice(0,4)+" 年 "+(+ym.slice(5,7))+" 月", ym)}</span></h3>
   <div class="card">
@@ -2666,14 +2685,14 @@ function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags;
 // 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
 function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px">
-  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(t)}</label>`; }
+  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(dataLabel(t))}</label>`; }
 // 標籤：只留可複選的其他標籤（新舊片自動、不設選單）
 function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
   const skip=new Set(NEWOLD_TAGS);
   const all=otherTags().slice(); (selected||[]).forEach(t=>{ if(!skip.has(t)&&!all.includes(t)) all.push(t); });
   return `<label>${T("標籤（可複選）","Tags (multi-select)")}</label>
     <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
-    <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="${T("新增標籤…","New tag…")}" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">＋ ${T("加入","Add")}</button></div>`; }
+    <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="${T("新增標籤…","New tag…")}" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">${PLUS()} ${T("加入","Add")}</button></div>`; }
 function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
 // 有填銷售商品 → 自動勾「寵粉」標籤
 function autoPamperTag(prefix){
@@ -2814,11 +2833,11 @@ function poolDiscardBtn(v){ if(!v||v.stage!=="待處理") return "";
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
   const tags=videoTagsOf(v);
-  const tagHTML=tags.length?tags.map(t=>`<span class="tag" style="font-size:11px">${esc(t)}</span>`).join(" "):'<span class="muted" style="font-size:12px">—</span>';
+  const tagHTML=tags.length?tags.map(t=>`<span class="tag" style="font-size:11px">${esc(dataLabel(t))}</span>`).join(" "):'<span class="muted" style="font-size:12px">—</span>';
   const prod=(v.productUrl||"").trim();
   const prodCount=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]).length;
-  const prodHTML=prod?`<a href="${esc(prod)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">商品頁${prodCount?`（${prodCount}）`:""}</a>`
-    :(prodCount?`<span class="muted" style="font-size:12px">${prodCount} 項</span>`:'<span class="muted" style="font-size:12px">—</span>');
+  const prodHTML=prod?`<a href="${esc(prod)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${T("商品頁","Product")}${prodCount?paren(prodCount):""}</a>`
+    :(prodCount?`<span class="muted" style="font-size:12px">${T(prodCount+" 項",prodCount+" items")}</span>`:'<span class="muted" style="font-size:12px">—</span>');
   const rev=v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">已審</span>'
     :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">× 退回</span>':'');
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
@@ -2875,7 +2894,7 @@ function viewVideos(){
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
     <label style="margin:0">${T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
-      ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}（${langCount[k]||0}）</option>`).join("")}
+      ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
   const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
   const seg={script:0,rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
@@ -2886,7 +2905,7 @@ function viewVideos(){
   const order=videoTags();
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
   const tagBtns=present.length
-    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(t)} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
+    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(dataLabel(t))} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
       +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">${T("清除篩選","Clear")}</a>`
     : `<span class="muted" style="font-size:12px">${T("此分頁的影片尚未加標籤","No tags on this tab yet")}</span>`;
   return `<h2>${T("影片庫","Library")}</h2>
@@ -2902,11 +2921,11 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
-      <button class="btn sm" onclick="newSimpleVideo()">＋ ${T("新增一支","Add one")}</button>
+      <button class="btn sm" onclick="newSimpleVideo()">${PLUS()} ${T("新增一支","Add one")}</button>
       <button class="btn sec sm" onclick="batchNewFootage()">${T("批次新增","Batch add")}</button>
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <span class="muted" style="font-size:12px">${T("標籤","Tags")}：</span>
+      <span class="muted" style="font-size:12px">${T("標籤：","Tags: ")}</span>
       ${tagBtns}
     </div>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
@@ -3078,9 +3097,9 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||""))+enSubLine(v))}
       ${row(T("影片文案","Script"), (v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')+((currentRole()==="intl"&&!v.locale&&v.videoCopyEn)?`<div class="vt-en">${esc(v.videoCopyEn).replace(/\n/g,'<br>')}</div>`:''))}
       ${row(T("參考來源","Reference"), v.refLink?`<a href="${esc(v.refLink)}" target="_blank" rel="noopener noreferrer">${T("開啟參考來源","Open reference")}</a>`:'')}
-      ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
+      ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(dataLabel(t))}</span>`).join(" "):'')}
       ${(!v.locale&&!v.channel)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc(origLangLabel(origLangOf(v)))}`):''}
-      ${row(T("片源","Source"), esc(v.source||""))}
+      ${row(T("片源","Source"), esc(dataLabel(v.source||"")))}
       ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}
       ${row(T("建立者","Created by"), v.createdBy?`${esc(v.createdBy)}${v.createdAt?` <span class="muted" style="font-size:12px">${esc(String(v.createdAt).slice(0,10))}</span>`:''}`:'')}
@@ -3140,7 +3159,7 @@ function openVideoModal(id, edit, fromWork){
     <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
-      <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
       <div><label>${T("階段","Stage")}</label>
         ${["boss","manager"].includes(currentRole())
           ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
@@ -3394,10 +3413,10 @@ function intlLibRows(loc){
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
           <select id="addacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
-            <option value="">＋ ${T("加版本 — 選帳號","Add version — pick account")}</option>
+            <option value="">${PLUS()} ${T("加版本 — 選帳號","Add version — pick account")}</option>
             ${locs.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
           </select>
-          <button class="btn sm" style="flex:none" onclick="createLocalPick('${v.id}')" title="${T("建立這個版本並加入待認領","Create this version and add it to the pool")}">＋ ${T("加入","Add")}</button>
+          <button class="btn sm" style="flex:none" onclick="createLocalPick('${v.id}')" title="${T("建立這個版本並加入待認領","Create this version and add it to the pool")}">${PLUS()} ${T("加入","Add")}</button>
         </div>`
       : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">${loc?T(`還沒有${localeName(loc)}帳號 — 請管理員到設定新增`,`No ${localeName(loc)} accounts yet — ask the admin to add them in Settings`):T("請管理員先到設定新增帳號","Ask admin to add accounts in Settings")}</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
@@ -3727,13 +3746,13 @@ function chLibRows(ch){
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
           ${previewBtn}
           <select id="${C.pfx}acct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
-            <option value="">＋ ${T("加"+C.verName+" — 選帳號","Add "+C.verNameEn+" — pick account")}</option>
+            <option value="">${PLUS()} ${T("加"+C.verName+" — 選帳號","Add "+C.verNameEn+" — pick account")}</option>
             ${accts.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join("")}
           </select>
-          <button class="btn sm" style="flex:none" onclick="createChPick('${ch}','${v.id}')">＋ ${T("加入","Add")}</button>
+          <button class="btn sm" style="flex:none" onclick="createChPick('${ch}','${v.id}')">${PLUS()} ${T("加入","Add")}</button>
         </div>`
       : accts.length===1
-        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createChVersion('${ch}','${v.id}','${esc(jsEsc(accts[0]))}')">＋ ${T("加"+C.verName,"Add "+C.verNameEn)}</button></div>`
+        ? `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<button class="btn sm" style="flex:1" onclick="createChVersion('${ch}','${v.id}','${esc(jsEsc(accts[0]))}')">${PLUS()} ${T("加"+C.verName,"Add "+C.verNameEn)}</button></div>`
         : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">${T("請管理員先到設定新增"+C.label+"帳號","Ask the admin to add "+C.labelEn+" accounts in Settings")}</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
@@ -3899,6 +3918,11 @@ function setWorkHoursCard(s){
     <div class="muted" style="font-size:12px;margin-top:4px">角色可填：${TPL_ROLES.map(p=>p[1]).join("／")}。沒寫「＝」就當作全部。
       這些會出現在該角色的工作頁上方，按一下就加進今天的待辦；當天已經有同名的就不再出現。</div>
 
+    <label style="margin-top:14px">海外同仁看到的英文說法（一行一個，格式「中文=English」）</label>
+    <textarea id="set_dataen" rows="6" placeholder="寵粉=Fan perks&#10;吾家=Wu Jia&#10;官方IP=Official IP">${esc(Object.entries(Object.assign({}, DATA_EN, (s.dataEn||{}))).map(([k,v])=>k+"="+v).join("\n"))}</textarea>
+    <div class="muted" style="font-size:12px;margin-top:4px">標籤、片源、影片類型這些是你自己設的中文，海外剪輯的畫面全是英文，混在裡面會很突兀。
+      上面是內建的對照，可以改也可以加；沒列到的就照原樣顯示（品牌名、人名本來就不該硬翻）。</div>
+
     <label style="margin-top:14px">全公司出勤起算日（選填）</label>
     <div class="row" style="gap:8px;align-items:center">
       <input id="set_attstart" type="date" value="${esc(s.attendStart||"")}" style="max-width:180px">
@@ -4049,6 +4073,12 @@ async function saveSettings(){
     settings.workEnd=(val("set_wend")||DEF_WORK.end);
     settings.lateGraceMin=Math.max(0, parseInt(val("set_grace"))||0);
     settings.attendStart=(val("set_attstart")||"").trim();
+    // 海外英文說法：一行一個「中文=English」；跟內建一樣的就不用另外存
+    settings.dataEn=(val("set_dataen")||"").split("\n").reduce((acc,line)=>{
+      const i=line.indexOf("="); if(i<0) return acc;
+      const zh=line.slice(0,i).trim(), en=line.slice(i+1).trim();
+      if(zh && en && DATA_EN[zh]!==en) acc[zh]=en;
+      return acc; },{});
     // 每日固定工作：一行一件，「角色=內容」；角色寫錯或沒寫都當作「全部」
     settings.dailyTemplates=(val("set_tpl")||"").split("\n").map(line=>{
       const i=line.indexOf("="); const label=(i>=0?line.slice(0,i):"").trim(); const t=(i>=0?line.slice(i+1):line).trim();
