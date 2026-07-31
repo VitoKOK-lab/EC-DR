@@ -111,6 +111,7 @@ function newVideoRecord(over){
     origLang:"",
     driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
     refLink:"",   // 參考來源網址：這支的靈感／參考影片是哪來的
+    cover:"",     // 封面圖網址（Firebase Storage，上傳時已壓縮）
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
@@ -2807,6 +2808,9 @@ function reviewVid(id, status){
     .then(ok=>{ if(ok){ toast(status==="通過"?"已通過 ":"已退回，剪輯會收到 "); closeModal(); } });
 }
 let VID_VIEW="rawNoSched";   // 影片庫分頁：rawNoSched/rawSched/newNoSched/newSched/old（五類）
+// 影片庫的瀏覽方式：list＝原本的清單、grid＝封面圖平鋪。
+// 記在這台裝置上（每個人習慣不同，也不值得為了它多寫一次資料庫）。
+let VID_MODE=(typeof localStorage!=="undefined" && localStorage.getItem("ecdr_vidmode")==="grid")?"grid":"list";
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
 let VID_Q="";   // 搜尋字存全域：資料同步重繪時還原，打到一半不會被清掉
 // 一創語言（原本影片的語言）：影片庫用選單切換、每支原本標小圖示分辨
@@ -2857,7 +2861,7 @@ function vidTableRow(v){
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
-      <span class="vthumb">▶</span>
+      ${coverThumbHTML(v)}
       <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
@@ -2868,21 +2872,46 @@ function vidTableRow(v){
       ${rev}</span></td>
   </tr>`;
 }
-function vidRowsHTML(){
+// 目前分頁＋搜尋＋標籤篩完、排好序的影片（清單模式與圖片模式共用同一份）
+function vidVisibleList(){
   const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && origLangOf(v)===VID_LANG);   // 只列一創原本（依選單語言），不含二創版
   const q=String(VID_Q||'').toLowerCase().trim();
   let list=all.filter(v=> vidSegment(v)===VID_VIEW);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
-  if(!list.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("沒有符合的影片","No matching videos")}</div>`;
   // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
   // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
   list.sort((a,b)=> vidOrderRank(a)-vidOrderRank(b) || vidSortVal(a).localeCompare(vidSortVal(b)) || String(a.id).localeCompare(String(b.id)));
+  return list;
+}
+// 圖片模式：一支一張封面卡
+function vidCardHTML(v){
+  const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+  const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
+  return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
+    <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
+    <div class="vcard-b">
+      <div class="vcard-t">${esc(vidTitle(v))}</div>
+      <div class="vcard-m">
+        <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
+        ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
+      </div>
+    </div></div>`;
+}
+function vidRowsHTML(){
+  const list=vidVisibleList();
+  if(!list.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("沒有符合的影片","No matching videos")}</div>`;
+  const total=`<p class="muted" style="margin-top:8px;font-size:12px">${T("共","Total")} ${list.length} ${T("支","videos")}</p>`;
+  if(VID_MODE==="grid") return `<div class="vgrid">${list.map(vidCardHTML).join("")}</div>${total}`;
   return `<div class="${list.length>8?'vidscroll':''}"><table class="vtable responsive">
     <colgroup><col class="c-vid"><col class="c-tag"><col class="c-sch"><col class="c-prod"><col class="c-ed"><col class="c-st"></colgroup>
     <thead><tr><th>${T("影片","Video")}</th><th>${T("標籤","Tags")}</th><th>${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}</th><th>${T("商品","Products")}</th><th>${T("剪輯師","Editor")}</th><th>${T("狀態","Status")}</th></tr></thead>
-    <tbody>${list.map(vidTableRow).join("")}</tbody></table></div>
-    <p class="muted" style="margin-top:8px;font-size:12px">${T("共","Total")} ${list.length} ${T("支","videos")}</p>`;
+    <tbody>${list.map(vidTableRow).join("")}</tbody></table></div>${total}`;
+}
+function vidSetMode(m){
+  VID_MODE=(m==="grid")?"grid":"list";
+  try{ localStorage.setItem("ecdr_vidmode", VID_MODE); }catch(e){}
+  render();
 }
 function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
@@ -2921,6 +2950,10 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
+      <div class="vmode" role="group" aria-label="${T("瀏覽方式","View mode")}">
+        <button class="vmode-b ${VID_MODE==="list"?"on":""}" onclick="vidSetMode('list')" title="${T("清單","List")}">☰ ${T("清單","List")}</button>
+        <button class="vmode-b ${VID_MODE==="grid"?"on":""}" onclick="vidSetMode('grid')" title="${T("圖片","Covers")}">▦ ${T("圖片","Covers")}</button>
+      </div>
       <button class="btn sm" onclick="newSimpleVideo()">${PLUS()} ${T("新增一支","Add one")}</button>
       <button class="btn sec sm" onclick="batchNewFootage()">${T("批次新增","Batch add")}</button>
     </div>
@@ -3089,9 +3122,105 @@ function vidMetricsCard(v){
 }
 // 影片視窗：檢視模式（唯讀明細＋各語言版本／成效／審片卡）
 // 影片視窗：檢視模式（唯讀明細＋各語言版本／成效／審片／使用紀錄）
+// ===================================================================
+// 影片封面圖 —— 先在瀏覽器壓縮，再放 Firebase Storage
+// 為什麼一定要壓：手機截圖動輒 3–5MB。22 個人各傳幾百張就是好幾 GB，
+// 而且每個人翻影片庫都會把縮圖再下載一次（流量是另外算錢的）。
+// 壓成長邊 720px 的 JPEG 之後約 60–90KB，縮圖跟原圖肉眼看不出差別，
+// 儲存與流量都省 50 倍左右。
+// ===================================================================
+const COVER_MAX=720;                  // 壓縮後的長邊上限（像素）
+const COVER_Q=0.72;                   // JPEG 品質
+const COVER_SRC_MAX=12*1024*1024;     // 原始檔上限：再大就是拿錯檔案了（例如把影片檔當圖片選）
+function coverUrl(v){ return String((v&&v.cover)||"").trim(); }
+function hasCover(v){ return !!coverUrl(v); }
+
+// 把使用者選的圖畫到 canvas 上縮小，輸出成 JPEG blob
+function coverCompress(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      if(!w||!h){ reject(new Error(T("這個檔案讀不出圖片","Could not read that image"))); return; }
+      const k=Math.min(1, COVER_MAX/Math.max(w,h));   // 只縮不放大：本來就小的圖保持原樣
+      const cw=Math.max(1,Math.round(w*k)), ch=Math.max(1,Math.round(h*k));
+      const cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
+      const cx=cv.getContext("2d");
+      cx.fillStyle="#ffffff"; cx.fillRect(0,0,cw,ch);   // 透明底的 PNG 轉 JPEG 會變黑，先鋪白
+      cx.drawImage(img,0,0,cw,ch);
+      cv.toBlob(b=> b?resolve(b):reject(new Error(T("圖片壓縮失敗，換一張試試","Compression failed — try another image"))),
+        "image/jpeg", COVER_Q);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error(T("這個檔案不是圖片","That file is not an image"))); };
+    img.src=url;
+  });
+}
+function coverBusy(on){ const b=document.getElementById("cv_box"); if(b) b.classList.toggle("busy", !!on); }
+// Storage 規則沒開的時候錯誤訊息是 storage/unauthorized，講白話一點才知道要去做什麼
+function coverErrMsg(e){
+  const m=String((e&&(e.code||e.message))||"");
+  if(m.includes("unauthorized")||m.includes("403")) return T("沒有上傳權限 —— Firebase 主控台的 Storage 規則還沒設定","No permission — the Firebase Storage rules are not set up yet");
+  if(m.includes("quota")||m.includes("retry-limit")) return T("上傳逾時，網路不穩定，請再試一次","Upload timed out — check your connection and retry");
+  return (e&&e.message)||T("上傳失敗","Upload failed");
+}
+function coverPickFile(){ const el=document.getElementById("cv_file"); if(el) el.click(); }
+async function coverChosen(input, id){
+  const file=input&&input.files&&input.files[0];
+  if(input) input.value="";        // 清掉才能「再選同一張」（onchange 只在值有變時才觸發）
+  if(!file) return;
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽，離開後才能上傳","Read-only preview — leave it to upload"),true); return; }
+  if(!/^image\//.test(String(file.type||""))){ toast(T("請選圖片檔（JPG／PNG）","Pick an image file (JPG / PNG)"),true); return; }
+  if(file.size>COVER_SRC_MAX){ toast(T("這個檔案太大了（超過 12MB），確認一下是不是選到影片檔","That file is over 12MB — did you pick a video by mistake?"),true); return; }
+  const DB=(typeof window!=="undefined")&&window.DB;
+  if(!DB||!DB.uploadCover){ toast(T("連線還沒就緒，稍等一下再上傳","Not connected yet — try again in a moment"),true); return; }
+  coverBusy(true);
+  try{
+    const blob=await coverCompress(file);
+    const url=await DB.uploadCover(id, blob);
+    // 圖已經在 Storage 了，這裡只是把網址記到這支影片上；不等「儲存修改」是刻意的，
+    // 不然使用者傳完圖卻按取消，Storage 會留一張沒人指向的孤兒圖。
+    const done=await write("PUT",`/api/videos/${id}`,{video:{cover:url}},T("封面已更新","Cover updated"));
+    if(done) openVideoModal(id, true);   // 重開編輯畫面才看得到新封面
+  }catch(e){ toast(coverErrMsg(e), true); }
+  finally{ coverBusy(false); }
+}
+async function coverRemove(id){
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  if(!confirm(T("移除這支影片的封面？","Remove this video's cover?"))) return;
+  const DB=(typeof window!=="undefined")&&window.DB;
+  const done=await write("PUT",`/api/videos/${id}`,{video:{cover:""}},T("已移除封面","Cover removed"));
+  // 檔案刪不掉不算失敗（可能早就被蓋掉了）；影片上的 cover 清掉才是真正的「移除」
+  if(DB&&DB.deleteCover) { try{ await DB.deleteCover(id); }catch(e){} }
+  if(done) openVideoModal(id, true);
+}
+// 編輯畫面左上角那一格
+function coverSlotHTML(v, id){
+  const u=coverUrl(v);
+  const inner=u
+    ? `<img src="${esc(u)}" alt="${T("影片封面","Cover")}" loading="lazy">`
+    : `<span class="cv-empty">${PLUS()}<br><span>${T("加封面","Add cover")}</span></span>`;
+  return `<div class="cv-slot">
+    <div class="cv-box${u?' has':''}" id="cv_box" onclick="coverPickFile()"
+         title="${T("點一下上傳封面（會自動壓縮）","Click to upload a cover (auto-compressed)")}">
+      ${inner}<span class="cv-spin"></span></div>
+    <input type="file" id="cv_file" accept="image/*" style="display:none" onchange="coverChosen(this,'${esc(jsEsc(id))}')">
+    ${u?`<a href="javascript:void(0)" class="cv-rm" onclick="coverRemove('${esc(jsEsc(id))}')">${T("移除","Remove")}</a>`
+       :`<span class="cv-hint">${T("選填","Optional")}</span>`}
+  </div>`;
+}
+// 清單／格子用的小縮圖（沒封面就維持原本的 ▶ 底色方塊）
+function coverThumbHTML(v, cls){
+  const u=coverUrl(v);
+  return u ? `<img class="${cls||"vthumb"}" src="${esc(u)}" alt="" loading="lazy" decoding="async">`
+           : `<span class="${cls||"vthumb"}">▶</span>`;
+}
+
 function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, reviewCard, usageCard){
   const row=(l,c)=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="muted" style="width:100px;flex:none;font-size:13px">${l}</div><div style="flex:1;min-width:0">${c||'<span class="muted">—</span>'}</div></div>`;
   const body=`
+      ${hasCover(v)?`<div class="cv-view"><img src="${esc(coverUrl(v))}" alt="${T("影片封面","Cover")}" loading="lazy"></div>`:''}
       ${row(T("編號","Code"), esc(vidCode(v)))}
       ${row(T("原始片名","Raw title"), esc(zhTW(v.rawName||"")))}
       ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||""))+enSubLine(v))}
@@ -3143,15 +3272,20 @@ function openVideoModal(id, edit, fromWork){
   if(!edit){ vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, reviewCard, usageCard); return; }
 
   const body=`
-    <label>${T("編號 ／ 原始片名","Code / Raw title")}</label>
-    <div class="row" style="gap:8px">
-      <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
-      <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1" placeholder="${T("原始片名","Raw title")}">
-    </div>
-    <label>${T("編號 ／ 影片貼文文案（不填則同原始片名）","Code / Post caption (defaults to raw title)")}</label>
-    <div class="row" style="gap:8px">
-      <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="${T("同原片編號","Same code")}">
-      <input id="e_name" value="${esc(v.name||"")}" style="flex:1" placeholder="${T("影片貼文文案","Post caption")}">
+    <div class="cv-head">
+      ${coverSlotHTML(v, id)}
+      <div class="cv-head-f">
+        <label style="margin-top:0">${T("編號 ／ 原始片名","Code / Raw title")}</label>
+        <div class="row" style="gap:8px">
+          <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
+          <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1;min-width:0" placeholder="${T("原始片名","Raw title")}">
+        </div>
+        <label>${T("編號 ／ 影片貼文文案（不填則同原始片名）","Code / Post caption (defaults to raw title)")}</label>
+        <div class="row" style="gap:8px">
+          <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="${T("同原片編號","Same code")}">
+          <input id="e_name" value="${esc(v.name||"")}" style="flex:1;min-width:0" placeholder="${T("影片貼文文案","Post caption")}">
+        </div>
+      </div>
     </div>
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" autocomplete="off">

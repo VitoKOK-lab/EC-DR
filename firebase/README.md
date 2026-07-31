@@ -30,11 +30,23 @@ npm install -g firebase-tools
 firebase login
 cd firebase
 # 把 .firebaserc 的 PASTE_YOUR_PROJECT_ID 改成你的專案 ID（在專案設定可看到）
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,storage
 ```
 
-`firebase.json` 只設定 Firestore 規則、不含 hosting —— 網站發布是把檔案推到 GitHub 的
-`main`，由 GitHub Pages 服務根目錄。
+`firebase.json` 只設定 Firestore 與 Storage 規則、不含 hosting —— 網站發布是把檔案推到
+GitHub 的 `main`，由 GitHub Pages 服務根目錄。
+
+## 三之二、Storage 規則（影片封面圖要用）
+
+影片封面圖放 Firebase Storage。**Storage 剛啟用時的預設規則是「全部禁止」**，
+不改的話上傳會失敗（畫面會提示「沒有上傳權限 —— Storage 規則還沒設定」）。
+
+不想裝 CLI 的話，用網頁貼一次也可以：
+Firebase 主控台 → **建構 → Storage → 規則** → 把 [`storage.rules`](storage.rules)
+**整個檔案內容**貼上去（連同第一行 `rules_version = '2';`）→ **發布**。
+
+規則的重點：要通過匿名登入、**只收圖片**、**單張小於 2MB**、`covers/` 以外的路徑一律不開
+（避免被當成免費網路硬碟）。上傳前程式已經壓過（長邊 720px 的 JPEG，約 60–90KB）。
 
 ---
 

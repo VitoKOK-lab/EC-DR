@@ -10,6 +10,8 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
          query, where, orderBy, limit,
          arrayUnion, arrayRemove, increment }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
@@ -70,6 +72,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     db = getFirestore(app);
   }
   const auth = getAuth(app);
+  const storage = getStorage(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
   const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
@@ -113,6 +116,23 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       return true;
     },
     logsLimit: () => logsLimit,
+
+    // ── 影片封面圖（Firebase Storage）──
+    // 路徑固定 covers/<影片id>.jpg：一支片一張，重傳就直接蓋掉，不會愈積愈多。
+    // cacheControl 設一年＋immutable：每次上傳 getDownloadURL 都會給一組新 token（網址跟著變），
+    // 所以舊網址可以放心讓瀏覽器永久快取 —— 22 個人天天翻影片庫也只會下載一次，
+    // 這是流量費用的關鍵（不設的話預設只快取 1 小時，等於每天重下載一輪縮圖）。
+    coverPath: (id) => "covers/" + String(id) + ".jpg",
+    async uploadCover(id, blob) {
+      const r = storageRef(storage, "covers/" + String(id) + ".jpg");
+      await uploadBytes(r, blob, { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" });
+      return await getDownloadURL(r);
+    },
+    // 刪不掉不算失敗（可能本來就沒有）：影片那筆的 cover 欄位清掉才是真正的「移除」
+    async deleteCover(id) {
+      try { await deleteObject(storageRef(storage, "covers/" + String(id) + ".jpg")); return true; }
+      catch (e) { return false; }
+    },
     // 常駐訂閱的起始日；app.js 用它判斷某個月份要不要另外補讀
     shiftsFrom: SHIFTS_FROM,
     // 補讀某個月的打卡紀錄（只讀一次，不建立訂閱）。回傳有沒有真的去讀。

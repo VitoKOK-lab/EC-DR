@@ -46,6 +46,7 @@
 | `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
 | `refLink` | string | 參考來源網址（選填，v93） | 這支的靈感／參考影片是哪來的。影片詳情裡顯示成「參考來源 → 開啟參考來源」，點了開新分頁（`rel=noopener`） |
+| `cover` | string | 封面圖網址（選填，v95） | Firebase Storage 的下載網址，檔案固定在 `covers/<影片id>.jpg`（一支一張，重傳直接蓋掉）。空字串＝沒有封面。詳見下面「影片封面圖」 |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
 | `socialLink` | string | 社群預排連結 | 排程工具／預約貼文（選填） |
 | `note` | string | 備註 | 補充說明（整併自舊 Google 試算表） |
@@ -444,3 +445,31 @@ v84 上線時沒有人有 `pwHash`，所以**全員下次登入都會被要求�
 **重點：翻譯只影響「看得到的文字」，不動資料。** 標籤 chip 的 `value`、片源下拉的 `value`、
 `vidTagToggle()` 傳的參數一律是原本的中文值 —— 不然存回資料庫就把資料弄髒了。
 smoke-v94 會盯著這件事。
+
+---
+
+## 影片封面圖（v95）
+
+**存哪裡**：Firebase Storage，路徑固定 `covers/<影片id>.jpg`。
+一支片一張，重傳直接蓋掉，不會愈積愈多；`videos.cover` 只存下載網址。
+規則見 `firebase/storage.rules`（要登入、只收圖片、單張 < 2MB，`covers/` 以外一律不開）。
+
+**上傳前一定先壓**（`coverCompress`）：畫到 canvas 縮成長邊 720px、輸出 JPEG q0.72，
+一張約 60–90KB。手機截圖原檔動輒 3–5MB，不壓的話 22 個人各傳幾百張就是好幾 GB，
+而且每個人翻影片庫都要再下載一次。只縮不放大；透明底的 PNG 會先鋪白（不然轉 JPEG 會變黑）。
+
+**流量的關鍵在快取**：`uploadCover` 送 `cacheControl: public, max-age=31536000, immutable`。
+每次上傳 `getDownloadURL` 都會給一組新 token（網址跟著變），所以舊網址可以放心讓瀏覽器
+永久快取 —— 同一個人天天翻影片庫也只下載一次。清單與格子的 `<img>` 都掛 `loading="lazy"`，
+沒捲到的不會下載。**不設這兩件事的話，縮圖會變成整套系統最大的流量來源。**
+
+**上傳時機**：選完檔就直接傳、直接寫回 `videos.cover`，不等「儲存修改」。
+不然使用者傳完圖卻按取消，Storage 會留一張沒人指向的孤兒圖。
+移除封面則是先清 `cover` 欄位再刪檔 —— 檔案刪不掉不算失敗（可能早就被蓋掉了）。
+
+**顯示在三個地方**：編輯彈窗左上角（`cv-slot`，點了上傳）、影片詳情（`cv-view`）、
+影片庫清單的小縮圖（`coverThumbHTML`，沒封面就維持原本的 ▶ 方塊）。
+
+**影片庫兩種瀏覽方式**（`VID_MODE`）：`list` 清單（原本的表格）／`grid` 圖片（封面平鋪）。
+兩種模式共用同一份 `vidVisibleList()`，所以分頁、搜尋、標籤篩選在兩邊行為完全一致。
+選擇記在 `localStorage.ecdr_vidmode`（每個人習慣不同，不值得為它多寫一次資料庫）。

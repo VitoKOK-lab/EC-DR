@@ -1,0 +1,19 @@
+rules_version = '2';
+// 影片封面圖 — 比照 firestore.rules，通過匿名登入即可讀寫，
+// 但額外限制「只能是圖片」且「單張不超過 2MB」，避免被當成免費網路硬碟。
+// 上傳前程式已經壓過（長邊 720px、JPEG），正常一張約 60–90KB，離 2MB 很遠。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /covers/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 2 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+    // 其他路徑一律不開
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
