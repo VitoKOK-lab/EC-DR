@@ -2860,9 +2860,9 @@ function vidTableRow(v){
           return o; })());
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
-    <td data-label="影片" class="cv-name"><span style="display:flex;align-items:center;gap:8px;min-width:0">
-      ${coverThumbHTML(v)}
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+    <td data-label="影片" class="cv-name"><span class="vt-line">
+      ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidName(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -2891,10 +2891,11 @@ function vidCardHTML(v){
   return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidTitle(v))}</div>
+      <div class="vcard-t">${esc(vidName(v))}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
+        <span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
       </div>
     </div></div>`;
 }
@@ -4322,10 +4323,15 @@ function vidCode(v){ return (v&&v.code) || String((v&&v.id)||"").replace(/^V/,""
 // 清單上顯示的片名：把後面那一長串 #標籤 去掉，只留看得懂是哪一支的部分。
 // 標籤是貼文用的，在清單裡只會把每一列撐成兩三行。完整的貼文文案在影片詳情
 // 與編輯框裡照樣看得到（那兩處直接讀 v.name，不經過這裡），資料本身也不動。
-function vidTitle(v){
+function vidName(v){
   const raw=zhTW((v&&(v.name||v.rawName))||"");
-  const t=stripHash(raw) || raw || "(未命名)";   // 整串都是標籤時退回原文，不要變成空的
-  const c=vidCode(v); return c?(c+" "+t):t;
+  return stripHash(raw) || raw || T("(未命名)","(untitled)");   // 整串都是標籤時退回原文，不要變成空的
+}
+// 純文字場合（確認視窗、toast、操作紀錄）用這個：編號＋片名，一行講完是哪一支。
+// 有版面的清單改用 vidName() 把片名放前面、編號用小灰字靠右（見 .vt-code）——
+// 編號是系統流水號，每一列都長得差不多，擺在開頭會把真正要看的片名擠掉。
+function vidTitle(v){
+  const t=vidName(v), c=vidCode(v); return c?(c+" "+t):t;
 }
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }

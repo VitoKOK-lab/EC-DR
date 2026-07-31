@@ -388,6 +388,13 @@
     table.responsive td.cv-name::before{display:none}
     table.responsive td.cv-name>span{flex:1;min-width:0}
     table.responsive .vt-title{white-space:normal !important;overflow:visible !important;text-overflow:clip !important;font-weight:700}
+    /* 手機的影片列只剩片名，會自己換行顯示完整。編號若還占著 flex 的一格，
+       會把片名擠掉一整行 —— 所以改成浮動：縮圖靠左浮、編號靠右浮，片名文字繞著兩者排，
+       一行都不會多。（兩個浮動元素在 HTML 裡都排在片名前面，繞排才成立） */
+    table.responsive td.cv-name .vt-line{display:block}
+    table.responsive td.cv-name .vthumb{float:left;margin:1px 8px 0 0}
+    table.responsive td.cv-name .vt-code{float:right;margin:1px 0 0 8px;padding-left:0}
+    table.responsive td.cv-name .vt-title{display:inline}
     /* 影片庫手機卡片：只留片名（標籤／預排／商品／剪輯師／狀態太空洞，點進去再看） */
     table.vtable.responsive td:not(.cv-name){display:none}
     table.vtable.responsive tr{padding:12px 14px}
@@ -508,6 +515,14 @@
   }
   .vthumb{flex:none;width:26px;height:26px;border-radius:6px;background:var(--salesbg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px}
   img.vthumb{object-fit:cover;background:var(--panel2)}
+  /* 影片編號：系統流水號，每一列都長得差不多，所以退到最右邊當小灰字，
+     把整行的寬度讓給真正要看的片名（不另外占一行）。
+     它在 HTML 裡排在片名「前面」是刻意的 —— 手機版要靠 float:right 讓片名繞著它排，
+     而浮動元素必須先出現才繞得到；桌機用 flex 的 order 把它推回最右邊。 */
+  .vt-line{display:flex;align-items:center;gap:8px;min-width:0}
+  .vt-code{order:9;flex:none;margin-left:auto;padding-left:8px;font-size:11px;color:var(--muted);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .vcard-m .vt-code{order:0;margin-left:auto;padding-left:0;font-size:10px}
   /* 影片封面 —— 編輯畫面左上角那一格 */
   .cv-head{display:flex;gap:12px;align-items:flex-start;margin:0 0 4px}
   .cv-head-f{flex:1;min-width:0}
@@ -633,7 +648,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1785463654"></script>
-<script type="module" src="fb.js?v=1785463654"></script>
+<script src="app.js?v=1785464600"></script>
+<script type="module" src="fb.js?v=1785464600"></script>
 </body>
 </html>
