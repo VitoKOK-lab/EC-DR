@@ -327,6 +327,13 @@ function closeHeaderMenu(){
   const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
   pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
+// 關分頁／重新整理／按上一頁時，如果彈窗裡還有沒存的修改就先問一聲。
+// （文案打了一大段還沒存，手滑重整就沒了 —— 這是唯一救得回來的時機）
+// 瀏覽器只認「有沒有取消事件」，自訂訊息現在都被忽略，所以文字寫什麼不重要。
+if(typeof window!=="undefined" && window.addEventListener){
+  window.addEventListener("beforeunload", (e)=>{ if(!MODAL_DIRTY) return;
+    e.preventDefault(); e.returnValue=""; return ""; });
+}
 // 這台電腦上次是誰登入的 —— 記起來，下次只要按「直接登入」，不用在一堆名字裡找自己
 let LOGIN_ALL=false;
 function lastUserHere(){ return localStorage.getItem("ecdr_last")||""; }
@@ -3117,7 +3124,11 @@ function viewPerf(){
 function editVideo(id){ openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
-function tryExitVideoEdit(){ if(MODAL_DIRTY){ toast(T("已修改，請按「儲存修改」或「取消編輯」","Unsaved changes — press Save or Cancel"),true); return; } closeModal(); }
+function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); }
+// 文案欄平常收成一排（版面才不會被一大塊空白占掉），點下去展開成 6 排好編輯。
+// 展開後就不收回去 —— 打到一半突然縮回去比占版面更煩。
+function vcopyOpen(){ const t=document.getElementById("e_vcopy");
+  if(t && !(t.classList&&t.classList.contains("open"))){ t.rows=6; if(t.classList) t.classList.add("open"); } }
 // 影片視窗：平台成效卡（管理員／經理人可見）
 function vidMetricsCard(v){
   const mx=Array.isArray(v.metrics)?v.metrics:[];
@@ -3300,9 +3311,13 @@ function openVideoModal(id, edit, fromWork){
       </div>
     </div>
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
-    <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" autocomplete="off">
+    <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
+    <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
+      title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
     <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
     <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
+    <label>${T("預排上片日期","Scheduled upload date")}</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
@@ -3317,9 +3332,6 @@ function openVideoModal(id, edit, fromWork){
     <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
     ${productRows("e", v.products)}
     <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
-    <label>${T("預排上片日期","Scheduled upload date")}</label>
-    <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-
     <div id="e_links">${editLinksHTML(v.productUrl)}</div>
     <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">
     ${reviewCard}
@@ -4382,7 +4394,12 @@ function showModal(title, inner, onConfirm, confirmLabel){
   root.innerHTML = html;
   if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
 }
-function modalBackdrop(e){ if(e.target&&e.target.classList&&e.target.classList.contains("modal")){ if(MODAL_DIRTY) return; closeModal(); } }
+// 改到一半想離開時的提醒（× 鍵與點視窗外都用這一則，講法一致）
+function warnUnsaved(){ toast(T("還沒存檔喔 —— 請按「儲存修改」，不要的話按「取消編輯」",
+  "Not saved yet — press Save, or Cancel to discard"), true); }
+// 點視窗外（背景）即可關閉；但只要動過任何欄位就不關，並且要講出來為什麼沒關 ——
+// 原本是靜靜不理，使用者會以為系統當掉，然後直接重整把改的東西丟掉。
+function modalBackdrop(e){ if(e.target&&e.target.classList&&e.target.classList.contains("modal")){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); } }
 function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").innerHTML=""; }
 
 // ===================================================================
