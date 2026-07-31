@@ -45,6 +45,7 @@
 | `products` | object[] | 商品（最多 4 個） | 每筆 `{name, price, salePrice}`；`price`＝原價、`salePrice`＝售價（寵粉價，選填），皆手動輸入。只有源片（台灣中文版）可編輯；海外/蝦皮二創版的編輯畫面只唯讀顯示（依 `settings.exchangeRates` 即時換算幣別），不能改 |
 | `productUrl` | string | 商品頁網址 | 導購連結基底（+ `?utm_source=平台`） |
 | `driveFolder` | string | 存檔位置 | 雲端備份連結（同一支重播都一樣） |
+| `refLink` | string | 參考來源網址（選填，v93） | 這支的靈感／參考影片是哪來的。影片詳情裡顯示成「參考來源 → 開啟參考來源」，點了開新分頁（`rel=noopener`） |
 | `publishedLink` | string | 上傳連結 | 社群貼文網址 |
 | `socialLink` | string | 社群預排連結 | 排程工具／預約貼文（選填） |
 | `note` | string | 備註 | 補充說明（整併自舊 Google 試算表） |

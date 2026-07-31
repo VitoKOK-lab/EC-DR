@@ -91,6 +91,7 @@ function newVideoRecord(over){
     // 一創語言（原本影片是什麼語言拍的）：""＝中文（預設）、"th"泰、"en"英、"my"馬來
     origLang:"",
     driveFolder:"", publishedLink:"", socialLink:"", rawLink:"",
+    refLink:"",   // 參考來源網址：這支的靈感／參考影片是哪來的
     usageHistory:[], totalUsed:0,
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
@@ -3076,6 +3077,7 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("原始片名","Raw title"), esc(zhTW(v.rawName||"")))}
       ${row(T("影片貼文文案","Post caption"), esc(zhTW(v.name||""))+enSubLine(v))}
       ${row(T("影片文案","Script"), (v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')+((currentRole()==="intl"&&!v.locale&&v.videoCopyEn)?`<div class="vt-en">${esc(v.videoCopyEn).replace(/\n/g,'<br>')}</div>`:''))}
+      ${row(T("參考來源","Reference"), v.refLink?`<a href="${esc(v.refLink)}" target="_blank" rel="noopener noreferrer">${T("開啟參考來源","Open reference")}</a>`:'')}
       ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(t)}</span>`).join(" "):'')}
       ${(!v.locale&&!v.channel)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc(origLangLabel(origLangOf(v)))}`):''}
       ${row(T("片源","Source"), esc(v.source||""))}
@@ -3134,6 +3136,8 @@ function openVideoModal(id, edit, fromWork){
     </div>
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label><input id="e_vcopy" value="${esc(v.videoCopy||"")}" autocomplete="off">
+    <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
+    <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option ${v.source===c?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
@@ -3196,7 +3200,7 @@ async function saveVideo(id){
     products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), note:zhTW(val("e_note").trim())};
+    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim())};
   if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
   return await write("PUT",`/api/videos/${id}`,{video},T("已更新影片","Video updated"));
 }
