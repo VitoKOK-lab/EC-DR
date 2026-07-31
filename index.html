@@ -388,6 +388,13 @@
     table.responsive td.cv-name::before{display:none}
     table.responsive td.cv-name>span{flex:1;min-width:0}
     table.responsive .vt-title{white-space:normal !important;overflow:visible !important;text-overflow:clip !important;font-weight:700}
+    /* 手機的影片列只剩片名，會自己換行顯示完整。編號若還占著 flex 的一格，
+       會把片名擠掉一整行 —— 所以改成浮動：縮圖靠左浮、編號靠右浮，片名文字繞著兩者排，
+       一行都不會多。（兩個浮動元素在 HTML 裡都排在片名前面，繞排才成立） */
+    table.responsive td.cv-name .vt-line{display:block}
+    table.responsive td.cv-name .vthumb{float:left;margin:1px 8px 0 0}
+    table.responsive td.cv-name .vt-code{float:right;margin:1px 0 0 8px;padding-left:0}
+    table.responsive td.cv-name .vt-title{display:inline}
     /* 影片庫手機卡片：只留片名（標籤／預排／商品／剪輯師／狀態太空洞，點進去再看） */
     table.vtable.responsive td:not(.cv-name){display:none}
     table.vtable.responsive tr{padding:12px 14px}
@@ -507,6 +514,57 @@
     .vtab-n{flex:none}
   }
   .vthumb{flex:none;width:26px;height:26px;border-radius:6px;background:var(--salesbg);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px}
+  img.vthumb{object-fit:cover;background:var(--panel2)}
+  /* 影片編號：系統流水號，每一列都長得差不多，所以退到最右邊當小灰字，
+     把整行的寬度讓給真正要看的片名（不另外占一行）。
+     它在 HTML 裡排在片名「前面」是刻意的 —— 手機版要靠 float:right 讓片名繞著它排，
+     而浮動元素必須先出現才繞得到；桌機用 flex 的 order 把它推回最右邊。 */
+  .vt-line{display:flex;align-items:center;gap:8px;min-width:0}
+  .vt-code{order:9;flex:none;margin-left:auto;padding-left:8px;font-size:11px;color:var(--muted);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .vcard-m .vt-code{order:0;margin-left:auto;padding-left:0;font-size:10px}
+  /* 影片封面 —— 編輯畫面左上角那一格 */
+  .cv-head{display:flex;gap:12px;align-items:flex-start;margin:0 0 4px}
+  .cv-head-f{flex:1;min-width:0}
+  .cv-slot{flex:none;width:96px;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .cv-box{position:relative;width:96px;aspect-ratio:3/4;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:.12s}
+  .cv-box:hover{border-color:var(--accent)}
+  .cv-box.has{border-style:solid}
+  .cv-box img{width:100%;height:100%;object-fit:cover;display:block}
+  .cv-empty{color:var(--muted);font-size:18px;line-height:1.3;text-align:center}
+  .cv-empty span{font-size:11px}
+  .cv-rm{font-size:11px;color:var(--muted)}
+  .cv-hint{font-size:11px;color:var(--muted)}
+  /* 上傳中：蓋一層半透明＋轉圈，避免重複點 */
+  .cv-spin{display:none}
+  .cv-box.busy{pointer-events:none}
+  .cv-box.busy .cv-spin{display:block;position:absolute;inset:0;background:rgba(255,255,255,.66)}
+  .cv-box.busy .cv-spin::after{content:"";position:absolute;top:50%;left:50%;width:20px;height:20px;margin:-10px 0 0 -10px;
+    border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:cvspin .8s linear infinite}
+  @keyframes cvspin{to{transform:rotate(360deg)}}
+  /* 檢視畫面的封面 */
+  .cv-view{margin:0 0 10px}
+  .cv-view img{max-width:150px;width:100%;border-radius:10px;display:block}
+  /* 影片庫：清單／圖片切換 */
+  .vmode{display:flex;flex:none;border:1px solid var(--line);border-radius:var(--rs);overflow:hidden}
+  .vmode-b{border:0;background:var(--panel);color:var(--muted);font:inherit;font-size:12px;padding:7px 10px;cursor:pointer;white-space:nowrap}
+  .vmode-b.on{background:var(--salesbg);color:var(--accent);font-weight:600}
+  /* 影片庫：圖片模式 */
+  .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:8px}
+  .vcard{border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;background:var(--panel);transition:.12s;min-width:0}
+  .vcard:hover{border-color:var(--accent)}
+  .vcard-img{width:100%;aspect-ratio:3/4;background:var(--panel2);overflow:hidden}
+  .vcard-th{width:100%;height:100%;border-radius:0;display:flex;align-items:center;justify-content:center;
+    background:var(--salesbg);color:var(--accent);font-size:20px}
+  img.vcard-th{object-fit:cover}
+  .vcard-b{padding:7px 8px}
+  .vcard-t{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .vcard-m{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px}
+  @media (max-width:640px){
+    .vgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+    .cv-slot,.cv-box{width:80px}
+  }
   table.vtable{margin-top:4px;table-layout:fixed}
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
@@ -590,7 +648,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1785462312"></script>
-<script type="module" src="fb.js?v=1785338158"></script>
+<script src="app.js?v=1785464600"></script>
+<script type="module" src="fb.js?v=1785464600"></script>
 </body>
 </html>
