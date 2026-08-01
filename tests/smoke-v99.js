@@ -34,7 +34,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
   reviewStatus:"",locale:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos, sched){
   calls=[]; toasts=[]; fields={}; nodes={}; modalHTML="";
-  OD_Q=""; OD_UNSCHED=true; OD_DS=""; MODAL_DIRTY=false;
+  OD_Q=""; OD_UNSCHED=false; OD_CAT="all"; OD_DS=""; MODAL_DIRTY=false;
   VID_LANG=""; VID_VIEW="rawNoSched"; VID_MODE="list"; VID_TAGS=new Set(); VID_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
