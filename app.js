@@ -131,7 +131,10 @@ function dayVideoList(date){
   const seen=new Set(); const out=[];
   ((STATE.schedule||{})[date]?.slots||[]).forEach(s=>{ if(s.videoId && !seen.has(s.videoId)){ seen.add(s.videoId); out.push({videoId:s.videoId, slot:s}); } });
   // 海外二創(locale)／蝦皮二創(channel)版本走各自的排程月曆，不計入台灣月排程
-  (STATE.videos||[]).forEach(v=>{ if(!v.locale && !v.channel && v.scheduledDate===date && ["已完成","已上片"].includes(v.stage) && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  // 排程與剪輯是兩條獨立的線：一個人先把日期排好，其他人再照著剪。
+  // 所以「排到這天」的影片一律算進來，不管剪完了沒 —— v99 之前這裡卡了 stage，
+  // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
+  (STATE.videos||[]).forEach(v=>{ if(!v.locale && !v.channel && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -701,28 +704,31 @@ function openDay(ds){
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
     </tr>`;
   }).join("");
-  // 排舊片到這天：當天已排過的不再出現；時段自動帶 10/12/16，超過 3 個可自選時間
-  const usedIds = new Set(list.map(it=>it.videoId));
-  const doneList=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && ["已完成","已上片"].includes(v.stage) && !usedIds.has(v.id) && vidIsOld(v))  // 過了預排上片日（舊片）才能重播；海外/蝦皮二創版不算
-    .sort((a,b)=>String(b.finishedAt||b.scheduledDate||"").localeCompare(String(a.finishedAt||a.scheduledDate||"")));
+  // 排一支影片到這天：所有影片都能選（排程與剪輯是兩條獨立的線）；當天已排過的不再出現
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
   const timeField = `<div style="min-width:120px"><label style="margin:0 0 2px">${T("上片時間","Time")}</label>
     <input id="od_time" type="time" value="${autoTime}"></div>`;
-  // 存檔位置（雲端備份）＝這支影片本來的存檔，重播都一樣 → 自動帶入；切換影片時更新
-  OD_DRIVE={}; doneList.forEach(v=>{ OD_DRIVE[v.id]=v.driveFolder||""; });
-  const firstDrive = doneList.length ? (doneList[0].driveFolder||"") : "";
-  const reusePicker = `<div class="card" style="border-color:var(--accent)"><b>${T("排舊片重播到這天","Schedule an old video (rerun) on this day")}</b>
-    ${doneList.length? `<div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
-        <div style="flex:1;min-width:150px"><label style="margin:0 0 2px">${T("選一支舊片","Pick an old video")}</label>
-          <select id="od_vid" onchange="odPickVid()">${doneList.map(v=>`<option value="${v.id}">${esc(vidTitle(v))}${T("（已用 "+usageList(v).length+" 次）"," (used "+usageList(v).length+"x)")}</option>`).join("")}</select></div>
-        ${timeField}
-        <button class="btn sm" onclick="odReuse('${ds}')">${T("排入","Add")}</button>
-      </div>
+  OD_DS=ds;
+  const picker = `<div class="card" style="border-color:var(--accent)"><b>${T("排一支影片到這天","Schedule a video on this day")}</b>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+      <input id="od_q" placeholder="${T("搜尋編號／片名","Search code / title")}" value="${esc(OD_Q)}" oninput="OD_Q=this.value;odFilter()" style="flex:1;min-width:140px">
+      <label style="display:inline-flex;align-items:center;gap:5px;margin:0;font-size:12px;white-space:nowrap"
+        title="${T("已經排在今天或之後的不列出來；舊片可以重播，所以照樣看得到","Hides videos already placed on today or later; old videos stay — they can be rerun")}">
+        <input type="checkbox" id="od_uns" ${OD_UNSCHED?"checked":""} onchange="OD_UNSCHED=this.checked;odFilter()" style="width:auto;margin:0">
+        ${T("只看還沒排的","Unscheduled only")}</label>
+    </div>
+    <div id="od_list" style="margin-top:8px">${odSelectHTML(ds)}</div>
+    <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
+      ${timeField}
+      <button class="btn sm" id="od_add" onclick="odAdd('${ds}')">${T("排入","Add")}</button>
+    </div>
+    <div id="od_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
+    <div id="od_reuse" style="display:none">
       <label style="margin:8px 0 2px">${T("存檔位置（雲端備份・自動帶入，同一支都一樣）","File location (auto-filled)")}</label>
-      <input id="od_drive" value="${esc(firstDrive)}" placeholder="${T("這支影片的雲端備份連結","Cloud backup link")}">
+      <input id="od_drive" placeholder="${T("這支影片的雲端備份連結","Cloud backup link")}">
       <label style="margin:8px 0 2px">${T("上傳連結（這次發佈的社群網址・每次可能不同，手動貼上）","Upload URL (this rerun's post — paste manually)")}</label>
-      <input id="od_link" placeholder="${T("貼上這次重播要發佈的連結（可先排、之後再補）","Paste the post URL (can add later)")}">`
-      : `<p class="muted" style="margin-top:6px">${T("目前沒有可排的舊片。","No old videos available.")}</p>`}
+      <input id="od_link" placeholder="${T("貼上這次重播要發佈的連結（可先排、之後再補）","Paste the post URL (can add later)")}">
+    </div>
   </div>`;
   const b = dayBreakdown(ds);
   const summary = `<div class="row" style="gap:8px;margin-bottom:8px">`+
@@ -733,14 +739,60 @@ function openDay(ds){
       <table class="responsive"><thead><tr><th>${T("影片（剪輯・時間・連結）","Video (editor · time · links)")}</th><th>${T("改上片日","Move to")}</th><th>${T("操作","Action")}</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">${T("當日尚無影片","Nothing scheduled")}</td></tr>`}</tbody></table>
     </div>
-    ${reusePicker}`, null);
+    ${picker}`, null);
+  odPickVid();   // 帶出第一支的說明與（舊片才有的）重播欄位
 }
-// 切換要重播的舊片時，自動帶入它的存檔位置（雲端備份）
-let OD_DRIVE={};
-function odPickVid(){ const e=document.getElementById("od_drive"); if(e) e.value=OD_DRIVE[val("od_vid")]||""; }
-// 從月曆某天排一支舊片重播（存檔位置自動帶入、上傳連結手動）
-function odReuse(ds){ const id=val("od_vid"); if(!id){ toast("請先選一支舊片",true); return; }
-  write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},"已排入重播").then(ok=>{ if(ok) openDay(ds); }); }
+// ── 月曆某天的「排一支影片」選單 ──────────────────────────────
+// 所有影片都能選：排日期的人跟剪片的人可以分頭做，不必等剪完才排得進去。
+let OD_DRIVE={}, OD_Q="", OD_UNSCHED=true, OD_DS="";
+function odCandidates(ds){
+  const used=new Set(dayVideoList(ds).map(it=>it.videoId));
+  const q=String(OD_Q||"").toLowerCase().trim();
+  let list=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && !used.has(v.id));   // 海外／蝦皮二創版走各自的月曆
+  // 「只看還沒排的」＝濾掉已經排在今天或之後的；舊片的排程日在過去，重播不受影響
+  if(OD_UNSCHED) list=list.filter(v=>!(v.scheduledDate && String(v.scheduledDate).slice(0,10)>=today));
+  if(q) list=list.filter(v=>[v.name,v.rawName,v.code,v.editor].map(x=>String(x||"").toLowerCase()).join("  ").includes(q));
+  // 還沒播過的排前面（那是這次要排的主角），舊片墊後；同群依編號
+  return list.sort((a,b)=> (vidIsOld(a)?1:0)-(vidIsOld(b)?1:0)
+    || String(vidCode(a)).localeCompare(String(vidCode(b))));
+}
+function odSelectHTML(ds){
+  const list=odCandidates(ds);
+  // 存檔位置（雲端備份）＝這支影片本來的存檔，重播都一樣 → 切換影片時自動帶入
+  OD_DRIVE={}; list.forEach(v=>{ OD_DRIVE[v.id]=v.driveFolder||""; });
+  if(!list.length) return `<p class="muted" style="margin:0;font-size:13px">${T("沒有符合的影片。","No matching videos.")}</p>`;
+  return `<label style="margin:0 0 2px">${T("選一支影片","Pick a video")}${paren(list.length)}</label>
+    <select id="od_vid" onchange="odPickVid()">${list.map(v=>{
+      const tail=vidIsOld(v) ? T("・舊片・已用 "+usageList(v).length+" 次"," · old · used "+usageList(v).length+"x")
+                             : "・"+stageLabel(v.stage);
+      return `<option value="${v.id}">${esc(vidTitle(v))}${esc(tail)}</option>`; }).join("")}</select>`;
+}
+function odFilter(){ const e=document.getElementById("od_list"); if(e) e.innerHTML=odSelectHTML(OD_DS); odPickVid(); }
+// 換一支影片時：帶出存檔位置、切換重播專用欄位、把「按下去會發生什麼」寫清楚
+function odPickVid(){
+  const id=val("od_vid"), v=vid(id), old=!!v && vidIsOld(v);
+  const d=document.getElementById("od_drive"); if(d) d.value=OD_DRIVE[id]||"";
+  const box=document.getElementById("od_reuse"); if(box) box.style.display=old?"":"none";
+  const btn=document.getElementById("od_add"); if(btn) btn.textContent=old?T("排入重播","Add rerun"):T("排入","Add");
+  const hint=document.getElementById("od_hint");
+  if(hint) hint.textContent = !v ? ""
+    : old ? T("這支已經播過 → 排成「重播」，原本的預排上片日不會被改掉。",
+              "Already aired → added as a rerun; its original scheduled date stays.")
+          : T("這支還沒播過 → 直接把它的「預排上片日」設成這天（還沒剪完也可以先排）。",
+              "Not aired yet → sets its scheduled upload date to this day (fine even if editing is unfinished).");
+}
+// 排入：舊片＝重播（另存一筆排片紀錄）；其餘＝直接設定它的預排上片日
+function odAdd(ds){
+  const id=val("od_vid"); if(!id){ toast(T("請先選一支影片","Pick a video first"),true); return; }
+  const v=vid(id)||{};
+  if(vidIsOld(v)){
+    write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},
+      T("已排入重播","Rerun scheduled")).then(ok=>{ if(ok) openDay(ds); });
+  }else{
+    write("PUT",`/api/videos/${id}`,{video:{scheduledDate:ds, publishTime:val("od_time")}},
+      T("已排到 "+ds,"Scheduled for "+ds)).then(ok=>{ if(ok) openDay(ds); });
+  }
+}
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
 async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
   const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
@@ -808,6 +860,26 @@ function scheduleGlance(){
   for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
     const b=dayBreakdown(ds); if(!b.full){ defs.push({ds,short:b.short}); } }
   return {runway, defs, todayTarget:daySum(today)};
+}
+// 日期欄位下方的一排小字：接下來 14 天各排了幾支、還缺幾支，點一下直接填進欄位。
+// （手機上的日期選擇器是作業系統畫的，沒辦法在它裡面加東西，所以資訊放在欄位下方）
+function nextDaysStrip(fieldId, days){
+  const n=days||14, out=[];
+  for(let off=0;off<n;off++){
+    const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off);
+    const ds=d.toISOString().slice(0,10);
+    const b=dayBreakdown(ds);
+    out.push(`<button type="button" class="dchip${b.full?' full':''}" onclick="pickDate('${fieldId}','${ds}')"
+      title="${T(ds+"：已排 "+b.total+" 支／目標 "+b.target+" 支", ds+": "+b.total+" of "+b.target+" scheduled")}">${fmtMD(ds)}
+      <b>${b.total}</b><span>/${b.target}</span></button>`);
+  }
+  return `<div class="muted" style="font-size:12px;margin-top:6px">${T("接下來 14 天各排了幾支（點一下帶入）：","Next 14 days — scheduled / target (tap to fill):")}</div>
+    <div class="dstrip">${out.join("")}</div>`;
+}
+function pickDate(fieldId, ds){
+  const e=document.getElementById(fieldId); if(!e) return;
+  e.value=ds; MODAL_DIRTY=true;
+  if(typeof e.dispatchEvent==="function" && typeof Event==="function"){ try{ e.dispatchEvent(new Event("change",{bubbles:true})); }catch(err){} }
 }
 // ===================================================================
 // 統一資料寫入包裝：所有直接寫資料庫的動作都走這裡
@@ -3318,6 +3390,7 @@ function openVideoModal(id, edit, fromWork){
     <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    ${nextDaysStrip("e_date")}
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     <div class="grid cols2">
       <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
@@ -4416,8 +4489,8 @@ const TUT_RULES=[
   {oc:"newSimpleVideo",  title:"新增影片", text:"建立一支新影片，填原始片名、影片文案與商品。"},
   {oc:"editVideo",       title:"打開影片內容", text:"點影片名稱可看這支片的完整資料；裡面再按「編輯」才能修改。"},
   {oc:"vidSetView",      title:"影片庫分頁", text:"切換影片清單：毛片待剪／新片未排程／新片已排程／舊片。"},
-  {oc:"odReuse",         title:"排入（重播舊片）", text:"把選好的舊片排到這一天重播；存檔位置自動帶入，上傳連結可之後再補。"},
-  {oc:"openDay",         title:"打開這一天", text:"查看這天要上的影片、調整上片日，或安排舊片重播。"},
+  {oc:"odAdd",           title:"排入這一天", text:"把選好的影片排到這一天。還沒播過的＝設定它的預排上片日（沒剪完也可以先排）；舊片＝排成重播。"},
+  {oc:"openDay",         title:"打開這一天", text:"查看這天要上的影片、調整上片日，或把別支影片排進來。"},
   {oc:"clockOutReport",  title:"下班匯報", text:"下班前按這裡，會列出今天完成／未完成的工作並打卡下班。"},
   {oc:"reviewVid",       title:"老闆娘審核", text:"通過或退回這支影片；退回會回到剪輯的今日工作。"},
   {oc:"delVideo",        title:"刪除影片", text:"把這支影片移到「回收桶」（軟刪除）；管理員可在回收桶復原或永久刪除。"},

@@ -64,21 +64,24 @@ as("小葵","editor");
 ok("工作頁不會跳出待說明", !viewWork().includes("出勤異常待說明"));
 
 // ══ ① 設密碼那天之後才算 ══
-const users1=[{name:"小葵",role:"editor",pw:"x",pwSet:true,pwAt:D(-2)+"T14:00:00"},
+// 這一段用「固定的過去月份」而不是相對今天的日期：月報表是按月查的，
+// 用相對日期的話每個月 1～5 號會跨月（造在上個月、卻拿這個月去查），測試就無故變紅。
+const PM="2026-05", P=(d)=>PM+"-"+String(d).padStart(2,"0");
+const users1=[{name:"小葵",role:"editor",pw:"x",pwSet:true,pwAt:P(12)+"T14:00:00"},
               {name:"管理員",role:"boss"}];
-reset([sh("小葵",D(-5),"10:30","16:00"),    // 設密碼之前 → 不算
-       sh("小葵",D(-2),"10:30","16:00"),    // 設密碼當天 → 算
-       sh("小葵",D(-1),"10:30","16:00")],   // 之後 → 算
+reset([sh("小葵",P(9),"10:30","16:00"),     // 設密碼之前 → 不算
+       sh("小葵",P(12),"10:30","16:00"),    // 設密碼當天 → 算
+       sh("小葵",P(13),"10:30","16:00")],   // 之後 → 算
       WORK, users1);
-ok("起算日＝設密碼那一天", attendStartOf("小葵")===D(-2));
-ok("起算日之前不算遲到", attendOf(STATE.shifts["小葵__"+D(-5)]).late===0);
-ok("起算日之前標成「未列入計算」", attDetailTable("小葵",YM).includes("未列入計算"));
-ok("起算日當天就開始算", attendOf(STATE.shifts["小葵__"+D(-2)]).late===80);
-ok("起算日之後照樣算", attendOf(STATE.shifts["小葵__"+D(-1)]).late===80);
-ok("月報表只算起算日之後（2 次）", attSum("小葵",YM).late===2);
-ok("出勤天數還是全部（紀錄留著）", attSum("小葵",YM).days===3);
+ok("起算日＝設密碼那一天", attendStartOf("小葵")===P(12));
+ok("起算日之前不算遲到", attendOf(STATE.shifts["小葵__"+P(9)]).late===0);
+ok("起算日之前標成「未列入計算」", attDetailTable("小葵",PM).includes("未列入計算"));
+ok("起算日當天就開始算", attendOf(STATE.shifts["小葵__"+P(12)]).late===80);
+ok("起算日之後照樣算", attendOf(STATE.shifts["小葵__"+P(13)]).late===80);
+ok("月報表只算起算日之後（2 次）", attSum("小葵",PM).late===2);
+ok("出勤天數還是全部（紀錄留著）", attSum("小葵",PM).days===3);
 ok("counted 標記正確",
-   attendOf(STATE.shifts["小葵__"+D(-5)]).counted===false && attendOf(STATE.shifts["小葵__"+D(-2)]).counted===true);
+   attendOf(STATE.shifts["小葵__"+P(9)]).counted===false && attendOf(STATE.shifts["小葵__"+P(12)]).counted===true);
 
 // 今日出勤那張表：未列入計算的不要顯示「正常」，尚未起算的人在標題統一講一次
 reset([sh("小葵",T0,"10:30","16:00")], WORK,
@@ -99,7 +102,9 @@ as("管理員","boss");
 reset([sh("小葵",D(-2),"10:30","16:00")], Object.assign({attendStart:D(-1)},WORK), users1);
 ok("全公司起算日比較晚 → 以全公司為準", attendStartOf("小葵")===D(-1));
 ok("個人設密碼較早也不算", attendOf(STATE.shifts["小葵__"+D(-2)]).late===0);
-reset([sh("小葵",D(-2),"10:30","16:00")], Object.assign({attendStart:D(-9)},WORK), users1);
+// 這一段要「個人的比全公司的晚」，所以另外給一個 pwAt＝前天的使用者
+const users2=[{name:"小葵",role:"editor",pw:"x",pwSet:true,pwAt:D(-2)+"T14:00:00"},{name:"管理員",role:"boss"}];
+reset([sh("小葵",D(-2),"10:30","16:00")], Object.assign({attendStart:D(-9)},WORK), users2);
 ok("個人設密碼比較晚 → 以個人為準", attendStartOf("小葵")===D(-2));
 ok("個人起算日到了就算", attendOf(STATE.shifts["小葵__"+D(-2)]).late===80);
 reset([], Object.assign({attendStart:D(-3)},WORK), [{name:"阿新",role:"editor",pw:"0000"},{name:"管理員",role:"boss"}]);
@@ -133,7 +138,8 @@ reset([sh("小葵",T0,"11:20","15:00")], WORK,
 ok("剪輯也能設成變動工時", attendOf(STATE.shifts["小葵__"+T0]).late===0);
 
 // ══ ③ 人資自己看得到自己的上下班 ══
-reset([sh("HR小姐",T0,"11:20","15:00"), sh("HR小姐",D(-1),"09:40","19:00")], WORK,
+// 只用「今天」這一筆：每日紀錄是按月列的，用相對日期的話每個月 1 號會跨到上個月去
+reset([sh("HR小姐",T0,"11:20","15:00")], WORK,
       [{name:"HR小姐",role:"hr",pw:"x",pwSet:true,pwAt:"2020-01-01T00:00:00"},{name:"管理員",role:"boss"}]);
 as("HR小姐","hr");
 { const h=viewAttend();
@@ -142,7 +148,8 @@ as("HR小姐","hr");
   ok("看得到今天工時", h.includes("今天工時"));
   ok("看得到本月累計工時", h.includes("月累計工時"));
   ok("寫明是變動工時", h.includes("變動工時（不判遲到早退，只記工時）"));
-  ok("可以展開自己每一天的紀錄", h.includes("我這個月的每日紀錄") && h.includes("09:40"));
+  ok("可以展開自己每一天的紀錄",
+     (h.split("我這個月的每日紀錄")[1]||"").includes("11:20"));
   ok("寫出起算日", h.includes("出勤自 2020-01-01 起算")); }
 reset([], WORK, [{name:"HR小姐",role:"hr",pw:"0000"},{name:"管理員",role:"boss"}]);
 as("HR小姐","hr");
