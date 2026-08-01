@@ -717,6 +717,7 @@ function openDay(ds){
         <input type="checkbox" id="od_uns" ${OD_UNSCHED?"checked":""} onchange="OD_UNSCHED=this.checked;odFilter()" style="width:auto;margin:0">
         ${T("只看還沒排的","Unscheduled only")}</label>
     </div>
+    <div id="od_cats">${odCatTabs(ds)}</div>
     <div id="od_list" style="margin-top:8px">${odSelectHTML(ds)}</div>
     <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
       ${timeField}
@@ -744,18 +745,37 @@ function openDay(ds){
 }
 // ── 月曆某天的「排一支影片」選單 ──────────────────────────────
 // 所有影片都能選：排日期的人跟剪片的人可以分頭做，不必等剪完才排得進去。
-let OD_DRIVE={}, OD_Q="", OD_UNSCHED=true, OD_DS="";
-function odCandidates(ds){
+let OD_DRIVE={}, OD_Q="", OD_UNSCHED=false, OD_CAT="all", OD_DS="";
+// 三類（互斥、涵蓋全部）：舊片＝播過了、已剪好的新片＝剪完但還沒到上片日、還沒剪好的毛片＝待處理／剪輯中
+function odCat(v){ return vidIsOld(v) ? "old" : (isPublished(v) ? "done" : "raw"); }
+const OD_CATS=[["all","全部","All"],["raw","還沒剪好的毛片","Raw · not cut"],
+               ["done","已剪好的新片","New · cut"],["old","舊片","Old"]];
+// 分類鈕之前的共同底：排除當天已排過的，再套「只看還沒排的」
+function odBase(ds){
   const used=new Set(dayVideoList(ds).map(it=>it.videoId));
-  const q=String(OD_Q||"").toLowerCase().trim();
   let list=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && !used.has(v.id));   // 海外／蝦皮二創版走各自的月曆
   // 「只看還沒排的」＝濾掉已經排在今天或之後的；舊片的排程日在過去，重播不受影響
   if(OD_UNSCHED) list=list.filter(v=>!(v.scheduledDate && String(v.scheduledDate).slice(0,10)>=today));
+  return list;
+}
+function odCandidates(ds){
+  const q=String(OD_Q||"").toLowerCase().trim();
+  let list=odBase(ds);
+  if(OD_CAT!=="all") list=list.filter(v=>odCat(v)===OD_CAT);
   if(q) list=list.filter(v=>[v.name,v.rawName,v.code,v.editor].map(x=>String(x||"").toLowerCase()).join("  ").includes(q));
   // 還沒播過的排前面（那是這次要排的主角），舊片墊後；同群依編號
   return list.sort((a,b)=> (vidIsOld(a)?1:0)-(vidIsOld(b)?1:0)
     || String(vidCode(a)).localeCompare(String(vidCode(b))));
 }
+// 分類快選：沿用影片庫那排分頁籤的樣式與講法
+function odCatTabs(ds){
+  const base=odBase(ds), n={all:base.length, old:0, done:0, raw:0};
+  base.forEach(v=>{ n[odCat(v)]++; });
+  return `<div class="vtabs" style="margin-top:8px">${OD_CATS.map(([k,zh,en])=>
+    `<button class="vtab ${OD_CAT===k?'on':''}" onclick="odSetCat('${k}')"><span>${T(zh,en)}</span> <span class="vtab-n">${n[k]}</span></button>`
+  ).join("")}</div>`;
+}
+function odSetCat(k){ OD_CAT=OD_CATS.some(c=>c[0]===k)?k:"all"; odFilter(); }
 function odSelectHTML(ds){
   const list=odCandidates(ds);
   // 存檔位置（雲端備份）＝這支影片本來的存檔，重播都一樣 → 切換影片時自動帶入
@@ -767,7 +787,11 @@ function odSelectHTML(ds){
                              : "・"+stageLabel(v.stage);
       return `<option value="${v.id}">${esc(vidTitle(v))}${esc(tail)}</option>`; }).join("")}</select>`;
 }
-function odFilter(){ const e=document.getElementById("od_list"); if(e) e.innerHTML=odSelectHTML(OD_DS); odPickVid(); }
+function odFilter(){
+  const c=document.getElementById("od_cats"); if(c) c.innerHTML=odCatTabs(OD_DS);   // 數字會跟著「只看還沒排的」變
+  const e=document.getElementById("od_list"); if(e) e.innerHTML=odSelectHTML(OD_DS);
+  odPickVid();
+}
 // 換一支影片時：帶出存檔位置、切換重播專用欄位、把「按下去會發生什麼」寫清楚
 function odPickVid(){
   const id=val("od_vid"), v=vid(id), old=!!v && vidIsOld(v);
