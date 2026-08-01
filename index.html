@@ -197,6 +197,15 @@
   textarea{min-height:60px}
   /* 點了才展開的文字框（影片文案）：收合時跟一般單行輸入框一樣高，
      點下去變 6 排。min-height 要蓋掉上面那條，不然收合時還是 60px。 */
+  /* 日期欄位下方的 14 天速覽：一天一顆，橫向捲；排滿的轉綠 */
+  .dstrip{display:flex;gap:5px;overflow-x:auto;padding:5px 0 7px;-webkit-overflow-scrolling:touch}
+  .dchip{flex:none;min-width:52px;border:1px solid var(--line);background:var(--panel);border-radius:var(--rs);
+    padding:5px 7px;font:inherit;font-size:11px;color:var(--muted);line-height:1.25;text-align:center;cursor:pointer;transition:.12s}
+  .dchip:hover{border-color:var(--accent)}
+  .dchip b{display:block;font-size:15px;color:var(--red);font-weight:800}
+  .dchip span{font-size:10px;opacity:.7}
+  .dchip.full{background:var(--greenbg);border-color:var(--green)}
+  .dchip.full b{color:var(--green)}
   textarea.grow{min-height:0;line-height:1.2;resize:vertical;overflow:hidden}
   textarea.grow.open{line-height:1.6;overflow:auto}
   /* 日期欄：加日曆圖示，讓「這是可以點的日期選擇器」在 iOS Safari 上也看得出來（空值時原生欄位完全看不出可點） */
@@ -652,7 +661,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=1785490531"></script>
-<script type="module" src="fb.js?v=1785490531"></script>
+<script src="app.js?v=1785585373"></script>
+<script type="module" src="fb.js?v=1785585373"></script>
 </body>
 </html>

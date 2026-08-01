@@ -47,7 +47,7 @@ ok("intl 剪輯看不到階段下拉（只能用完成鍵）", !modalHTML.includ
 openVideoModal("S1", false);
 ok("intl 檢視視窗 English rows", modalHTML.includes("Video details") && modalHTML.includes("Post caption") && !modalHTML.includes("影片內容"));
 openDay(T0);
-ok("intl 點日視窗 English", modalHTML.includes("Videos this day") && modalHTML.includes("Schedule an old video") && !modalHTML.includes("當日影片"));
+ok("intl 點日視窗 English", modalHTML.includes("Videos this day") && modalHTML.includes("Schedule a video on this day") && !modalHTML.includes("當日影片"));
 
 // --- editor：中文完全不變 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
