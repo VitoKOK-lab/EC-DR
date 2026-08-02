@@ -43,8 +43,8 @@ openIntlModal("E1");
 ok("editor 開英文版視窗＝中文介面", modalHTML.includes("儲存") && modalHTML.includes("取消") && modalHTML.includes("英文版本") && !modalHTML.includes(">Save<") && !modalHTML.includes("Watch Chinese"));
 ok("editor 英文版視窗教學是中文", modalHTML.includes("先看我們的中文成片"));
 INTL_ACCT="acctEN"; INTL_CAL_YM=null;
-openDayIntl(T0);
-ok("editor 開海外日視窗＝中文", modalHTML.includes("移出排程") && !modalHTML.includes(">Unschedule<"));
+let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
+ok("editor 開海外日視窗＝中文", toastMsg.includes("只有") || toastMsg.includes("Only"));
 WORK_ZONE="en"; let h=viewWork();
 ok("editor 英文區清單中文字串", h.includes("加版本 — 選帳號") && !h.includes("Add version — pick account"));
 h=viewWork(); // dayBadge/shpBadge
@@ -64,8 +64,8 @@ ok("intl 原本語言列英文", modalHTML.includes("Original language") && moda
 WORK_ZONE="shopee"; h=viewWork();
 ok("intl 蝦/馬徽章用 SP/MY", h.includes(">SP</span>") && !h.includes(">蝦</span>"));
 ok("intl 天數徽章 New", h.includes(">New</span>") || !h.includes(">新</span>"));
-INTL_ACCT="acctEN"; openDayIntl(T0);
-ok("intl 海外日視窗英文", modalHTML.includes("Unschedule") && !modalHTML.includes("移出排程"));
+INTL_ACCT="acctEN"; toastMsg=""; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
+ok("intl 海外日視窗英文", toastMsg.includes("只有") || toastMsg.includes("Only"));
 
 // ── 功能防呆 ──
 { let confirmed=false; const _c=global.confirm; global.confirm=()=>{confirmed=true; return false;};

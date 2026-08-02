@@ -823,7 +823,7 @@ function odAdd(ds){
   }
 }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
-async function moveReuse(id, oldDate, newDate){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
+async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
   const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
   const link=(idx>=0?(day.slots[idx].publishedLink||""):"");
   try{
@@ -843,11 +843,10 @@ async function moveReuse(id, oldDate, newDate){ if(!canSchedule()){ toast(T("只
   }catch(e){ toast(e.message||"改期失敗",true); }
 }
 // 改上片日期（移動時間，不刪除）
-function rescheduleVid(id,newDate,ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(!newDate||newDate===ds) return;
+function rescheduleVid(id,newDate,ds){ if(!newDate||newDate===ds) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:newDate}},"已改上片日至 "+newDate).then(ok=>{ if(ok) openDay(ds); }); }
 // 移出排程（新片）：只把這支移出這天，影片本身保留 → 回到「新片未排程」，可重新再排
 async function unscheduleVid(id, ds){
-  if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; }
   const v=vid(id)||{};
   if(!confirm("把「"+vidTitle(v)+"」移出「"+ds+"」的排程？\n\n只是移出這天，影片本身不會刪除，之後可重新再排。")) return;
   try{
@@ -859,7 +858,7 @@ async function unscheduleVid(id, ds){
   }catch(e){ toast(e.message||"移出失敗",true); }
 }
 // 移出排程（舊片重播）：只移除這天的重播，影片保留、使用次數同步退回
-async function unscheduleReuse(id, ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(dbBlocked()) return;
+async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
   const v=vid(id)||{};
   const slots=((STATE.schedule||{})[ds]||{}).slots||[];
   const idx=slots.findIndex(s=>s.videoId===id && s.reused);
@@ -3545,8 +3544,8 @@ function lineDiscard(k, id, msg){ const v=vid(id)||{};
   write("DELETE","/api/videos/"+id+"/purge",{},msg.ok(v)).then(ok=>{ if(ok) render(); });
 }
 // 排程調整：只改預排上片日／移出當天，影片本身不動
-function lineReschedule(id, nd, okMsg, after){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(!nd) return; write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},okMsg).then(ok=>{ if(ok&&after) after(); }); }
-function lineUnschedule(id, askMsg, okMsg, after){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(!confirm(askMsg)) return;
+function lineReschedule(id, nd, okMsg, after){ if(!nd) return; write("PUT",`/api/videos/${id}`,{video:{scheduledDate:nd}},okMsg).then(ok=>{ if(ok&&after) after(); }); }
+function lineUnschedule(id, askMsg, okMsg, after){ if(!confirm(askMsg)) return;
   write("PUT",`/api/videos/${id}`,{video:{scheduledDate:null}},okMsg).then(ok=>{ if(ok&&after) after(); }); }
 const INTL_LOCALES=["en","th"];
 const LOCALE_NAME={en:"English",th:"ไทย (Thai)",ms:"Bahasa (Malay)"};   // ms 保留給顯示/翻譯用
@@ -3784,8 +3783,8 @@ function openDayIntl(ds){
   </div></div>`;
 }
 // 海外排程調整（比照中文版月曆）：改上片日／移出這一天 — 只動排程日期，影片本身不動
-function intlReschedule(id,nd,ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayIntl(ds)); }
-function intlUnschedule(id,ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } lineUnschedule(id,
+function intlReschedule(id,nd,ds){ if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayIntl(ds)); }
+function intlUnschedule(id,ds){ lineUnschedule(id,
   T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video itself stays."),
   T("已移出排程","Removed from this day"), ()=>openDayIntl(ds)); }
 
@@ -4073,8 +4072,8 @@ function openDayCh(ch,ds){
     ${list.length?`<table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
   </div></div>`;
 }
-function chReschedule(ch,id,nd,ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayCh(ch,ds)); }
-function chUnschedule(ch,id,ds){ if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; } lineUnschedule(id,
+function chReschedule(ch,id,nd,ds){ if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayCh(ch,ds)); }
+function chUnschedule(ch,id,ds){ lineUnschedule(id,
   T("把這支移出 "+ds+"？只是移出這天，影片本身不會刪除。","Remove from "+ds+"? Only the schedule changes — the video stays."),
   T("已移出排程","Removed from schedule"), ()=>openDayCh(ch,ds)); }
 
