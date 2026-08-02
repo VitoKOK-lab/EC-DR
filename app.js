@@ -2737,10 +2737,10 @@ function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，
 function unclaimVid(id){ if(!confirm(T("退回這支毛片到待剪清單？大家就能重新認領。","Return this to the shared pool so others can claim it?"))) return; write("POST",`/api/videos/${id}/unclaim`,{},T("已退回待剪毛片清單","Returned to the pool")); }
 // 我的剪輯工作：作業中 →（按一下）編輯內容
 function setWorkStep(id, step){ dbUpdate("videos", id, {workStep:step, updatedAt:nowIso()}); }
-// 完成：剪輯按了才標「剪輯完成」並移到影片庫（編輯時的「儲存修改」只存內容、不完成）
+// 完成：剪輯按了才標「剪輯完成」（編輯時的「儲存修改」只存內容、不完成）
 function finishWork(id){ const v=vid(id)||{};
   if(!confirm(T("「"+vidTitle(v)+"」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳雲端＋補連結。","Done cutting \""+vidTitle(v)+"\"?\nIt moves to In review — upload & add links after Regina approves."))) return;
-  write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},T("剪輯完成，已移到影片庫","Done — moved to the library")).then(ok=>{ if(ok && myTabs().some(t=>t[0]==="videos")){ CUR_TAB="videos"; buildNav(); render(); } });
+  write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},T("剪輯完成","Done")).then(ok=>{ if(ok) render(); });
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
 function reworkVideo(id){ const v=vid(id)||{};
