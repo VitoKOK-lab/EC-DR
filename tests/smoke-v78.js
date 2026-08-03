@@ -39,7 +39,7 @@ function reset(tasks, videos, users){
 }
 const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); };
 const task=(id,o)=>Object.assign({id,user:"小葵",date:T0,title:"工作"+id,report:"",done:false,assignedBy:"",ack:true,createdAt:T0},o||{});
-const vid_=(id,o)=>Object.assign({id,code:"",name:"片"+id,rawName:"片"+id,stage:"待處理",locale:"",channel:"",
+const vid_=(id,o)=>Object.assign({id,code:"",name:"片"+id,rawName:"片"+id,rawLink:"http://raw",stage:"待處理",locale:"",channel:"",
   tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null},o||{});
 // 只看「今天要做的事」那張卡（折疊區塊不算）
 const todayCard=()=> (viewWork().split("今天要做的事")[1]||"").split("<details")[0];

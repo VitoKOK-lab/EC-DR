@@ -98,16 +98,27 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("批次的編號沒有重覆", new Set(made.map(v=>v.code)).size===5);
     ok("批次的編號是連號", made.map(v=>+String(v.code).slice(-3)).sort((a,b)=>a-b).join(",")==="1,2,3,4,5"); }
 
-  // ── ⑤ 新增後真的看得到：進「待剪・未排程」分頁 ──
+  // ── ⑤ 新增後真的看得到 ──
+  // 只填片名（還沒拍）→ 進「未拍片」，還不進待認領（認領了也沒毛片可剪）
   reset([]);
   as("小葵","editor");
-  await route("POST","/api/videos",{video:{name:"剛剛新增的片",rawName:"剛剛新增的片"}});
+  await route("POST","/api/videos",{video:{name:"只填片名的",rawName:"只填片名的"}});
   STATE.videos=Object.values(db.videos);                       // 模擬 Firestore 同步回來
-  ok("新片會落在「待剪・未排程」", vidSegment(STATE.videos[0])==="rawNoSched");
+  ok("只填片名的新片會落在「未拍片」", vidSegment(STATE.videos[0])==="script");
+  VID_VIEW="script";
+  ok("影片庫的未拍片分頁看得到", viewVideos().includes("只填片名的"));
+  ok("還沒拍的不進待認領", !viewWork().includes("只填片名的"));
+  ok("片名前面有編號", vidTitle(STATE.videos[0]).startsWith(STATE.videos[0].code));
+
+  // 有填毛片連結（拍好了）→ 進「待剪・未排程」，待認領也看得到
+  reset([]);
+  as("小葵","editor");
+  await route("POST","/api/videos",{video:{name:"剛剛新增的片",rawName:"剛剛新增的片",rawLink:"http://raw"}});
+  STATE.videos=Object.values(db.videos);
+  ok("有毛片的新片會落在「待剪・未排程」", vidSegment(STATE.videos[0])==="rawNoSched");
   VID_VIEW="rawNoSched";
   ok("影片庫看得到這支片", viewVideos().includes("剛剛新增的片"));
   ok("上班計畫的待認領也看得到", viewWork().includes("剛剛新增的片"));
-  ok("片名前面有編號", vidTitle(STATE.videos[0]).startsWith(STATE.videos[0].code));
 
   // ── ⑥ 舊資料照舊：既有影片的 ID 不會被動到 ──
   reset([mkVid("V001",{name:"舊片一"}),mkVid("V002",{name:"舊片二"})]);

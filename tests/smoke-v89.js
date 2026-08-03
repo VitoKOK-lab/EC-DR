@@ -138,15 +138,17 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     v_("S2",{videoCopy:"口播二"}),                    // 同上
     v_("R1",{rawLink:"http://d"}),                    // 有毛片 → 可認領
     v_("R2",{rawLink:"http://d",videoCopy:"口播三"}), // 文案毛片都有 → 可認領
-    v_("R3"),                                         // 兩個都沒（純毛片名）→ 可認領
+    v_("R3"),                                         // 兩個都沒填 → 也還沒拍，不該出現（v108）
+    v_("C1",{channel:"shopee",sourceVideoId:"R1"}),   // 二創殼本來就沒毛片連結 → 照樣可認領
   ];
   reset({videos:POOL}); as("小葵","editor");
   { const w=viewWork();
     ok("有文案沒毛片的不出現在待認領", !w.includes("claimVid('S1')") && !w.includes("claimVid('S2')"));
     ok("有毛片的照樣可以認領", w.includes("claimVid('R1')"));
     ok("文案毛片都有的也可以認領", w.includes("claimVid('R2')"));
-    ok("兩個都沒填的照舊可以認領（不是每支都先寫文案）", w.includes("claimVid('R3')"));
-    ok("待認領的數字扣掉了（3 支）", w.includes('<span class="fn">3</span>')); }
+    ok("兩個都沒填的也不出現（只填片名＝還沒拍）", !w.includes("claimVid('R3')"));
+    ok("二創殼不受影響，照樣可認領", w.includes("claimVid('C1')"));
+    ok("待認領的數字扣掉了（3 支：R1 R2 C1）", w.includes('<span class="fn">3</span>')); }
   reset({videos:POOL}); as("小葵","editor");
   ok("指派給我也一樣不出現（沒毛片就是不能剪）", (()=>{
     STATE.videos[0].assignedTo="小葵"; return !viewWork().includes("claimVid('S1')"); })());

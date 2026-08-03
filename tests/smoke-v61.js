@@ -38,7 +38,7 @@ function reset(){
     schedule:{}, logs:[], tasks:{}, shifts:{}, deletedVideos:[],
     videos:[
       // 一創：毛片＋已上片可拿來二創的源片
-      {id:"R1",name:"待剪毛片",rawName:"待剪毛片",stage:"待處理",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},
+      {id:"R1",name:"待剪毛片",rawName:"待剪毛片",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},
       {id:"S1",name:"已上片源片",rawName:"已上片源片",stage:"已上片",published:true,tags:["舊片"],publishedLink:"http://p",
        driveFolder:"http://d",finishedAt:"2026-07-02T05:00:00",locale:"",channel:"",products:[],usageHistory:[],metrics:[]},
       // 二創：待做的殼
