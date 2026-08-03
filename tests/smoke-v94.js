@@ -30,7 +30,7 @@ const TAGS=["新片","舊片","寵粉","代理招商","銷售","教育","個人�
 const SOURCES=["官方IP","吾家"];
 function reset(extraSettings){
   calls=[]; toasts=[]; fields={}; modalHTML="";
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
   POOL_FILTER="all"; POOL_Q=""; TEAM_GROUP="all"; TEAM_Q="";
   STATE={ users:[{name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Kai",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},

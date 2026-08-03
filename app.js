@@ -3049,7 +3049,8 @@ function reviewVid(id, status){
     {action:"審片"+status, target:vidTitle(v)+(note.trim()?("・"+note.trim()):"")})
     .then(ok=>{ if(ok){ toast(status==="通過"?"已通過 ":"已退回，剪輯會收到 "); closeModal(); } });
 }
-let VID_VIEW="rawNoSched";   // 影片庫分頁，見 VID_SEGS（七類）
+let VID_VIEW="raw";        // 影片庫分頁（四類，見 VID_GROUPS）
+let VID_UNSCHED=false;     // 只看還沒排日期的（矩陣的第二軸抽成開關）
 // 影片庫的瀏覽方式：list＝原本的清單、grid＝封面圖平鋪。
 // 記在這台裝置上（每個人習慣不同，也不值得為了它多寫一次資料庫）。
 let VID_MODE=(typeof localStorage!=="undefined" && localStorage.getItem("ecdr_vidmode")==="grid")?"grid":"list";
@@ -3122,7 +3123,7 @@ function vidMatchQ(v){
   return [v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
 }
 function vidVisibleList(){
-  let list=vidAllOfLang().filter(v=> vidSegment(v)===VID_VIEW).filter(vidMatchQ);
+  let list=vidAllOfLang().filter(v=> vidGroupOf(v)===VID_VIEW).filter(vidMatchQ).filter(vidMatchSched);
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
   // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
   // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
@@ -3159,30 +3160,34 @@ function vidSetMode(m){
   try{ localStorage.setItem("ecdr_vidmode", VID_MODE); }catch(e){}
   render();
 }
-// 分段數字跟著搜尋一起變 —— 打「農曆七月」就看得出它落在哪一個分頁
-const VID_SEG_LABEL={
-  scriptNoSched:["未拍・未排程","Not shot · unscheduled"],
-  scriptSched:  ["未拍・已排程","Not shot · scheduled"],
-  rawNoSched:   ["待剪・未排程","Raw · unscheduled"],
-  rawSched:     ["待剪・已排程","Raw · scheduled"],
-  newNoSched:   ["剪完・未排程","Done · unscheduled"],
-  newSched:     ["新片完成","New"],
-  old:          ["舊片","Old"],
-};
+// 分頁只留四個。內部仍然是七段（見 vidSegment），但「排了沒」這一軸抽成一個開關 ——
+// 攤平成七顆等於逼使用者用眼睛做二維查表，而且要看完所有沒排日期的片得點三個分頁。
+// 開關打開＝一次看完全部還沒排的，補排日期不用跳頁。
+const VID_GROUPS=[
+  ["script","未拍","Not shot", ["scriptNoSched","scriptSched"]],
+  ["raw",   "待剪","To edit",  ["rawNoSched","rawSched"]],
+  ["done",  "剪完","Done",     ["newNoSched","newSched"]],
+  ["old",   "舊片","Old",      ["old"]],
+];
+function vidGroupOf(v){ const s=vidSegment(v);
+  const g=VID_GROUPS.find(x=>x[3].includes(s)); return g?g[0]:"raw"; }
+// 「只看還沒排日期的」：舊片本來就一定有排程日，開關打開時那一頁自然是 0
+function vidMatchSched(v){ return !VID_UNSCHED || !v.scheduledDate; }
+// 分頁數字跟著搜尋與開關一起變 —— 打「農曆七月」就看得出它落在哪一個分頁
 function vidSegCounts(){
-  const seg={}; VID_SEGS.forEach(k=>seg[k]=0);
-  vidAllOfLang().filter(vidMatchQ).forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
-  return seg;
+  const c={}; VID_GROUPS.forEach(g=>c[g[0]]=0);
+  vidAllOfLang().filter(vidMatchQ).filter(vidMatchSched).forEach(v=>{ const g=vidGroupOf(v); if(c[g]!=null) c[g]++; });
+  return c;
 }
 function vidTabsHTML(){
-  const seg=vidSegCounts();
-  return VID_SEGS.map(k=>{ const [zh,en]=VID_SEG_LABEL[k];
-    return `<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')"><span>${T(zh,en)}</span> <span class="vtab-n">${seg[k]}</span></button>`;
-  }).join("");
+  const c=vidSegCounts();
+  return VID_GROUPS.map(([k,zh,en])=>
+    `<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')"><span>${T(zh,en)}</span> <span class="vtab-n">${c[k]}</span></button>`
+  ).join("");
 }
 // 標籤鈕：只列出「這個分頁、這次搜尋結果裡實際有的標籤」並標數量 → 按了一定對得上影片
 function vidTagBtnsHTML(){
-  const viewList=vidAllOfLang().filter(vidMatchQ).filter(v=>vidSegment(v)===VID_VIEW);
+  const viewList=vidAllOfLang().filter(vidMatchQ).filter(vidMatchSched).filter(v=>vidGroupOf(v)===VID_VIEW);
   const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
   const order=videoTags();
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
@@ -3200,6 +3205,8 @@ function vidFilter(){
 }
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
+// 開關只換清單與數字，不整頁重繪（跟搜尋同一條路）
+function vidSetUnsched(on){ VID_UNSCHED=!!on; vidFilter(); }
 function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
 function viewVideos(){
   const allSrc=(STATE.videos||[]).filter(v=>!v.locale && !v.channel);   // 影片庫：只放一創原本，二創版走各自排程與源片的版本卡
@@ -3213,6 +3220,10 @@ function viewVideos(){
   <div class="card">
     ${langSel}
     <div class="vtabs" id="vid_tabs">${vidTabsHTML()}</div>
+    <label style="display:inline-flex;align-items:center;gap:5px;margin:8px 0 0;font-size:12px;white-space:nowrap"
+      title="${T("四個分頁都只列還沒填預排上片日的，一次補齊不用跳頁","Shows only videos with no scheduled date — across all four tabs")}">
+      <input type="checkbox" id="vid_uns" ${VID_UNSCHED?"checked":""} onchange="vidSetUnsched(this.checked)" style="width:auto;margin:0">
+      ${T("只看還沒排日期的","Unscheduled only")}</label>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
       <div class="vmode" role="group" aria-label="${T("瀏覽方式","View mode")}">
@@ -3540,54 +3551,60 @@ function openVideoModal(id, edit, fromWork){
 
   if(!edit){ vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, reviewCard, usageCard); return; }
 
+  // 折疊分組（v111）：四個人輪流做全部的事，所以不能依角色隱藏 —— 依「資料類型」折。
+  // 每次都要看的留在上面；其餘收起來，但只要裡面已經有資料就自動展開（不然會以為是空的）。
+  const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
+  const hasPost = !!String(v.driveFolder||"").trim() || usageList(v).length>0
+                  || (Array.isArray(v.metrics)&&v.metrics.length>0);
+  const hasAdv  = !!String(v.name||"").trim() || !!String(v.refLink||"").trim()
+                  || !!String(v.note||"").trim() || !!v.editor;
   const body=`
     <div class="cv-head">
       ${coverSlotHTML(v, id)}
       <div class="cv-head-f">
         <label style="margin-top:0">${T("編號 ／ 原始片名","Code / Raw title")}</label>
         <div class="row" style="gap:8px">
-          <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}" oninput="var c=document.getElementById('e_code2');if(c)c.value=this.value">
+          <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}">
           <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1;min-width:0" placeholder="${T("原始片名","Raw title")}">
-        </div>
-        <label>${T("編號 ／ 影片貼文文案（不填則同原始片名）","Code / Post caption (defaults to raw title)")}</label>
-        <div class="row" style="gap:8px">
-          <input id="e_code2" value="${esc(vidCode(v))}" readonly style="flex:none;width:78px;text-align:center;background:var(--panel2)" title="${T("同原片編號","Same code")}">
-          <input id="e_name" value="${esc(v.name||"")}" style="flex:1;min-width:0" placeholder="${T("影片貼文文案","Post caption")}">
         </div>
       </div>
     </div>
-    <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
-    <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
-    <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
+    <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
     ${nextDaysStrip("e_date")}
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
-    <div class="grid cols2">
-      <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
-      <div><label>${T("階段","Stage")}</label>
-        ${["boss","manager"].includes(currentRole())
-          ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
-          : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
-             <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
-    </div>
-    ${(!v.locale&&!v.channel)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
-    <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
-    <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
-    ${productRows("e", v.products)}
-    <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
-    <div id="e_links">${editLinksHTML(v.productUrl)}</div>
-    <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">
     ${reviewCard}
-    <div class="card" style="background:var(--panel2)"><b>${T("完成影片存檔連結","Finished file link")}</b>
-      <label>${T("完成影片存檔連結","Finished file link")}</label><input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">
-    </div>
-    ${localizedCard}
-    ${metricsCard}
-    ${usageCard}
+    ${fold(T("商品與導購","Products & links"), prodList.length||null, `
+      ${productRows("e", v.products)}
+      <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
+      <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd)}
+    ${fold(T("上片後","After publishing"), null, `
+      <label>${T("完成影片存檔連結","Finished file link")}</label>
+      <input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">
+      ${metricsCard}
+      ${usageCard}`, hasPost)}
+    ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
+    ${fold(T("進階","Advanced"), null, `
+      <label>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</label>
+      <input id="e_name" value="${esc(v.name||"")}" placeholder="${T("影片貼文文案","Post caption")}">
+      <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
+      <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
+      <div class="grid cols2">
+        <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
+        <div><label>${T("階段","Stage")}</label>
+          ${["boss","manager"].includes(currentRole())
+            ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
+            : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
+               <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
+      </div>
+      ${(!v.locale&&!v.channel)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
+      <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
+      <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
+      <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">`, hasAdv)}
     ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>

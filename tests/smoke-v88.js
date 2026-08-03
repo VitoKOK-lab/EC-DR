@@ -29,7 +29,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
   reviewStatus:"",locale:"",channel:"",origLang:"",source:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos){
   calls=[]; toasts=[]; fields={};
-  VID_LANG=""; VID_VIEW="scriptNoSched"; VID_TAGS=new Set(); VID_Q="";
+  VID_LANG=""; VID_VIEW="script"; VID_TAGS=new Set(); VID_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Regina",role:"manager",pwHash:H},{name:"管理員",role:"boss"}],
@@ -82,36 +82,35 @@ const LIB=[
 ];
 reset(LIB); as("Regina","manager");
 { const h=viewVideos();
-  ok("多了「未拍・未排程」這個分頁", h.includes("未拍・未排程"));
-  ok("它排在「待剪・未排程」前面",
-     h.indexOf("未拍・未排程")<h.indexOf("待剪・未排程"));
+  ok("多了「未拍」這個分頁", h.includes("<span>未拍</span>"));
+  ok("它排在「待剪」前面",
+     h.indexOf("<span>未拍</span>")<h.indexOf("<span>待剪</span>"));
   ok("它排在語言下拉後面（還在分頁列裡）",
-     h.indexOf("原本語言")<h.indexOf("未拍・未排程"));
-  ok("數字是 2", tabN(h,"未拍・未排程")===2);
-  ok("待剪・未排程剩 1（S1 S2 被移走了）", tabN(h,"待剪・未排程")===1);
-  ok("原本的五個分頁都還在",
-     ["待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"].every(x=>h.includes(x))); }
-reset(LIB); as("Regina","manager"); VID_VIEW="scriptNoSched";
+     h.indexOf("原本語言")<h.indexOf("<span>未拍</span>"));
+  ok("數字是 2", tabN(h,"未拍")===2);
+  ok("待剪剩 2（S1 S2 被移走了）", tabN(h,"待剪")===2);
+  ok("四個分頁都在", ["未拍","待剪","剪完","舊片"].every(x=>h.includes("<span>"+x+"</span>"))); }
+reset(LIB); as("Regina","manager"); VID_VIEW="script";
 ok("點進去只列未拍的", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2","N1","O1"]))===JSON.stringify(["S1","S2"]));
-reset(LIB); as("Regina","manager"); VID_VIEW="rawNoSched";
-ok("待剪那頁不再列到它們", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2"]))===JSON.stringify(["R1"]));
+reset(LIB); as("Regina","manager"); VID_VIEW="raw";
+ok("待剪那頁不再列到它們", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2"]))===JSON.stringify(["R1","R2"]));
 
 // ══ 沒有這種片的時候 ══
 reset([v_("R1",{rawLink:"http://d"})]); as("Regina","manager");
 { const h=viewVideos();
-  ok("沒有這種片時分頁還是在（數字 0）", h.includes("未拍・未排程") && tabN(h,"未拍・未排程")===0); }
-reset([v_("R1",{rawLink:"http://d"})]); as("Regina","manager"); VID_VIEW="scriptNoSched";
+  ok("沒有這種片時分頁還是在（數字 0）", h.includes("<span>未拍</span>") && tabN(h,"未拍")===0); }
+reset([v_("R1",{rawLink:"http://d"})]); as("Regina","manager"); VID_VIEW="script";
 ok("空的分頁不會炸", typeof viewVideos()==="string" && viewVideos().length>0);
 
 // ══ 搜尋、標籤在新分頁一樣能用 ══
 reset([v_("S1",{videoCopy:"口播一",name:"翡翠開箱",tags:["寵粉"]}),
        v_("S2",{videoCopy:"口播二",name:"珠寶保養",tags:["珠寶介紹"]})]);
-as("Regina","manager"); VID_VIEW="scriptNoSched"; VID_Q="翡翠";
+as("Regina","manager"); VID_VIEW="script"; VID_Q="翡翠";
 ok("新分頁裡搜得到", JSON.stringify(listed(viewVideos(),["S1","S2"]))===JSON.stringify(["S1"]));
 // 標籤鈕只列「這一頁實際有的」：待剪那支的標籤不該出現在文案頁
 reset([v_("S1",{videoCopy:"口播一",name:"翡翠開箱",tags:["寵粉"]}),
        v_("R1",{rawLink:"http://d",name:"待剪的",tags:["珠寶介紹"]})]);
-as("Regina","manager"); VID_VIEW="scriptNoSched";
+as("Regina","manager"); VID_VIEW="script";
 { const btns=(viewVideos().split("標籤")[1]||"").split('id="vid_list"')[0];
   ok("新分頁的標籤鈕只列這一頁有的", btns.includes("寵粉") && !btns.includes("珠寶介紹")); }
 
@@ -134,7 +133,7 @@ reset(LIB); as("小葵","editor");
 // ══ render 不炸 ══
 reset(LIB);
 [["Regina","manager","videos"],["Anna","intl","videos"],["管理員","boss","videos"],["小葵","editor","videos"]].forEach(([u,r,tab])=>{
-  as(u,r); CUR_TAB=tab; VID_VIEW="scriptNoSched";
+  as(u,r); CUR_TAB=tab; VID_VIEW="script";
   try{ render(); ok(`[${r}] ${tab} script`, true); }catch(e){ ok(`[${r}] ${tab} → ${e.message}`, false); } });
 reset(LIB);
 ["script","rawNoSched","rawSched","newNoSched","newSched","old"].forEach(seg=>{

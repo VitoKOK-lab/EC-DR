@@ -70,7 +70,7 @@ ok("泰文區只列 TH 帳號", zc.includes("tiktok-TH") && !zc.includes("tiktok
 ok("泰文區版本 chip 只列 TH", !zc.includes(`openIntlModal('E1')`) && zc.includes(`openIntlModal('T1')`));
 
 // ── 海外視角：中文下顯示英文小字 ──
-VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
+VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
 h=viewVideos();
 ok("intl 影片庫中文下有英文小字", h.includes("vt-en") && h.includes("Golden original"));
 ok("英文小字去掉 hashtag", !h.includes("Golden original #gold"));

@@ -60,7 +60,7 @@ ok("editor 編輯視窗維持中文", modalHTML.includes("原始片名") && moda
 ok("editor 語言選項統一為馬來西亞", modalHTML.includes(">馬來西亞<") && !modalHTML.includes("馬來文"));
 
 // --- 三個下拉名稱一致 ---
-VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set();
+VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set();
 let h=viewVideos();
 ok("影片庫語言選單用 馬來西亞", h.includes("馬來西亞（"));
 CAL_PLAT="tw"; CAL_YM=null; CUR_TAB="cal"; h=viewCal();

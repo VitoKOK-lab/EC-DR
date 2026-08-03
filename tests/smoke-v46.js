@@ -40,7 +40,7 @@ ok("dispStage：已完成+通過=已完成", dispStage(STATE.videos[1])==="已�
 
 // 影片庫列
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
-VID_LANG=""; VID_VIEW="newNoSched"; VID_TAGS=new Set(); VID_Q="";
+VID_LANG=""; VID_VIEW="done"; VID_TAGS=new Set(); VID_Q="";
 let h=vidTableRow(STATE.videos[0]);
 ok("影片庫列顯示待審核（琥珀）", h.includes("待審核") && h.includes("var(--amber)"));
 h=vidTableRow(STATE.videos[1]);

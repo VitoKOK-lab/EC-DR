@@ -1,4 +1,6 @@
-// v109：影片庫拆成七段，對齊實際的作業流程。
+// v109：影片庫的生命週期。
+// 內部仍是七段（vidSegment），但畫面上只有四個分頁 ＋ 一個「只看還沒排日期的」開關：
+// 攤平成七顆等於逼使用者用眼睛做二維查表，抽成開關反而一次看得完所有沒排的。
 // 兩個獨立的軸交叉：拍了沒（毛片連結）／剪了沒（已完成）／過期沒 × 排了沒（上片日期）
 //   ① 未拍・未排程   ← 要補排日期的在這裡
 //   ② 未拍・已排程   等拍片
@@ -42,7 +44,7 @@ function reset(videos){
     settings:{dailyTarget:4,videoTags:["寵粉"],sources:["老闆自拍"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"},
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:videos||[] };
-  CUR_TAB="videos"; VIEW_AS=null; VID_LANG=""; VID_VIEW="scriptNoSched"; VID_Q=""; VID_TAGS=new Set(); VID_MODE="list";
+  CUR_TAB="videos"; VIEW_AS=null; VID_LANG=""; VID_VIEW="script"; VID_Q=""; VID_TAGS=new Set(); VID_MODE="list";
   POOL_FILTER="all"; POOL_Q=""; WORK_ZONE="shopee";
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
   localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss");
@@ -96,7 +98,7 @@ ok("待剪・未排程排第三（2）", vidOrderRank(v_("C",{rawLink:"http://ra
 ok("待剪・已排程排第四（3）", vidOrderRank(v_("D",{rawLink:"http://raw",scheduledDate:FUTURE}))===3);
 ok("舊片排最後（6）", vidOrderRank(v_("G",done({rawLink:"http://raw",scheduledDate:PAST})))===6);
 
-// ══ ④ 分頁列 ══
+// ══ ④ 分頁列：四頁 ＋ 一個開關 ══
 const LIB=[
   v_("A1",{videoCopy:"口播"}), v_("A2",{videoCopy:"口播"}),          // 未拍・未排程 2
   v_("B1",{videoCopy:"口播",scheduledDate:FUTURE}),                   // 未拍・已排程 1
@@ -106,36 +108,51 @@ const LIB=[
   v_("F1",done({rawLink:"http://raw",scheduledDate:FUTURE})),         // 新片完成 1
   v_("G1",done({rawLink:"http://raw",scheduledDate:PAST})),           // 舊片 1
 ];
-reset(LIB); as("管理員","boss");
+reset(LIB); as("管理員","boss"); VID_UNSCHED=false;
 { const h=viewVideos();
-  const NAMES=["未拍・未排程","未拍・已排程","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"];
-  ok("七個分頁都在", NAMES.every(x=>h.includes("<span>"+x+"</span>")));
+  const NAMES=["未拍","待剪","剪完","舊片"];
+  ok("只剩四個分頁", NAMES.every(x=>h.includes("<span>"+x+"</span>")));
+  ok("不再有七顆矩陣按鈕",
+     !h.includes("<span>未拍・未排程</span>") && !h.includes("<span>待剪・已排程</span>"));
   ok("分頁順序＝流程順序",
      NAMES.map(x=>h.indexOf("<span>"+x+"</span>")).every((v,i,a)=>i===0||(v>0&&v>a[i-1])));
-  ok("未拍・未排程 2", tabN(h,"未拍・未排程")===2);
-  ok("未拍・已排程 1", tabN(h,"未拍・已排程")===1);
-  ok("待剪・未排程 1", tabN(h,"待剪・未排程")===1);
-  ok("待剪・已排程 1", tabN(h,"待剪・已排程")===1);
-  ok("剪完・未排程 1", tabN(h,"剪完・未排程")===1);
-  ok("新片完成 1", tabN(h,"新片完成")===1);
+  ok("未拍 3（未排 2＋已排 1）", tabN(h,"未拍")===3);
+  ok("待剪 2", tabN(h,"待剪")===2);
+  ok("剪完 2", tabN(h,"剪完")===2);
   ok("舊片 1", tabN(h,"舊片")===1);
-  ok("加起來等於全部 8 支",
-     NAMES.reduce((a,x)=>a+tabN(h,x),0)===LIB.length); }
+  ok("加起來等於全部 8 支", NAMES.reduce((a,x)=>a+tabN(h,x),0)===LIB.length);
+  ok("有「只看還沒排日期的」開關", h.includes('id="vid_uns"') && h.includes("只看還沒排日期的")); }
 
-// 每一頁點進去只列自己那一段
-reset(LIB); as("管理員","boss");
-[["scriptNoSched",["A1","A2"]],["scriptSched",["B1"]],["rawNoSched",["C1"]],["rawSched",["D1"]],
- ["newNoSched",["E1"]],["newSched",["F1"]],["old",["G1"]]].forEach(([view,want])=>{
+// 開關打開：四個分頁的數字都只算沒排日期的
+reset(LIB); as("管理員","boss"); VID_UNSCHED=true;
+{ const h=viewVideos();
+  ok("開關打開：未拍剩 2", tabN(h,"未拍")===2);
+  ok("開關打開：待剪剩 1", tabN(h,"待剪")===1);
+  ok("開關打開：剪完剩 1", tabN(h,"剪完")===1);
+  ok("開關打開：舊片是 0（舊片一定有排程日）", tabN(h,"舊片")===0);
+  ok("加起來＝所有沒排日期的 4 支",
+     ["未拍","待剪","剪完","舊片"].reduce((a,x)=>a+tabN(h,x),0)===LIB.filter(v=>!v.scheduledDate).length);
+  ok("開關是勾起來的", /id="vid_uns" checked/.test(h)); }
+
+// 每一頁點進去只列自己那一組
+reset(LIB); as("管理員","boss"); VID_UNSCHED=false;
+[["script",["A1","A2","B1"]],["raw",["C1","D1"]],["done",["E1","F1"]],["old",["G1"]]].forEach(([view,want])=>{
   VID_VIEW=view;
   const got=listed(viewVideos(), LIB.map(v=>v.id));
   ok(`${view} 只列 ${want.join("/")}`, JSON.stringify(got)===JSON.stringify(want)); });
 
-// ══ ⑤ 「要補排日期」的三頁：加起來就是所有沒排程的 ══
-reset(LIB); as("管理員","boss");
+// 開關打開時，清單也只剩沒排日期的
+reset(LIB); as("管理員","boss"); VID_UNSCHED=true;
+[["script",["A1","A2"]],["raw",["C1"]],["done",["E1"]],["old",[]]].forEach(([view,want])=>{
+  VID_VIEW=view;
+  const got=listed(viewVideos(), LIB.map(v=>v.id));
+  ok(`開關打開時 ${view} 只列 ${want.join("/")||"（空）"}`, JSON.stringify(got)===JSON.stringify(want)); });
+
+// ══ ⑤ 「要補排日期」的片，開關一次看完（不用跳三頁）══
+reset(LIB); as("管理員","boss"); VID_UNSCHED=true;
 { const h=viewVideos();
-  const noSched=tabN(h,"未拍・未排程")+tabN(h,"待剪・未排程")+tabN(h,"剪完・未排程");
-  const actual=LIB.filter(v=>!v.scheduledDate).length;
-  ok("三個「未排程」分頁加起來＝所有沒排日期的片", noSched===actual && noSched===4); }
+  const shown=["未拍","待剪","剪完","舊片"].reduce((a,x)=>a+tabN(h,x),0);
+  ok("開關打開＝所有沒排日期的片", shown===LIB.filter(v=>!v.scheduledDate).length && shown===4); }
 
 // ══ ⑥ 補上日期、補上毛片連結之後會自己換頁 ══
 reset();
@@ -173,17 +190,15 @@ as("小葵","editor");
 reset(LIB.concat([v_("Z1",{videoCopy:"口播",name:"關鍵字片"})])); as("管理員","boss");
 VID_Q="關鍵字";
 { const h=viewVideos();
-  ok("搜尋後只有未拍・未排程是 1", tabN(h,"未拍・未排程")===1);
-  ok("其餘六頁都是 0",
-     ["未拍・已排程","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
-       .every(x=>tabN(h,x)===0)); }
+  ok("搜尋後只有未拍是 1", tabN(h,"未拍")===1);
+  ok("其餘三頁都是 0", ["待剪","剪完","舊片"].every(x=>tabN(h,x)===0)); }
 
 // ══ ⑨ 海外看到英文、沒有中文洩漏 ══
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外七個分頁都是英文",
-     ["Not shot · unscheduled","Not shot · scheduled","Raw · unscheduled","Raw · scheduled",
-      "Done · unscheduled","New","Old"].every(x=>h.includes("<span>"+x+"</span>")));
+  ok("海外四個分頁都是英文",
+     ["Not shot","To edit","Done","Old"].every(x=>h.includes("<span>"+x+"</span>")));
+  ok("海外的開關也是英文", h.includes("Unscheduled only"));
   ok("海外沒有中文分頁名洩漏", !h.includes("未拍") && !h.includes("待剪") && !h.includes("剪完")); }
 
 // ══ ⑩ render 不炸 ══

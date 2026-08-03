@@ -34,7 +34,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
   reviewStatus:"",locale:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos){
   calls=[]; toasts=[]; fields={}; nodes={}; modalHTML=""; unloadHandler=null;
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_MODE="list"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_MODE="list"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
   MODAL_DIRTY=false;
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
@@ -97,7 +97,8 @@ ok("欄位不在畫面上時不會炸", (function(){ try{ vcopyOpen(); return tr
   { const m=modalHTML;
     ok("日期欄還在", m.includes('id="e_date"'));
     ok("在標籤上方", m.indexOf('id="e_date"') < m.indexOf('id="e_box"'));
-    ok("在參考來源下面（跟其他基本欄位一區）", m.indexOf('id="e_ref"') < m.indexOf('id="e_date"'));
+    ok("在毛片連結下面（都是每次要看的基本欄位）", m.indexOf('id="e_rawlink"') < m.indexOf('id="e_date"'));
+    ok("參考來源已收進「進階」折疊（v111）", m.indexOf('id="e_date"') < m.indexOf('id="e_ref"'));
     ok("不再夾在商品頁網址後面", m.indexOf('id="e_url"') > m.indexOf('id="e_date"'));
     ok("整份只出現一次（沒有複製兩份）", (m.match(/id="e_date"/g)||[]).length===1);
     ok("日期的日曆小圖示還在", m.includes('class="dateIco"')); }

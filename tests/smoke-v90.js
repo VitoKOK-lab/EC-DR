@@ -28,7 +28,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
   stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:null,finishedAt:"",publishedLink:"",
   reviewStatus:"",locale:"",channel:"",origLang:"",source:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos){
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Regina",role:"manager",pwHash:H},{name:"管理員",role:"boss"}],
@@ -68,10 +68,10 @@ const LIB=[ v_("S1",{videoCopy:"口播"}), v_("R1",{rawLink:"http://d"}),
   v_("O1",{tags:["舊片"]}) ];
 reset(LIB); as("Regina","manager");
 { const h=viewVideos();
-  ok("影片庫分頁的名稱包在 span 裡", h.includes("<span>未拍・未排程</span> <span class=\"vtab-n\">"));
-  ok("七個分頁都在", ["未拍・未排程","未拍・已排程","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
+  ok("影片庫分頁的名稱包在 span 裡", h.includes("<span>未拍</span> <span class=\"vtab-n\">"));
+  ok("四個分頁都在", ["未拍","待剪","剪完","舊片"]
      .every(x=>h.includes("<span>"+x+"</span>")));
-  ok("每個分頁都各自帶一個數字", (h.match(/<span class="vtab-n">/g)||[]).length>=6);
+  ok("每個分頁都各自帶一個數字", (h.match(/<span class="vtab-n">/g)||[]).length>=4);
   ok("選中的還是有 on", h.includes('class="vtab on"')); }
 reset(LIB); as("小葵","editor");
 { const w=viewWork();
@@ -80,12 +80,12 @@ reset(LIB); as("小葵","editor");
      .every(x=>w.includes("<span>"+x+"</span>"))); }
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Not shot · unscheduled</span>"));
-  ok("海外沒有中文分頁名洩漏", !h.includes("<span>未拍・未排程</span>")); }
+  ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Not shot</span>"));
+  ok("海外沒有中文分頁名洩漏", !h.includes("<span>未拍</span>")); }
 
 // ══ 點分頁還是有作用 ══
 reset(LIB); as("Regina","manager");
-ok("每個分頁都點得動", ["scriptNoSched","scriptSched","rawNoSched","rawSched","newNoSched","newSched","old"]
+ok("每個分頁都點得動", ["script","raw","done","old"]
    .every(k=>viewVideos().includes(`vidSetView('${k}')`)));
 vidSetView("old");
 ok("點了會換頁", VID_VIEW==="old" && viewVideos().includes('class="vtab on"'));

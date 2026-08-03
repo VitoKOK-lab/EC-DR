@@ -35,7 +35,7 @@ function reset(){
     settings:{dailyTarget:4,videoTags:["寵粉"],sources:["老闆自拍"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"},
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:[] };
-  CUR_TAB="videos"; VIEW_AS=null; VID_LANG=""; VID_VIEW="scriptNoSched"; VID_Q=""; VID_TAGS=new Set();
+  CUR_TAB="videos"; VIEW_AS=null; VID_LANG=""; VID_VIEW="script"; VID_Q=""; VID_TAGS=new Set();
   BULK_BUSY=false;
   global.window.DB={ set:async(c,id,o)=>{calls.push(["set",c,id,o]);}, update:async(c,id,p)=>{calls.push(["update",c,id,p]);},
     del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
