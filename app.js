@@ -2848,7 +2848,10 @@ function finishWork(id){ const v=vid(id)||{};
   write("POST","/api/videos/"+id+"/finish",{scheduledDate:v.scheduledDate||null},T("剪輯完成","Done")).then(ok=>{ if(ok) render(); });
 }
 // 移回剪輯中（重剪）：管理員／經理人把已完成的影片退回該剪輯的今日工作
-function reworkVideo(id){ const v=vid(id)||{};
+// 同上：先存再把它移走
+function reworkVideo(id){ afterFlush(()=>reworkVideoGo(id)); }
+function reworkVideoGo(id){
+  const v=vid(id)||{};
   let who=v.editor||v.claimedBy||"";
   if(!who){   // 沒有指定剪輯（孤兒影片）→ 讓管理員選一位；海外二創版列海外剪輯、其餘列台灣剪輯
     const wantRole=v.locale?"intl":"editor";
@@ -3041,7 +3044,9 @@ function editorMarkReviewed(id){ const v=vid(id)||{};
     T("已標記審過 → 快上傳雲端＋補連結","Marked as approved — now upload & add the links")).then(ok=>{ if(ok) render(); });
 }
 // 老闆娘選擇性審核（不擋上架）：通過／退回(附原因)；退回會在剪輯的今日工作出現
-function reviewVid(id, status){
+// 同一個視窗裡改過的欄位先存，不然按下「通過」視窗一關就沒了
+function reviewVid(id, status){ afterFlush(()=>reviewVidGo(id, status)); }
+function reviewVidGo(id, status){
   let note="";
   if(status==="退回"){ note=prompt("退回原因（給剪輯修正）："); if(note===null) return; if(!note.trim()){ toast("請填退回原因",true); return; } }
   const v=vid(id)||{};
@@ -3462,7 +3467,7 @@ async function coverChosen(input, id){
     // 圖已經在 Storage 了，這裡只是把網址記到這支影片上；不等「儲存修改」是刻意的，
     // 不然使用者傳完圖卻按取消，Storage 會留一張沒人指向的孤兒圖。
     const done=await write("PUT",`/api/videos/${id}`,{video:{cover:url}},T("封面已更新","Cover updated"));
-    if(done) openVideoModal(id, true);   // 重開編輯畫面才看得到新封面
+    if(done) coverRefresh(id, url);   // 只換封面那一格，沒存的欄位留著
   }catch(e){ toast(coverErrMsg(e), true); }
   finally{ coverBusy(false); }
 }
@@ -3473,22 +3478,32 @@ async function coverRemove(id){
   const done=await write("PUT",`/api/videos/${id}`,{video:{cover:""}},T("已移除封面","Cover removed"));
   // 檔案刪不掉不算失敗（可能早就被蓋掉了）；影片上的 cover 清掉才是真正的「移除」
   if(DB&&DB.deleteCover) { try{ await DB.deleteCover(id); }catch(e){} }
-  if(done) openVideoModal(id, true);
+  if(done) coverRefresh(id, "");
 }
 // 編輯畫面左上角那一格
-function coverSlotHTML(v, id){
+function coverSlotHTML(v, id){ return `<div class="cv-slot" id="cv_slot">${coverSlotInner(v, id)}</div>`; }
+function coverSlotInner(v, id){
   const u=coverUrl(v);
   const inner=u
     ? `<img src="${esc(u)}" alt="${T("影片封面","Cover")}" loading="lazy">`
     : `<span class="cv-empty">${PLUS()}<br><span>${T("加封面","Add cover")}</span></span>`;
-  return `<div class="cv-slot">
-    <div class="cv-box${u?' has':''}" id="cv_box" onclick="coverPickFile()"
+  return `<div class="cv-box${u?' has':''}" id="cv_box" onclick="coverPickFile()"
          title="${T("點一下上傳封面（會自動壓縮）","Click to upload a cover (auto-compressed)")}">
       ${inner}<span class="cv-spin"></span></div>
     <input type="file" id="cv_file" accept="image/*" style="display:none" onchange="coverChosen(this,'${esc(jsEsc(id))}')">
     ${u?`<a href="javascript:void(0)" class="cv-rm" onclick="coverRemove('${esc(jsEsc(id))}')">${T("移除","Remove")}</a>`
-       :`<span class="cv-hint">${T("選填","Optional")}</span>`}
-  </div>`;
+       :`<span class="cv-hint">${T("選填","Optional")}</span>`}`;
+}
+// 換封面之後只重畫封面那一格。
+// 以前是整個編輯視窗重開 —— 那會把還沒按儲存的欄位（成片連結、文案…）
+// 通通換回資料庫裡的舊值，等於使用者剛打的字被吃掉。
+// nextCover 直接帶新網址，不必等 Firestore 同步回來。
+function coverRefresh(id, nextCover){
+  const slot=document.getElementById("cv_slot");
+  const v=Object.assign({}, vid(id)||{});
+  if(nextCover!==undefined) v.cover=nextCover;
+  if(!slot){ openVideoModal(id, true); return; }   // 不在編輯視窗（少見）才退回重開
+  slot.innerHTML=coverSlotInner(v, id);
 }
 // 清單／格子用的小縮圖（沒封面就維持原本的 ▶ 底色方塊）
 function coverThumbHTML(v, cls){
@@ -3620,7 +3635,7 @@ function openVideoModal(id, edit, fromWork){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="cancelVideoEdit()">${T("取消編輯","Cancel")}</button>
       <button class="btn" id="vmSave" type="button">${fromWork?T('儲存並完成','Save & finish'):T('儲存修改','Save')}</button></div>`;
-  MODAL_DIRTY=false;
+  MODAL_DIRTY=false; MODAL_SAVE=()=>saveVideo(id);
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
   document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(!ok) return;
     if(fromWork){ await write("POST",`/api/videos/${id}/finish`,{scheduledDate:val("e_date")||null},"已完成（保留在工作列，下班後消失）"); }
@@ -4042,8 +4057,8 @@ function openIntlModal(id){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="intlSaveVideo('${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
-  MODAL_DIRTY=false;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
+  MODAL_DIRTY=false; MODAL_SAVE=()=>intlSaveVideo(id);
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
 }
 
 // ===================================================================
@@ -4143,8 +4158,8 @@ function openChModal(ch,id){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="closeModal()">${T("取消","Cancel")}</button>
       <button class="btn" type="button" onclick="chSaveVideo('${ch}','${id}').then(function(ok){if(ok)closeModal();})">${T("儲存","Save")}</button></div>`;
-  MODAL_DIRTY=false;
-  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
+  MODAL_DIRTY=false; MODAL_SAVE=()=>chSaveVideo(ch,id);
+  document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${reviewCardHTML(v)}${foot}</div></div>`;
 }
 
 // ---- 二創區頁（可製作清單 ＋ 我的工作，合併一頁；比照上班計畫風格）----
@@ -4671,7 +4686,23 @@ function warnUnsaved(){ toast(T("還沒存檔喔 —— 請按「儲存修改」
 // 點視窗外（背景）即可關閉；但只要動過任何欄位就不關，並且要講出來為什麼沒關 ——
 // 原本是靜靜不理，使用者會以為系統當掉，然後直接重整把改的東西丟掉。
 function modalBackdrop(e){ if(e.target&&e.target.classList&&e.target.classList.contains("modal")){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); } }
-function closeModal(){ MODAL_DIRTY=false; document.getElementById("modalRoot").innerHTML=""; }
+// 目前開著的編輯視窗要怎麼存。視窗內的動作鍵（審片、移到今日工作…）在關掉視窗之前
+// 先用它把還沒存的欄位收起來 —— 不然使用者剛打的字會被靜默丟掉。
+let MODAL_SAVE=null;
+// 有沒存的東西就先存。存不起來（例如商品與網址沒配對）回 false，呼叫端要停手。
+async function modalFlushEdits(){
+  if(!MODAL_DIRTY || typeof MODAL_SAVE!=="function") return true;
+  const ok=await MODAL_SAVE();
+  if(ok===false) return false;
+  MODAL_DIRTY=false; return true;
+}
+// 視窗內的動作鍵共用：沒東西要存就直接做（維持同步），有才先存完再做。
+// 存不起來就停手，不然使用者剛打的字會被關掉的視窗帶走。
+function afterFlush(fn){
+  if(!MODAL_DIRTY || typeof MODAL_SAVE!=="function"){ fn(); return; }
+  modalFlushEdits().then(ok=>{ if(ok) fn(); });
+}
+function closeModal(){ MODAL_DIRTY=false; MODAL_SAVE=null; document.getElementById("modalRoot").innerHTML=""; }
 
 // ===================================================================
 // 新手教學模式：開啟後，把游標停在任何按鈕／欄位上會出現說明
