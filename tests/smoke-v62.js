@@ -61,9 +61,10 @@ ok("海外排最後", sorted.slice(-2).every(n=>["Asmeer","Pakistan Team"].inclu
   bootLogin();
   global.document.getElementById=_get;
   const groups=order.filter(x=>String(x).startsWith("#")).map(x=>x.slice(1));
-  ok("登入頁分區：客服、人資在管理層之前", JSON.stringify(groups)===JSON.stringify(["Taiwan","海外版","人資","管理層"]));
-  const tw=order.slice(order.indexOf("#Taiwan")+1, order.indexOf("#海外版"));
-  ok("登入頁 Taiwan 區照分工排序", JSON.stringify(tw)===JSON.stringify(["小葵","Edward","阿明","小華"])); }
+  ok("登入頁分區：台灣兩排 → 巴基斯坦 → 管理層",
+     JSON.stringify(groups)===JSON.stringify(["台灣・剪輯行銷","台灣・其他","巴基斯坦","管理層"]));
+  const tw=order.slice(order.indexOf("#台灣・剪輯行銷")+1, order.indexOf("#台灣・其他"));
+  ok("登入頁台灣剪輯區照分工排序", JSON.stringify(tw)===JSON.stringify(["小葵","Edward","阿明","小華"])); }
 
 // ── 流程中控（Regina）──
 reset(); as("Regina","manager");
@@ -73,10 +74,10 @@ ok("流程中控員工卡照順序", ascending(order(h,["小葵","Edward","阿�
 // ── 儀表板的下拉 ──
 reset(); as("管理員","boss");
 let d=viewDashboard();
-ok("指派交辦下拉照順序分組", d.includes('label="一次創作"') && d.includes('label="二次創作"') && d.includes('label="海外剪輯"'));
+ok("指派交辦下拉照順序分組", d.includes('label="一次創作"') && d.includes('label="二次創作"') && d.includes('label="巴基斯坦"'));
 { const seg=d.split('id="asg_who"')[1].split("</select>")[0];
   ok("交辦下拉：一創在二創之前", seg.indexOf("一次創作")<seg.indexOf("二次創作"));
-  ok("交辦下拉：海外在最後", seg.indexOf("海外剪輯")>seg.indexOf("二次創作")); }
+  ok("交辦下拉：巴基斯坦在最後", seg.indexOf("巴基斯坦")>seg.indexOf("二次創作")); }
 { const seg=d.split('id="va_who"')[1].split("</select>")[0];
   ok("員工視角下拉有人資分組（不會誤歸一創）", seg.includes('label="人資"') && seg.split('label="一次創作"')[1].split("</optgroup>")[0].indexOf("HR小姐")<0); }
 { const seg=d.split('id="afp_who"')[1].split("</select>")[0];

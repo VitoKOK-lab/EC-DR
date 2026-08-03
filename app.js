@@ -3,18 +3,33 @@
 // 角色：管理員（Vito）＋ 剪輯。已移除：交辦、KPI、日報、稽核、二創、商品庫。
 // 資料層走 Firestore（fb.js 提供 window.DB）；商業邏輯都在前端。
 // ===================================================================
-const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", intl:"海外剪輯", cs:"員工", hr:"人資"};
+// 職位。intl＝巴基斯坦團隊（全英文介面，做英/泰版二創）。
+// mkt／svc／ship 是後來加的不剪片職位，權限與畫面比照 cs。
+const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷",
+                    svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
+const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing",
+                       svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+const roleEn=(r)=>ROLE_LABEL_EN[r]||ROLE_LABEL_EN.editor;
+// 篩選下拉是在挑「一群人」，用複數才讀得順（個人徽章仍用上面的單數）
+const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"Marketing",
+                     svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+// 會打卡、進團隊看板與出勤的所有職位（不含管理員／經理人）。顯示順序見 ROLE_ORDER。
+const STAFF_ROLES=["editor","mkt","svc","ship","cs","hr","intl"];
+// 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
+const NO_EDIT_ROLES=["mkt","svc","ship","cs","hr"];
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
   boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
-  // 不分海內外：所有剪輯（editor＋intl）分頁完全相同；二創區已整合進「上班計畫」的「建立二創版本」卡
+  // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
-  cs:      [["work","本日工作"],["team","團隊看板"]],   // 員工（不剪片）：只做交辦工作與每日匯報，沒有一創二創之分
+  cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報，沒有一創二創之分
   hr:      [["team","團隊看板"],["attend","出勤"]],   // 人資：團隊看板（交辦狀況＋成效）＋出勤（打卡、遲到早退、月報表）
 };
+// 行銷／客服／出貨：畫面與權限比照「員工」
+ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 let VIEW_AS = null;   // 管理員「員工視角」：暫時以某員工身分檢視（唯讀預覽）
@@ -389,18 +404,15 @@ function bootLogin(){
     wrap.appendChild(who); wrap.appendChild(role); wrap.appendChild(go); wrap.appendChild(sw);
     g.appendChild(wrap); return;
   }
-  const all=staffSorted(((STATE?.users)||[]).filter(u=>["editor","manager","intl","cs","hr"].includes(u.role||"editor")));   // 一創→兩種→二創，英文名在後
+  const all=staffSorted(((STATE?.users)||[]).filter(u=>STAFF_ROLES.concat("manager").includes(u.role||"editor")));   // 一創→兩種→二創，英文名在後
   if(!all.length){ const n=document.createElement("p"); n.className="muted"; n.style.cssText="width:100%;text-align:center"; n.textContent="尚無成員，請按「管理員登入」進入後新增"; g.appendChild(n); return; }
   const mkBtn=(u)=>{ const b=document.createElement("button"); b.className="userBtn";
     b.innerHTML = esc(u.name); b.onclick=()=>loginAs(u); return b; };
   const section=(title, list)=>{ if(!list.length) return;
     const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
     list.forEach(u=>g.appendChild(mkBtn(u))); };
-  // 分區順序：Taiwan（剪輯）→ 員工 → 海外版 → 人資 → 管理層（Regina 放最下面，靠近「管理員登入」）
-  section("Taiwan", all.filter(u=>(u.role||"editor")==="editor"));
-  section("員工", all.filter(u=>u.role==="cs"));
-  section("海外版", all.filter(u=>u.role==="intl"));
-  section("人資", all.filter(u=>u.role==="hr"));
+  // 分區順序：台灣（剪輯行銷 → 其他）→ 巴基斯坦 → 管理層（Regina 放最下面，靠近「管理員登入」）
+  STAFF_GROUPS.forEach(([key,zh,en,roles])=> section(zh, all.filter(u=>roles.includes(u.role||"editor"))));
   section("管理層", all.filter(u=>u.role==="manager"));
 }
 // 上下班要用公司電腦打卡：一般員工不給手機登入（經理人／人資／管理員不受限，他們要能隨時處理事情）
@@ -1014,7 +1026,7 @@ function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改
 // 沒設定時沿用下面這兩組預設，行為跟以前一樣。
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
-const TPL_ROLES=[["all","全部"],["editor","剪輯"],["cs","員工"],["intl","海外剪輯"]];
+const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
 function dailyTemplates(){
   const s=(STATE&&STATE.settings&&STATE.settings.dailyTemplates);
   if(Array.isArray(s) && s.length) return s.filter(x=>x&&String(x.t||"").trim());
@@ -1070,8 +1082,8 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return; const na
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
   if(!txt){ toast("請輸入通知內容",true); return; }
-  const ALL={"__all__":["editor","intl","cs","hr"], "__editor__":["editor"], "__cs__":["cs"], "__intl__":["intl"], "__hr__":["hr"]};
-  const targets = ALL[who] ? staffNamesSorted(ALL[who]) : (who?[who]:[]);
+  const roles=noticeTargetRoles(who);
+  const targets = roles ? staffNamesSorted(roles) : (who?[who]:[]);
   if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
   try{
     for(const name of targets){
@@ -1496,18 +1508,24 @@ function workTasksCard(tasks){
 }
 // ===================================================================
 // 員工顯示順序（所有清單共用）：一次創作 → 兩種都做 → 二次創作／海外；同組內中文名在前、英文名在後
+// 職位在台灣區裡的先後：剪輯 → 行銷 →（其餘）客服 → 出貨 → 員工 → 人資
+const ROLE_ORDER={editor:0, mkt:1, svc:2, ship:3, cs:4, manager:5, hr:6};
+// 台灣（0）在前、巴基斯坦（1）在後
+const regionRank=(role)=> role==="intl" ? 1 : 0;
 function staffRank(u){
   const role = u.role||"editor";
-  // 一次創作 → 兩種都做 → 二次創作 → 員工（不剪片） → 海外（一律排最後）
-  const byCraft = role==="hr" ? 6 : (role==="intl" ? 5 : (role==="cs" ? 4
-    : (role==="editor" ? ((u.craft||"orig")==="orig" ? 0 : ((u.craft||"orig")==="both" ? 1 : 2)) : 3)));
-  const byName  = /^[A-Za-z]/.test(String(u.name||"")) ? 1 : 0;   // 英文名字排後面
-  return [byCraft, 0, byName];
+  const byRegion = regionRank(role);
+  const byRole   = ROLE_ORDER[role]!=null ? ROLE_ORDER[role] : 7;
+  // 剪輯內部再依分工：一次創作 → 兩種都做 → 二次創作
+  const byCraft  = role==="editor" ? ({orig:0, both:1, derived:2}[u.craft||"orig"] ?? 0) : 0;
+  const byName   = /^[A-Za-z]/.test(String(u.name||"")) ? 1 : 0;   // 英文名字排後面
+  return [byRegion, byRole, byCraft, byName];
 }
 function staffSorted(list){
   return (list||[]).slice().sort((a,b)=>{
     const ra=staffRank(a), rb=staffRank(b);
-    return (ra[0]-rb[0]) || (ra[1]-rb[1]) || (ra[2]-rb[2]) || String(a.name).localeCompare(String(b.name),"zh-Hant");
+    return (ra[0]-rb[0]) || (ra[1]-rb[1]) || (ra[2]-rb[2]) || (ra[3]-rb[3])
+        || String(a.name).localeCompare(String(b.name),"zh-Hant");
   });
 }
 // 下拉選單的分組：一次創作 / 二次創作 / 海外 / 其他角色（順序即顯示順序）
@@ -1519,8 +1537,11 @@ function staffOptGroups(roles){
     ["一次創作", u=>isEd(u) && (u.craft||"orig")==="orig"],
     ["二次創作", u=>isEd(u) && (u.craft||"orig")==="derived"],
     ["兩種都做", u=>isEd(u) && (u.craft||"orig")==="both"],
+    ["行銷",     u=>u.role==="mkt"],
+    ["客服",     u=>u.role==="svc"],
+    ["出貨",     u=>u.role==="ship"],
     ["員工",     u=>u.role==="cs"],
-    ["海外剪輯", u=>u.role==="intl"],
+    ["巴基斯坦", u=>u.role==="intl"],
     ["經理人",   u=>u.role==="manager"],
     ["人資",     u=>u.role==="hr"],
   ];
@@ -1531,17 +1552,28 @@ function staffOptGroups(roles){
     return ppl.length?`<optgroup label="${esc(label)}">${ppl.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`:'';
   }).join("");
 }
-// 分清單：剪輯 → 員工（不剪片） → 海外剪輯（海外一律排最後）
+// 分區塊：台灣先分兩排（做內容的／其餘），巴基斯坦自成一區排最後。
+// 每一區列出屬於它的職位，之後要調哪個職位歸哪一排，改這裡就好。
 const STAFF_GROUPS=[
-  ["editor", "剪輯",     "Editors"],
-  ["cs",     "員工",     "Staff"],
-  ["intl",   "海外剪輯", "Intl editors"],
-  ["hr",     "人資",     "HR"],           // 人資自己的出勤與工作也要被記錄（由管理員考核）
+  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt"]],
+  ["twrest", "台灣・其他",     "Taiwan · Others",              ["svc","ship","cs","hr"]],
+  ["pk",     "巴基斯坦",       "Pakistan",                     ["intl"]],
 ];
 function staffByGroup(list){
-  const pool = staffSorted(list || (STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
-  return STAFF_GROUPS.map(([role,zh,en])=>({role, zh, en, people:pool.filter(u=>(u.role||"editor")===role)}))
+  const pool = staffSorted(list || (STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+  return STAFF_GROUPS.map(([key,zh,en,roles])=>({role:key, key, zh, en, roles,
+      people:pool.filter(u=>roles.includes(u.role||"editor"))}))
     .filter(g=>g.people.length);
+}
+// HR 通知的收件對象代碼 → 職位清單。
+// 支援 __all__、每個區塊（__twmake__／__twrest__／__pk__）與每個職位（__editor__…）。
+// 認不出來的（例如直接選某個人的名字）回 null，由呼叫端當成單一收件人。
+function noticeTargetRoles(who){
+  if(who==="__all__") return STAFF_ROLES;
+  const g=STAFF_GROUPS.find(([key])=>("__"+key+"__")===who);
+  if(g) return g[3];
+  const m=/^__(.+)__$/.exec(String(who||""));
+  return (m && STAFF_ROLES.includes(m[1])) ? [m[1]] : null;
 }
 function staffNamesSorted(roles){
   const rs = roles || ["editor","intl"];
@@ -1589,7 +1621,7 @@ function viewWorkCS(me){
 }
 function viewWork(){
   const me = currentUser();
-  if(currentRole()==="cs") return viewWorkCS(me);
+  if(NO_EDIT_ROLES.includes(currentRole())) return viewWorkCS(me);   // 行銷／客服／出貨／員工：只有交辦工作那一版
   const inProg = myInProgressCount(); const atLimit = false;   // 已取消同時支數上限（2026-07）；只顯示支數
   // 全員畫面一致（只分中/英介面）：台灣毛片＋蝦皮/馬來/EN/TH 版本全部合併同一份清單，小圖（蝦/馬/EN/TH）分辨
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
@@ -1939,7 +1971,7 @@ function attEnsureMonth(ym){
     window.DB.loadShiftMonth(ym).catch(()=>{});
   }catch(e){}
 }
-function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor"))); }
+function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor"))); }
 // 某人某月的每日出勤
 function attRows(name, ym){
   return Object.values((STATE&&STATE.shifts)||{})
@@ -1965,7 +1997,7 @@ function shiftTag(name){
 function myAttendCard(){
   const me=currentUser();
   const u=((STATE&&STATE.users)||[]).find(x=>x.name===me);
-  if(!u || !["editor","intl","cs","hr"].includes(u.role||"")) return "";   // 管理員不打卡
+  if(!u || !STAFF_ROLES.includes(u.role||"")) return "";   // 管理員不打卡
   const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
   const w=workHoursOf(me), st=attendStartOf(me);
   const a=attendOf((STATE.shifts||{})[shiftId(me,today)]||null);
@@ -2203,7 +2235,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
     const name=u.name;
     const sh=(STATE.shifts||{})[shiftId(name,today)];
     const on=sh&&sh.clockIn, off=sh&&sh.clockOut;
-    const isCS=(u.role==="cs"||u.role==="hr");   // 不剪片的角色：不顯示影片數字
+    const isCS=NO_EDIT_ROLES.includes(u.role);   // 不剪片的角色：不顯示影片數字
     const dot=off?`<span class="pill" style="font-size:10px">已下班 ${String(sh.clockOut).slice(11,16)}</span>`
       : on?`<span class="pill ok" style="font-size:10px">上班中</span>`
       : `<span class="pill wa" style="font-size:10px">今天還沒上線</span>`;
@@ -2239,7 +2271,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
         <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>`}
     </div>`; }
 function viewFlow(){
-  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
+  const staff=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const g=scheduleGlance();
   const pool=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && v.stage==="待處理");
@@ -2253,7 +2285,7 @@ function viewFlow(){
 
   const runwayCard=flowRunwayCard(g, okRunway, pct);
 
-  const stockCard=flowStockCard(staff.filter(u=>!["cs","hr"].includes(u.role)), pool, unassigned, stockDays);   // 毛片只指派給剪輯
+  const stockCard=flowStockCard(staff.filter(u=>!NO_EDIT_ROLES.includes(u.role)), pool, unassigned, stockDays);   // 毛片只指派給剪輯
 
   const reviewQueueCard=flowReviewQueueCard();
 
@@ -2547,7 +2579,7 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 // 純檢視：沒有按鍵、沒有連結、不寫任何資料。人資只有這一頁。
 // ===================================================================
 function teamStaff(){
-  return staffSorted((STATE.users||[]).filter(u=>["editor","intl","cs","hr"].includes(u.role||"editor")));
+  return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
 }
 // 某人「今天」的成效：出勤、今日完成、進行中、交辦完成
 function teamDayStat(name, allTasks){
@@ -2601,7 +2633,7 @@ function teamDayCard(u, allTasks){
   const nDone=tasks.filter(t=>t.done).length;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="hr"?"HR":(u.role==="intl"?"Intl":"Editor")))}</span></b>
+      <b style="font-size:15px">${esc(name)} <span class="muted" style="font-size:11px;font-weight:400">${T(ROLE_LABEL[u.role||"editor"]||"", roleEn(u.role||"editor"))}</span></b>
       ${dashStatusPill(s)}</div>
     <div class="muted" style="font-size:12px;margin-top:2px">${T("上班","Shift")} ${att}</div>
     <div class="mstat">
@@ -2642,7 +2674,9 @@ function teamNoticeCompose(staff){
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
       <select id="hrn_who" style="width:auto;min-width:150px">
         <option value="__all__">全體同仁</option>
-        ${groups.map(g=>`<option value="__${esc(g.role)}__">全體${esc(g.zh)}（${g.people.length}）</option>`).join("")}
+        ${groups.map(g=>`<option value="__${esc(g.key)}__">全體${esc(g.zh)}（${g.people.length}）</option>`).join("")}
+        ${STAFF_ROLES.map(r=>{ const n=staff.filter(u=>(u.role||"editor")===r).length;
+            return n?`<option value="__${r}__">全體${esc(ROLE_LABEL[r])}（${n}）</option>`:""; }).join("")}
         ${groups.map(g=>`<optgroup label="${esc(g.zh)}">${g.people.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`).join("")}</select>
       <input id="hrn_txt" placeholder="要通知大家的事…" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')hrNotify()">
       <button class="btn sm" style="flex:none" onclick="hrNotify()">送出通知</button>
@@ -2650,7 +2684,7 @@ function teamNoticeCompose(staff){
     ${rows?`<div style="margin-top:12px"><b style="font-size:13px">我發出的通知</b>${rows}</div>`:''}
   </div>`;
 }
-const noEdit=(u)=>["cs","hr"].includes(u&&u.role);   // 不剪片的角色
+const noEdit=(u)=>NO_EDIT_ROLES.includes(u&&u.role);   // 不剪片的角色
 // ── 團隊看板的篩選（v85）：22 個人一次看太長，先縮到自己要看的那一群 ──
 // 只是換個看法，不會改到任何資料；看板上依然沒有任何會動到資料的按鍵。
 let TEAM_GROUP="all", TEAM_Q="";
@@ -2666,7 +2700,9 @@ function teamFilterBar(all, shown){
   const opt=(k,zh,en)=>`<option value="${k}" ${TEAM_GROUP===k?"selected":""}>${T(zh,en)}${paren(k==="all"?all.length:all.filter(u=>(u.role||"editor")===k).length)}</option>`;
   return `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 4px">
     <select style="width:auto" onchange="teamSetGroup(this.value)">
-      ${opt("all","全部","Everyone")}${opt("editor","剪輯","Editors")}${opt("cs","員工","Staff")}${opt("intl","海外剪輯","Intl")}${opt("hr","人資","HR")}</select>
+      ${opt("all","全部","Everyone")}${STAFF_ROLES
+        .filter(r=>all.some(u=>(u.role||"editor")===r) || TEAM_GROUP===r)   // 沒有人的職位不列出來（剛開的職位不佔位）
+        .map(r=>opt(r, ROLE_LABEL[r], ROLE_GROUP_EN[r])).join("")}</select>
     <input value="${esc(TEAM_Q)}" placeholder="${T("找人…","Find someone…")}" style="flex:1;min-width:110px"
       onchange="teamSetQ(this.value)" onkeydown="if(event.key==='Enter')teamSetQ(this.value)">
     ${(TEAM_GROUP!=="all"||TEAM_Q)?`<span class="muted" style="font-size:12px">${T("顯示 "+shown.length+" / "+all.length+" 人","Showing "+shown.length+" of "+all.length)}</span>`:""}
@@ -2688,7 +2724,7 @@ function viewTeam(){
   const dayTaskDone=dayStats.reduce((a,d)=>a+d.tasks.filter(t=>t.done).length,0);
   const monDone=months.reduce((a,x)=>a+x.m.count,0);
   const rows=months.map(({u,m})=>`<tr>
-    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", u.role==="cs"?"Staff":(u.role==="hr"?"HR":(u.role==="intl"?"Intl":"Editor")))}</span></td>
+    <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", roleEn(u.role||"editor"))}</span></td>
     <td data-label="${T("完成上架","Published")}">${noEdit(u)?"—":m.count}</td>
     <td data-label="${T("剪片速度","Days/clip")}">${noEdit(u)?"—":(m.avgDays!=null?m.avgDays.toFixed(1)+T(" 天"," d"):"—")}</td>
     <td data-label="${T("平均工時","Avg time")}">${noEdit(u)?"—":minLabel(m.avgMin)}</td>
@@ -4219,11 +4255,11 @@ function setChannelCards(s){
 // 設定：成員名單（角色、改名、重設密碼、刪除）
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>海外剪輯</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>員工</b>＝只做交辦工作與每日匯報，不碰影片、沒有一創二創之分；<b>人資</b>＝只看團隊看板，不能操作。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片、沒有一創二創之分；<b>人資</b>＝只看團隊看板，不能操作。</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>負責</th><th>上下班</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
-      <select id="mb_role" style="width:auto"><option value="editor">剪輯</option><option value="manager">經理人</option><option value="intl">海外剪輯</option><option value="cs">員工</option><option value="hr">人資</option></select>
+      <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
       <select id="mb_craft" style="width:auto" title="剪輯才需要分工">${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
   </div>`;
@@ -4282,18 +4318,15 @@ function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
-  const members=(STATE.users||[]).filter(u=>["editor","manager","intl","cs","hr"].includes(u.role||"editor"));
+  const members=(STATE.users||[]).filter(u=>STAFF_ROLES.concat("manager").includes(u.role||"editor"));
+  const ROLE_PICK=STAFF_ROLES.concat("manager");   // 可以指派的職位（管理員不在清單裡）
   const roleSel=(u)=>`<select onchange="setMemberRole('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
-      <option value="editor" ${(u.role||"editor")==="editor"?"selected":""}>剪輯</option>
-      <option value="manager" ${u.role==="manager"?"selected":""}>經理人</option>
-      <option value="intl" ${u.role==="intl"?"selected":""}>海外剪輯</option>
-      <option value="cs" ${u.role==="cs"?"selected":""}>員工</option>
-      <option value="hr" ${u.role==="hr"?"selected":""}>人資</option></select>`;
+      ${ROLE_PICK.map(r=>`<option value="${r}" ${(u.role||"editor")===r?"selected":""}>${esc(ROLE_LABEL[r])}</option>`).join("")}</select>`;
   // 剪輯才需要分工；管理員/經理人/人資固定看全部
   const craftSel=(u)=> ["editor","intl"].includes(u.role||"editor")
     ? `<select onchange="setMemberCraft('${esc(jsEsc(u.name))}',this.value)" style="width:auto;padding:4px 8px;font-size:13px">
         ${Object.entries(CRAFT_LABEL).map(([k,l])=>`<option value="${k}" ${craftOf(u.name)===k?"selected":""}>${l}</option>`).join("")}</select>`
-    : (u.role==="cs" ? '<span class="muted" style="font-size:12px">不剪片</span>'
+    : (NO_EDIT_ROLES.includes(u.role) ? '<span class="muted" style="font-size:12px">不剪片</span>'
                      : '<span class="muted" style="font-size:12px">全部</span>');
   const whSel=(u)=>{ const w=workHoursOf(u.name);
     const flexBox=`<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
@@ -4471,7 +4504,7 @@ function setMemberHours(name, start, end){
 function setMemberFlex(name, on){
   writeAdmin("PUT","/api/users/"+name,{flexHours:!!on},
     on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
-function setMemberRole(name, role){ if(!["editor","manager","intl","cs","hr"].includes(role)) return;
+function setMemberRole(name, role){ if(!STAFF_ROLES.concat("manager").includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
   writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
