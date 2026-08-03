@@ -22,13 +22,19 @@ eval(src);
 
 const T0 = new Date(Date.now()+288e5).toISOString().slice(0,10);
 STATE = {
-  users:[ {name:"Kai",role:"editor"}, {name:"Anna",role:"intl"}, {name:"Sara",role:"cs"} ],
+  users:[ {name:"Kai",role:"editor"}, {name:"Anna",role:"intl"}, {name:"Omar",role:"intl"}, {name:"Sara",role:"cs"} ],
   settings:{ dailyTarget:4, videoTags:["oldtag"], sources:["srcA"], postPlatforms:[{name:"IG",utm:"ig"}],
     intlAccounts:[{locale:"th",name:"acctTH"},{locale:"en",name:"acctEN"}],
     shopeeAccounts:["acctSHP"], msAccounts:["acctMS"], exchangeRates:{en:{code:"USD",rate:0.031,mult:1},th:{code:"THB",rate:1.1,mult:1},ms:{code:"MYR",rate:0.14,mult:1},shopee:{code:"TWD",rate:1,mult:1.2}} },
   schedule:{}, shifts:{ ["Kai__"+T0]:{id:"k",user:"Kai",date:T0,clockIn:T0+"T01:00:00",clockOut:""} },
   tasks:{ K1:{id:"K1",user:"Kai",date:T0,title:"taskA",report:"note",done:false,assignedBy:"Regina",ack:true,createdAt:T0},
-          K2:{id:"K2",user:"Sara",date:T0,title:"taskB",report:"",done:false,createdAt:T0} },
+          K2:{id:"K2",user:"Sara",date:T0,title:"taskB",report:"",done:false,createdAt:T0},
+          // 同事之間的訊息：三種狀態各一則，收件匣／發訊人／主管三張卡才都畫得出來被掃到
+          P1:{id:"P1",kind:"p2p",user:"Anna",from:"Omar",date:T0,title:"msgNew",ack:false,reply:"",fromSeen:false,createdAt:T0+"T01:00:00"},
+          P2:{id:"P2",kind:"p2p",user:"Anna",from:"Omar",date:T0,title:"msgOpened",ack:true,ackAt:T0,reply:"",fromSeen:false,createdAt:T0+"T02:00:00"},
+          P3:{id:"P3",kind:"p2p",user:"Omar",from:"Anna",date:T0,title:"msgSent",ack:true,ackAt:T0,reply:"replyText",replyAt:T0,fromSeen:false,createdAt:T0+"T03:00:00"},
+          P4:{id:"P4",kind:"p2p",user:"Omar",from:"Anna",date:T0,title:"msgWaiting",ack:false,reply:"",fromSeen:false,createdAt:T0+"T04:00:00"},
+          P5:{id:"P5",kind:"p2p",user:"Omar",from:"Anna",date:T0,title:"msgRead",ack:true,ackAt:T0,reply:"",fromSeen:false,createdAt:T0+"T05:00:00"} },
   logs:[], deletedVideos:[],
   videos:[
     {id:"S2",name:"SRC pub",rawName:"SRC pub",nameEn:"SRC pub EN",videoCopy:"copyZH",videoCopyEn:"copyEN",stage:"已上片",published:true,tags:["oldtag"],publishedLink:"http://x",driveFolder:"http://d",rawLink:"http://r",finishedAt:"2020-01-01T00:00:00Z",locale:"",channel:"",products:[{name:"prodA",price:"100",salePrice:"80"}],usageHistory:[],metrics:[]},

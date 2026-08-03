@@ -1442,6 +1442,131 @@ function myMsgFold(){
     </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`;
   return fold(T("找主管／人資說一件事","Message HR / manager"), unseen||null, body, false);
 }
+
+// ===================================================================
+// 同事之間傳訊息（v120）：kind:"p2p"，一次傳給一位同區同事。
+// 三步做完才算結束：① 收件人按「收到」 ② 收件人回覆 ③ 發訊人看完回覆按「收到」。
+// 任何一步沒做完，它就一直留在「該做那一步的人」畫面上 —— 完成才會消失。
+// 用 kind 分流是為了不混進交辦成效：isTask() 只認沒有 kind 的那些。
+// ===================================================================
+function isP2P(t){ return !!(t && t.kind==="p2p"); }
+function allP2P(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isP2P); }
+const p2pReplied=(m)=>!!String((m&&m.reply)||"").trim();
+// 我收到的：還沒按「收到」，或按了還沒回覆 → 留著
+function p2pInbox(){ return allP2P()
+  .filter(m=>m.user===currentUser() && (!m.ack || !p2pReplied(m))).sort(msgSort); }
+// 我發出的：對方還沒回，或回了我還沒按「收到」→ 留著
+function p2pSent(){ return allP2P()
+  .filter(m=>m.from===currentUser() && !m.fromSeen).sort(msgSort); }
+// 可以傳給誰：同區的同事。管理層走「找主管／人資說一件事」那條，不重複開一條路
+function p2pTargets(){
+  const mz=myZone();
+  return staffSorted((STATE.users||[]).filter(u=>{
+    if(!STAFF_ROLES.includes(u.role||"editor")) return false;
+    if(u.name===currentUser()) return false;
+    const z=zoneOfUser(u.name);
+    if(z==="both") return false;
+    return mz==="both" || z===mz;
+  }));
+}
+async function sendP2P(){ refreshToday();
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  const to=(val("p2p_to")||"").trim();
+  if(!to){ toast(T("請先選擇要傳給誰","Pick who to send it to"),true); return; }
+  const t=(val("p2p_txt")||"").trim();
+  if(!t){ toast(T("請先寫下你想說的事","Write your message first"),true); return; }
+  const id=uid("P");
+  try{ await window.DB.set("tasks", id, {id, kind:"p2p", user:to, from:currentUser(), date:today,
+        title:t, ack:false, ackAt:"", reply:"", replyAt:"", fromSeen:false, fromSeenAt:"", createdAt:nowIso()});
+    const i=document.getElementById("p2p_txt"); if(i) i.value="";
+    toast(T("已傳給「"+to+"」，等他按收到","Sent to "+to));
+    logA("傳訊息給同事", to+"："+t.slice(0,30));
+  }catch(e){ toast(T("送出失敗，請稍後再試","Failed to send, try again"),true); }
+}
+// ① 收件人按「收到」
+function p2pAck(id){ const m=taskById(id)||{};
+  dbUpdate("tasks", id, {ack:true, ackAt:nowIso()},
+    {action:"收到同事訊息", target:(m.from||"")+"："+String(m.title||"").slice(0,30)}); }
+// ② 收件人回覆
+function p2pReply(id){
+  const v=(val("p2pr_"+id)||"").trim();
+  if(v.length<2){ toast(T("請簡單回覆一下","Write a short reply"),true); return; }
+  const m=taskById(id)||{};
+  dbUpdate("tasks", id, {reply:v, replyAt:nowIso()},
+    {action:"回覆同事訊息", target:(m.from||"")+"："+v.slice(0,30)}); }
+// ③ 發訊人看完回覆按「收到」→ 這條結束，雙方畫面上收起來
+function p2pSeen(id){ const m=taskById(id)||{};
+  dbUpdate("tasks", id, {fromSeen:true, fromSeenAt:nowIso()},
+    {action:"看過同事回覆", target:(m.user||"")+"："+String(m.title||"").slice(0,30)}); }
+// ── 同事來訊（收件匣）：有訊息才出現，沒做完不會消失 ──
+function p2pInboxCard(){
+  const list=p2pInbox(); if(!list.length) return "";
+  const nNew=list.filter(m=>!m.ack).length;
+  const rows=list.map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
+      <div style="font-size:13.5px"><b>${esc(m.from||"")}</b>
+        <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}</span></div>
+      <div style="font-size:13.5px;margin-top:3px;white-space:pre-wrap">${esc(m.title||"")}</div>
+      ${!m.ack
+        ? `<div style="margin-top:6px"><button class="btn sm" onclick="p2pAck('${m.id}')">${T("收到","Got it")}</button>
+             <span class="muted" style="font-size:12px;margin-left:8px">${T("按了他才知道你看到了","They'll see that you've read it")}</span></div>`
+        : `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+             <span class="pill ok" style="font-size:10px;flex:none">${T("已收到","Got it")}</span>
+             <input id="p2pr_${m.id}" placeholder="${T("回覆他…","Reply…")}" style="flex:1;min-width:150px"
+               onkeydown="if(event.key==='Enter')p2pReply('${m.id}')">
+             <button class="btn sm" style="flex:none" onclick="p2pReply('${m.id}')">${T("回覆","Reply")}</button></div>`}
+    </div>`).join("");
+  return `<div class="card" style="border-color:var(--gold)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">📬 ${T("同事來訊","From a colleague")}</b>
+      <span class="pill ${nNew?'em':'wa'}">${nNew?T(nNew+" 則待接收", nNew+" to open"):T("待回覆","Reply needed")}</span></div>
+    ${rows}</div>`;
+}
+// ── 傳訊息給同事（折疊）：發訊＋看對方回覆 ──
+function p2pFold(){
+  const targets=p2pTargets();
+  const sent=p2pSent();
+  const nBack=sent.filter(p2pReplied).length;          // 對方回了、等我按收到
+  const rows=sent.map(m=>{
+    const answered=p2pReplied(m);
+    return `<div class="todo"><span class="tkind">${answered?"💬":(m.ack?"👀":"📨")}</span>
+      <div class="tmain"><div class="ttitle">${esc(m.title||"")}</div>
+        <div class="tsub">${T("給","To")} ${esc(m.user||"")}・${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}
+          ${answered
+            ? `<div style="margin-top:4px"><b>${esc(m.user||"")}</b> ${T("回覆","replied")}
+                 <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span>：${esc(m.reply)}</div>`
+            : `<div style="margin-top:4px" class="muted">${m.ack?T("他已經按收到，等他回覆…","Read — waiting for a reply…"):T("等他按收到…","Waiting for them to open it…")}</div>`}
+        </div></div>
+      <div class="tact">${answered
+        ? `<button class="btn sm" style="padding:4px 12px" onclick="p2pSeen('${m.id}')">${T("收到","Got it")}</button>`
+        : ''}</div></div>`;
+  }).join("");
+  const body = targets.length
+    ? `<div class="row" style="gap:6px;flex-wrap:wrap">
+        <select id="p2p_to" style="width:auto;min-width:120px"><option value="">${T("傳給誰…","To…")}</option>${targets.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
+        <input id="p2p_txt" placeholder="${T("想跟同事說的事…","Message a colleague…")}" style="flex:2;min-width:150px"
+          onkeydown="if(event.key==='Enter')sendP2P()">
+        <button class="btn sm" style="flex:none" onclick="sendP2P()">${T("送出","Send")}</button>
+      </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`
+    : `<p class="muted" style="font-size:13px;margin:0">${T("目前沒有可以傳訊息的同事。","No colleagues to message yet.")}</p>`;
+  return fold(T("傳訊息給同事","Message a colleague"), nBack||null, body, false);
+}
+// ── 同事之間的訊息（主管／管理員）：工作上的溝通要追蹤得到 ──
+function p2pWatchCard(){
+  if(!["boss","manager"].includes(currentRole())) return "";
+  const list=allP2P().sort(msgSort);
+  if(!list.length) return "";
+  const open=list.filter(m=>!p2pReplied(m));
+  const rows=list.slice(0,30).map(m=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="font-size:13.5px"><b>${esc(m.from||"")}</b> → <b>${esc(m.user||"")}</b>
+        <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}</span>
+        <span class="pill ${p2pReplied(m)?'ok':(m.ack?'wa':'em')}" style="font-size:10px;margin-left:5px">${
+          p2pReplied(m)?T("已回覆","Replied"):(m.ack?T("已收到","Opened"):T("未接收","Unopened"))}</span></div>
+      <div style="font-size:13px;margin-top:3px;white-space:pre-wrap">${esc(m.title||"")}</div>
+      ${p2pReplied(m)?`<div class="muted" style="font-size:12px;margin-top:3px">${T("回","Re")}：${esc(m.reply)}</div>`:''}
+    </div>`).join("");
+  return fold(T("同事之間的訊息","Messages between colleagues"), open.length||null,
+    `<div>${rows}${list.length>30?`<p class="muted" style="font-size:12px;margin:6px 0 0">${T("只顯示最近 30 則","Showing the latest 30")}</p>`:''}</div>`, false);
+}
 // ── 同仁來訊（人資／主管）：沒有訊息就整張卡都不出現 ──
 function msgInboxCard(){
   const list=msgsForMe(); if(!list.length) return "";
@@ -1611,9 +1736,11 @@ function viewWorkCS(me){
     <div><span class="fn ${nNoReport?'warn':''}">${nNoReport}</span><span class="fl">未回報</span></div>
   </div>
   ${workIssueCard()}
+  ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
   ${fold("之後要做", nFuture, futureTasksBody())}
   ${myMsgFold()}
+  ${p2pFold()}
   <div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
@@ -1676,12 +1803,14 @@ function viewWork(){
   <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
   ${focusBar}
   ${workIssueCard()}
+  ${p2pInboxCard()}
   ${rejCard}
 
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
   ${myMsgFold()}
+  ${p2pFold()}
   ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
@@ -2747,6 +2876,7 @@ function viewTeam(){
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `<h2>${T("團隊看板","Team Board")}</h2>
   ${currentRole()==="hr"?msgInboxCard():''}
+  ${p2pWatchCard()}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
   ${currentRole()==="hr"?myMsgFold():''}
   ${teamFilterBar(everyone, staff)}
