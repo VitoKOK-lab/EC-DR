@@ -3394,6 +3394,57 @@ function zoneSwitchHTML(){
       `<span>${T(ZONE_LABEL[z][0],ZONE_LABEL[z][1])}</span> <span class="vtab-n">${n(z)}</span></button>`).join("")+
     `</div>`;
 }
+// ── 原本語言可能設錯（主管／管理員）──────────────────────────────────
+// 分區靠「原本語言」判斷源片，但這個欄位埋在編輯視窗的「進階」裡、預設收起來，
+// 舊資料幾乎都沒設 → 泰文／英文拍的原創會一直留在台灣區。
+// 這張卡把「標題看起來不是中文、欄位卻還是中文」的挑出來，一次設定。
+// 只給建議、不自動改 —— 猜錯會把片弄到看不見的區去，一定要人確認過才寫。
+function guessOrigLang(v){
+  const t=String((v&&(v.name||v.rawName))||"");
+  if(/[฀-๿]/.test(t)) return "th";                                    // 泰文字母很好認
+  if(/[A-Za-z]/.test(t) && !/[㐀-鿿぀-ヿ]/.test(t)) return "en"; // 有拉丁字母、完全沒有中日韓字
+  return "";
+}
+function origLangSuspects(){
+  return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)==="" && guessOrigLang(v)!=="")
+    .sort((a,b)=>String(a.code||a.id).localeCompare(String(b.code||b.id)));
+}
+function origLangFixCard(){
+  if(!["boss","manager"].includes(currentRole())) return "";
+  const list=origLangSuspects(); if(!list.length) return "";
+  const rows=list.map(v=>`<div class="row" style="gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);flex-wrap:nowrap">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span>
+      <select id="olf_${v.id}" style="width:auto;flex:none;font-size:13px;padding:5px 7px">
+        ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${guessOrigLang(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}
+      </select></div>`).join("");
+  return `<div class="card" style="border-color:var(--gold)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🌐 ${T("原本語言可能要調整","Check the original language")}</b>
+      <span class="pill em">${list.length}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.7">${T(
+      "這幾支的標題看起來不是中文，但「原本語言」還是中文，所以它們留在台灣區、台灣剪輯看得到。<br>下拉已經先幫你選好建議的語言，確認後按儲存 —— 設成泰文或英文的會移到海外區。",
+      "These look non-Chinese by title but are still marked Chinese, so they stay in the Taiwan area.<br>The dropdown is pre-filled with a guess — confirm and save; Thai/English ones move to the overseas area.")}</div>
+    <div style="margin-top:8px${list.length>8?';max-height:320px;overflow-y:auto':''}">${rows}</div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn sm" onclick="saveOrigLangFixes()">${T("儲存","Save")}</button>
+      <span class="muted" style="font-size:12px">${T("維持「中文」的那幾支不會被動到","Rows left on Chinese are not touched")}</span></div>
+  </div>`;
+}
+async function saveOrigLangFixes(){
+  if(dbBlocked()) return;
+  const list=origLangSuspects();
+  const changes=list.map(v=>({v, to:val("olf_"+v.id)||""})).filter(x=>x.to && x.to!==origLangOf(x.v));
+  if(!changes.length){ toast(T("沒有要調整的（都還是中文）","Nothing to change"),true); return; }
+  if(!confirm(T("要調整 "+changes.length+" 支影片的原本語言嗎？\n設成泰文或英文的會移到海外區。",
+               "Update the original language of "+changes.length+" videos?"))) return;
+  BULK_BUSY=true; let n=0;
+  try{ for(const c of changes){
+        try{ await window.DB.update("videos", c.v.id, {origLang:c.to, updatedAt:nowIso()}); n++; }catch(e){}
+      } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("調整原本語言 "+n+" 支", changes.map(c=>vidTitle(c.v)).join("、").slice(0,120));
+  await delay(300); toast(T("已調整 "+n+" 支","Updated "+n));
+}
 function viewVideosTW(){
   const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
   const langCount={}; allSrc.forEach(v=>{ const l=effOrigLang(v); langCount[l]=(langCount[l]||0)+1; });
@@ -3406,6 +3457,7 @@ function viewVideosTW(){
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
   return `<h2>${T("影片庫","Library")}</h2>
+  ${origLangFixCard()}
   <div class="card">
     ${zoneSwitchHTML()}
     ${langSel}

@@ -188,6 +188,64 @@ for(const [u,r] of [["小葵","editor"],["郁莚","editor"],["小美","cs"],["An
   }
 }
 
+// ══════════ ⑨ 「原本語言可能要調整」清單（v120）══════════
+// 分區靠「原本語言」判斷源片，但那個欄位埋在編輯視窗的「進階」裡、預設收起來，
+// 舊資料幾乎都沒設 —— 這張卡把可疑的挑出來讓主管一次設定。
+function langFixture(){
+  reset();
+  const v_=(id,name,o)=>Object.assign({id,code:"26"+id,name,rawName:name,videoCopy:"",rawLink:"http://raw",
+    stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:null,publishedLink:"",driveFolder:"",
+    locale:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
+  STATE.videos=[
+    v_("TH1","หินธรรมชาติจากคัดลัง ราคา 5,000"),                      // 泰文字 → 建議泰文
+    v_("EN1","Growing Up Taiwanese and Pakistani | Meet Tahir"),      // 純英文 → 建議英文
+    v_("ZH1","05. 男生戴珠寶不娘？中東男人的寶石有多霸氣"),              // 中文 → 不列
+    v_("NUM","2609041"),                                              // 只有數字 → 不列（猜不出來就別亂猜）
+    v_("SET","Already Thai",{origLang:"th"}),                          // 已經設好了 → 不列
+    v_("SHP","Shopee shell",{channel:"shopee",sourceVideoId:"ZH1"}),   // 版本殼 → 不列（只看源片）
+  ];
+}
+langFixture(); as("Regina","manager");
+{ const ids=origLangSuspects().map(v=>v.id).sort().join(",");
+  ok("挑出泰文與英文標題的源片", ids==="EN1,TH1");
+  ok("中文標題不列", !ids.includes("ZH1"));
+  ok("只有數字的不亂猜", !ids.includes("NUM"));
+  ok("已經設好的不列", !ids.includes("SET"));
+  ok("版本殼不列（只看源片）", !ids.includes("SHP"));
+  ok("泰文標題建議泰文", guessOrigLang(vid("TH1"))==="th");
+  ok("英文標題建議英文", guessOrigLang(vid("EN1"))==="en");
+  ok("中文標題不建議", guessOrigLang(vid("ZH1"))===""); }
+{ const c=origLangFixCard();
+  ok("卡片列出兩支", c.includes("หินธรรมชาติ") && c.includes("Growing Up Taiwanese"));
+  ok("每支有自己的下拉", c.includes('id="olf_TH1"') && c.includes('id="olf_EN1"'));
+  ok("下拉預選建議的語言", /id="olf_TH1"[\s\S]*?value="th" selected/.test(c));
+  ok("有儲存鍵", c.includes("saveOrigLangFixes()"));
+  ok("影片庫上看得到這張卡", (ZONE_VIEW="tw", viewVideos().includes("原本語言可能要調整"))); }
+for(const [u,r,should] of [["Regina","manager",true],["管理員","boss",true],
+                           ["小葵","editor",false],["HR小姐","hr",false]]){
+  as(u,r);
+  ok(`${r} ${should?"看得到":"看不到"}這張卡`, (origLangFixCard()!=="")===should);
+}
+// 儲存：只寫真的有改的，中文那些不動
+langFixture(); as("Regina","manager");
+fields={olf_TH1:"th", olf_EN1:""};        // 第二支被人改回中文 → 不該寫
+await saveOrigLangFixes(); await wait();
+{ const w=writes.filter(x=>x[0]==="update");
+  ok("只寫有改的那一支", w.length===1 && w[0][1]==="videos" && w[0][2]==="TH1" && w[0][3].origLang==="th");
+  ok("改回中文的那支沒被寫", !w.some(x=>x[2]==="EN1"));
+  ok("順手更新 updatedAt", !!w[0][3].updatedAt); }
+langFixture(); as("Regina","manager");
+fields={olf_TH1:"", olf_EN1:""};
+await saveOrigLangFixes(); await wait();
+ok("全部維持中文就不寫任何東西", writes.length===0 && toasts.some(t=>t.includes("沒有要調整")));
+// 設好之後就真的換區了
+langFixture(); as("Regina","manager");
+vid("TH1").origLang="th";
+ok("設成泰文之後歸海外", zoneOfVideo(vid("TH1"))==="intl");
+ok("設好的那支就從清單消失", !origLangSuspects().map(v=>v.id).includes("TH1"));
+as("小葵","editor");
+ok("台灣剪輯的池裡也沒有它了", !poolAll().map(v=>v.id).includes("TH1"));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
 })();
