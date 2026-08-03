@@ -99,7 +99,8 @@ as("管理員","boss");
   ok("四個分頁都在", ["未拍","待剪","剪完","舊片"].every(x=>h.includes("<span>"+x+"</span>"))); }
 reset([v_("A")]); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外看到的是英文", h.includes("<span>Not shot</span>"));
+  // v115 分區：海外的影片庫是來源清單，沒有台灣的四個管線分頁
+  ok("海外看到的是英文", h.includes("Library") && h.includes("Pick a published Taiwan video"));
   ok("海外沒有中文洩漏", !h.includes("未拍")); }
 
 // ══════════ ③ 搜尋時分段數字要跟著動 ══════════

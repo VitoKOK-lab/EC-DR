@@ -111,8 +111,9 @@ reset([v_("7122",{name:"翡翠開箱",rawLink:"http://d"})]); as("小葵","edito
 ok("待認領清單維持原樣（沒被順手改掉）", viewWork().includes("2607122 翡翠開箱"));
 
 // ══ 海外剪輯 ══
+// v115 分區：海外的影片庫是來源清單，沒有這個表格 —— 改驗它確實換成來源清單
 reset([v_("7122",{name:"翡翠開箱"})]); as("Anna","intl");
-ok("海外的編號提示是英文", cell(viewVideos()).includes('title="Video code"'));
+ok("海外的影片庫換成來源清單", viewVideos().includes("Pick a published Taiwan video"));
 reset([v_("A",{name:"",rawName:""})]); as("Anna","intl");
 ok("海外看到的未命名是英文", vidName(v_("A",{name:"",rawName:""}))==="(untitled)");
 

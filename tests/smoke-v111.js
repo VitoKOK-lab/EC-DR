@@ -70,7 +70,8 @@ reset(LIB); as("管理員","boss");
   ok("只剩四顆分頁", ["未拍","待剪","剪完","舊片"].every(x=>h.includes("<span>"+x+"</span>")));
   ok("矩陣式的七顆不見了",
      !h.includes("未拍・未排程") && !h.includes("待剪・已排程") && !h.includes("剪完・未排程"));
-  ok("分頁鈕正好四顆", (h.match(/class="vtab /g)||[]).length===4);
+  // v115 分區：boss 另有台灣／海外的區切換鈕，所以只數 #vid_tabs 裡面那一排
+  ok("分頁鈕正好四顆", ((h.split('id="vid_tabs"')[1]||"").split("</div>")[0].match(/class="vtab /g)||[]).length===4);
   ok("四顆的數字加起來＝全部", ["未拍","待剪","剪完","舊片"].reduce((a,x)=>a+tabN(h,x),0)===LIB.length); }
 
 // 內部七段沒有被拆掉（生命週期判定仍然完整）
@@ -114,8 +115,9 @@ reset(LIB); as("管理員","boss");
 // 海外看到英文
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外四顆分頁英文", ["Not shot","To edit","Done","Old"].every(x=>h.includes("<span>"+x+"</span>")));
-  ok("海外開關也是英文", h.includes("Unscheduled only"));
+  // v115 分區：四顆分頁是台灣的拍片管線，海外改看單純的來源清單
+  ok("海外沒有台灣的四顆分頁", !["Not shot","To edit","Done","Old"].some(x=>h.includes("<span>"+x+"</span>")));
+  ok("海外的來源清單也是英文", h.includes("Pick a published Taiwan video") && h.includes("All languages"));
   ok("海外沒有中文洩漏", !h.includes("未拍") && !h.includes("待剪") && !h.includes("只看還沒排")); }
 
 // ══════════ ③ 編輯表單：每次要看的留在上面 ══════════

@@ -57,8 +57,9 @@ for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","e
 // --- 影片庫語言選單＋過濾 ---
 localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss");
 VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set();
-let h=viewVideos();
-ok("語言選單存在且有計數", h.includes("原本語言") && h.includes("中文（2）") && h.includes("泰文（1）") && h.includes("英文（1）") && h.includes("馬來西亞（1）"));
+ZONE_VIEW="tw"; let h=viewVideos();
+// v115 分區：台灣庫把蝦皮／馬來版併進來，版本殼的語言跟著源片算 → 中文從 2 變 3
+ok("語言選單存在且有計數", h.includes("原本語言") && h.includes("中文（3）") && h.includes("泰文（1）") && h.includes("英文（1）") && h.includes("馬來西亞（1）"));
 ok("中文庫只列中文原本（含舊資料無欄位者）", h.includes("舊欄位無 origLang") && !h.includes("Thai original clip"));
 VID_LANG="th"; h=viewVideos();
 ok("切到泰文庫只列泰文原本", h.includes("Thai original clip") && !h.includes("舊欄位無 origLang"));

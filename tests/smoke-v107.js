@@ -84,10 +84,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   // ══ ③ 排序：台灣（剪輯→行銷→客服→出貨→員工→人資）→ 巴基斯坦 ══
   reset();
   { const names=staffSorted(STATE.users.filter(u=>STAFF_ROLES.includes(u.role))).map(u=>u.name);
+    // v115：一創／二創分工已移除，剪輯內部只依名字排（中文名在前）
     ok("整體順序正確", JSON.stringify(names)===JSON.stringify(
-      ["小葵","郁莚","阿明","小華","阿華","阿豪","茂泉","小美","HR小姐","Asmeer"]));
+      ["小華","小葵","阿明","郁莚","阿華","阿豪","茂泉","小美","HR小姐","Asmeer"]));
     ok("剪輯排最前面", names.slice(0,4).every(n=>["小葵","郁莚","阿明","小華"].includes(n)));
-    ok("剪輯內部照一創→兩種→二創", names.indexOf("小葵")<names.indexOf("阿明") && names.indexOf("阿明")<names.indexOf("小華"));
     ok("行銷緊接在剪輯後面", names[4]==="阿華");
     ok("巴基斯坦排最後", names[names.length-1]==="Asmeer"); }
 
@@ -189,7 +189,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     const groups=rows.filter(x=>String(x).startsWith("#")).map(x=>x.slice(1));
     ok("登入頁分區順序", JSON.stringify(groups)===JSON.stringify(["台灣・剪輯行銷","台灣・其他","巴基斯坦","管理層"]));
     const first=rows.slice(rows.indexOf("#台灣・剪輯行銷")+1, rows.indexOf("#台灣・其他"));
-    ok("登入頁第一排＝剪輯後面接行銷", JSON.stringify(first)===JSON.stringify(["小葵","郁莚","阿明","小華","阿華"]));
+    ok("登入頁第一排＝剪輯後面接行銷", JSON.stringify(first)===JSON.stringify(["小華","小葵","阿明","郁莚","阿華"]));
     LOGIN_ALL=false; }
 
   // ══ ⑪ 每日固定工作範本認得新職位 ══

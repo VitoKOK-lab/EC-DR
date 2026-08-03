@@ -56,10 +56,13 @@ localStorage.setItem("ecdr_user","Anna");
   ok("EN version created with English draft name (hashtags stripped)", JSON.stringify(calls).includes("Gold dropped 12% in a week") && !JSON.stringify(calls).includes("#gold"));
 
   calls=[];
+  vid("S1").driveFolder="http://drive/S1";
   createLocalVersion("S1","th","tiktok-TH-2");
   await new Promise(r=>setTimeout(r,250));
   const thRec=calls.map(c=>c[2]).find(o=>o&&o.locale==="th");
-  ok("TH version keeps empty name (translate via 文A)", thRec && thRec.name==="");
+  // v115：建立版本一律帶語言後綴（海外的底稿用源片英文名，剪輯再用 文A 翻成泰文）
+  ok("TH version gets a Thai-version suffix", thRec && thRec.name==="Gold dropped 12% in a week (Thai version)");
+  ok("TH version inherits the source folder", thRec && thRec.driveFolder===vid("S1").driveFolder);
 
   // 3) modal 預填：已存在但沒名字的英文版，Title 預填英文名
   localStorage.setItem("ecdr_user","Anna");

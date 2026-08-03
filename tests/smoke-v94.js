@@ -111,9 +111,13 @@ ok("在設定填了翻譯之後就一個中文都不剩",
    cjk(modalHTML).length===0 || !!console.log("   殘留：",cjk(modalHTML).join(" ")));
 
 // ══ 標籤在畫面上真的變英文了 ══
+// v115 分區：海外的影片庫是來源清單，沒有標籤鈕 —— 標籤英譯改在台灣庫上驗
+reset(); as("管理員","boss"); ZONE_VIEW="tw";
+{ const h=viewVideos();
+  ok("台灣庫的標籤鈕用中文原名", h.includes(">寵粉")); }
 reset(); as("Anna","intl");
 { const h=viewVideos();
-  ok("影片庫的標籤鈕是英文", h.includes("Fan perks") && !h.includes(">寵粉")); }
+  ok("海外的影片庫是來源清單（英文）", h.includes("Pick a published Taiwan video")); }
 reset(); as("Anna","intl");
 modalHTML=""; openVideoModal("S1", false);
 { const m=modalHTML;
@@ -131,7 +135,7 @@ modalHTML=""; openVideoModal("S1", true);
 { const m=modalHTML;
   ok("標籤 chip 的 value 還是中文原值", m.includes('value="寵粉"'));
   ok("片源下拉的 value 還是中文原值", m.includes('value="官方IP"')); }
-reset(); as("Anna","intl");
+reset(); as("管理員","boss"); ZONE_VIEW="tw";
 { const h=viewVideos();
   ok("標籤鈕點下去傳的是中文原值", h.includes("vidTagToggle('寵粉'")); }
 

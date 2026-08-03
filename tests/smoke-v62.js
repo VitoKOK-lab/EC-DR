@@ -46,9 +46,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 reset();
 // ── 排序規則本身 ──
 const sorted=staffNamesSorted(["editor","intl"]);
-ok("順序：一創中文 → 兩種都做 → 二創 → 海外英文",
-   JSON.stringify(sorted)===JSON.stringify(["小葵","Edward","阿明","小華","Asmeer","Pakistan Team"]));
-ok("一創排最前面", sorted[0]==="小葵" && sorted[1]==="Edward");
+// v115：一創／二創分工已移除，剪輯內部只剩「中文名在前、英文名在後」再依名字排
+ok("順序：台灣剪輯（中文名先）→ 英文名 → 巴基斯坦",
+   JSON.stringify(sorted)===JSON.stringify(["小華","小葵","阿明","Edward","Asmeer","Pakistan Team"]));
+ok("台灣剪輯排在巴基斯坦前面", sorted.indexOf("阿明")<sorted.indexOf("Asmeer"));
 ok("同組內中文名在英文名前面", sorted.indexOf("小葵")<sorted.indexOf("Edward"));
 ok("海外排最後", sorted.slice(-2).every(n=>["Asmeer","Pakistan Team"].includes(n)));
 
@@ -64,24 +65,25 @@ ok("海外排最後", sorted.slice(-2).every(n=>["Asmeer","Pakistan Team"].inclu
   ok("登入頁分區：台灣兩排 → 巴基斯坦 → 管理層",
      JSON.stringify(groups)===JSON.stringify(["台灣・剪輯行銷","台灣・其他","巴基斯坦","管理層"]));
   const tw=order.slice(order.indexOf("#台灣・剪輯行銷")+1, order.indexOf("#台灣・其他"));
-  ok("登入頁台灣剪輯區照分工排序", JSON.stringify(tw)===JSON.stringify(["小葵","Edward","阿明","小華"])); }
+  ok("登入頁台灣剪輯區照排序", JSON.stringify(tw)===JSON.stringify(["小華","小葵","阿明","Edward"])); }
 
 // ── 流程中控（Regina）──
 reset(); as("Regina","manager");
 let h=viewFlow();
-ok("流程中控員工卡照順序", ascending(order(h,["小葵","Edward","阿明","小華","Asmeer","Pakistan Team"])));
+ok("流程中控員工卡照順序", ascending(order(h,["小華","小葵","阿明","Edward","Asmeer","Pakistan Team"])));
 
 // ── 儀表板的下拉 ──
 reset(); as("管理員","boss");
 let d=viewDashboard();
-ok("指派交辦下拉照順序分組", d.includes('label="一次創作"') && d.includes('label="二次創作"') && d.includes('label="巴基斯坦"'));
+ok("指派交辦下拉照職位分組", d.includes('label="剪輯"') && d.includes('label="巴基斯坦"'));
+ok("一創／二創分組已移除", !d.includes('label="一次創作"') && !d.includes('label="二次創作"'));
 { const seg=d.split('id="asg_who"')[1].split("</select>")[0];
-  ok("交辦下拉：一創在二創之前", seg.indexOf("一次創作")<seg.indexOf("二次創作"));
-  ok("交辦下拉：巴基斯坦在最後", seg.indexOf("巴基斯坦")>seg.indexOf("二次創作")); }
+  ok("交辦下拉：剪輯在巴基斯坦之前", seg.indexOf("剪輯")<seg.indexOf("巴基斯坦")); }
 { const seg=d.split('id="va_who"')[1].split("</select>")[0];
-  ok("員工視角下拉有人資分組（不會誤歸一創）", seg.includes('label="人資"') && seg.split('label="一次創作"')[1].split("</optgroup>")[0].indexOf("HR小姐")<0); }
+  ok("員工視角下拉有人資分組（不會被誤歸剪輯）",
+     seg.includes('label="人資"') && seg.split('label="剪輯"')[1].split("</optgroup>")[0].indexOf("HR小姐")<0); }
 { const seg=d.split('id="afp_who"')[1].split("</select>")[0];
-  ok("指派毛片下拉照順序", ascending(order(seg,["小葵","Edward","阿明","小華"]))); }
+  ok("指派毛片下拉照順序", ascending(order(seg,["小華","小葵","阿明","Edward"]))); }
 
 // ── 人資：看得到交辦，但不能操作 ──
 reset(); as("HR小姐","hr");
@@ -90,7 +92,7 @@ ok("HR 看得到交辦與回報", h.includes("交辦完成") && h.includes("回�
 ok("HR 沒有交辦輸入框", !h.includes("flowAssign("));
 ok("HR 沒有審核按鈕", !h.includes("reviewVid("));
 ok("HR 沒有轉移/刪除交辦的操作", !h.includes("transferTask(") && !h.includes("delTask("));
-ok("HR 的員工卡也照排序", ascending(order(h.split("今日成效")[1],["小葵","Edward","阿明","小華","Asmeer","Pakistan Team"])));
+ok("HR 的員工卡也照排序", ascending(order(h.split("今日成效")[1],["小華","小葵","阿明","Edward","Asmeer","Pakistan Team"])));
 
 // ── Regina 仍然可以交辦 ──
 reset(); as("Regina","manager");

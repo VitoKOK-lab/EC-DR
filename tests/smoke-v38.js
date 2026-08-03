@@ -42,11 +42,12 @@ ok("intl 新增影片 modal English", modalHTML.includes("Add video") && modalHT
 batchNewFootage();
 ok("intl 批次新增 modal English", modalHTML.includes("Add raw footage") && modalHTML.includes("Clip 1") && modalHTML.includes("shared by all 5") && !modalHTML.includes("第 1 支") && !modalHTML.includes("原本語言"));
 ok("intl language options say Malaysia", modalHTML.includes(">Malaysia<"));
+// v115 分區：海外點源片只跳出唯讀的來源簡介，不再進台灣的編輯視窗
 openVideoModal("S1", true);
-ok("intl 編輯視窗 English (labels+footer)", modalHTML.includes("Raw title") && modalHTML.includes("Save") && modalHTML.includes("Tags (multi-select)") && !modalHTML.includes("原始片名") && !modalHTML.includes("儲存修改"));
-ok("intl 剪輯看不到階段下拉（只能用完成鍵）", !modalHTML.includes('<select id="e_stage"') && modalHTML.includes('id="e_stage"'));
-openVideoModal("S1", false);
-ok("intl 檢視視窗 English rows", modalHTML.includes("Video details") && modalHTML.includes("Post caption") && !modalHTML.includes("影片內容"));
+ok("intl 點源片＝唯讀來源卡（英文）", modalHTML.includes("Source · Taiwan") && modalHTML.includes("Video details"));
+ok("intl 看不到台灣的編輯欄位", !modalHTML.includes('id="e_stage"') && !modalHTML.includes('id="e_date"') && !modalHTML.includes('id="e_raw"'));
+ok("intl 看不到刪除鍵", !modalHTML.includes("delVideo("));
+ok("intl 來源卡沒有中文洩漏", !modalHTML.includes("影片內容") && !modalHTML.includes("來源・台灣"));
 let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDay(T0); toast=oldToast;
 ok("intl 點日視窗 English", toastMsg.includes("只有") || toastMsg.includes("Only"));
 
@@ -69,10 +70,13 @@ ok("月排程選單用 馬來西亞", h.includes(">馬來西亞<"));
 WORK_ZONE="shopee"; h=viewWork();
 ok("建立二創版本選單用 馬來西亞", h.includes(">馬來西亞<"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-h=viewVideos(); const a=h.includes("Malaysia (");
-CAL_PLAT="tw"; h=viewCal(); const b=h.includes(">Malaysia<");
-WORK_ZONE="shopee"; h=viewWork(); const c=h.includes(">Malaysia<");
-ok("intl 三處都用 Malaysia（一致）", a && b && c);
+// v115 分區：馬來西亞歸台灣，海外的影片庫是來源清單，整頁都不該出現這個字
+h=viewVideos();
+ok("intl 影片庫沒有馬來西亞（歸台灣）", !h.includes("Malaysia"));
+CAL_PLAT="tw"; h=viewCal();
+ok("intl 月排程沒有馬來西亞（歸台灣）", !h.includes(">Malaysia<"));
+WORK_ZONE="en"; h=viewWork();
+ok("intl 建立版本沒有馬來西亞", !h.includes(">Malaysia<"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

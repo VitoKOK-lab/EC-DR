@@ -63,8 +63,10 @@ for (const [line, call, field] of [
   reset(); hookDB(); call();
   const rec=(calls.find(c=>c[0]==="set"&&c[1]==="videos")||[])[3];
   ok(`建立 ${line} 版本：寫入 ${field}=${line}`, !!rec && rec[field]===line && rec.sourceVideoId==="S1" && rec.stage==="待處理" && rec.assignedTo==="小葵");
-  if(line==="en") ok("英文版帶入英文片名草稿", rec && rec.name==="Source EN");
-  if(line==="th") ok("泰文版標題留白（自行翻譯）", rec && rec.name==="");
+  // v115：四條線都自動帶語言後綴＋源片的存檔資料夾
+  if(line==="en") ok("英文版帶入英文片名草稿＋後綴", rec && rec.name==="Source EN (English version)");
+  if(line==="th") ok("泰文版也帶英文底稿＋後綴", rec && rec.name==="Source EN (Thai version)");
+  ok(`建立 ${line} 版本：帶入源片的存檔資料夾`, rec && rec.driveFolder===vid("S1").driveFolder);
   if(line==="shopee") ok("建立時複製源片商品與連結", rec && rec.products.length===1 && rec.productUrl==="http://u");
 }
 // 重複帳號擋下

@@ -41,10 +41,12 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 WORK_ZONE="shopee";
 let h=viewWork();
-ok("editor 池合併全部線", h.includes("黃金原本") && h.includes("蝦皮版標題") && h.includes("馬來版標題") && h.includes("EN version title") && h.includes("TH version title"));
-ok("editor 蝦/馬/海外殼有退回鍵", h.includes(`chDiscard('shopee','P1')`) && h.includes(`chDiscard('ms','M1')`) && h.includes(`intlDiscard('E1')`) && h.includes(`intlDiscard('T1')`));
+// v115 分區：台灣的池只有中文毛片＋蝦皮＋馬來，英文／泰文歸海外
+ok("台灣池＝中文＋蝦皮＋馬來", h.includes("黃金原本") && h.includes("蝦皮版標題") && h.includes("馬來版標題"));
+ok("台灣池看不到英文／泰文", !h.includes("EN version title") && !h.includes("TH version title"));
+ok("台灣的蝦/馬殼有退回鍵", h.includes(`chDiscard('shopee','P1')`) && h.includes(`chDiscard('ms','M1')`));
 ok("editor 原本毛片沒有退回鍵", !h.includes(`intlDiscard('S1')`) && !h.includes(`chDiscard('shopee','S1')`));
-ok("editor 二創區選單＝四區合一", h.includes(">蝦皮<") && h.includes(">馬來西亞<") && h.includes(">英文 TikTok<") && h.includes(">泰文 TikTok<"));
+ok("台灣的建立版本只有蝦皮／馬來", h.includes(">蝦皮<") && h.includes(">馬來西亞<") && !h.includes(">英文 TikTok<") && !h.includes(">泰文 TikTok<"));
 ok("editor 池顯示建立者", h.includes("由 Regina 建立"));
 ok("editor 不顯示英文小字", !h.includes("vt-en"));
 // editor 手上已認領的海外殼仍看得到（安全網：不會消失）
@@ -57,9 +59,10 @@ STATE.videos = STATE.videos.filter(v=>v.id!=="E9");
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 WORK_ZONE="shopee";
 h=viewWork();
-ok("intl 池同樣合併全部線", h.includes("EN version title") && h.includes("TH version title") && h.includes("黃金原本") && h.includes("蝦皮版標題") && h.includes("馬來版標題"));
-ok("intl 殼有退回鍵", h.includes(`intlDiscard('E1')`) && h.includes(`chDiscard('shopee','P1')`));
-ok("intl 二創區選單＝四區英文標籤", h.includes(">Shopee<") && h.includes(">Malaysia<") && h.includes("English (TikTok)") && h.includes("Thai (TikTok)"));
+ok("海外池＝英文＋泰文", h.includes("EN version title") && h.includes("TH version title"));
+ok("海外池看不到中文毛片／蝦皮／馬來", !h.includes("黃金原本") && !h.includes("蝦皮版標題") && !h.includes("馬來版標題"));
+ok("海外的殼有退回鍵", h.includes(`intlDiscard('E1')`) && !h.includes(`chDiscard('shopee','P1')`));
+ok("海外的建立版本只有英文／泰文", h.includes("English (TikTok)") && h.includes("Thai (TikTok)") && !h.includes(">Shopee<") && !h.includes(">Malaysia<"));
 ok("intl 池顯示建立者(英文)", h.includes("added by Regina"));
 // 英文區的帳號下拉只列英文帳號，且 value 是全清單索引
 WORK_ZONE="en"; h=viewWork(); let zc=h.split("Create a version").slice(-1)[0];
@@ -69,13 +72,19 @@ WORK_ZONE="th"; h=viewWork(); zc=h.split("Create a version").slice(-1)[0];
 ok("泰文區只列 TH 帳號", zc.includes("tiktok-TH") && !zc.includes("tiktok-EN"));
 ok("泰文區版本 chip 只列 TH", !zc.includes(`openIntlModal('E1')`) && zc.includes(`openIntlModal('T1')`));
 
-// ── 海外視角：中文下顯示英文小字 ──
-VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
+// ── 海外視角：來源清單中文標題下顯示英文小字 ──
+// v115 分區：海外的影片庫＝已上片的來源清單（S2），英文小字改掛在 ilib-en
+VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q=""; INTL_Q=""; INTL_LIB_LOC="";
+vid("S2").nameEn="Published source #gold";
 h=viewVideos();
-ok("intl 影片庫中文下有英文小字", h.includes("vt-en") && h.includes("Golden original"));
-ok("英文小字去掉 hashtag", !h.includes("Golden original #gold"));
+ok("intl 影片庫中文下有英文小字", h.includes("ilib-en") && h.includes("Published source"));
+ok("英文小字去掉 hashtag", !h.includes("Published source #gold"));
+vid("S2").nameEn="Published source";
+// v115 分區：海外走唯讀來源卡，文案優先顯示英文版
 openVideoModal("S1", false);
-ok("intl 檢視視窗文案含英文翻譯", modalHTML.includes("黃金文案") && modalHTML.includes("Golden copy EN"));
+ok("intl 來源卡顯示英文文案", modalHTML.includes("Golden copy EN"));
+ok("intl 來源卡有毛片與成片連結（做版本要用的）",
+   modalHTML.includes("Download raw footage") || modalHTML.includes("No raw footage"));
 // 中文角色不顯示英文小字
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 h=viewVideos();
