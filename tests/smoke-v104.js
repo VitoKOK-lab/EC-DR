@@ -71,6 +71,18 @@ ok("點快選分類：待認領也自動展開", poolFold(viewWork()).slice(0,10
 reset(); setPoolQ("珠寶"); setPoolQ("");
 ok("清掉搜尋字：折疊回到收合", !poolFold(viewWork()).slice(0,10).includes("open"));
 
+// ══ ②-b 按 Enter 之後也不能把待認領收掉（要能直接點搜到的片名）══
+reset();
+{ // 模擬使用者：展開待認領 → 打字 → 按 Enter
+  const poolInput=(viewWork().match(/<input id="pool_q"[\s\S]*?>/)||[""])[0];
+  const onkey=(poolInput.match(/onkeydown="([^"]*)"/)||[])[1]||"";
+  ok("Enter 走的是 setPoolQ（跟打字同一條路）", onkey.includes("setPoolQ(this.value)"));
+  setPoolQ("珠寶");                       // ← Enter 觸發的就是這個
+  const w=viewWork();
+  ok("按 Enter 後待認領仍然展開（沒被縮到最小）", poolFold(w).slice(0,10).includes("open"));
+  ok("按 Enter 後搜到的片名點得到", w.includes("editVideo('P1')") && w.includes("editVideo('P3')"));
+  ok("按 Enter 後搜尋字還在框裡", w.includes(`id="pool_q" value="珠寶"`)); }
+
 // ══ ③ 局部重繪：只換清單，不整頁重畫（折疊不會被收回去、游標留在搜尋框）══
 reset();
 { let rendered=false; const _r=render; render=()=>{rendered=true;};

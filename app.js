@@ -1904,8 +1904,13 @@ function saveIssueNote(id){
   if(v.length<2){ toast("請簡單說明原因",true); return; }
   dbUpdate("shifts", id, {issueNote:v, issueAt:nowIso()}, {action:"填寫出勤異常原因", target:id});
 }
-// 工作頁最上面的異常提醒卡（有未說明的異常才出現）
+// 要不要請員工說明出勤異常。預設關 —— 上下班規則還沒定案之前，
+// 系統只默默記上下班時間與登入的電子紀錄（裝置／UA／手機與否／GPS），
+// 不要拿「遲到早退」去煩員工。規則定好後在設定頁打開即可，歷史紀錄都在。
+function attIssueAskOn(){ const s=(STATE&&STATE.settings)||{}; return s.attIssueAsk===true; }
+// 工作頁最上面的異常提醒卡（有未說明的異常、且已開啟這個功能才出現）
 function workIssueCard(){
+  if(!attIssueAskOn()) return "";
   const list=myIssueShifts(); if(!list.length) return "";
   return `<div class="card" style="border-color:var(--red)">
     <b style="font-size:16px;color:var(--red)">⚠ ${T("出勤異常待說明","Attendance to explain")}（${list.length}）</b>
@@ -4251,6 +4256,11 @@ function setWorkHoursCard(s){
     </div>
     <label style="margin-top:12px" style="display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
+    <label style="margin-top:12px;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="set_attask" ${s.attIssueAsk===true?"checked":""} style="width:auto;margin:0"> 請員工說明出勤異常（遲到／早退／忘打下班）</label>
+    <div class="muted" style="font-size:12px;margin-top:4px">預設關著。關著的時候員工的工作頁不會跳出「出勤異常待說明」，
+      但上下班時間與登入的電子紀錄（裝置、手機與否、GPS）照常記錄，人資在出勤頁也照常看得到。
+      上下班規則定好之後再打開，先前的紀錄不會遺失。</div>
     <label style="margin-top:12px">公司座標（選填，用來標出「打卡地點離公司很遠」）</label>
     <div class="grid cols2">
       <div><input id="set_olat" placeholder="緯度 例 25.033964" value="${o.lat!=null?esc(String(o.lat)):""}"></div>
@@ -4406,6 +4416,7 @@ async function saveSettings(){
       const hit=TPL_ROLES.find(p=>p[1]===label||p[0]===label);
       return {t, r:hit?hit[0]:"all"}; }).filter(x=>x.t);
     const pcEl=document.getElementById("set_pconly"); settings.pcOnly = pcEl? !!pcEl.checked : true;
+    const aiEl=document.getElementById("set_attask"); settings.attIssueAsk = aiEl? !!aiEl.checked : false;
     const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
     settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};
   }

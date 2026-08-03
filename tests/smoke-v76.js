@@ -210,12 +210,16 @@ reset([]);
   calls.length=0; fields.pwg1="a12345"; fields.pwg2="b67890"; await savePwGate(); await wait(20);
   ok("兩次要一致", !calls.length && toasts.some(t=>t.includes("兩次輸入不一致")));
 
-  // ══ v77：出勤異常要填原因 ══
+  // ══ v77：出勤異常要填原因（v106 起改成預設關閉，開了才跳）══
   reset([sh("小葵",T0,"09:30","18:00")], {workStart:"09:00",workEnd:"18:00",lateGraceMin:10},
         [{name:"小葵",role:"editor",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true}]);
   as("小葵","editor");
   ok("遲到算異常", attIssues(STATE.shifts["小葵__"+T0]).some(x=>x.includes("遲到")));
-  ok("工作頁跳出待說明提醒", viewWork().includes("出勤異常待說明") && viewWork().includes("saveIssueNote("));
+  ok("預設不跳待說明提醒（規則還沒定案）", !viewWork().includes("出勤異常待說明"));
+  reset([sh("小葵",T0,"09:30","18:00")], {workStart:"09:00",workEnd:"18:00",lateGraceMin:10,attIssueAsk:true},
+        [{name:"小葵",role:"editor",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true}]);
+  as("小葵","editor");
+  ok("開啟後工作頁才跳待說明提醒", viewWork().includes("出勤異常待說明") && viewWork().includes("saveIssueNote("));
   fields["isn_小葵__"+T0]="路上car禍改道";
   saveIssueNote("小葵__"+T0); await wait(20);
   ok("填了原因會寫進那天的打卡紀錄",
