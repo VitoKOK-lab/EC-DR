@@ -36,14 +36,15 @@ const POOL=[
 ];
 function reset(){
   nodes={}; missing=new Set();
-  STATE={ users:[{name:"小葵",role:"editor",craft:"both"}],
+  STATE={ users:[{name:"小葵",role:"editor"},{name:"Regina",role:"manager"}],
     settings:{dailyTarget:4,videoTags:["新片"],sources:["老闆自拍","外部公司"],postPlatforms:[],
       intlAccounts:[{locale:"en",name:"acctEN"},{locale:"th",name:"acctTH"}],
       shopeeAccounts:["acctSHP"],msAccounts:["acctMS"],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"},
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:POOL.map(v=>Object.assign({},v)) };
   POOL_FILTER="all"; POOL_Q=""; WORK_ZONE="shopee"; VIEW_AS=null; CUR_TAB="work";
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
-  localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
+  // 這支測的是搜尋機制，用看得到兩區的 Regina，池才是 fixture 設計的完整 6 支
+  localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
 }
 // 「待認領」那張卡的折疊區段
 const poolFold=(h)=>{ const parts=h.split('<details class="fold"');

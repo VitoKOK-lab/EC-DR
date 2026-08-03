@@ -58,13 +58,19 @@ for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","e
 // --- 上班計畫的建立二創版本卡（三個 zone 切換） ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 WORK_ZONE="shopee"; let h=viewWork();
-ok("editor work has 建立二創版本 card (shopee list)", h.includes("建立二創版本") && h.includes("蝦皮店A"));
+ok("editor work has 建立其他版本 card (shopee list)", h.includes("建立其他版本") && h.includes("蝦皮店A"));
 WORK_ZONE="ms"; h=viewWork();
 ok("zone switch → 馬來 list", h.includes("tiktok-Malaysia"));
+// v115 分區：台灣剪輯的建立版本卡只有蝦皮／馬來，英文／泰文歸海外
 WORK_ZONE="en"; h=viewWork();
-ok("zone switch → 英文 list (EN 帳號)", h.includes("tiktok-EN") && !h.includes("tiktok-TH"));
+ok("台灣看不到英文線（自動落回蝦皮）", !h.includes("tiktok-EN"));
 WORK_ZONE="th"; h=viewWork();
-ok("zone switch → 泰文 list (TH 帳號)", h.includes("tiktok-TH") && !h.includes("tiktok-EN"));
+ok("台灣也看不到泰文線", !h.includes("tiktok-TH"));
+// 海外那一側才有英文／泰文
+localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
+WORK_ZONE="th"; h=viewWork();
+ok("海外切得到泰文線", h.includes("tiktok-TH"));
+localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 
 // --- intl 全英文 spot checks ---
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");

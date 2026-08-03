@@ -28,9 +28,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 openVideoModal("V1", true);
 ok("editor 有刪除卡（中文）", modalHTML.includes("刪除這支影片") && modalHTML.includes("管理員可救回"));
+// v115 分區：海外不再進台灣的編輯視窗，也就沒有刪除鍵
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 openVideoModal("V1", true);
-ok("intl 刪除卡英文", modalHTML.includes("Delete this video") && !modalHTML.includes("刪除這支影片"));
+ok("intl 沒有刪除鍵（源片不歸他們管）", !modalHTML.includes("Delete this video") && !modalHTML.includes("刪除這支影片"));
 { let msg=""; global.confirm=(m)=>{msg=m; return false;};
   delVideo("V1"); ok("intl 刪除確認英文＋提可救回", msg.includes("recycle bin") && msg.includes("restore"));
   localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");

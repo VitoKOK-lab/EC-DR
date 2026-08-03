@@ -67,9 +67,10 @@ ok("等審列有「已審過」鍵", h.includes("editorMarkReviewed('W1')") && h
     openVideoModal("W1", false);
     ok("檢視視窗階段=待審核", modalHTML.includes("待審核"));
     // intl 顯示 In review
+    // v115 分區：海外點源片只有唯讀來源卡，階段名不出現在那裡 —— 改驗它確實被攔下來
     localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
     openVideoModal("W1", false);
-    ok("intl 檢視=In review", modalHTML.includes("In review"));
+    ok("intl 點源片＝唯讀來源卡（英文）", modalHTML.includes("Source · Taiwan"));
 
     // Regina 待審清單含蝦皮殼
     localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");

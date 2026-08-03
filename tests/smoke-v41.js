@@ -45,12 +45,15 @@ ok("editor 英文版視窗教學是中文", modalHTML.includes("先看我們的�
 INTL_ACCT="acctEN"; INTL_CAL_YM=null;
 let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
 ok("editor 開海外日視窗＝中文", toastMsg.includes("只有") || toastMsg.includes("Only"));
-WORK_ZONE="en"; let h=viewWork();
-ok("editor 英文區清單中文字串", h.includes("加版本 — 選帳號") && !h.includes("Add version — pick account"));
+// v115 分區：台灣沒有英文線，改用蝦皮驗中文字串
+WORK_ZONE="shopee"; let h=viewWork();
+ok("editor 建版本清單是中文字串", h.includes("加蝦皮版") && !h.includes("Add Shopee version"));
 h=viewWork(); // dayBadge/shpBadge
 ok("editor 蝦/馬徽章維持中文字", h.includes(">蝦</span>"));
 openVideoModal("S2", false);
-ok("editor 各語言版本卡中文", modalHTML.includes("各語言版本") && modalHTML.includes("上傳連結"));
+// v115 分區：台灣看不到「各語言版本」（那是海外的），改驗蝦皮版本卡
+ok("editor 看得到蝦皮版本卡（中文）", modalHTML.includes("蝦皮版本") && modalHTML.includes("上傳連結"));
+ok("editor 看不到各語言版本", !modalHTML.includes("各語言版本"));
 
 // ── 海外剪輯 → 全英文 ──
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
@@ -58,11 +61,14 @@ openIntlModal("E1");
 ok("intl 英文版視窗英文", modalHTML.includes(">Save<") && modalHTML.includes("Watch Chinese") && !modalHTML.includes("儲存"));
 openChModal("shopee","P1");
 ok("intl 蝦皮視窗價格標籤英文", modalHTML.includes("Fan price") && !modalHTML.includes("寵粉價"));
+// v115 分區：海外點源片＝唯讀來源卡，沒有版本清單也沒有「原本語言」那一列
 openVideoModal("S2", false);
-ok("intl 各語言版本卡英文", modalHTML.includes("Language versions") && !modalHTML.includes("各語言版本") && !modalHTML.includes("誰剪的"));
-ok("intl 原本語言列英文", modalHTML.includes("Original language") && modalHTML.includes(">ZH<") && !modalHTML.includes("中文"));
-WORK_ZONE="shopee"; h=viewWork();
-ok("intl 蝦/馬徽章用 SP/MY", h.includes(">SP</span>") && !h.includes(">蝦</span>"));
+ok("intl 點源片＝唯讀來源卡", modalHTML.includes("Source · Taiwan") && modalHTML.includes("Video details"));
+ok("intl 看不到版本清單", !modalHTML.includes("Language versions") && !modalHTML.includes("各語言版本"));
+ok("intl 來源卡全英文", !modalHTML.includes("影片內容") && !modalHTML.includes("原本語言"));
+// v115 分區：海外的池沒有蝦皮，徽章改在英文版上驗（EN）
+WORK_ZONE="en"; h=viewWork();
+ok("intl 徽章用英文（EN）", h.includes(">EN</span>") && !h.includes(">蝦</span>"));
 ok("intl 天數徽章 New", h.includes(">New</span>") || !h.includes(">新</span>"));
 INTL_ACCT="acctEN"; toastMsg=""; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
 ok("intl 海外日視窗英文", toastMsg.includes("只有") || toastMsg.includes("Only"));

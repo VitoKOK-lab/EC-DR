@@ -76,8 +76,9 @@ reset(LIB); as("Regina","manager");
 reset(LIB); as("小葵","editor");
 { const w=viewWork();
   ok("待認領的快選也包了 span", w.includes("<span>全部</span> <span class=\"vtab-n\">"));
-  ok("待認領六個快選都在", ["全部","中文毛片","蝦皮","馬來西亞","英文","泰文"]
-     .every(x=>w.includes("<span>"+x+"</span>"))); }
+  ok("待認領四個快選都在（台灣區）", ["全部","中文毛片","蝦皮","馬來西亞"]
+     .every(x=>w.includes("<span>"+x+"</span>")));
+  ok("台灣看不到英文／泰文快選", !w.includes("<span>英文</span>") && !w.includes("<span>泰文</span>")); }
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
   ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Not shot</span>"));
