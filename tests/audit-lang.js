@@ -81,5 +81,49 @@ openChModal("shopee","P1"); scanEN("openChModal", modalHTML);
 INTL_ACCT="acctEN"; openDayIntl(T0); scanEN("openDayIntl", modalHTML);
 openDay(T0); scanEN("openDay(TW)", modalHTML);
 
-console.log(issues.length?issues.join("\n"):"(無洩漏)");
-console.log("\n總計:",issues.length,"處");
+// ---- 登入流程、密碼設定頁、離線橫幅（intl 視角）----
+// 這幾個畫面不在上面那批 view 函式裡，之前掃不到 —— 海外同事每次換裝置都會撞見。
+// loginAs / bootLogin 執行時 ecdr_role 還沒寫進 localStorage，
+// 所以它們必須靠手上那個人的 role 判斷語言，不能靠 T()。這一段就是在驗那件事。
+(async()=>{
+  const annaU={name:"Anna", role:"intl"};                       // 沒有 pwHash → pwCheck 走純字串比對，不需要 crypto
+  // ① 密碼設定頁：登入成功後才會看到，這時 ecdr_role 已經是 intl
+  localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
+  scanCJK("pwGateHTML", pwGateHTML());
+
+  // ② 離線橫幅：全員都看得到，海外也是。要先讓 mustSetPw() 為 false 才畫得到主畫面
+  const anna=STATE.users.find(u=>u.name==="Anna"); anna.pwHash="pbkdf2$1$x$y";
+  ONLINE=false; CUR_TAB="work"; WORK_ZONE="en"; viewEl.innerHTML="";
+  try{ render(); scanCJK("render:offline", viewEl.innerHTML); }
+  catch(e){ issues.push("[炸] render:offline "+e.message); }
+  ONLINE=true; delete anna.pwHash;
+
+  // ③ 登入時的三則提示：ecdr_role 故意清掉，模擬「第一次在這台裝置登入」
+  localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role");
+  const said=[]; const _alert=global.alert, _prompt=global.prompt, _toast=toast;
+  global.alert=(m)=>said.push(String(m)); toast=(m)=>said.push(String(m));
+  // 手機擋登入的那則
+  global.navigator={onLine:true, userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"};
+  global.prompt=()=>null;
+  await loginAs(annaU);
+  // 密碼錯誤的那則（換回桌機 UA，prompt 回一個錯的密碼）
+  global.navigator={onLine:true, userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64)"};
+  global.prompt=(m)=>{ said.push(String(m)); return "definitely-wrong"; };
+  await loginAs(annaU);
+  scanCJK("loginAs(提示訊息)", said.join("\n"));
+
+  // ④ 快速登入：這台裝置認得他是誰，三顆字要跟著他的職位走
+  const grid=[]; const _gid=global.document.getElementById;
+  global.document.getElementById=(id)=> id==="userGrid"
+    ? { set innerHTML(v){}, get innerHTML(){return "";}, appendChild(n){ grid.push(n); } }
+    : _gid(id);
+  global.document.createElement=()=>({className:"",textContent:"",onclick:null,
+    appendChild(n){ this.textContent+=" "+(n.textContent||""); }});
+  localStorage.setItem("ecdr_last","Anna"); LOGIN_ALL=false;
+  try{ bootLogin(); scanCJK("bootLogin(快速登入)", grid.map(n=>n.textContent||"").join(" ")); }
+  catch(e){ issues.push("[炸] bootLogin "+e.message); }
+  global.document.getElementById=_gid; global.alert=_alert; global.prompt=_prompt; toast=_toast;
+
+  console.log(issues.length?issues.join("\n"):"(無洩漏)");
+  console.log("\n總計:",issues.length,"處");
+})();
