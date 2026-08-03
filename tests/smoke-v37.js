@@ -28,7 +28,7 @@ const raw = {
   schedule:{}, tasks:{ T1:{id:"T1",user:"Anna",date:T0,title:"翻譯文案",assignedBy:"Vito",ack:false,report:"",done:false,createdAt:"a"} }, shifts:{}, logs:[],
   videos:[
     {id:"S1",name:"黃金原本",rawName:"黃金原本",nameEn:"Gold original",stage:"已上片",locale:"",channel:"",origLang:"",scheduledDate:"2026-01-01",editor:"小葵",published:true,products:[],usageHistory:[],tags:[],metrics:[]},
-    {id:"R1",name:"台灣毛片",rawName:"台灣毛片",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"R1",name:"台灣毛片",rawName:"台灣毛片",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"V101",name:"EN cut",stage:"剪輯中",locale:"en",channel:"",sourceVideoId:"S1",account:"tiktok-EN",claimedBy:"Anna",editor:"Anna",claimedAt:T0+"T09:00:00",scheduledDate:T0,usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"V201",name:"蝦皮版",stage:"剪輯中",locale:"",channel:"shopee",sourceVideoId:"S1",account:"蝦皮店A",claimedBy:"小葵",editor:"小葵",claimedAt:T0+"T09:10:00",usageHistory:[],tags:[],products:[],metrics:[]},
   ],

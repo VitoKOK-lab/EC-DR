@@ -28,10 +28,10 @@ const raw = {
   schedule:{}, tasks:{}, shifts:{}, logs:[],
   videos:[
     {id:"S1",name:"中文原本",rawName:"中文原本",stage:"已上片",locale:"",channel:"",origLang:"",scheduledDate:"2026-01-01",editor:"小葵",published:true,usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"S2",name:"Thai original clip",rawName:"Thai original clip",stage:"待處理",locale:"",channel:"",origLang:"th",usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"S3",name:"English original",rawName:"English original",stage:"待處理",locale:"",channel:"",origLang:"en",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"S2",name:"Thai original clip",rawName:"Thai original clip",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",origLang:"th",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"S3",name:"English original",rawName:"English original",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",origLang:"en",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"S4",name:"Malay original",rawName:"Malay original",stage:"已完成",locale:"",channel:"",origLang:"my",finishedAt:"2026-01-01T09:00:00",scheduledDate:"2026-01-02",published:true,editor:"小葵",usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"OLD1",name:"舊欄位無 origLang",rawName:"舊欄位無 origLang",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"OLD1",name:"舊欄位無 origLang",rawName:"舊欄位無 origLang",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"V201",name:"蝦皮版",stage:"待處理",locale:"",channel:"shopee",sourceVideoId:"S1",account:"蝦皮店A",assignedTo:"小葵",usageHistory:[],tags:[],products:[],metrics:[]},
   ],
 };

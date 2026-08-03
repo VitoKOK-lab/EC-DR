@@ -22,7 +22,7 @@ toast=(m)=>{ toasts.push(String(m)); };
 
 const T0=new Date(Date.now()+288e5).toISOString().slice(0,10);
 const H='pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==';
-const v_=(o)=>Object.assign({id:o.id,code:"",name:"",rawName:"x",stage:"待處理",editor:"",claimedBy:"",
+const v_=(o)=>Object.assign({id:o.id,code:"",name:"",rawName:"x",rawLink:"http://raw",stage:"待處理",editor:"",claimedBy:"",
   assignedTo:"",locale:"",channel:"",source:"",tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null},o);
 // 一池子各式各樣的待認領項目
 const POOL=[

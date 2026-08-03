@@ -24,7 +24,7 @@ toast=()=>{};
 
 const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
 const H='pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==';
-const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+id,videoCopy:"",rawLink:"",
+const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+id,videoCopy:"",rawLink:"http://raw",
   stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:null,finishedAt:"",publishedLink:"",
   reviewStatus:"",locale:"",channel:"",origLang:"",source:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos){
@@ -68,8 +68,8 @@ const LIB=[ v_("S1",{videoCopy:"口播"}), v_("R1",{rawLink:"http://d"}),
   v_("O1",{tags:["舊片"]}) ];
 reset(LIB); as("Regina","manager");
 { const h=viewVideos();
-  ok("影片庫分頁的名稱包在 span 裡", h.includes("<span>有文案・未拍片</span> <span class=\"vtab-n\">"));
-  ok("六個分頁都在", ["有文案・未拍片","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
+  ok("影片庫分頁的名稱包在 span 裡", h.includes("<span>未拍片</span> <span class=\"vtab-n\">"));
+  ok("六個分頁都在", ["未拍片","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
      .every(x=>h.includes("<span>"+x+"</span>")));
   ok("每個分頁都各自帶一個數字", (h.match(/<span class="vtab-n">/g)||[]).length>=6);
   ok("選中的還是有 on", h.includes('class="vtab on"')); }
@@ -80,7 +80,7 @@ reset(LIB); as("小葵","editor");
      .every(x=>w.includes("<span>"+x+"</span>"))); }
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Script · not shot</span>"));
+  ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Not shot</span>"));
   ok("海外沒有中文分頁名洩漏", !h.includes("<span>有文案・未拍片</span>")); }
 
 // ══ 點分頁還是有作用 ══

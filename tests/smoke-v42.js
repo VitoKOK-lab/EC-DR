@@ -25,8 +25,8 @@ STATE = {
     shopeeAccounts:["acctSHP"], msAccounts:["acctMS"], exchangeRates:{} },
   schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
   videos:[
-    {id:"R1",name:"中文毛片一",rawName:"中文毛片一",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"R2",name:"中文毛片二",rawName:"中文毛片二",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"R1",name:"中文毛片一",rawName:"中文毛片一",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"R2",name:"中文毛片二",rawName:"中文毛片二",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"E1",name:"EN shell",rawName:"src",stage:"待處理",locale:"en",sourceVideoId:"S9",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"T1",name:"TH shell",rawName:"src",stage:"待處理",locale:"th",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"P1",name:"SHP shell",rawName:"src",stage:"待處理",channel:"shopee",usageHistory:[],tags:[],products:[],metrics:[]},

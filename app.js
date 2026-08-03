@@ -2966,10 +2966,14 @@ function vidIsOld(v){
 // 有寫文案、但毛片還沒拍（沒有毛片雲端連結）——「待剪」的前一站
 // 為什麼用「有沒有毛片雲端連結」判斷：原始片名每一支都有（新增時必填），
 // 毛片連結才是「這支真的拍出來了」的訊號；實際資料裡待剪的 58 支有 57 支都填了。
-const vidHasScript=(v)=>!!String(v&&v.videoCopy||"").trim();
 const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
-// 文案寫好了但還沒拍 → 剪輯認領了也沒東西可剪，所以不放進待認領（v89）
-const vidNotShot=(v)=>vidHasScript(v) && !vidHasRaw(v);
+// 還沒拍＝沒有毛片雲端連結。判斷只看這一個欄位：
+// 原始片名每一支都有（新增時必填），文案則常常晚一點才補，
+// 所以「有沒有文案」不能拿來判斷拍了沒 —— 只填片名就排日期的那些，
+// 以前會被當成待剪片，其實根本還沒拍。
+// 剪輯認領了也沒東西可剪，所以這些不放進待認領（v89）。
+// 只對一創原本適用：二創殼本來就沒有毛片連結（素材來自源片），不能一起排除。
+const vidNotShot=(v)=> !isDerived(v) && !vidHasRaw(v);
 function vidSegment(v){
   if(vidIsOld(v)) return "old";                                  // ⑥ 已剪・過排程
   if(!isPublished(v)){
@@ -3090,11 +3094,14 @@ function vidTableRow(v){
   </tr>`;
 }
 // 目前分頁＋搜尋＋標籤篩完、排好序的影片（清單模式與圖片模式共用同一份）
+// 影片庫這一頁的母體：只列一創原本（依語言選單），不含二創版
+function vidAllOfLang(){ return (STATE.videos||[]).filter(v=>!v.locale && !v.channel && origLangOf(v)===VID_LANG); }
+function vidMatchQ(v){
+  const q=String(VID_Q||'').toLowerCase().trim(); if(!q) return true;
+  return [v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
+}
 function vidVisibleList(){
-  const all=(STATE.videos||[]).filter(v=>!v.locale && !v.channel && origLangOf(v)===VID_LANG);   // 只列一創原本（依選單語言），不含二創版
-  const q=String(VID_Q||'').toLowerCase().trim();
-  let list=all.filter(v=> vidSegment(v)===VID_VIEW);
-  if(q) list=list.filter(v=>[v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
+  let list=vidAllOfLang().filter(v=> vidSegment(v)===VID_VIEW).filter(vidMatchQ);
   if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
   // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
   // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
@@ -3131,7 +3138,40 @@ function vidSetMode(m){
   try{ localStorage.setItem("ecdr_vidmode", VID_MODE); }catch(e){}
   render();
 }
-function vidFilter(){ const el=document.getElementById('vid_list'); if(el) el.innerHTML=vidRowsHTML(); }
+// 分段數字跟著搜尋一起變 —— 打「農曆七月」就看得出它落在哪一個分頁
+function vidSegCounts(){
+  const seg={script:0,rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0};
+  vidAllOfLang().filter(vidMatchQ).forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
+  return seg;
+}
+function vidTabsHTML(){
+  const seg=vidSegCounts();
+  const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  return tab("script",     T("未拍片","Not shot"),          seg.script)
+       + tab("rawNoSched", T("待剪・未排程","Raw · unscheduled"), seg.rawNoSched)
+       + tab("rawSched",   T("待剪・已排程","Raw · scheduled"),   seg.rawSched)
+       + tab("newNoSched", T("剪完・未排程","Done · unscheduled"),seg.newNoSched)
+       + tab("newSched",   T("新片完成","New"),              seg.newSched)
+       + tab("old",        T("舊片","Old"),                  seg.old);
+}
+// 標籤鈕：只列出「這個分頁、這次搜尋結果裡實際有的標籤」並標數量 → 按了一定對得上影片
+function vidTagBtnsHTML(){
+  const viewList=vidAllOfLang().filter(vidMatchQ).filter(v=>vidSegment(v)===VID_VIEW);
+  const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
+  const order=videoTags();
+  const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
+  return present.length
+    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(dataLabel(t))} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
+      +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">${T("清除篩選","Clear")}</a>`
+    : `<span class="muted" style="font-size:12px">${T("此分頁的影片尚未加標籤","No tags on this tab yet")}</span>`;
+}
+// 邊打邊篩：只換清單、分段數字、標籤數字三塊，不整頁重繪（游標留在搜尋框）
+function vidFilter(){
+  const l=document.getElementById('vid_list'); if(!l){ render(); return; }
+  l.innerHTML=vidRowsHTML();
+  const t=document.getElementById('vid_tabs'); if(t) t.innerHTML=vidTabsHTML();
+  const g=document.getElementById('vid_tags'); if(g) g.innerHTML=vidTagBtnsHTML();
+}
 function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classList.add('sec'); } else { VID_TAGS.add(t); el.classList.remove('sec'); } vidFilter(); }
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
@@ -3143,29 +3183,10 @@ function viewVideos(){
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
-  const all=allSrc.filter(v=>origLangOf(v)===VID_LANG);
-  const seg={script:0,rawNoSched:0,rawSched:0,newNoSched:0,newSched:0,old:0}; all.forEach(v=>{ const s=vidSegment(v); if(seg[s]!=null) seg[s]++; });
-  const tab=(k,label,n)=>`<button class="vtab ${VID_VIEW===k?'on':''}" onclick="vidSetView('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
-  // 標籤鈕：只列出「本分頁影片實際有的標籤」並標數量 → 按了一定對得上影片
-  const viewList=all.filter(v=> vidSegment(v)===VID_VIEW);
-  const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
-  const order=videoTags();
-  const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
-  const tagBtns=present.length
-    ? present.map(t=>`<button class="btn sm ${VID_TAGS.has(t)?'':'sec'}" onclick="vidTagToggle('${esc(jsEsc(t))}',this)">${esc(dataLabel(t))} <span style="opacity:.7">${tagCount[t]}</span></button>`).join("")
-      +`<a href="javascript:void(0)" onclick="VID_TAGS.clear();render()" class="muted" style="font-size:12px;margin-left:4px">${T("清除篩選","Clear")}</a>`
-    : `<span class="muted" style="font-size:12px">${T("此分頁的影片尚未加標籤","No tags on this tab yet")}</span>`;
   return `<h2>${T("影片庫","Library")}</h2>
   <div class="card">
     ${langSel}
-    <div class="vtabs">
-      ${tab("script",T("有文案・未拍片","Script · not shot"),seg.script)}
-      ${tab("rawNoSched",T("待剪・未排程","Raw · unscheduled"),seg.rawNoSched)}
-      ${tab("rawSched",T("待剪・已排程","Raw · scheduled"),seg.rawSched)}
-      ${tab("newNoSched",T("剪完・未排程","Done · unscheduled"),seg.newNoSched)}
-      ${tab("newSched",T("新片完成","New"),seg.newSched)}
-      ${tab("old",T("舊片","Old"),seg.old)}
-    </div>
+    <div class="vtabs" id="vid_tabs">${vidTabsHTML()}</div>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
       <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
       <div class="vmode" role="group" aria-label="${T("瀏覽方式","View mode")}">
@@ -3177,7 +3198,7 @@ function viewVideos(){
     </div>
     <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <span class="muted" style="font-size:12px">${T("標籤：","Tags: ")}</span>
-      ${tagBtns}
+      <span id="vid_tags">${vidTagBtnsHTML()}</span>
     </div>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;
