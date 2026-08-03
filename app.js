@@ -389,8 +389,6 @@ if(typeof window!=="undefined" && window.addEventListener){
 let LOGIN_ALL=false;
 function lastUserHere(){ return localStorage.getItem("ecdr_last")||""; }
 function loginSwitchAccount(){ LOGIN_ALL=true; bootLogin(); }
-function loginQuick(){ const n=lastUserHere();
-  const u=((STATE?.users)||[]).find(x=>x.name===n); if(u) loginAs(u); else loginSwitchAccount(); }
 function bootLogin(){
   const g = document.getElementById("userGrid"); g.innerHTML = "";
   // 這台裝置上次登入過的人：只顯示他一個，按「直接登入」再輸入密碼
@@ -1001,7 +999,6 @@ function dbWrite(op, coll, id, payload, log){
   return p.then(()=>{ if(log) logA(log.action, log.target||""); return true; })
           .catch(()=>{ toast(T("更新失敗，請稍後再試","Update failed — please try again"),true); return false; });
 }
-function dbSet(coll, id, o, log){ return dbWrite("set", coll, id, o, log); }
 function dbUpdate(coll, id, p, log){ return dbWrite("update", coll, id, p, log); }
 function dbDel(coll, id, log){ return dbWrite("del", coll, id, null, log); }
 
@@ -1333,21 +1330,6 @@ function workPoolCard(pool, poolShown, poolCnt, me){
     </div>
   </div>`;
 }
-// 上班計畫：我的今日工作卡（進行中＋今天剛完成；天數標記與各線專屬按鈕）
-function workMineCard(myWork, inProg, atLimit, workBtn, undoBtn){
-  return `<div class="card">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="font-size:16px">${T("我的今日工作","My work today")}</b>
-      <span class="pill ok">${T("製作中","In progress")} ${inProg}</span>
-    </div>
-    <table class="responsive" style="margin-top:10px"><thead><tr><th style="width:60px">${T("天數","Days")}</th><th>${T("影片","Video")}</th><th style="width:200px">${T("狀態","Status")}</th></tr></thead>
-    <tbody>${myWork.map(v=>`<tr>
-        <td data-label="${T("天數","Days")}">${v.stage==="剪輯中"?dayBadge(v):'<span class="muted">—</span>'}</td>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${enSubLine(v)}</td>
-        <td data-label="${T("狀態","Status")}"><div class="row" style="gap:6px">${workBtn(v)}${undoBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="3" class="muted">${T("目前沒有進行中的影片，從上面「待認領」認領一支開始","Nothing in progress — claim one from the pool above")}</td></tr>`}</tbody></table>
-  </div>`;
-}
 // 折疊區塊：次要的東西收進來，點了才展開
 function fold(title, count, body, open){
   if(!body) return "";
@@ -1492,57 +1474,8 @@ function futureTasksBody(){
       ${t.assignedBy?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}
     </div></div>`).join("");
 }
-// 上班計畫：HR 通知卡 —— 只需要按一顆小小的「收到」，不用回報、不算交辦成效
-function workNoticeCard(notices){
-  if(!notices.length) return "";
-  const nNew=notices.filter(t=>!t.ack).length;
-  return `<div class="card" style="border-color:var(--gold)">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">📣 ${T("HR 通知","HR notice")}</b>
-      ${nNew?`<span class="pill em" style="font-size:11px">${T(nNew+" 則未讀",nNew+" unread")}</span>`:`<span class="pill ok" style="font-size:11px">${T("都看過了","All read")}</span>`}
-    </div>
-    <div style="margin-top:8px">${notices.map(t=>`<div style="padding:9px 0;border-bottom:1px solid var(--line)">
-      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:14px;font-weight:600;min-width:0;flex:1">${esc(t.title)}</span>
-        ${t.ack?`<span class="pill ok" style="font-size:10px;flex:none">${T("已收到","Received")} ${String(t.ackAt||"").slice(11,16)}</span>`
-               :`<button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`}
-      </div>
-      <div class="muted" style="font-size:11px;margin-top:2px">${esc(t.assignedBy||"")}・${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}</div>
-      <input id="nr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
-        onchange="noticeReply('${t.id}',this.value)" placeholder="${T("想回覆什麼可以寫在這裡（選填）…","Reply here (optional)…")}">
-    </div>`).join("")}</div>
-  </div>`;
-}
-// 上班計畫：交辦工作卡（主管交辦需按收到；回報滿 12 字才可打勾完成）
-function workTasksCard(tasks){
-  return `<div class="card">
-    <b style="font-size:16px">${currentRole()==="cs"?"我的今日工作計畫":T("我的今日工作計畫（剪輯以外）","My work plan today (beyond editing)")}</b>
-    <div style="margin-top:10px">${tasks.map(t=>{ const can=(t.report||'').trim().length>=12; const assigned=!!t.assignedBy; const needAck=assigned&&!t.ack;
-      const head=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-          <b style="font-size:14px">${esc(t.title)}${(assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:''}</b>
-          ${assigned?`<span class="pill em" style="font-size:10px;flex:none">${T("主管交辦","Assigned")}</span>`:`<button class="btn sec sm" style="flex:none;padding:4px 10px" onclick="delTask('${t.id}')">${T("刪","✕")}</button>`}
-        </div>`;
-      const contactLine = t.contact ? `<div style="font-size:12px;margin-top:4px"><span class="muted">${T("對接窗口","Contact")}：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>` : '';
-      if(needAck) return `<div style="border:1px solid var(--gold);background:var(--amberbg);border-radius:6px;padding:12px;margin-bottom:10px">
-        ${head}${contactLine}
-        <div class="row" style="align-items:center;gap:8px;margin:6px 0 0;flex-wrap:wrap">
-          <span class="muted" style="font-size:12px;flex:1;min-width:0">${T("主管交辦・按「收到」開始執行","Assigned · press Got it to start")}</span>
-          <button class="btn sm" style="flex:none;padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button></div></div>`;
-      return `<div style="border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px">
-        ${head}${contactLine}
-        ${assigned?`<div class="muted" style="font-size:12px;margin-top:4px">${T("已收到（主管交辦）","Received (assigned)")}</div>`:''}
-        <input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:8px" oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12" onchange="taskReport('${t.id}',this.value)" placeholder="${T("填寫完整處理狀況及後續…","Progress note (at least 12 characters)…")}">
-        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:700;margin-top:8px;color:${t.done?'var(--green)':'var(--amber)'}">
-          <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'} onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('已完成','Done'):T('進行中','In progress')}</label>
-      </div>`;}).join("")||`<div class="muted">${T("尚無交辦工作","No tasks yet")}</div>`}</div>
-    ${currentRole()==="intl"?"":`<div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 8px">
-      <span class="muted" style="font-size:12px;align-self:center">常用：</span>
-      ${workPresets().map(p=>`<button class="btn sec sm" style="padding:4px 10px;font-size:12px" onclick="addPresetTask('${esc(jsEsc(p))}')">＋ ${esc(p)}</button>`).join("")}</div>`}
-    <div class="row" style="gap:8px;margin-top:6px"><input id="wp_newtask" placeholder="${T("自己新增工作項目…","Add your own task…")}" style="flex:2;min-width:150px" onkeydown="if(event.key==='Enter')createTask()"><input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}<button class="btn sm" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button></div>
-  </div>`;
-}
 // ===================================================================
-// 員工顯示順序（所有清單共用）：一次創作 → 兩種都做 → 二次創作／海外；同組內中文名在前、英文名在後
+// 員工顯示順序（所有清單共用）：台灣（剪輯 → 行銷 → 客服 → 出貨 → 員工 → 人資）→ 海外一律排最後；同組內中文名在前、英文名在後
 // 職位在台灣區裡的先後：剪輯 → 行銷 →（其餘）客服 → 出貨 → 員工 → 人資
 const ROLE_ORDER={editor:0, mkt:1, svc:2, ship:3, cs:4, manager:5, hr:6};
 // 台灣（0）在前、巴基斯坦（1）在後
@@ -1622,8 +1555,19 @@ function staffNamesSorted(roles){
 // 會讓它們從毛片庫存、指派清單、儀表板數字裡整批消失。
 // ===================================================================
 const ZONE_LABEL={tw:["台灣","Taiwan"], intl:["海外","Overseas"]};
-// 這支影片屬於哪一區：有 locale（en/th）＝海外；其餘（中文源片、shopee、ms）＝台灣
-function zoneOfVideo(v){ return (v && v.locale) ? "intl" : "tw"; }
+// 這支影片屬於哪一區。三種情況分開看：
+//   ① 有 locale（en/th）＝海外做的版本殼
+//   ② 有 channel（shopee/ms）＝台灣做的版本殼 —— 版本殼不等於海外
+//   ③ 都沒有＝源片，看它「原本是用什麼語言拍的」：泰文／英文＝海外的原創，
+//      中文與馬來西亞＝台灣。（用泰文／英文拍的原創確實存在，v119 修正）
+function zoneOfVideo(v){
+  if(!v) return "tw";
+  if(v.locale) return "intl";
+  if(v.channel) return "tw";
+  return zoneOfOrigLang(origLangOf(v));
+}
+// 「原本語言」對應到哪一區（源片與待認領池的分類共用這一份）
+function zoneOfOrigLang(l){ return (l==="en"||l==="th") ? "intl" : "tw"; }
 // 這個人看得到哪幾區。職位是唯一真相來源 —— 要換區就改職位，不另外開設定
 function zoneOfUser(name){
   const u=(STATE.users||[]).find(x=>x.name===name);
@@ -1632,6 +1576,8 @@ function zoneOfUser(name){
   return r==="intl" ? "intl" : "tw";
 }
 function myZone(){ return zoneOfUser(currentUser()); }
+// 看不看得到「這個人」：管理層（zone 是 both）永遠看得到，其餘只看同區
+function seesPerson(name){ const z=zoneOfUser(name); return z==="both" || seesZone(z); }
 function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
@@ -1794,7 +1740,12 @@ function poolMatch(v){
           Array.isArray(v.tags)?v.tags.join(" "):""]
     .filter(Boolean).join(" ").toLowerCase().includes(q);
 }
-function poolCat(v){ return (v.channel&&CHANNELS[v.channel])?v.channel:(v.locale||"tw"); }
+// 待認領池的快選分類。源片沒有 locale，要看「原本語言」才知道它是中文毛片還是海外原創
+function poolCat(v){
+  if(v.channel&&CHANNELS[v.channel]) return v.channel;
+  if(v.locale) return v.locale;
+  const l=origLangOf(v); return zoneOfOrigLang(l)==="intl" ? l : "tw";
+}
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
   const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]]
@@ -2633,8 +2584,11 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 //         ②本月成效（一張表）
 // 純檢視：沒有按鍵、沒有連結、不寫任何資料。人資只有這一頁。
 // ===================================================================
+// 團隊看板只列同區的人 —— 卡片上會寫出每個人今天完成的影片標題，
+// 不分區的話台灣看得到英文／泰文片名、海外看得到中文毛片名。
+// 管理層（管理員／經理人／人資）看全部，也永遠對所有人可見（大家要找得到主管）。
 function teamStaff(){
-  return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+  return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor") && seesPerson(u.name)));
 }
 // 某人「今天」的成效：出勤、今日完成、進行中、交辦完成
 function teamDayStat(name, allTasks){
@@ -3308,10 +3262,13 @@ function zoneSwitchHTML(){
 function viewVideosTW(){
   const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
   const langCount={}; allSrc.forEach(v=>{ const l=effOrigLang(v); langCount[l]=(langCount[l]||0)+1; });
+  // 只列屬於台灣區的原本語言（中文／馬來西亞）—— 泰文與英文拍的原創屬於海外，不在這個庫裡
+  const langs=ORIG_LANGS.map((x,i)=>[x[0],x[1],["Chinese","Thai","English","Malaysia"][i]]).filter(([k])=>zoneOfOrigLang(k)==="tw");
+  if(!langs.some(([k])=>k===VID_LANG)) VID_LANG="";
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
     <label style="margin:0">${T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
-      ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}${paren(langCount[k]||0)}</option>`).join("")}
+      ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
   return `<h2>${T("影片庫","Library")}</h2>
   <div class="card">
@@ -4774,7 +4731,6 @@ async function saveSettings(){
 function addMember(){ const name=val("mb_name").trim(); if(!name){ toast("請輸入名字",true); return; }
   const role=val("mb_role")||"editor";
   write("POST","/api/users",{name,role},"已新增成員（"+(ROLE_LABEL[role]||role)+"）"); }
-// 指定這位剪輯負責一次創作還是二次創作（決定他看得到哪些工作）
 // 個人班表例外：兩個都清空＝改回全公司時間
 function setMemberHours(name, start, end){
   const u=((STATE&&STATE.users)||[]).find(x=>x.name===name)||{};

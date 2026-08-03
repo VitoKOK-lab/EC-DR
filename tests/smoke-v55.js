@@ -73,19 +73,26 @@ ok("HR 分頁＝團隊看板＋出勤", JSON.stringify(myTabs())===JSON.stringif
 
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡，另外測）
+// v119 分區：看板卡片會寫出每個人今天完成的片名，所以只列同區的人。
+// 台灣剪輯看不到 Anna（海外）；要驗「全部的人都列得出來」就得用看得到兩區的主管。
+localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+const hAll=viewTeam();
+localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 // ── 兩塊：今日成效／本月成效 ──
 ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
-ok("兩位剪輯都列出來", h.includes("小葵") && h.includes("Anna"));
+ok("主管看得到兩位剪輯", hAll.includes("小葵") && hAll.includes("Anna"));
+ok("台灣剪輯看不到海外同事", h.includes("小葵") && !h.includes("Anna"));
 ok("人資自己也在名單上（他也要被記錄、由管理員考核）", h.includes("HR小姐"));
 
 // ── 今日成效的數字 ──
-ok("小葵今日完成 2 支", (()=>{ const seg=h.split("小葵")[1].split("Anna")[0]; return seg.includes(">2</div><div class=\"l\">今日完成"); })());
+ok("小葵今日完成 2 支", (()=>{ const seg=hAll.split("小葵")[1].split("Anna")[0]; return seg.includes(">2</div><div class=\"l\">今日完成"); })());
 ok("進行中算得出來（1 支）", h.includes(">1</div><div class=\"l\">進行中"));
 ok("交辦完成 1/2", h.includes("1/2</div><div class=\"l\">交辦完成"));
 ok("有上班時間與工時", h.includes("09:00–18:00") && h.includes("工時 9h0m"));
 ok("沒上線的顯示今天還沒上線", h.includes("今天還沒上線"));
-ok("列出今天完成的片名", h.includes("今天完成A") && h.includes("今天完成B") && h.includes("海外完成片"));
+ok("列出今天完成的片名", h.includes("今天完成A") && h.includes("今天完成B"));
+ok("海外的片名只有主管看得到", hAll.includes("海外完成片") && !h.includes("海外完成片"));
 ok("列出交辦回報內容", h.includes("回覆廠商") && h.includes("已聯絡完成"));
 ok("頂部有今日／本月摘要", h.includes("今日出勤") && h.includes("今日完成") && h.includes("本月完成"));
 

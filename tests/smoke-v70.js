@@ -74,13 +74,18 @@ ok("每個人都還是可以交辦", ["小葵","阿明","小美","阿凱","Anna"
 ok("交辦輸入框編號不重複", (()=>{ const ids=(f.match(/id="fa_(\d+)"/g)||[]); return new Set(ids).size===ids.length && ids.length===7; })());
 
 // ── 團隊看板：今日成效也分三份 ──
-reset(); as("小葵","editor");
+// v119 分區：看板卡片會寫出片名，所以只列同區的人。三組要看得齊，得用看得到兩區的主管
+reset(); as("Regina","manager");
 let t=viewTeam();
 // 小標要用 </h4> 錨定：篩選下拉裡也有「巴基斯坦（2）」這種字串，會跟小標撞在一起
 const h4=(zh,n)=>`>${zh}（${n}）</h4>`;
 ok("看板有三個小標", [h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)].every(x=>t.includes(x)));
 ok("看板小標順序一致", ascending(order(t,[h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)])));
 ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===3);
+{ // 台灣剪輯只看得到台灣那兩組
+  as("小葵","editor"); const tw=viewTeam();
+  ok("台灣剪輯只有台灣兩組", tw.includes(h4("台灣・剪輯行銷",2)) && tw.includes(h4("台灣・其他",3)) && !tw.includes("巴基斯坦（"));
+  as("Regina","manager"); }
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 
 // ── HR 通知：收件人分清單 ──

@@ -141,10 +141,7 @@
   .quickLogin .qlSwitch{margin-top:12px}
   .adminLink{margin-top:10px;background:none;border:none;color:var(--muted);font-size:13px;letter-spacing:.12em;border-bottom:1px solid transparent;padding:4px 2px;transition:.2s}
   .adminLink:hover{color:var(--gold-dk);border-bottom-color:var(--gold)}
-  .userBtn .role{display:block;font-size:12px;color:var(--muted);margin-top:5px;font-weight:500;letter-spacing:1px}
-  .userBtn.lead{border-color:var(--accent);border-width:2px;box-shadow:var(--shadow2)}
-  .userBtn.lead .role{color:var(--accent);font-weight:700}
-  .userBtn.mgr{border-style:dashed}
+
   .addRow{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .addRow input,.addRow select{padding:10px;border-radius:var(--rs);border:1px solid var(--line);background:var(--panel);color:var(--txt)}
 
@@ -225,8 +222,7 @@
   .btn:hover::after{left:130%}
   .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
   .btn.sec:hover{background:var(--panel2);color:var(--txt);border-color:var(--gold);transform:translateY(-1px)}
-  .btn.gold{background:#fff;color:var(--gold-dk);border:1px solid var(--gold);box-shadow:none}
-  .btn.gold:hover{background:var(--amberbg);transform:translateY(-1px)}
+
   .btn.danger{background:var(--red);color:#fff;box-shadow:0 6px 16px rgba(176,71,58,.22)}
   .btn.danger:hover{background:#8F3329;filter:none}
   .btn.sm{padding:7px 14px;font-size:13px;border-radius:2px;letter-spacing:.06em}
@@ -247,7 +243,7 @@
   .ilib-meta{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
   .ilib-code{font-variant-numeric:tabular-nums;opacity:.7}
   .ilib-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex:none;width:250px}
-  .ilib-actions .others{font-size:11px;color:var(--muted);text-align:center}
+
   /* 海外版沿用中文版樣式（品牌金色/pill）；語言以 EN/TH/MS 文字區分，不用彩色 */
   .verrow{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
   .ibtn{width:38px;flex:none;padding:0;justify-content:center;font-size:14px;display:inline-flex;align-items:center}
@@ -262,16 +258,15 @@
   tbody tr{transition:background .15s,box-shadow .15s}
   tbody tr:hover{background:linear-gradient(90deg,rgba(197,179,130,.10),var(--panel2) 30%);box-shadow:inset 3px 0 0 var(--gold)}
   .tag{display:inline-block;padding:3px 11px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.04em}
-  .tag.traffic{background:#fff;border-color:var(--teal);color:var(--traffic)}
+
   .tag.sales{background:#fff;border-color:var(--gold);color:var(--gold-dk)}
-  .green{background:var(--green)} .yellow{background:var(--amber)} .red{background:var(--red)}
+
   .muted{color:var(--muted)}
   .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
   .pill.em{background:var(--redbg);color:var(--red)}
   .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
   .pill.ok{background:var(--greenbg);color:var(--green)}
   .pos{color:var(--green);font-weight:800}
-
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
@@ -299,7 +294,7 @@
   .day .dnum{position:absolute;top:7px;left:10px;font-size:13px;font-weight:700;color:var(--muted)}
   .day .big{font-family:var(--serif);font-size:28px;font-weight:900;line-height:1;color:var(--txt)}
   .day .big span{font-size:12px;color:var(--muted);font-weight:600}
-  .day .tbar{display:none}
+
   .day .pmk{font-size:10.5px;font-weight:700;margin-top:6px;letter-spacing:.3px}
   .day.filled,.day.full{background:linear-gradient(180deg,#EAF8F6,#fff)}
   .day.filled::before,.day.full::before{background:var(--green)}
@@ -418,14 +413,14 @@
     table.vtable.responsive td:not(.cv-name){display:none}
     table.vtable.responsive tr{padding:12px 14px}
     .grid.cols2{grid-template-columns:minmax(0,1fr) !important}
-    .workgrid{grid-template-columns:minmax(0,1fr) !important;grid-template-rows:auto;grid-auto-flow:row}
+
     .dgrid{grid-template-columns:minmax(0,1fr) !important}
     .dgrid-ed{grid-template-columns:minmax(0,1fr) !important}
     .teamgrid{grid-template-columns:minmax(0,1fr) !important}
     .grid.cols3{grid-template-columns:minmax(0,1fr) !important}
-    .grid.cols4{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+
     /* 卡片一律撐滿一欄，內容太長就換行，不會把版面推寬 */
-    main>*,.card,.teamgrid>*,.dgrid>*,.dgrid-ed>*,.workgrid>*{min-width:0;max-width:100%}
+    main>*,.card,.teamgrid>*,.dgrid>*,.dgrid-ed>*{min-width:0;max-width:100%}
     .card{overflow-wrap:anywhere;word-break:break-word}
     .focusbar>div{min-width:0}
     .row{flex-wrap:wrap}
@@ -439,24 +434,23 @@
     .day .big{font-size:20px;margin-top:0}
     .day .big span{font-size:10px !important}
     .day .pmk{display:none}            /* 手機隱藏缺口明細，用底色表達狀態，點進去看細節 */
-    .day .tbar{display:none}
+
     .day.urgent{min-height:62px}
     .day.urgent .dnum{font-size:15px}
     .day.urgent .big{font-size:22px}
     .day.urgent .pmk{display:none}
   }
   @media (max-width:380px){
-    .grid.cols4{grid-template-columns:1fr 1fr !important}
+
     header{gap:4px;padding:9px 9px}
     .hgear{width:32px;height:32px}
     .hwho{max-width:24vw}
     nav button{padding:11px 9px;font-size:12px}
     .day{min-height:52px}.day .big{font-size:15px}
-    .day .tbar{display:none}
+
   }
   /* 上班計畫四宮格：2×2 對齊（同一列等高），手機收合單欄並維持工作順序 */
-  .workgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto;grid-auto-flow:column;gap:16px}
-  .workgrid>.card{margin-bottom:0}
+
   /* 海外 My Work：只有 2 張卡（To do／In progress），並排滿版，桌機才不會右半邊空一大塊 */
   /* 儀表板：內容少的卡片兩兩並排，長的（每位剪輯/排程帶/績效）各自整列 */
   .dgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}
@@ -470,23 +464,7 @@
   @media(max-width:1040px){ .teamgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
   .grid.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
   .grid.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .grid.cols4{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);transition:.22s}
-  .stat:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(43,24,34,.10);border-color:var(--gold)}
-  .stat .n{font-family:var(--serif);font-size:28px;font-weight:900;line-height:1.1}
-  .stat .l{color:var(--muted);font-size:13px;margin-top:3px}
-  .ucard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:15px;box-shadow:var(--shadow);border-left:4px solid var(--line);transition:.2s}
-  .ucard:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(43,24,34,.09)}
-  .ucard.good{border-left-color:var(--green)}
-  .ucard.bad{border-left-color:var(--red)}
-  .ucard .uh{display:flex;justify-content:space-between;align-items:center}
-  .ucard .nm{font-weight:800}
-  table.wk{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;table-layout:fixed}
-  table.wk th{font-size:11px;color:var(--muted);text-align:left;padding:3px 4px;border-bottom:1px solid var(--line)}
-  table.wk td{padding:3px 4px;border-bottom:1px solid #F2E9EE;vertical-align:top;word-break:break-word}
-  table.wk th:nth-child(1),table.wk td:nth-child(1){width:34%}
-  table.wk th:nth-child(2),table.wk td:nth-child(2){width:18%}
-  .statusdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+
   /* 未來排程視覺帶 */
   .sstrip{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
   .sstrip .sday{scroll-snap-align:start}
@@ -594,15 +572,13 @@
   table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
   table.vtable .c-vid{width:34%}
   table.vtable .c-tag{width:15%}
-  table.vtable .c-upd{width:10%}
+
   table.vtable .c-sch{width:11%}
   table.vtable .c-prod{width:11%}
   table.vtable .c-ed{width:9%}
   table.vtable .c-st{width:10%}
   .ststack{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-  .vrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px;transition:.12s}
-  .vrow:hover{background:var(--panel2)}
-  .vrow:last-child{border-bottom:none}
+
 </style>
 </head>
 <body>

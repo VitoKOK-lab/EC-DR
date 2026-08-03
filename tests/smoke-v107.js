@@ -103,12 +103,16 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("管理員與經理人不在區塊裡", !g.some(x=>x.people.some(u=>["boss","manager"].includes(u.role)))); }
 
   // ══ ⑤ 團隊看板／流程中控的小標 ══
-  reset(); as("小葵","editor"); CUR_TAB="team";
+  // v119 分區：看板只列同區的人 —— 三組要看得齊得用看得到兩區的主管
+  reset(); as("Regina","manager"); CUR_TAB="team";
   { const t=viewTeam();
     ok("看板三個小標都在", [h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)].every(x=>t.includes(x)));
     ok("看板小標順序正確", ascending(order(t,[h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)])));
     ok("篩選下拉列得出新職位", t.includes(">行銷（1）") && t.includes(">客服（1）") && t.includes(">出貨（1）"));
     ok("篩選下拉用巴基斯坦", t.includes(">巴基斯坦（1）") && !t.includes(">海外剪輯（")); }
+  reset(); as("小葵","editor"); CUR_TAB="team";
+  { const t=viewTeam();
+    ok("台灣剪輯只有台灣兩組", t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && !t.includes("巴基斯坦（")); }
   reset(); as("Regina","manager"); CUR_TAB="flow";
   { const f=viewFlow();
     ok("流程中控三個小標都在", [h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)].every(x=>f.includes(x)));
@@ -118,7 +122,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   reset(); as("小葵","editor"); TEAM_GROUP="ship";
   { const t=viewTeam();
     ok("只看出貨", t.includes("茂泉") && !t.includes("阿華") && !t.includes("Asmeer")); }
-  reset(); as("小葵","editor"); TEAM_GROUP="intl";
+  // 巴基斯坦那一組只有看得到兩區的人（主管）篩得出來
+  reset(); as("Regina","manager"); TEAM_GROUP="intl";
   ok("只看巴基斯坦", viewTeam().includes("Asmeer") && !viewTeam().includes("茂泉"));
 
   // ══ ⑥ 新職位＝不剪片 ══
