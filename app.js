@@ -1590,12 +1590,12 @@ function viewWork(){
       ? `<button class="btn sm" disabled style="opacity:1;background:var(--amber);box-shadow:none">${T("待審核","In review")}</button>`
       : `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
     if(v.channel&&CHANNELS[v.channel]) return `<button class="btn sec sm" onclick="openChModal('${v.channel}','${v.id}')">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
+      <button class="btn sm" onclick="chFinish('${v.channel}','${v.id}')" title="${T("剪好了→標記完成（進入待審核），畫面留在這頁","Mark done (goes to In review) — you stay on this page")}">${T("完成","Done")} ✔</button>`;
     if(v.locale) return `<button class="btn sec sm" onclick="openIntlModal('${v.id}')">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="intlFinish('${v.id}')" title="${T("剪好了→標記完成並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`;
-    // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成並移到影片庫
+      <button class="btn sm" onclick="intlFinish('${v.id}')" title="${T("剪好了→標記完成（進入待審核），畫面留在這頁","Mark done (goes to In review) — you stay on this page")}">${T("完成","Done")} ✔</button>`;
+    // 編輯內容：按「儲存修改」只存、留在原地；要結案再按「完成」→ 標記剪輯完成（畫面一律留在原本那頁）
     return `<button class="btn sec sm" onclick="openVideoModal('${v.id}',true,false)" title="${T("編輯內容（按「儲存修改」只存、留在這頁）","Edit content (Save keeps you here)")}">${T("編輯內容","Edit")}</button>
-      <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」並移到影片庫","Mark done and move to the library")}">${T("完成","Done")} ✔</button>`; };
+      <button class="btn sm" onclick="finishWork('${v.id}')" title="${T("剪好了→標記「剪輯完成」（進入待審核），畫面留在這頁","Mark done (goes to In review) — you stay on this page")}">${T("完成","Done")} ✔</button>`; };
   // 退回鍵：把認領的毛片/版本放回待剪清單重選
   const undoBtn=(v)=> v.stage!=="剪輯中" ? '' : (v.channel&&CHANNELS[v.channel])
     ? `<button class="btn sec sm" onclick="chUnclaim('${v.channel}','${v.id}')" title="${T("後悔了？退回待處理清單重選","Return to the to-do pool")}">${T("退回","Return")}</button>`
@@ -3820,7 +3820,7 @@ function intlDiscard(id){ const v0=vid(id)||{}; const k=INTL_LOCALES.includes(v0
 function intlFinish(id){ const v=vid(id)||{}; const t=v.name||v.rawName||T("這支影片","this video");
   lineFinish(id, T(`「${t}」剪好了？\n完成後進入「待審核」，等 Regina 審過再上傳＋補連結。`,
     `Done cutting "${t}"?\nIt moves to In review — upload & add links after Regina approves.`),
-    T("已完成，移到影片庫","Done — moved to the library"));
+    T("已完成（進入待審核）","Done — in review"));
 }
 async function intlSaveVideo(id){
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
