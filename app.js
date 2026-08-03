@@ -75,6 +75,9 @@ function currentRole(){
 function ownerName(){ return (STATE && STATE.settings && STATE.settings.ownerName) || "Vito"; }
 // 雙語：海外剪輯(intl)看英文、其他角色看中文（海外員工看到的畫面都要是英文）
 function T(zh,en){ return currentRole()==="intl" ? en : zh; }
+// 登入畫面專用：那時候 ecdr_role 還沒寫進 localStorage（海外同事第一次換裝置就會踩到），
+// T() 會誤判成中文。改用手上已知的那個人的職位來決定語言。
+function roleT(role){ return (zh,en)=> (role==="intl" ? en : zh); }
 // 標點也要跟著語言走：中文用全形（）＋，英文用半形 () +
 function paren(x){ return T("（"+x+"）"," ("+x+")"); }
 function PLUS(){ return T("＋","+"); }
@@ -396,10 +399,13 @@ function bootLogin(){
   if(lastU && !LOGIN_ALL){
     const wrap=document.createElement("div"); wrap.className="quickLogin";
     const who=document.createElement("div"); who.className="qlName"; who.textContent=lastU.name;
-    const role=document.createElement("div"); role.className="qlRole"; role.textContent=ROLE_LABEL[lastU.role||"editor"]||"";
-    const go=document.createElement("button"); go.className="btn qlGo"; go.textContent="直接登入";
+    // 這台裝置認得他是誰了 → 用他的職位決定語言（還沒登入，T() 這時候不可靠）
+    const tr=roleT(lastU.role);
+    const role=document.createElement("div"); role.className="qlRole";
+    role.textContent=tr(ROLE_LABEL[lastU.role||"editor"]||"", "Intl Editor");
+    const go=document.createElement("button"); go.className="btn qlGo"; go.textContent=tr("直接登入","Log in");
     go.onclick=()=>loginAs(lastU);
-    const sw=document.createElement("button"); sw.className="adminLink qlSwitch"; sw.textContent="不是我，切換帳號";
+    const sw=document.createElement("button"); sw.className="adminLink qlSwitch"; sw.textContent=tr("不是我，切換帳號","Not me — switch account");
     sw.onclick=loginSwitchAccount;
     wrap.appendChild(who); wrap.appendChild(role); wrap.appendChild(go); wrap.appendChild(sw);
     g.appendChild(wrap); return;
@@ -453,11 +459,17 @@ function pwRuleError(a, b){
   return "";
 }
 async function loginAs(u){
+  // 這裡還不能用 T()：ecdr_role 要登入成功才寫進去，海外同事第一次在新裝置登入時
+  // currentRole() 會退回預設的 editor（＝中文）。手上就有 u.role，直接拿它判斷。
+  const tr=roleT(u&&u.role);
   if(blockedOnMobile(u.role)){
-    alert("請用公司電腦登入。\n\n上下班打卡要在公司電腦上進行，手機不能登入。\n（如有特殊需要請找管理員）");
+    alert(tr("請用公司電腦登入。\n\n上下班打卡要在公司電腦上進行，手機不能登入。\n（如有特殊需要請找管理員）",
+             "Please log in from a company computer.\n\nClock-in and clock-out must be done on a company computer; phones can't log in.\n(Ask the admin if you need an exception.)"));
     return; }
-  const pw=prompt("請輸入「"+u.name+"」的密碼（預設 0000）："); if(pw===null) return;
-  if(!await pwCheck(u, String(pw).trim())){ toast("密碼錯誤。預設為 0000，忘記請找主管線上重設",true); return; }
+  const pw=prompt(tr("請輸入「"+u.name+"」的密碼（預設 0000）：",
+                     "Enter the password for \""+u.name+"\" (default 0000):")); if(pw===null) return;
+  if(!await pwCheck(u, String(pw).trim())){ toast(tr("密碼錯誤。預設為 0000，忘記請找主管線上重設",
+                     "Wrong password. The default is 0000 — ask your manager to reset it if you forgot."),true); return; }
   setUser(u.name); localStorage.setItem("ecdr_role", u.role||"editor");
   localStorage.setItem("ecdr_last", u.name);   // 這台裝置下次直接顯示他
   CUR_TAB=null; LOGIN_ALL=false;
@@ -585,7 +597,25 @@ function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2t
   if(window.OpenCC) return init();
   try{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"; s.async=true; s.onload=init; document.head.appendChild(s); }catch(e){}
 })();
-function vid(id){ return (STATE.videos||[]).find(v=>v.id===id); }
+// ── 影片索引：影片庫每一列都要問「這支的版本有哪些」，沒有索引就是每一列掃一次全表
+// （主管視角 4000 支片實測 4.8 秒，剪輯視角只要 0.13 秒 —— 差在那三次全表掃描）。
+// decorate() 每次同步都把 STATE.videos 換成新陣列，拿陣列身分當快取鍵就夠；
+// 再比一次長度，是因為測試會就地 push（app.js 本身一律整個換掉，不就地改）。
+// ⚠️ 要新增／移除影片請整個換掉 STATE.videos，不要就地 push。
+let VIDX=null, VIDX_SRC=null, VIDX_N=-1;
+function vidxBuild(){
+  const vs=(STATE&&STATE.videos)||[];
+  if(VIDX_SRC===vs && VIDX_N===vs.length) return VIDX;
+  const byId=new Map(), bySrc=new Map();
+  vs.forEach(v=>{ byId.set(v.id, v);
+    if(!v.sourceVideoId) return;
+    let a=bySrc.get(v.sourceVideoId); if(!a) bySrc.set(v.sourceVideoId, a=[]); a.push(v); });
+  VIDX={byId, bySrc}; VIDX_SRC=vs; VIDX_N=vs.length; return VIDX;
+}
+function vid(id){ return vidxBuild().byId.get(id); }
+// ⚠️ 內部用：回傳的是索引裡的共用陣列。呼叫端一律要再 filter 出自己要的那些
+// （filter 會產生新陣列），絕對不能拿去就地 sort，否則索引就被改壞了。
+function versionsOfSrc(sourceId){ return vidxBuild().bySrc.get(sourceId)||[]; }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 // 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
 function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(dataLabel(t))}</span>`; }
@@ -605,27 +635,28 @@ function mustSetPw(){
 }
 function pwGateHTML(){
   return `<div class="card" style="max-width:460px;margin:40px auto;border-color:var(--gold)">
-    <b style="font-size:18px">請先設定你自己的密碼</b>
+    <b style="font-size:18px">${T("請先設定你自己的密碼","Set your own password first")}</b>
     <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
-      設定一組只有你知道的密碼之後才能開始使用。<br>系統不會保留你的密碼原文，忘記只能請管理員重設。</div>
-    <label style="margin-top:14px">新密碼（至少 ${PW_MIN} 碼）</label>
-    <input id="pwg1" type="password" autocomplete="new-password" placeholder="輸入新密碼">
-    <label style="margin-top:10px">再輸入一次</label>
-    <input id="pwg2" type="password" autocomplete="new-password" placeholder="再輸入一次" onkeydown="if(event.key==='Enter')savePwGate()">
-    <button class="btn" style="width:100%;margin-top:14px;font-size:16px;padding:12px" onclick="savePwGate()">設定密碼並開始使用</button>
-    <div class="muted" style="font-size:12px;margin-top:10px">忘記密碼時，請管理員到「設定 → 成員」幫你重設。</div>
+      ${T("設定一組只有你知道的密碼之後才能開始使用。<br>系統不會保留你的密碼原文，忘記只能請管理員重設。",
+          "Pick a password only you know before you start.<br>We never store your password itself — if you forget it, only the admin can reset it.")}</div>
+    <label style="margin-top:14px">${T("新密碼（至少 "+PW_MIN+" 碼）","New password (at least "+PW_MIN+" characters)")}</label>
+    <input id="pwg1" type="password" autocomplete="new-password" placeholder="${T("輸入新密碼","Enter a new password")}">
+    <label style="margin-top:10px">${T("再輸入一次","Enter it again")}</label>
+    <input id="pwg2" type="password" autocomplete="new-password" placeholder="${T("再輸入一次","Enter it again")}" onkeydown="if(event.key==='Enter')savePwGate()">
+    <button class="btn" style="width:100%;margin-top:14px;font-size:16px;padding:12px" onclick="savePwGate()">${T("設定密碼並開始使用","Save and start")}</button>
+    <div class="muted" style="font-size:12px;margin-top:10px">${T("忘記密碼時，請管理員到「設定 → 成員」幫你重設。","If you forget it, ask the admin to reset it in Settings → Members.")}</div>
   </div>`;
 }
 async function savePwGate(){
   const a=(val("pwg1")||"").trim(), b=(val("pwg2")||"").trim();
   const err=pwRuleError(a,b); if(err){ toast(err,true); return; }
   const u=((STATE&&STATE.users)||[]).find(x=>x.name===realUser());
-  if(await pwCheck(u, a)){ toast("不能沿用原本的密碼",true); return; }
+  if(await pwCheck(u, a)){ toast(T("不能沿用原本的密碼","You can't reuse your current password"),true); return; }
   // pw:"" ＝ 把明文清掉；之後只留 pwHash
   const body={pwHash: await pwMakeHash(a), pw:"", pwSet:true};
   // 出勤從這一刻開始算。第二次改密碼不會重設，否則等於把之前的出勤洗掉。
   if(!(u&&u.pwAt)) body.pwAt=nowIso();
-  const okDone=await write("PUT","/api/users/"+realUser(),body,"密碼已設定，開始使用吧");
+  const okDone=await write("PUT","/api/users/"+realUser(),body,T("密碼已設定，開始使用吧","Password saved — you're all set"));
   if(okDone){ applyState(LAST_RAW); }
 }
 function render(){
@@ -641,7 +672,8 @@ function render(){
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   const banner = ONLINE ? "" :
-    `<div class="card" style="border-color:var(--red)">目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
+    `<div class="card" style="border-color:var(--red)">${T("目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。",
+      "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
   // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
@@ -3808,7 +3840,7 @@ function lineAccounts(k){ const L=LINES[k]; if(!L) return [];
   return intlAccountsFor(k).map(a=>a.name); }
 function lineTarget(k){ const L=LINES[k]; if(!L) return 2;
   const v=STATE.settings&&STATE.settings[L.targetKey]; return (v!=null&&v!=="")?(+v||0):2; }
-function lineVersionsOfSrc(k, sourceId){ return (STATE.videos||[]).filter(v=>lineMatch(v,k) && v.sourceVideoId===sourceId); }
+function lineVersionsOfSrc(k, sourceId){ return versionsOfSrc(sourceId).filter(v=>lineMatch(v,k)); }
 function lineDayList(k, date, acct){ return (STATE.videos||[]).filter(v=>lineMatch(v,k) && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
 function lineDayBreak(k, date, acct){ const total=lineDayList(k,date,acct).length, target=lineTarget(k);
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
@@ -3916,7 +3948,7 @@ function inheritedDriveHint(v){
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
 function intlDailyTarget(){ return lineTarget("en"); }
-function localizedVersionsOfSrc(sourceId){ return (STATE.videos||[]).filter(v=>v.sourceVideoId===sourceId && v.locale); }
+function localizedVersionsOfSrc(sourceId){ return versionsOfSrc(sourceId).filter(v=>v.locale); }
 // 版本卡（源片視窗用，四條線共用）：列出這支源片在某條線的所有版本；
 // 欄位／狀態顏色只有這一份，差異只有「標題、是否顯示語言欄、是否顯示觀看數」
 function lineVersionsCard(cfg){
