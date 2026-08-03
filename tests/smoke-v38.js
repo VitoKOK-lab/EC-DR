@@ -46,8 +46,8 @@ ok("intl 編輯視窗 English (labels+footer)", modalHTML.includes("Raw title") 
 ok("intl 剪輯看不到階段下拉（只能用完成鍵）", !modalHTML.includes('<select id="e_stage"') && modalHTML.includes('id="e_stage"'));
 openVideoModal("S1", false);
 ok("intl 檢視視窗 English rows", modalHTML.includes("Video details") && modalHTML.includes("Post caption") && !modalHTML.includes("影片內容"));
-openDay(T0);
-ok("intl 點日視窗 English", modalHTML.includes("Videos this day") && modalHTML.includes("Schedule a video on this day") && !modalHTML.includes("當日影片"));
+let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDay(T0); toast=oldToast;
+ok("intl 點日視窗 English", toastMsg.includes("只有") || toastMsg.includes("Only"));
 
 // --- editor：中文完全不變 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
