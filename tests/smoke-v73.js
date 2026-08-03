@@ -81,7 +81,10 @@ ok("團隊看板也算得到這支", viewTeam().includes(">1</div><div class=\"l
   const calls=[];
   global.window.DB={ set:async()=>{}, update:async(c,id,p)=>{calls.push([c,id,p]);}, del:async()=>{},
     scheduleSet:async()=>{}, setSettings:async()=>{} };
-  setup([mk({name:"手動改成已完成",stage:"剪輯中",editor:"小葵",claimedBy:"小葵",claimedAt:T0+"T01:00:00",finishedAt:""})]);
+  // 認領時間要用「一小時前」而不是今天 01:00 —— 在台灣時間 00:00–01:00 之間跑，
+  // 今天 01:00 還沒到，durationMin 會因為「完成早於認領」回 null，測試每天那一小時都會紅
+  const CLAIMED=new Date(Date.now()+288e5-36e5).toISOString().slice(0,19);
+  setup([mk({name:"手動改成已完成",stage:"剪輯中",editor:"小葵",claimedBy:"小葵",claimedAt:CLAIMED,finishedAt:""})]);
   const vid1=STATE.videos[0].id;
   await route("PUT","/api/videos/"+vid1,{video:{stage:"已完成"}});
   const p1=(calls.find(c=>c[1]===vid1)||[])[2]||{};
