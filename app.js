@@ -2800,6 +2800,8 @@ function batchNewFootage(){ if(dbBlocked()) return;
       <legend style="font-size:13px;color:var(--muted);padding:0 6px">${T("第 "+(i+1)+" 支","Clip "+(i+1))}</legend>
       <label>${T("原始片名（編號自動產生：民國年＋月日＋當日序號）","Raw title (code auto-generated)")}</label>
       <input id="bn${i}" placeholder="${T("毛片片名（留空＝不建立這支）","Raw title (leave empty to skip)")}">
+      <label>${T("影片文案（口播台詞）· 填了片名就必填","Script (spoken lines) · required once a title is filled")}</label>
+      <input id="bv${i}" autocomplete="off" placeholder="${T("這支要講什麼","What this clip should say")}">
       <label>${T("毛片雲端連結","Raw footage cloud link")}</label>
       <input id="bl${i}" placeholder="${T("毛片原始檔雲端連結（選填）","Cloud link (optional)")}">
       ${productRows("b"+i, [])}
@@ -2814,13 +2816,18 @@ function batchNewFootage(){ if(dbBlocked()) return;
     const bLang=val("b_lang")||"";
     const items=[];
     for(let i=0;i<5;i++){ const name=zhTW((val("bn"+i)||"").trim()); if(!name) continue;
-      items.push({name, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
+      // 有片名就一定要有文案（同上：只有片名＝空殼，拍片的人接不下去）
+      const vcopy=zhTW((val("bv"+i)||"").trim());
+      if(!vcopy){ toast(T("第 "+(i+1)+" 支有片名但沒填文案，請補上（或把片名清空跳過這支）",
+                          "Clip "+(i+1)+" has a title but no script — fill it in, or clear the title to skip"),true); return false; }
+      items.push({name, videoCopy:vcopy, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
     // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
     let ok=0; BULK_BUSY=true; const made=[];
     try{
       for(let i=0;i<items.length;i++){
         const rec=newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
+          videoCopy:items[i].videoCopy,
           rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
           tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]});   // 有銷售商品 → 自動帶「寵粉」
         made.push(rec);
@@ -2874,13 +2881,17 @@ function newSimpleVideo(){
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <label>${T("原始片名","Raw title")}</label><input id="sv_name" placeholder="${T("毛片名稱","Raw footage name")}">
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="sv_link" placeholder="${T("毛片原始檔雲端連結（選填）","Cloud link (optional)")}">
-    <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines in the video)")}</label><input id="sv_vcopy" autocomplete="off">
+    <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
+    <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
     ${productRows("sv", [])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
     if(!name){ toast(T("請輸入原始片名","Enter the raw title"),true); return false; }
+    // 文案必填：片名只是代號，文案才說得出要拍什麼。留空的話這支到了拍片那邊等於空殼。
+    const vcopy=zhTW(val("sv_vcopy").trim());
+    if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
     const svProducts=collectProducts("sv");
-    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:zhTW(val("sv_vcopy").trim()), products:svProducts,
+    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
       origLang:val("sv_lang")||"",
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
