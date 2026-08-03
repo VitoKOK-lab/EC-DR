@@ -117,7 +117,11 @@ ok("[intl] 分頁有 Team Board", myTabs().some(t=>t[0]==="team"&&t[1]==="Team B
 // ── 團隊看板內容 ──
 reset(); as("小葵","editor");
 let t=viewTeam();
-ok("看板列出所有人（含不剪片的員工）", ["小葵","Anna","小美","阿凱"].every(n=>t.includes(n)));
+// v119 分區：看板卡片會寫出片名，所以只列同區的人 —— 台灣看不到 Anna（海外）
+ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>t.includes(n)));
+ok("台灣看不到海外同事", !t.includes("Anna"));
+{ as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
+  ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));
 ok("交辦標示為主管交辦（不寫誰）", t.includes("主管交辦") && !t.includes("Regina 交辦"));
 ok("看得到處理狀況", t.includes("處理狀況") && t.includes("已回覆 12 則"));
@@ -136,7 +140,8 @@ ok("純檢視：沒有任何會改到資料的動作", ["reviewVid(","flowAssign
 // ── 海外看板全英文 ──
 reset(); as("Anna","intl");
 let te=viewTeam();
-ok("海外看板是英文", te.includes("Team Board") && te.includes("Tasks done") && te.includes(">Assigned<"));
+// v119 分區：海外的看板上只剩自己與管理層，交辦都是台灣同事的 → 改用他自己卡片上的英文字驗
+ok("海外看板是英文", te.includes("Team Board") && te.includes("Tasks done") && te.includes("No tasks today"));
 ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.includes("交辦完成"));
 
 // ── 人資只有看板，且看得到所有交辦 ──

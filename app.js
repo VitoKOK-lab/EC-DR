@@ -1555,8 +1555,19 @@ function staffNamesSorted(roles){
 // 會讓它們從毛片庫存、指派清單、儀表板數字裡整批消失。
 // ===================================================================
 const ZONE_LABEL={tw:["台灣","Taiwan"], intl:["海外","Overseas"]};
-// 這支影片屬於哪一區：有 locale（en/th）＝海外；其餘（中文源片、shopee、ms）＝台灣
-function zoneOfVideo(v){ return (v && v.locale) ? "intl" : "tw"; }
+// 這支影片屬於哪一區。三種情況分開看：
+//   ① 有 locale（en/th）＝海外做的版本殼
+//   ② 有 channel（shopee/ms）＝台灣做的版本殼 —— 版本殼不等於海外
+//   ③ 都沒有＝源片，看它「原本是用什麼語言拍的」：泰文／英文＝海外的原創，
+//      中文與馬來西亞＝台灣。（用泰文／英文拍的原創確實存在，v119 修正）
+function zoneOfVideo(v){
+  if(!v) return "tw";
+  if(v.locale) return "intl";
+  if(v.channel) return "tw";
+  return zoneOfOrigLang(origLangOf(v));
+}
+// 「原本語言」對應到哪一區（源片與待認領池的分類共用這一份）
+function zoneOfOrigLang(l){ return (l==="en"||l==="th") ? "intl" : "tw"; }
 // 這個人看得到哪幾區。職位是唯一真相來源 —— 要換區就改職位，不另外開設定
 function zoneOfUser(name){
   const u=(STATE.users||[]).find(x=>x.name===name);
@@ -1565,6 +1576,8 @@ function zoneOfUser(name){
   return r==="intl" ? "intl" : "tw";
 }
 function myZone(){ return zoneOfUser(currentUser()); }
+// 看不看得到「這個人」：管理層（zone 是 both）永遠看得到，其餘只看同區
+function seesPerson(name){ const z=zoneOfUser(name); return z==="both" || seesZone(z); }
 function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
@@ -1727,7 +1740,12 @@ function poolMatch(v){
           Array.isArray(v.tags)?v.tags.join(" "):""]
     .filter(Boolean).join(" ").toLowerCase().includes(q);
 }
-function poolCat(v){ return (v.channel&&CHANNELS[v.channel])?v.channel:(v.locale||"tw"); }
+// 待認領池的快選分類。源片沒有 locale，要看「原本語言」才知道它是中文毛片還是海外原創
+function poolCat(v){
+  if(v.channel&&CHANNELS[v.channel]) return v.channel;
+  if(v.locale) return v.locale;
+  const l=origLangOf(v); return zoneOfOrigLang(l)==="intl" ? l : "tw";
+}
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
   const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]]
@@ -2566,8 +2584,11 @@ function dashKpiCard(kpi, starName, okEditors, bestEdit, bestACount, bestATime){
 //         ②本月成效（一張表）
 // 純檢視：沒有按鍵、沒有連結、不寫任何資料。人資只有這一頁。
 // ===================================================================
+// 團隊看板只列同區的人 —— 卡片上會寫出每個人今天完成的影片標題，
+// 不分區的話台灣看得到英文／泰文片名、海外看得到中文毛片名。
+// 管理層（管理員／經理人／人資）看全部，也永遠對所有人可見（大家要找得到主管）。
 function teamStaff(){
-  return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+  return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor") && seesPerson(u.name)));
 }
 // 某人「今天」的成效：出勤、今日完成、進行中、交辦完成
 function teamDayStat(name, allTasks){
@@ -3241,10 +3262,13 @@ function zoneSwitchHTML(){
 function viewVideosTW(){
   const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
   const langCount={}; allSrc.forEach(v=>{ const l=effOrigLang(v); langCount[l]=(langCount[l]||0)+1; });
+  // 只列屬於台灣區的原本語言（中文／馬來西亞）—— 泰文與英文拍的原創屬於海外，不在這個庫裡
+  const langs=ORIG_LANGS.map((x,i)=>[x[0],x[1],["Chinese","Thai","English","Malaysia"][i]]).filter(([k])=>zoneOfOrigLang(k)==="tw");
+  if(!langs.some(([k])=>k===VID_LANG)) VID_LANG="";
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
     <label style="margin:0">${T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
-      ${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}${paren(langCount[k]||0)}</option>`).join("")}
+      ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
   return `<h2>${T("影片庫","Library")}</h2>
   <div class="card">

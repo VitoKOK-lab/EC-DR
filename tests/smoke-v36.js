@@ -59,10 +59,23 @@ localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role",
 VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set();
 ZONE_VIEW="tw"; let h=viewVideos();
 // v115 分區：台灣庫把蝦皮／馬來版併進來，版本殼的語言跟著源片算 → 中文從 2 變 3
-ok("語言選單存在且有計數", h.includes("原本語言") && h.includes("中文（3）") && h.includes("泰文（1）") && h.includes("英文（1）") && h.includes("馬來西亞（1）"));
+// v119：用泰文／英文拍的原創屬於海外，語言選單只留台灣區的中文與馬來西亞
+ok("語言選單存在且有計數", h.includes("原本語言") && h.includes("中文（3）") && h.includes("馬來西亞（1）"));
+ok("台灣的語言選單沒有泰文／英文（那是海外的）", !h.includes("泰文（") && !h.includes("英文（"));
 ok("中文庫只列中文原本（含舊資料無欄位者）", h.includes("舊欄位無 origLang") && !h.includes("Thai original clip"));
-VID_LANG="th"; h=viewVideos();
-ok("切到泰文庫只列泰文原本", h.includes("Thai original clip") && !h.includes("舊欄位無 origLang"));
+ok("台灣庫完全看不到泰文原創", !h.includes("Thai original clip"));
+{ // 泰文原創歸海外：走海外的待認領池（海外的「影片庫」是台灣已上片的來源挑選清單，不是全庫）
+  ok("泰文原創屬於海外區", zoneOfVideo(vid("S2"))==="intl" && zoneOfVideo(vid("S3"))==="intl");
+  ok("中文與馬來原創屬於台灣區", zoneOfVideo(vid("S1"))==="tw" && zoneOfVideo(vid("S4"))==="tw" && zoneOfVideo(vid("OLD1"))==="tw");
+  localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
+  const pool=poolAll().map(v=>v.id);
+  ok("海外的待認領池有泰文／英文原創", pool.includes("S2") && pool.includes("S3"));
+  ok("海外的待認領池沒有中文毛片與蝦皮版", !pool.includes("OLD1") && !pool.includes("V201"));
+  ok("泰文原創在池裡歸「泰文」那一類", poolCat(vid("S2"))==="th" && poolCat(vid("S3"))==="en");
+  localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
+  const twPool=poolAll().map(v=>v.id);
+  ok("台灣的待認領池看不到泰文／英文原創", !twPool.includes("S2") && !twPool.includes("S3"));
+  localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss"); }
 VID_LANG="my"; VID_VIEW="old"; h=viewVideos();
 ok("馬來庫舊片分頁列出馬來原本", h.includes("Malay original"));
 
