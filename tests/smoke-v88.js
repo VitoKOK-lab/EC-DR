@@ -51,24 +51,24 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 
 // ══ 分段判定 ══
 reset();
-ok("有文案沒毛片 → script", vidSegment(v_("A",{videoCopy:"口播台詞"}))==="script");
+ok("有文案沒毛片 → 未拍・未排程", vidSegment(v_("A",{videoCopy:"口播台詞"}))==="scriptNoSched");
 ok("有文案也有毛片 → 照舊待剪", vidSegment(v_("B",{videoCopy:"口播台詞",rawLink:"http://d"}))==="rawNoSched");
-ok("沒文案沒毛片 → 也是 script（只填片名就排日期的，其實還沒拍）", vidSegment(v_("C"))==="script");
+ok("沒文案沒毛片 → 也算沒拍（只填片名就排日期的，其實還沒拍）", vidSegment(v_("C"))==="scriptNoSched");
 ok("沒文案有毛片 → 照舊待剪", vidSegment(v_("D",{rawLink:"http://d"}))==="rawNoSched");
-ok("沒毛片但排了程 → 還是 script（沒拍就是沒拍）",
-   vidSegment(v_("E",{scheduledDate:D(3)}))==="script");
+ok("沒毛片但排了程 → 未拍・已排程（沒拍就是沒拍）",
+   vidSegment(v_("E",{scheduledDate:D(3)}))==="scriptSched");
 ok("二創殼不受影響（本來就沒有毛片連結）",
-   vidSegment(v_("X1",{channel:"shopee",sourceVideoId:"S"}))!=="script" &&
-   vidSegment(v_("X2",{locale:"en",sourceVideoId:"S"}))!=="script");
-ok("剪完的不會跑進來", vidSegment(v_("F",{videoCopy:"x",stage:"已完成",finishedAt:D(-1)+"T05:00:00",publishedLink:"http://p"}))!=="script");
+   !String(vidSegment(v_("X1",{channel:"shopee",sourceVideoId:"S"}))).startsWith("script") &&
+   !String(vidSegment(v_("X2",{locale:"en",sourceVideoId:"S"}))).startsWith("script"));
+ok("剪完的不會跑進來", !String(vidSegment(v_("F",{videoCopy:"x",stage:"已完成",finishedAt:D(-1)+"T05:00:00",publishedLink:"http://p"}))).startsWith("script"));
 ok("舊片不會跑進來", vidSegment(v_("G",{videoCopy:"x",tags:["舊片"]}))==="old");
-ok("毛片連結只有空白也算沒拍", vidSegment(v_("H",{videoCopy:"   "}))==="script");
-ok("毛片連結只有空白不算有毛片", vidSegment(v_("I",{videoCopy:"x",rawLink:"   "}))==="script");
+ok("毛片連結只有空白也算沒拍", vidSegment(v_("H",{videoCopy:"   "}))==="scriptNoSched");
+ok("毛片連結只有空白不算有毛片", vidSegment(v_("I",{videoCopy:"x",rawLink:"   "}))==="scriptNoSched");
 
 // ══ 排序：文案階段排在待剪前面 ══
 reset();
-ok("script 排最前面（0）", vidOrderRank(v_("A",{videoCopy:"x"}))===0);
-ok("待剪未排是 1", vidOrderRank(v_("B",{rawLink:"http://d"}))===1);
+ok("未拍・未排程排最前面（0）", vidOrderRank(v_("A",{videoCopy:"x"}))===0);
+ok("待剪未排是 2", vidOrderRank(v_("B",{rawLink:"http://d"}))===2);
 ok("排序沒有被 ?? 吃掉 0", vidOrderRank(v_("A",{videoCopy:"x"}))!==9);
 
 // ══ 影片庫畫面 ══
@@ -82,24 +82,23 @@ const LIB=[
 ];
 reset(LIB); as("Regina","manager");
 { const h=viewVideos();
-  ok("多了「未拍片」這個分頁", h.includes("未拍片"));
-  ok("它排在「待剪・未排程」前面",
-     h.indexOf("未拍片")<h.indexOf("待剪・未排程"));
+  ok("多了「未拍」這個分頁", h.includes("<span>未拍</span>"));
+  ok("它排在「待剪」前面",
+     h.indexOf("<span>未拍</span>")<h.indexOf("<span>待剪</span>"));
   ok("它排在語言下拉後面（還在分頁列裡）",
-     h.indexOf("原本語言")<h.indexOf("未拍片"));
-  ok("數字是 2", tabN(h,"未拍片")===2);
-  ok("待剪・未排程剩 1（S1 S2 被移走了）", tabN(h,"待剪・未排程")===1);
-  ok("原本的五個分頁都還在",
-     ["待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"].every(x=>h.includes(x))); }
+     h.indexOf("原本語言")<h.indexOf("<span>未拍</span>"));
+  ok("數字是 2", tabN(h,"未拍")===2);
+  ok("待剪剩 2（S1 S2 被移走了）", tabN(h,"待剪")===2);
+  ok("四個分頁都在", ["未拍","待剪","剪完","舊片"].every(x=>h.includes("<span>"+x+"</span>"))); }
 reset(LIB); as("Regina","manager"); VID_VIEW="script";
-ok("點進去只列有文案未拍片的", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2","N1","O1"]))===JSON.stringify(["S1","S2"]));
-reset(LIB); as("Regina","manager"); VID_VIEW="rawNoSched";
-ok("待剪那頁不再列到它們", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2"]))===JSON.stringify(["R1"]));
+ok("點進去只列未拍的", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2","N1","O1"]))===JSON.stringify(["S1","S2"]));
+reset(LIB); as("Regina","manager"); VID_VIEW="raw";
+ok("待剪那頁不再列到它們", JSON.stringify(listed(viewVideos(),["S1","S2","R1","R2"]))===JSON.stringify(["R1","R2"]));
 
 // ══ 沒有這種片的時候 ══
 reset([v_("R1",{rawLink:"http://d"})]); as("Regina","manager");
 { const h=viewVideos();
-  ok("沒有這種片時分頁還是在（數字 0）", h.includes("未拍片") && tabN(h,"未拍片")===0); }
+  ok("沒有這種片時分頁還是在（數字 0）", h.includes("<span>未拍</span>") && tabN(h,"未拍")===0); }
 reset([v_("R1",{rawLink:"http://d"})]); as("Regina","manager"); VID_VIEW="script";
 ok("空的分頁不會炸", typeof viewVideos()==="string" && viewVideos().length>0);
 
@@ -118,7 +117,7 @@ as("Regina","manager"); VID_VIEW="script";
 // ══ 海外剪輯看到英文 ══
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外的分頁名是英文", h.includes("Not shot") && !h.includes("未拍片")); }
+  ok("海外的分頁名是英文", h.includes("Not shot") && !h.includes("未拍")); }
 
 // ══ 其他畫面不受影響 ══
 // 儀表板數「剪完・未排程」的那個數字：新分段不該把它算走

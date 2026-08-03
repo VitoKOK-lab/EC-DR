@@ -31,7 +31,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
 function reset(opts){
   opts=opts||{};
   calls=[]; toasts=[]; fields={};
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
   POOL_FILTER="all"; POOL_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Regina",role:"manager",pwHash:H},{name:"管理員",role:"boss"}],
@@ -157,7 +157,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   ok("補上毛片連結就回到待認領", viewWork().includes("claimVid('S1')"));
   // 影片庫那邊照舊看得到
   reset({videos:POOL}); as("Regina","manager"); VID_VIEW="script";
-  ok("影片庫的「有文案・未拍片」照樣列得出來",
+  ok("影片庫的「未拍・未排程」照樣列得出來",
      viewVideos().includes("'S1'") && viewVideos().includes("'S2'"));
 
   // ══ render 不炸 ══

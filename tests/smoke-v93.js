@@ -31,7 +31,7 @@ const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+i
   tags:[],products:[],usageHistory:[],metrics:[]},o||{});
 function reset(videos){
   calls=[]; toasts=[]; fields={}; modalHTML="";
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Regina",role:"manager",pwHash:H},{name:"管理員",role:"boss"}],

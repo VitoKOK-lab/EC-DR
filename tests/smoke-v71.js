@@ -39,7 +39,7 @@ function reset(videos){
     settings:{dailyTarget:4,videoTags:["舊片"],sources:["老闆自拍"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2026-07-01"},
     schedule:{}, logs:[], tasks:{}, shifts:{}, deletedVideos:[], videos: videos||[] };
-  CUR_TAB=null; VIEW_AS=null; VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
+  CUR_TAB=null; VIEW_AS=null; VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
   hookDB();
 }
 const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); };
@@ -89,7 +89,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   reset([mkVid("V001")]);
   as("小葵","editor");
   batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bl"+i]=""; }
+  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bv"+i]="口播"+(i+1); fields["bl"+i]=""; }
   fields.b_lang="";
   await MODAL_OK(); await wait(30);
   { const made=Object.values(db.videos||{});
@@ -104,9 +104,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   as("小葵","editor");
   await route("POST","/api/videos",{video:{name:"只填片名的",rawName:"只填片名的"}});
   STATE.videos=Object.values(db.videos);                       // 模擬 Firestore 同步回來
-  ok("只填片名的新片會落在「未拍片」", vidSegment(STATE.videos[0])==="script");
+  ok("只填片名的新片會落在「未拍・未排程」", vidSegment(STATE.videos[0])==="scriptNoSched");
   VID_VIEW="script";
-  ok("影片庫的未拍片分頁看得到", viewVideos().includes("只填片名的"));
+  ok("影片庫的未拍分頁看得到", viewVideos().includes("只填片名的"));
   ok("還沒拍的不進待認領", !viewWork().includes("只填片名的"));
   ok("片名前面有編號", vidTitle(STATE.videos[0]).startsWith(STATE.videos[0].code));
 
@@ -116,7 +116,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   await route("POST","/api/videos",{video:{name:"剛剛新增的片",rawName:"剛剛新增的片",rawLink:"http://raw"}});
   STATE.videos=Object.values(db.videos);
   ok("有毛片的新片會落在「待剪・未排程」", vidSegment(STATE.videos[0])==="rawNoSched");
-  VID_VIEW="rawNoSched";
+  VID_VIEW="raw";
   ok("影片庫看得到這支片", viewVideos().includes("剛剛新增的片"));
   ok("上班計畫的待認領也看得到", viewWork().includes("剛剛新增的片"));
 

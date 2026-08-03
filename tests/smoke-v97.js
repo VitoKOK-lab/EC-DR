@@ -34,7 +34,7 @@ const WIP=[
 ];
 function reset(videos){
   fields={}; modalHTML="";
-  VID_LANG=""; VID_VIEW="rawNoSched"; VID_MODE="list"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
+  VID_LANG=""; VID_VIEW="raw"; VID_MODE="list"; VID_TAGS=new Set(); VID_Q=""; POOL_FILTER="all"; POOL_Q="";
   STATE={ users:[{name:"小葵",role:"editor",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Anna",role:"intl",craft:"both",pwHash:H,pwAt:"2020-01-01T00:00:00"},
                  {name:"Regina",role:"manager",pwHash:H},{name:"小美",role:"hr",pwHash:H},

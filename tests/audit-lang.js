@@ -55,7 +55,7 @@ function scanEN(label, html){ const m=String(html).replace(/English \(TikTok\)|T
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 WORK_ZONE="shopee"; scanCJK("viewWork", viewWork());
 WORK_ZONE="en"; scanCJK("viewWork(zone en)", viewWork());
-VID_LANG=""; VID_VIEW="rawNoSched"; VID_TAGS=new Set(); VID_Q="";
+VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
 scanCJK("viewVideos", viewVideos());
 scanCJK("viewTeam", viewTeam());
 ["tw","th","shopee","en","ms"].forEach(p=>{ CAL_PLAT=p; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT=""; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};

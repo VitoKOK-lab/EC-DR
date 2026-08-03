@@ -48,24 +48,26 @@ const tabN=(h,label)=>{ const seg=h.split(">"+label+"</span>")[1]||""; const m=s
 const listed=(h,ids)=>ids.filter(id=>((h.split('id="vid_list"')[1])||"").includes("'"+id+"'"));
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
+// 落在「未拍」的兩段之一
+const notShotSeg=(v)=>String(vidSegment(v)).startsWith("script");
 
 // ══════════ ① 沒有毛片連結＝還沒拍 ══════════
 reset();
-ok("只填片名 → 未拍片", vidSegment(v_("A"))==="script");
-ok("只填片名又排了日期 → 還是未拍片（就是使用者遇到的那支）",
-   vidSegment(v_("B",{scheduledDate:D(4)}))==="script");
-ok("有文案沒毛片 → 未拍片", vidSegment(v_("C",{videoCopy:"口播台詞"}))==="script");
-ok("毛片連結只有空白 → 未拍片", vidSegment(v_("D",{rawLink:"   "}))==="script");
+ok("只填片名 → 未拍・未排程", vidSegment(v_("A"))==="scriptNoSched");
+ok("只填片名又排了日期 → 未拍・已排程（就是使用者遇到的那支）",
+   vidSegment(v_("B",{scheduledDate:D(4)}))==="scriptSched");
+ok("有文案沒毛片 → 未拍・未排程", vidSegment(v_("C",{videoCopy:"口播台詞"}))==="scriptNoSched");
+ok("毛片連結只有空白 → 未拍・未排程", vidSegment(v_("D",{rawLink:"   "}))==="scriptNoSched");
 ok("有毛片連結 → 待剪・未排程", vidSegment(v_("E",{rawLink:"http://raw"}))==="rawNoSched");
 ok("有毛片又排了日期 → 待剪・已排程", vidSegment(v_("F",{rawLink:"http://raw",scheduledDate:D(4)}))==="rawSched");
-ok("剪完的不受影響", vidSegment(v_("G",{stage:"已完成",finishedAt:D(-1)+"T05:00:00",publishedLink:"http://p"}))!=="script");
+ok("剪完的不受影響", !notShotSeg(v_("G",{stage:"已完成",finishedAt:D(-1)+"T05:00:00",publishedLink:"http://p"})));
 ok("舊片不受影響", vidSegment(v_("H",{tags:["舊片"]}))==="old");
 
 // 二創殼本來就沒有毛片連結（素材來自源片），不能被一起判成沒拍
-ok("蝦皮殼不算未拍", vidSegment(v_("P1",{channel:"shopee",sourceVideoId:"S1"}))!=="script");
-ok("馬來殼不算未拍", vidSegment(v_("M1",{channel:"ms",sourceVideoId:"S1"}))!=="script");
-ok("英文殼不算未拍", vidSegment(v_("E1",{locale:"en",sourceVideoId:"S1"}))!=="script");
-ok("泰文殼不算未拍", vidSegment(v_("T1",{locale:"th",sourceVideoId:"S1"}))!=="script");
+ok("蝦皮殼不算未拍", !notShotSeg(v_("P1",{channel:"shopee",sourceVideoId:"S1"})));
+ok("馬來殼不算未拍", !notShotSeg(v_("M1",{channel:"ms",sourceVideoId:"S1"})));
+ok("英文殼不算未拍", !notShotSeg(v_("E1",{locale:"en",sourceVideoId:"S1"})));
+ok("泰文殼不算未拍", !notShotSeg(v_("T1",{locale:"th",sourceVideoId:"S1"})));
 
 // 待認領：沒拍的不進去，二創殼照進
 reset([v_("A"), v_("B",{scheduledDate:D(4)}), v_("E",{rawLink:"http://raw"}),
@@ -80,23 +82,25 @@ as("小葵","editor");
 reset([v_("X",{code:"260807",name:"(未拍)農曆七月茶晶避邪擋煞的串珠",
                rawName:"(未拍)農曆七月茶晶避邪擋煞的串珠",scheduledDate:D(4)})]);
 as("管理員","boss");
-{ VID_VIEW="rawSched";
+{ VID_VIEW="raw";
   ok("待剪・已排程那頁不再列到它", listed(viewVideos(),["X"]).length===0);
   VID_VIEW="script";
-  ok("未拍片那頁列得到它", listed(viewVideos(),["X"]).length===1); }
+  ok("未拍那頁列得到它", listed(viewVideos(),["X"]).length===1);
+  VID_UNSCHED=true;
+  ok("開「只看還沒排的」就不列它（它排過了）", listed(viewVideos(),["X"]).length===0);
+  VID_UNSCHED=false; }
 
 // ══════════ ② 分頁名稱 ══════════
 reset([v_("A"), v_("E",{rawLink:"http://raw"})]);
 as("管理員","boss");
 { const h=viewVideos();
-  ok("分頁改叫「未拍片」", h.includes("<span>未拍片</span>"));
+  ok("有「未拍」分頁", h.includes("<span>未拍</span>"));
   ok("不再寫「有文案」（沒文案的也會進來）", !h.includes("有文案・未拍片"));
-  ok("六個分頁都在", ["未拍片","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"]
-     .every(x=>h.includes("<span>"+x+"</span>"))); }
+  ok("四個分頁都在", ["未拍","待剪","剪完","舊片"].every(x=>h.includes("<span>"+x+"</span>"))); }
 reset([v_("A")]); as("Anna","intl");
 { const h=viewVideos();
   ok("海外看到的是英文", h.includes("<span>Not shot</span>"));
-  ok("海外沒有中文洩漏", !h.includes("未拍片")); }
+  ok("海外沒有中文洩漏", !h.includes("未拍")); }
 
 // ══════════ ③ 搜尋時分段數字要跟著動 ══════════
 const LIB=[
@@ -109,26 +113,23 @@ const LIB=[
 ];
 reset(LIB); as("管理員","boss");
 { const h=viewVideos();
-  ok("沒搜尋時：未拍片 2", tabN(h,"未拍片")===2);
-  ok("沒搜尋時：待剪・未排程 2", tabN(h,"待剪・未排程")===2);
-  ok("沒搜尋時：待剪・已排程 1", tabN(h,"待剪・已排程")===1);
+  ok("沒搜尋時：未拍 2", tabN(h,"未拍")===2);
+  ok("沒搜尋時：待剪 3", tabN(h,"待剪")===3);
   ok("沒搜尋時：舊片 1", tabN(h,"舊片")===1); }
 reset(LIB); as("管理員","boss"); VID_Q="農曆七月";
 { const h=viewVideos();
-  ok("搜尋後：未拍片剩 1", tabN(h,"未拍片")===1);
-  ok("搜尋後：待剪・未排程剩 1", tabN(h,"待剪・未排程")===1);
-  ok("搜尋後：待剪・已排程剩 1", tabN(h,"待剪・已排程")===1);
+  ok("搜尋後：未拍剩 1", tabN(h,"未拍")===1);
+  ok("搜尋後：待剪剩 2", tabN(h,"待剪")===2);
   ok("搜尋後：舊片剩 1", tabN(h,"舊片")===1);
-  ok("搜尋後：剪完・未排程是 0", tabN(h,"剪完・未排程")===0); }
+  ok("搜尋後：剪完是 0", tabN(h,"剪完")===0); }
 reset(LIB); as("管理員","boss"); VID_Q="完全沒有這種片";
 { const h=viewVideos();
-  ok("搜不到時每一頁都是 0",
-     ["未拍片","待剪・未排程","待剪・已排程","剪完・未排程","新片完成","舊片"].every(x=>tabN(h,x)===0)); }
+  ok("搜不到時每一頁都是 0", ["未拍","待剪","剪完","舊片"].every(x=>tabN(h,x)===0)); }
 
 // 標籤數字也要跟著搜尋走
 reset(LIB); as("管理員","boss"); VID_VIEW="script";
 { const tags=(viewVideos().split("標籤")[1]||"").split('id="vid_list"')[0];
-  ok("沒搜尋時未拍片頁有兩種標籤", tags.includes("寵粉") && tags.includes("生活分享")); }
+  ok("沒搜尋時未拍頁有兩種標籤", tags.includes("寵粉") && tags.includes("生活分享")); }
 reset(LIB); as("管理員","boss"); VID_VIEW="script"; VID_Q="農曆七月";
 { const tags=(viewVideos().split("標籤")[1]||"").split('id="vid_list"')[0];
   ok("搜尋後標籤只剩符合的那一種", tags.includes("寵粉") && !tags.includes("生活分享")); }
@@ -142,7 +143,7 @@ reset(LIB); as("管理員","boss");
   ok("打字不會觸發整頁重繪", !rendered);
   ok("清單就地換掉", list.innerHTML!=="__old__");
   ok("分段數字就地換掉", tabs.innerHTML!=="__old__" && tabs.innerHTML.includes("vtab-n"));
-  ok("分段數字反映搜尋結果", tabN(tabs.innerHTML,"未拍片")===1);
+  ok("分段數字反映搜尋結果", tabN(tabs.innerHTML,"未拍")===1);
   ok("標籤數字就地換掉", tagsEl.innerHTML!=="__old__");
   render=_r; }
 reset(LIB); as("管理員","boss");
@@ -167,7 +168,7 @@ ok("搜尋＋標籤一起生效", JSON.stringify(listed(viewVideos(),["S1","S2"]
 // ══════════ ⑥ render 不炸 ══════════
 reset(LIB);
 [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]].forEach(([u,r])=>{
-  ["script","rawNoSched","rawSched","newNoSched","newSched","old"].forEach(view=>{
+  ["script","raw","done","old"].forEach(view=>{
     as(u,r); CUR_TAB="videos"; VID_VIEW=view; VID_Q="";
     try{ render(); ok(`[${r}] ${view}`, true); }catch(e){ ok(`[${r}] ${view} → ${e.message}`, false); } }); });
 
