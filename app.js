@@ -940,7 +940,7 @@ function isTask(t){ return !!(t && !t.kind); }
 function realTasks(list){ return (list||[]).filter(isTask); }
 function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isNotice); }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>isTask(t) && t.user===currentUser() && t.date===today)
+  .filter(t=>isTask(t) && t.user===currentUser() && (t.date===today || (t.assignedBy && !t.done)))
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
 // 我的 HR 通知：今天發的，加上以前發但我還沒按「收到」的（不會漏看）
 function myNotices(){ return allNotices()
@@ -2152,7 +2152,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
         <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
         <span class="linetitle">${esc(vidTitle(v))}</span></div>`; }).join("");
-    const tasks=realTasks(allTasks).filter(t=>t.user===name&&t.date===today).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+    const tasks=realTasks(allTasks).filter(t=>t.user===name&&(t.date===today||(t.assignedBy&&!t.done))).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
     const taskRows=tasks.map(t=>{
       const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
         :(t.assignedBy&&!t.ack)?'<span class="pill em" style="font-size:10px">未讀</span>'
