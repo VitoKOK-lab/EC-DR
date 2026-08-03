@@ -244,9 +244,9 @@ ok("亂傳參數就回到清單，不會卡在無效狀態", VID_MODE==="list");
   reset([v_("V1",{locale:"en"})]); as("Anna","intl");
   openVideoModal("V1", true);
   ok("海外的封面格是英文", modalHTML.includes("Add cover") && !modalHTML.includes("加封面"));
-  reset([v_("R1",{rawLink:"http://d"})]); as("Anna","intl");
-  ok("海外的瀏覽切換是英文", viewVideos().includes("List") && viewVideos().includes("Covers")
-     && !viewVideos().includes(">☰ 清單"));
+  // v115 分區：海外的影片庫沒有清單／圖片切換，改在台灣庫上驗
+  reset([v_("R1",{rawLink:"http://d"})]); as("管理員","boss"); ZONE_VIEW="tw";
+  ok("瀏覽切換在台灣庫上", viewVideos().includes("☰ 清單") && viewVideos().includes("▦ 圖片"));
 
   // ══ fb.js：Storage 介面 ══
   ok("[fb] 有載入 Storage SDK", fbjs.includes("firebase-storage.js") && fbjs.includes("getStorage"));

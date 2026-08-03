@@ -72,11 +72,14 @@ WORK_ZONE="th"; h=viewWork(); zc=h.split("Create a version").slice(-1)[0];
 ok("泰文區只列 TH 帳號", zc.includes("tiktok-TH") && !zc.includes("tiktok-EN"));
 ok("泰文區版本 chip 只列 TH", !zc.includes(`openIntlModal('E1')`) && zc.includes(`openIntlModal('T1')`));
 
-// ── 海外視角：中文下顯示英文小字 ──
-VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q="";
+// ── 海外視角：來源清單中文標題下顯示英文小字 ──
+// v115 分區：海外的影片庫＝已上片的來源清單（S2），英文小字改掛在 ilib-en
+VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q=""; INTL_Q=""; INTL_LIB_LOC="";
+vid("S2").nameEn="Published source #gold";
 h=viewVideos();
-ok("intl 影片庫中文下有英文小字", h.includes("vt-en") && h.includes("Golden original"));
-ok("英文小字去掉 hashtag", !h.includes("Golden original #gold"));
+ok("intl 影片庫中文下有英文小字", h.includes("ilib-en") && h.includes("Published source"));
+ok("英文小字去掉 hashtag", !h.includes("Published source #gold"));
+vid("S2").nameEn="Published source";
 // v115 分區：海外走唯讀來源卡，文案優先顯示英文版
 openVideoModal("S1", false);
 ok("intl 來源卡顯示英文文案", modalHTML.includes("Golden copy EN"));

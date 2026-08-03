@@ -70,9 +70,9 @@ ok("月排程選單用 馬來西亞", h.includes(">馬來西亞<"));
 WORK_ZONE="shopee"; h=viewWork();
 ok("建立二創版本選單用 馬來西亞", h.includes(">馬來西亞<"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-// v115 分區：馬來西亞歸台灣，intl 只在影片庫的語言下拉看得到這個字
-h=viewVideos(); const a=h.includes("Malaysia (");
-ok("intl 影片庫語言下拉用 Malaysia", a);
+// v115 分區：馬來西亞歸台灣，海外的影片庫是來源清單，整頁都不該出現這個字
+h=viewVideos();
+ok("intl 影片庫沒有馬來西亞（歸台灣）", !h.includes("Malaysia"));
 CAL_PLAT="tw"; h=viewCal();
 ok("intl 月排程沒有馬來西亞（歸台灣）", !h.includes(">Malaysia<"));
 WORK_ZONE="en"; h=viewWork();

@@ -79,9 +79,10 @@ reset(LIB); as("小葵","editor");
   ok("待認領四個快選都在（台灣區）", ["全部","中文毛片","蝦皮","馬來西亞"]
      .every(x=>w.includes("<span>"+x+"</span>")));
   ok("台灣看不到英文／泰文快選", !w.includes("<span>英文</span>") && !w.includes("<span>泰文</span>")); }
+// v115 分區：海外的影片庫沒有四個管線分頁
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外的分頁名也包在 span 裡（英文）", h.includes("<span>Not shot</span>"));
+  ok("海外沒有台灣的管線分頁", !h.includes("<span>Not shot</span>") && !h.includes('id="vid_tabs"'));
   ok("海外沒有中文分頁名洩漏", !h.includes("<span>未拍</span>")); }
 
 // ══ 點分頁還是有作用 ══

@@ -1219,7 +1219,8 @@ function workReviewCard(me){
   // 已審過（不論 Regina 按的還是剪輯自己按的）都要「亮出來」，不能沈下去：
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
-  const linksDone=(v)=>!!(String(v.driveFolder||"").trim() && String(v.publishedLink||"").trim());
+  // 存檔連結要是「自己剪的那一支」；只是繼承源片的資料夾不算補齊，提醒不能提早消失
+  const linksDone=(v)=>!!(ownDrive(v) && String(v.publishedLink||"").trim());
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
@@ -3142,7 +3143,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidName(v))}</span>${noCopyDot(v)}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${noCopyDot(v)}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3152,19 +3153,34 @@ function vidTableRow(v){
       ${rev}</span></td>
   </tr>`;
 }
-// 目前分頁＋搜尋＋標籤篩完、排好序的影片（清單模式與圖片模式共用同一份）
-// 影片庫這一頁的母體：只列一創原本（依語言選單），不含二創版
-function vidAllOfLang(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)===VID_LANG); }
+// 版本殼的「原本語言」跟著它的源片走（殼自己沒有 origLang）
+function effOrigLang(v){ return origLangOf(anchorOf(v)); }
+// 台灣影片庫的母體：中文源片 ＋ 蝦皮版 ＋ 馬來版（同一區的都列在一起）
+function vidAllOfLang(){
+  return (STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw" && effOrigLang(v)===VID_LANG);
+}
+// 搜尋範圍含版本自己的欄位，也含源片的片名與編號 ——
+// 這樣打源片的中文片名，找得到它底下的蝦皮版。
 function vidMatchQ(v){
   const q=String(VID_Q||'').toLowerCase().trim(); if(!q) return true;
-  return [v.name,v.rawName,v.videoCopy,v.code,v.editor].map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
+  const a=anchorOf(v);
+  return [v.name,v.rawName,v.videoCopy,v.code,v.editor,v.channel,v.account,a.name,a.code]
+    .map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
 }
 function vidVisibleList(){
   let list=vidAllOfLang().filter(v=> vidGroupOf(v)===VID_VIEW).filter(vidMatchQ).filter(vidMatchSched);
-  if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(v).some(t=>VID_TAGS.has(t)));
-  // 五分類排序（過去→未來）：①未剪未排 ②未剪有排 ③已剪未排 ④已剪有排未過期 ⑤舊片(已剪過期)
-  // 同一類內：有排程依「預排上片日」、沒排程依編號(上傳先後)，都從過去到未來
-  list.sort((a,b)=> vidOrderRank(a)-vidOrderRank(b) || vidSortVal(a).localeCompare(vidSortVal(b)) || String(a.id).localeCompare(String(b.id)));
+  // 標籤看源片的 —— 版本殼自己的 tags 是空的，不這樣做一開標籤篩選版本就全不見
+  if(VID_TAGS.size) list=list.filter(v=>videoTagsOf(anchorOf(v)).some(t=>VID_TAGS.has(t)));
+  // 排序以源片為主鍵，版本殼緊跟在自己的源片後面（蝦皮在前、馬來在後）。
+  // 源片與它的版本落在不同分頁時，版本會在自己那一頁單獨出現，但位置仍照源片算。
+  const ORD=["shopee","ms"];
+  list.sort((a,b)=>{ const A=anchorOf(a), B=anchorOf(b);
+    return vidOrderRank(A)-vidOrderRank(B)
+        || vidSortVal(A).localeCompare(vidSortVal(B))
+        || String(A.id).localeCompare(String(B.id))
+        || (isSourceVid(a)?0:1)-(isSourceVid(b)?0:1)
+        || ORD.indexOf(a.channel)-ORD.indexOf(b.channel)
+        || String(a.id).localeCompare(String(b.id)); });
   return list;
 }
 // 圖片模式：一支一張封面卡
@@ -3174,7 +3190,7 @@ function vidCardHTML(v){
   return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidName(v))}${noCopyDot(v)}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${noCopyDot(v)}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3225,7 +3241,8 @@ function vidTabsHTML(){
 // 標籤鈕：只列出「這個分頁、這次搜尋結果裡實際有的標籤」並標數量 → 按了一定對得上影片
 function vidTagBtnsHTML(){
   const viewList=vidAllOfLang().filter(vidMatchQ).filter(vidMatchSched).filter(v=>vidGroupOf(v)===VID_VIEW);
-  const tagCount={}; viewList.forEach(v=>videoTagsOf(v).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
+  // 標籤看源片的（版本殼自己沒有標籤）
+  const tagCount={}; viewList.forEach(v=>videoTagsOf(anchorOf(v)).forEach(t=>{ tagCount[t]=(tagCount[t]||0)+1; }));
   const order=videoTags();
   const present=Object.keys(tagCount).sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib) || a.localeCompare(b); });
   return present.length
@@ -3245,9 +3262,20 @@ function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 // 開關只換清單與數字，不整頁重繪（跟搜尋同一條路）
 function vidSetUnsched(on){ VID_UNSCHED=!!on; vidFilter(); }
 function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
-function viewVideos(){
-  const allSrc=(STATE.videos||[]).filter(isSourceVid);   // 影片庫：目前只放源片（階段 D 會併入同區的版本）
-  const langCount={}; allSrc.forEach(v=>{ const l=origLangOf(v); langCount[l]=(langCount[l]||0)+1; });
+// 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
+// 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
+function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
+function zoneSwitchHTML(){
+  if(myZone()!=="both") return "";
+  const n=(z)=>(STATE.videos||[]).filter(v=>zoneOfVideo(v)===z).length;
+  return `<div class="vtabs" style="margin-bottom:10px">`+
+    ["tw","intl"].map(z=>`<button class="vtab ${curZone()===z?'on':''}" onclick="setZoneView('${z}')">`+
+      `<span>${T(ZONE_LABEL[z][0],ZONE_LABEL[z][1])}</span> <span class="vtab-n">${n(z)}</span></button>`).join("")+
+    `</div>`;
+}
+function viewVideosTW(){
+  const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
+  const langCount={}; allSrc.forEach(v=>{ const l=effOrigLang(v); langCount[l]=(langCount[l]||0)+1; });
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
     <label style="margin:0">${T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
@@ -3255,6 +3283,7 @@ function viewVideos(){
     </select></div>`;
   return `<h2>${T("影片庫","Library")}</h2>
   <div class="card">
+    ${zoneSwitchHTML()}
     ${langSel}
     <div class="vtabs" id="vid_tabs">${vidTabsHTML()}</div>
     <label style="display:inline-flex;align-items:center;gap:5px;margin:8px 0 0;font-size:12px;white-space:nowrap"
@@ -3276,6 +3305,32 @@ function viewVideos(){
     </div>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;
+}
+// 海外的影片庫：台灣已上片的舊片（可以拿來做版本的來源）＋自己已經做過的版本。
+// 台灣的四個管線分頁（未拍／待剪／剪完／舊片）對他們沒有意義，拿掉。
+function viewVideosIntl(){
+  const locs=["", "en", "th"];
+  if(!locs.includes(INTL_LIB_LOC)) INTL_LIB_LOC="";
+  const sel=`<select onchange="intlLibSetLoc(this.value)" style="width:auto;min-width:150px">
+    ${locs.map(l=>`<option value="${l}" ${INTL_LIB_LOC===l?'selected':''}>${l?esc(localeName(l)):T("全部語言","All languages")}</option>`).join("")}
+  </select>`;
+  return `<h2>${T("影片庫","Library")}</h2>
+  <div class="card">
+    ${zoneSwitchHTML()}
+    <div class="muted" style="font-size:13px;margin-bottom:10px">${T("挑一支台灣已上片的影片，做成你的語言版本。","Pick a published Taiwan video and make your language version.")}</div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      ${sel}
+      <input id="intl_q" placeholder="${T("搜尋片名／編號","Search title / code")}" value="${esc(INTL_Q)}"
+        oninput="INTL_Q=this.value;intlLibFilter()" style="flex:1;min-width:150px">
+    </div>
+    <div id="intl_lib">${intlLibRows(INTL_LIB_LOC)}</div>
+  </div>`;
+}
+function intlLibSetLoc(l){ INTL_LIB_LOC=(l==="en"||l==="th")?l:""; intlLibFilter(); }
+// 邊打邊篩：只換清單那一塊（找不到就退回整頁重繪）
+function intlLibFilter(){
+  const box=document.getElementById("intl_lib"); if(!box){ render(); return; }
+  box.innerHTML=intlLibRows(INTL_LIB_LOC);
 }
 // 刪除影片：二次確認，無法復原
 function delVideo(id){
@@ -3541,6 +3596,20 @@ function coverRefresh(id, nextCover){
 // 沒寫文案的小橘點。片名只是代號，沒文案等於拍片的人接不下去 ——
 // 新增時已經擋住了（v110），這個點是給既有那批沒文案的舊資料用的：
 // 邊看邊補，補完就自己不見。二創殼的文案是之後翻譯的，不算。
+// 版本殼在清單上要標出是哪個版本。這是顯示層 —— 既有那批 name 空白或沒後綴的
+// 舊資料靠它補齊，不回寫資料庫（新建立的會在存檔時就帶上，見 createLineVersion）。
+const VER_SUFFIX={shopee:["（蝦皮版）"," (Shopee)"], ms:["（馬來西亞版）"," (Malay)"],
+                  en:["（英文版）"," (English)"], th:["（泰文版）"," (Thai)"]};
+function verSuffixOf(v){ const p=VER_SUFFIX[lineOf(v)]; return p?T(p[0],p[1]):""; }
+function vidNameZoned(v){
+  if(isSourceVid(v)) return vidName(v);
+  const sfx=verSuffixOf(v);
+  const base=stripHash(v.name||"") || vidName(anchorOf(v));
+  if(!sfx) return base;
+  // 已經帶過後綴的不要疊第二次（比對時把括號與空白拿掉，中英兩版都認得）
+  const bare=sfx.replace(/[（）()\s]/g,"");
+  return base.replace(/[（）()\s]/g,"").includes(bare) ? base : (base+sfx);
+}
 function noCopyDot(v){
   if(!v || isVersion(v)) return "";
   if(String(v.videoCopy||"").trim()) return "";
@@ -3674,7 +3743,8 @@ function openVideoModal(id, edit, fromWork){
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>
     </div>`:''}
-    ${(v.stage==="剪輯中"&&!["boss","manager"].includes(currentRole()))?`<div class="card">
+    ${/* 主管也要退得了片（決策 8：不新增組長職位，改把這顆補給 boss／manager，與上面那顆並存） */
+      (v.stage==="剪輯中")?`<div class="card">
       <button class="btn sec sm" type="button" onclick="closeModal();unclaimVid('${id}')">${T("退回（放回待剪清單）","Return to the pool")}</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${T("不會刪除影片，只是退回給大家重選","Nothing is deleted — it goes back to the shared pool")}</span>
     </div>`:''}
@@ -3745,6 +3815,17 @@ function lineDayBreak(k, date, acct){ const total=lineDayList(k,date,acct).lengt
 // 來源片池：四條線共用「已完整上傳的中文舊片」，互相排除彼此的衍生版本
 function lineSourcePool(){ return (STATE.videos||[]).filter(v=> isSourceVid(v) && isPublished(v) && vidIsOld(v)); }
 // 建立版本殼（指派給自己；同源片同帳號不重複）。msg 由各線提供，行為只有這一份
+// 建立版本時自動帶的名稱後綴。寫進資料庫的字串不能用 T()：
+// 存進去的值不該跟著「現在是誰在看」變。英／泰用英文後綴，那是它們自己畫面的語言。
+const VER_SUFFIX_RAW={ shopee:"（蝦皮版）", ms:"（馬來西亞版）",
+                       en:" (English version)", th:" (Thai version)" };
+// 已經帶過後綴的不再補第二次（重覆建立、或人工改過名字都算）
+function withVerSuffix(base, k){
+  const sfx=VER_SUFFIX_RAW[k]||""; base=String(base||"").trim();
+  if(!sfx || !base) return base;
+  const bare=sfx.replace(/[（）()\s]/g,"");
+  return base.replace(/[（）()\s]/g,"").includes(bare) ? base : (base+sfx);
+}
 function createLineVersion(k, sourceId, account, msg){
   const L=LINES[k]; if(!L){ toast(T("未知的平台","Unknown line"),true); return; }
   account=account||"";
@@ -3752,8 +3833,12 @@ function createLineVersion(k, sourceId, account, msg){
   if(!isPublished(s)){ toast(msg.notPublished,true); return; }
   if(account && (STATE.videos||[]).some(v=>v.sourceVideoId===sourceId && lineMatch(v,k) && v.account===account)){
     toast(msg.dup(account),true); return; }
+  // 名稱：海外（英／泰）優先用源片的英文名當底，台灣（蝦皮／馬來）用中文名；再一律補上該線的後綴。
+  // 剪輯還是可以自己改，這只是省一次複製貼上，順便讓片名一眼看得出是哪一版。
+  const draft=(INTL_LOCALES.includes(k) ? stripHash(s.nameEn||"") : "") || stripHash(s.name||s.rawName||"");
   const rec=newVideoRecord({ [L.field]:k, account, sourceVideoId:sourceId,
-    rawName:(s.name||s.rawName||""), name:(msg.draftName?msg.draftName(s):""), videoCopy:"",
+    rawName:(s.name||s.rawName||""), name:withVerSuffix(draft,k), videoCopy:"",
+    driveFolder:String(s.driveFolder||"").trim(),   // 存檔位置跟源片同一個資料夾（剪好後自己換成自己的檔案連結）
     products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:currentUser() });
@@ -3813,6 +3898,20 @@ function srcOf(v){ return v&&v.sourceVideoId?vid(v.sourceVideoId):null; }
 // 版本殼要跟著哪一支源片一起看（清單排序、標籤、語言都以它為準）。
 // 源片被刪掉時退回自己，避免整個清單排序丟例外。
 function anchorOf(v){ return isSourceVid(v) ? v : (srcOf(v)||v); }
+// 建立版本時會把源片的存檔位置一起帶進來，方便存在同一個資料夾。
+// 但那還是「源片的檔案」—— 要等剪輯換成自己剪好的那一支，才算這支自己的存檔連結。
+function ownDrive(v){
+  const d=String((v&&v.driveFolder)||"").trim(); if(!d) return false;
+  if(isSourceVid(v)) return true;
+  const s=srcOf(v); return !s || d!==String(s.driveFolder||"").trim();
+}
+// 存檔欄位下的小字：值還是源片帶進來的時候才出現
+function inheritedDriveHint(v){
+  if(!v || isSourceVid(v) || ownDrive(v) || !String(v.driveFolder||"").trim()) return "";
+  return `<div class="muted" style="font-size:11px;margin-top:4px">${T(
+    "自動帶入源片的存檔位置 — 剪好後請換成你自己的檔案連結（存在同一個資料夾）",
+    "Pre-filled with the source's folder — replace it with the link to your own cut (keep it in the same folder)")}</div>`;
+}
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
@@ -3897,20 +3996,22 @@ function intlLibRows(loc){
     const nArch=kidsAll.filter(isArchived).length;                 // 已上片＝完成任務，封存不再列出
     const kids=kidsAll.filter(k=>!isArchived(k)).sort((a,b)=>INTL_LOCALES.indexOf(a.locale)-INTL_LOCALES.indexOf(b.locale));
     const chips=kids.map(k=>{ const ds=dispStage(k); const done=(k.published||k.stage==='已完成')&&ds!=='待審核';
-      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${localeShort(k.locale)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):T('進行中','in progress')}</span>`;
+      return `<span class="pill ${done?'ok':'wa'}" style="cursor:pointer;font-size:11px" onclick="openIntlModal('${k.id}')" title="${esc(localeName(k.locale))}${k.name?(' · '+esc(stripHash(k.name))):''}${k.account?(' · '+esc(k.account)):''}${k.editor?(' · '+esc(k.editor)):''}${k.createdBy?(' · '+T('由 '+esc(k.createdBy)+' 建立','added by '+esc(k.createdBy))):''}">${localeShort(k.locale)} · ${ds==='待審核'?T('待審','in review'):done?T('完成','done'):T('進行中','in progress')}</span>`;
     }).join(" ") + (nArch?`<span class="pill" style="font-size:11px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="${T("已上片、已封存","Published & archived")}">${T("已封存","Archived")} ${nArch}</span>`:'');
     // 動作收成一排：▶ Preview 圖示 ＋ 帳號下拉 ＋ Add(選取後才建立、不跳走)
     const previewBtn=(v.publishedLink||v.driveFolder)?`<button class="btn sec sm ibtn" onclick="openVidPreview('${encodeURIComponent(v.publishedLink||v.driveFolder)}')" title="${T("預覽中文成片","Preview finished Chinese")}">▶</button>`:'';
+    // 看內容：唯讀四欄（標題／文案／毛片連結／完成影片連結）—— 海外做自己的語言版本只需要這些
+    const briefBtn=`<button class="btn sec sm" style="flex:none" onclick="openSourceForIntl('${v.id}')" title="${T("看標題、文案、毛片與成片連結","Title, copy, raw & finished links")}">${T("看內容","Details")}</button>`;
     const addRow = shownAccts.length
       ? `<div class="row" style="gap:6px;align-items:center;width:100%;flex-wrap:nowrap">
-          ${previewBtn}
+          ${previewBtn}${briefBtn}
           <select id="addacct_${v.id}" style="font-size:13px;padding:7px 8px;flex:1;min-width:0">
             <option value="">${PLUS()} ${T("加版本 — 選帳號","Add version — pick account")}</option>
             ${locs.filter(l=>intlAccountsFor(l).length).map(l=>`<optgroup label="${esc(localeName(l))}">${intlAccountsFor(l).map(a=>`<option value="${accts.indexOf(a)}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}
           </select>
           <button class="btn sm" style="flex:none" onclick="createLocalPick('${v.id}')" title="${T("建立這個版本並加入待認領","Create this version and add it to the pool")}">${PLUS()} ${T("加入","Add")}</button>
         </div>`
-      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}<span class="muted" style="font-size:12px">${loc?T(`還沒有${localeName(loc)}帳號 — 請管理員到設定新增`,`No ${localeName(loc)} accounts yet — ask the admin to add them in Settings`):T("請管理員先到設定新增帳號","Ask admin to add accounts in Settings")}</span></div>`;
+      : `<div class="row" style="gap:6px;align-items:center;width:100%">${previewBtn}${briefBtn}<span class="muted" style="font-size:12px">${loc?T(`還沒有${localeName(loc)}帳號 — 請管理員到設定新增`,`No ${localeName(loc)} accounts yet — ask the admin to add them in Settings`):T("請管理員先到設定新增帳號","Ask admin to add accounts in Settings")}</span></div>`;
     const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
     return `<div class="ilib-card">
       <div style="min-width:0;flex:1">
@@ -3933,8 +4034,10 @@ function intlCurAcct(){ const list=intlAccounts(); if(!list.length) return ""; i
 function intlSetAcct(name){ INTL_ACCT=name||""; render(); }
 function calMoveIntl(n){ let [y,m]=INTL_CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} INTL_CAL_YM=[y,m]; render(); }
 // 某日某帳號已排的在地化版本（依上傳預排日 scheduledDate；不分階段＝看整體計畫）
+// 跟蝦皮／馬來線一樣走 lineDayList，語言也要對得上 —— 英文帳號跟泰文帳號同名時
+// 才不會互相灌數（月曆是照語言分頁看的，INTL_LOC 由 calIntlBody 設定）
 function intlDayList(date, acct){ acct=acct!=null?acct:intlCurAcct();
-  return (STATE.videos||[]).filter(v=>v.locale && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }   // 海外月曆是跨語言看帳號，不套 lineDayList
+  return lineDayList(INTL_LOCALES.includes(INTL_LOC)?INTL_LOC:"en", date, acct); }
 function intlDayBreak(date, acct){ const total=intlDayList(date,acct).length, target=intlDailyTarget();
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 const MONTHS_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -3981,6 +4084,7 @@ function calLineBody(cfg){
 // 海外月曆內容體（依語言：en／th 各自的 TikTok 帳號）：月排程 hub 用
 function calIntlBody(loc){
   loc=INTL_LOCALES.includes(loc)?loc:"en";
+  INTL_LOC=loc;                                                        // 這一頁的語言：intlDayList／openDayIntl 都靠它
   const accts=intlAccountsFor(loc).map(a=>a.name);
   if(!INTL_ACCT || !accts.includes(INTL_ACCT)) INTL_ACCT=accts[0]||"";   // 目前帳號要屬於這個語言
   if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
@@ -4031,8 +4135,6 @@ function createLocalVersion(sourceId, locale, account){
     notFound:T("找不到源片","Source not found"),
     notPublished:T("只有已完成上片的影片可以做二創","Only finished videos can be localized"),
     dup:(a)=>T("「"+a+"」的"+localeName(locale)+"版本已存在",localeName(locale)+" version for “"+a+"” already exists"),
-    // 英文版：建立時帶入源片的英文片名（去掉 # 標籤）當標題草稿；泰文由剪輯用 文A 自行翻譯
-    draftName:(s)=> locale==="en" ? stripHash(s.nameEn||"") : "",
     ok:(a)=>localeName(locale)+(a?(" · "+a):"")+T(" 版本已加入待處理"," added to the pool") });
 }
 // 從 Library 的帳號下拉＋按鈕確認建立（避免誤觸馬上跳走）
@@ -4121,7 +4223,8 @@ function openIntlModal(id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案（口播台詞）","Script / copy")}</label><textarea id="i_vcopy" style="min-height:80px" placeholder="${T("翻譯／改編的文案","Translated / adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>${T("成片檔案連結（你重剪的）","Video file URL (your re-cut)")}</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("你剪好的"+esc(localeShort(v.locale))+"版雲端連結","Cloud link to your "+esc(localeShort(v.locale))+" cut")}"></div>
+      <div><label>${T("成片檔案連結（你重剪的）","Video file URL (your re-cut)")}</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("你剪好的"+esc(localeShort(v.locale))+"版雲端連結","Cloud link to your "+esc(localeShort(v.locale))+" cut")}">
+        ${inheritedDriveHint(v)}</div>
       <div><label>${T("上傳連結（TikTok 貼文）","Upload URL (the TikTok post)")}</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date (when it will go live)")}</label>
@@ -4222,7 +4325,8 @@ function openChModal(ch,id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案","Script / copy")}</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${T(C.verName+"文案（可跟中文版不同）","Adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>${T("影片檔存檔網址（你剪好的檔案）","Video file URL (your re-cut)")}</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("雲端連結","Cloud link")}"></div>
+      <div><label>${T("影片檔存檔網址（你剪好的檔案）","Video file URL (your re-cut)")}</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("雲端連結","Cloud link")}">
+        ${inheritedDriveHint(v)}</div>
       <div><label>${T(C.upLabel,"Upload URL")}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date")}</label>
