@@ -2919,22 +2919,32 @@ function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px">
   <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(dataLabel(t))}</label>`; }
 // 標籤：只留可複選的其他標籤（新舊片自動、不設選單）
+// 標籤越加越多，全部攤開在手機上佔掉一大塊。預設只露前兩個 ——
+// 已經勾起來的一定要露（不然看不出這支選了什麼），其餘收進「更多標籤」。
+const TAG_SHOW_MIN=2;
 function tagPickerHTML(id, selected){ const sel=new Set(selected||[]);
   const skip=new Set(NEWOLD_TAGS);
   const all=otherTags().slice(); (selected||[]).forEach(t=>{ if(!skip.has(t)&&!all.includes(t)) all.push(t); });
+  const head=[], rest=[];
+  all.forEach(t=>{ (sel.has(t) || head.length<TAG_SHOW_MIN) ? head.push(t) : rest.push(t); });
   return `<label>${T("標籤（可複選）","Tags (multi-select)")}</label>
-    <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${all.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
+    <div id="${id}_box" style="display:flex;flex-wrap:wrap;gap:6px">${head.map(t=>tagChip(id,t,sel.has(t))).join("")}</div>
+    ${rest.length?`<details class="fold" style="margin-top:6px"><summary>${T("更多標籤","More tags")}<span class="n">${rest.length}</span></summary>
+      <div class="foldbody"><div id="${id}_more" style="display:flex;flex-wrap:wrap;gap:6px">${rest.map(t=>tagChip(id,t,false)).join("")}</div></div></details>`:""}
     <div class="row" style="gap:6px;margin-top:6px"><input id="${id}_new" placeholder="${T("新增標籤…","New tag…")}" style="flex:1"><button type="button" class="btn sm sec" onclick="addTagOpt('${id}')">${PLUS()} ${T("加入","Add")}</button></div>`; }
 function collectTags(id){ return Array.from(document.querySelectorAll('.'+id+'_tag:checked')).map(x=>x.value); }
 // 有填銷售商品 → 自動勾「寵粉」標籤
 function autoPamperTag(prefix){
-  let has=false; for(let i=0;i<4;i++){ const e=document.getElementById(prefix+"_pn"+i); if(e&&e.value.trim()){ has=true; break; } }
+  let has=false; for(let i=0;i<PRODUCT_MAX;i++){ const e=document.getElementById(prefix+"_pn"+i); if(e&&e.value.trim()){ has=true; break; } }
   if(!has) return;
   const cb=document.querySelector('.'+prefix+'_tag[value="寵粉"]'); if(cb && !cb.checked) cb.checked=true;
 }
 function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) return; const v=(inp.value||'').trim(); if(!v){ return; }
   const box=document.getElementById(id+'_box');
-  if(box && !Array.from(box.querySelectorAll('input')).some(x=>x.value===v)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
+  // 收在「更多標籤」裡的也要算進去，不然同一個標籤會被加兩次
+  const more=document.getElementById(id+'_more');
+  const has=(el)=>!!el && Array.from(el.querySelectorAll('input')).some(x=>x.value===v);
+  if(box && !has(box) && !has(more)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
   inp.value=''; }
 async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
   if(!add.length || !window.DB) return;
@@ -3110,7 +3120,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidName(v))}</span>${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidName(v))}</span>${noCopyDot(v)}${(!v.locale&&!v.channel)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3142,7 +3152,7 @@ function vidCardHTML(v){
   return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidName(v))}</div>
+      <div class="vcard-t">${esc(vidName(v))}${noCopyDot(v)}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3506,6 +3516,14 @@ function coverRefresh(id, nextCover){
   slot.innerHTML=coverSlotInner(v, id);
 }
 // 清單／格子用的小縮圖（沒封面就維持原本的 ▶ 底色方塊）
+// 沒寫文案的小橘點。片名只是代號，沒文案等於拍片的人接不下去 ——
+// 新增時已經擋住了（v110），這個點是給既有那批沒文案的舊資料用的：
+// 邊看邊補，補完就自己不見。二創殼的文案是之後翻譯的，不算。
+function noCopyDot(v){
+  if(!v || v.locale || v.channel) return "";
+  if(String(v.videoCopy||"").trim()) return "";
+  return `<span class="nocopy" title="${T("還沒寫文案","No script yet")}" aria-label="${T("還沒寫文案","No script yet")}"></span>`;
+}
 function coverThumbHTML(v, cls){
   const u=coverUrl(v);
   return u ? `<img class="${cls||"vthumb"}" src="${esc(u)}" alt="" loading="lazy" decoding="async">`
@@ -3571,8 +3589,11 @@ function openVideoModal(id, edit, fromWork){
   const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
   const hasPost = !!String(v.driveFolder||"").trim() || usageList(v).length>0
                   || (Array.isArray(v.metrics)&&v.metrics.length>0);
-  const hasAdv  = !!String(v.name||"").trim() || !!String(v.refLink||"").trim()
-                  || !!String(v.note||"").trim() || !!v.editor;
+  // 「進階」一律收起來（都是選填、少碰的欄位）。裡面有東西時在標題上標個數字
+  // 提示，這樣不用打開也知道有料 —— 比自動展開安靜，又不會讓人漏看。
+  // 注意 name 不能拿來判斷：存檔時它預設會跟原始片名一樣，等於永遠有值。
+  const advFilled = [ String(v.name||"").trim() && String(v.name||"").trim()!==String(v.rawName||"").trim(),
+                      String(v.refLink||"").trim(), String(v.note||"").trim() ].filter(Boolean).length;
   const body=`
     <div class="cv-head">
       ${coverSlotHTML(v, id)}
@@ -3603,7 +3624,7 @@ function openVideoModal(id, edit, fromWork){
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
-    ${fold(T("進階","Advanced"), null, `
+    ${fold(T("進階","Advanced"), advFilled||null, `
       <label>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</label>
       <input id="e_name" value="${esc(v.name||"")}" placeholder="${T("影片貼文文案","Post caption")}">
       <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
@@ -3619,7 +3640,7 @@ function openVideoModal(id, edit, fromWork){
       ${(!v.locale&&!v.channel)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
       <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
       <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
-      <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">`, hasAdv)}
+      <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">`, false)}
     ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">
       <button class="btn sm" type="button" onclick="reworkVideo('${id}')">移到剪輯的今日工作</button>
       <span class="muted" style="font-size:12px;margin-left:8px">${(v.editor||v.claimedBy)?`退回「${esc(v.editor||v.claimedBy)}」重剪`:"這支無人認領，按下可指定剪輯"}</span>
@@ -4645,20 +4666,36 @@ function vidTitle(v){
 // 已用過的商品名（下拉選用，讓品名一致）
 function knownProducts(){ const set=new Set(); (STATE.videos||[]).forEach(v=>{ (v.products||[]).forEach(p=>{ if(p&&p.name) set.add(p.name); }); }); return [...set].sort(); }
 // 商品列：最多 4 個，每個 品名(下拉)+單價(手動)
-function productRows(prefix, products){
-  const ps=Array.isArray(products)?products:[];
-  let h=`<label>${T("銷售商品（最多 4 個）","Products (up to 4)")}</label>`;
-  for(let i=0;i<4;i++){ const p=ps[i]||{};
-    h+=`<div class="row" style="gap:8px;margin-bottom:6px">
+// 商品：以前固定攤開 4 列＝12 格，九成是空的，在手機上佔掉一大段。
+// 改成有幾個商品就長幾列，沒有就一列都不長，要填再按「＋ 加商品」。
+const PRODUCT_MAX=4;
+function productRowHTML(prefix, i, p){
+  p=p||{};
+  return `<div class="row" style="gap:8px;margin-bottom:6px" id="${prefix}_prow${i}">
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" oninput="autoPamperTag('${prefix}')" placeholder="${T("商品 "+(i+1)+"（品名）","Product "+(i+1)+" (name)")}" style="flex:2;min-width:130px">
       <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="${T("原價","List price")}" style="flex:1;min-width:80px">
       <input id="${prefix}_ps${i}" type="number" min="0" value="${(p.salePrice!=null&&p.salePrice!=="")?esc(p.salePrice):''}" placeholder="${T("售價(寵粉價)","Fan price")}" style="flex:1;min-width:100px">
-    </div>`; }
-  h+=`<datalist id="${prefix}_plist">${knownProducts().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
-  return h;
+    </div>`;
+}
+function productRows(prefix, products){
+  const ps=(Array.isArray(products)?products:[]).filter(p=>p&&p.name).slice(0,PRODUCT_MAX);
+  return `<label>${T("銷售商品（最多 4 個・選填）","Products (up to 4, optional)")}</label>
+    <div id="${prefix}_prows">${ps.map((p,i)=>productRowHTML(prefix,i,p)).join("")}</div>
+    <button type="button" class="btn sm sec" id="${prefix}_padd" style="${ps.length>=PRODUCT_MAX?'display:none':''}"
+      onclick="addProductRow('${esc(jsEsc(prefix))}')">${PLUS()} ${T("加商品","Add product")}</button>
+    <datalist id="${prefix}_plist">${knownProducts().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`;
+}
+// 按一下長一列；滿 4 列就把按鈕收起來
+function addProductRow(prefix){
+  const box=document.getElementById(prefix+"_prows"); if(!box) return;
+  let i=0; while(i<PRODUCT_MAX && document.getElementById(prefix+"_prow"+i)) i++;
+  if(i>=PRODUCT_MAX) return;
+  box.insertAdjacentHTML("beforeend", productRowHTML(prefix,i,null));
+  if(i+1>=PRODUCT_MAX){ const b=document.getElementById(prefix+"_padd"); if(b) b.style.display="none"; }
+  const f=document.getElementById(prefix+"_pn"+i); if(f&&f.focus) f.focus();
 }
 function collectProducts(prefix){ const out=[];
-  for(let i=0;i<4;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
+  for(let i=0;i<PRODUCT_MAX;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
     out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0}); }
   return out;
 }

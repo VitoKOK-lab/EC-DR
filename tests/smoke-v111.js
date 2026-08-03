@@ -122,13 +122,14 @@ reset(LIB); as("Anna","intl");
 reset([v_("V1")]); as("Regina","manager");
 openVideoModal("V1", true);
 { const m=modalHTML;
-  const top=m.split("<details")[0];   // 第一個折疊之前＝一進來就看得到的
+  const top=m.split("<summary>商品與導購")[0];   // 第一個折疊區塊之前＝一進來就看得到的
   ok("片名在上面", top.includes('id="e_raw"'));
   ok("文案在上面", top.includes('id="e_vcopy"'));
   ok("毛片連結在上面", top.includes('id="e_rawlink"'));
   ok("上片日期在上面", top.includes('id="e_date"'));
   ok("標籤在上面", top.includes('id="e_box"'));
   ok("商品沒有攤在上面", !top.includes('id="e_pn0"'));
+  ok("標籤只露前兩個，其餘收在「更多標籤」", m.includes("更多標籤"));
   ok("備註沒有攤在上面", !top.includes('id="e_note"'));
   ok("片源下拉沒有攤在上面", !top.includes('id="e_src"')); }
 
@@ -145,8 +146,9 @@ openVideoModal("V1", true);
   ok("有「上片後」折疊", m.includes("<summary>上片後"));
   ok("有「進階」折疊", m.includes("<summary>進階"));
   // 欄位仍然在 DOM 裡（折疊不等於移除，存檔才讀得到）
-  ["e_pn0","e_url","e_drive","e_name","e_ref","e_src","e_stage","e_editor","e_note"]
-    .forEach(f=>ok(`${f} 仍然在表單裡（存檔讀得到）`, m.includes(`id="${f}"`))); }
+  ["e_url","e_drive","e_name","e_ref","e_src","e_stage","e_editor","e_note"]
+    .forEach(f=>ok(`${f} 仍然在表單裡（存檔讀得到）`, m.includes(`id="${f}"`)));
+  ok("商品預設 0 列（v114），改成按「加商品」才長", !m.includes('id="e_pn0"') && m.includes("加商品")); }
 
 // 空白的片：三個折疊都收起來
 reset([v_("V1")]); as("Regina","manager");
@@ -171,22 +173,28 @@ openVideoModal("V1", true);
 ok("有成效資料 → 上片後自動展開", isOpen(modalHTML,"上片後"));
 reset([v_("V1",{note:"記得補商品連結"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有備註 → 進階自動展開", isOpen(modalHTML,"進階"));
+ok("有備註時進階仍然收著（v114）", !isOpen(modalHTML,"進階"));
+ok("但標題上標數字提示裡面有料", /<summary>進階<span class="n">1<\/span>/.test(modalHTML));
 reset([v_("V1",{refLink:"http://ref"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有參考網址 → 進階自動展開", isOpen(modalHTML,"進階"));
+ok("有參考網址也只標數字，不展開", !isOpen(modalHTML,"進階") && /<summary>進階<span class="n">1<\/span>/.test(modalHTML));
 reset([v_("V1",{editor:"小葵"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有指定剪輯 → 進階自動展開", isOpen(modalHTML,"進階"));
+ok("有指定剪輯不會撐開進階（v114 起一律收起）", !isOpen(modalHTML,"進階"));
 reset([v_("V1",{name:"貼文用的標題"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有貼文文案 → 進階自動展開", isOpen(modalHTML,"進階"));
+ok("貼文文案跟原始片名不同 → 標數字", /<summary>進階<span class="n">1<\/span>/.test(modalHTML));
+reset([v_("V1",{name:"毛片V1"})]); as("Regina","manager");
+openVideoModal("V1", true);
+ok("貼文文案等於原始片名就不算有料（存檔時本來就會這樣填）",
+   !/<summary>進階<span class="n">/.test(modalHTML));
 
 // 審片卡不折（是要處理的動作，不是參考資料）
 reset([v_("V1",{rawLink:"http://raw"})]); as("Regina","manager");
 openVideoModal("V1", true);
-{ const top=modalHTML.split("<details")[0];
-  ok("審片卡留在上面（Regina 要用）", top.includes("reviewVid(")); }
+{ const m=modalHTML;
+  ok("審片卡留在折疊區之前（Regina 要用）",
+     m.indexOf("reviewVid(")>=0 && m.indexOf("reviewVid(")<m.indexOf("<summary>商品與導購")); }
 reset([v_("V1",{rawLink:"http://raw"})]); as("小葵","editor");
 openVideoModal("V1", true);
 ok("剪輯看不到審片卡（本來就沒權限）", !modalHTML.includes("reviewVid("));

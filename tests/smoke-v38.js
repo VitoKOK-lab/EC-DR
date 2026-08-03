@@ -37,7 +37,8 @@ function noCJK(s){ return !/[一-鿿]/.test(s.replace(/黃金原本|小葵|蝦�
 // --- intl：新增/批次/編輯 彈窗全英文 ---
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 newSimpleVideo();
-ok("intl 新增影片 modal English", modalHTML.includes("Add video") && modalHTML.includes("Original language") && modalHTML.includes("List price") && modalHTML.includes("Fan price") && !modalHTML.includes("原始片名") && !modalHTML.includes("原價"));
+// v114 起商品預設 0 列，原價／售價的 placeholder 要按「加商品」才長出來
+ok("intl 新增影片 modal English", modalHTML.includes("Add video") && modalHTML.includes("Original language") && modalHTML.includes("Add product") && !modalHTML.includes("原始片名") && !modalHTML.includes("加商品"));
 batchNewFootage();
 ok("intl 批次新增 modal English", modalHTML.includes("Add raw footage") && modalHTML.includes("Clip 1") && modalHTML.includes("shared by all 5") && !modalHTML.includes("第 1 支") && !modalHTML.includes("原本語言"));
 ok("intl language options say Malaysia", modalHTML.includes(">Malaysia<"));
@@ -52,7 +53,7 @@ ok("intl 點日視窗 English", toastMsg.includes("只有") || toastMsg.includes
 // --- editor：中文完全不變 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 newSimpleVideo();
-ok("editor 新增影片維持中文", modalHTML.includes("新增影片") && modalHTML.includes("原本語言") && modalHTML.includes("原價"));
+ok("editor 新增影片維持中文", modalHTML.includes("新增影片") && modalHTML.includes("原本語言") && modalHTML.includes("加商品"));
 batchNewFootage();
 ok("editor 批次新增維持中文", modalHTML.includes("新增毛片") && modalHTML.includes("第 1 支"));
 openVideoModal("S1", true);
