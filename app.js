@@ -18,8 +18,37 @@ const ROLE_TABS = {
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 let VIEW_AS = null;   // 管理員「員工視角」：暫時以某員工身分檢視（唯讀預覽）
-const today = new Date(Date.now()+288e5).toISOString().slice(0,10); // 台灣時間 UTC+8
-const yesterday = new Date(Date.now()+288e5-864e5).toISOString().slice(0,10); // 前一日
+// 台灣時間（UTC+8）的今天／昨天。
+// 這兩個值以前是 const，載入時算一次就固定 —— 分頁掛著跨過午夜之後，
+// 交辦、新增工作、打卡都會被蓋上「前一天」的日期，然後隔天在自己的頁面上找不到。
+// 現在改成每次重繪、每次寫入日期之前都用 refreshToday() 重算，並由午夜守衛主動翻頁。
+function todayTW(){ return new Date(Date.now()+288e5).toISOString().slice(0,10); }
+function ydayTW(){ return new Date(Date.now()+288e5-864e5).toISOString().slice(0,10); }
+let today = todayTW();
+let yesterday = ydayTW();
+// 重算「今天」；真的跨日了才回 true（呼叫端可以順手重繪）
+function refreshToday(){ const t=todayTW(); if(t===today) return false;
+  today=t; yesterday=ydayTW(); return true; }
+// 午夜守衛：分頁掛著跨過午夜時，主動把畫面翻到新的一天。
+// 有彈窗開著或正在打字就先不翻（不打斷手上的編輯），today 維持舊值、下一輪再試 ——
+// 期間只要有任何互動觸發 render()，日期還是會被 refreshToday() 補正，寫入不會蓋錯天。
+function midnightWatch(){
+  if(todayTW()===today) return;                                        // 還沒跨日
+  const mr=document.getElementById("modalRoot");
+  if(mr && String(mr.innerHTML||"").trim()) return;                    // 彈窗開著
+  const ae=document.activeElement;
+  if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||"")) return;   // 正在打字
+  const oldY=yesterday;
+  refreshToday();
+  if(SHIFT_DATE===oldY) SHIFT_DATE=yesterday;   // 「每日匯報」的預設值沒被手動改過才跟著翻
+  buildNav(); render();
+}
+if(typeof window!=="undefined" && window.addEventListener && typeof setInterval==="function"){
+  const h=setInterval(midnightWatch, 30000);
+  if(h && typeof h.unref==="function") h.unref();          // Node 測試環境不要卡住行程
+  window.addEventListener("visibilitychange", midnightWatch);   // 手機切回前景時立刻補一次（背景計時器會被節流）
+  window.addEventListener("focus", midnightWatch);
+}
 
 function realUser(){ return localStorage.getItem("ecdr_user") || ""; }
 function currentUser(){ return VIEW_AS || realUser(); }   // 員工視角啟用時，畫面一律以該員工身分呈現
@@ -448,7 +477,7 @@ async function changeMyPw(){
   await write("PUT","/api/users/"+me,body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
-async function clockIn(name){
+async function clockIn(name){ refreshToday();
   try{ const id=shiftId(name,today); const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
     if(ex&&ex.clockIn) return;   // 已打過上班卡
     const env=punchEnv(); const isNew=!isKnownDevice(name, env.dev);
@@ -589,6 +618,7 @@ async function savePwGate(){
 }
 function render(){
   if(!STATE) return;
+  refreshToday();   // 分頁掛著跨午夜也不會拿到昨天的日期
   const v = document.getElementById("view");
   if(mustSetPw()){ v.classList.remove("anim"); v.innerHTML=pwGateHTML(); LAST_RENDER_TAB="__pw"; return; }
   // 同一頁重繪（新增/編輯/同步）時保留捲動位置，不跳回頂端；切換分頁則回到頂端
@@ -1000,7 +1030,7 @@ function presetPending(){
   const have=new Set(myTasks().map(t=>String(t.title||"").trim()));
   return workPresets().filter(t=>!have.has(t));
 }
-async function addPresetTask(title){
+async function addPresetTask(title){ refreshToday();
   if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
   const id=uid("T");
   try{ await window.DB.set("tasks", id, {id, user:currentUser(), date:today, title, contact:"", report:"", done:false, assignedBy:"", ack:true, createdAt:nowIso()}); }
@@ -1016,7 +1046,7 @@ async function addAllPresets(){
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
   toast(T("已帶入 "+n+" 件固定工作", "Added "+n+" daily items"));
 }
-async function createTask(){ const isIntl=currentRole()==="intl";
+async function createTask(){ refreshToday(); const isIntl=currentRole()==="intl";
   if(VIEW_AS){ toast(isIntl?"Read-only preview":"員工視角為唯讀預覽",true); return; }
   const t=val("wp_newtask").trim(); if(!t){ toast(isIntl?"Please enter a task":"請輸入工作項目",true); return; }
   const contact=(val("wp_contact")||"").trim();
@@ -1028,7 +1058,7 @@ async function createTask(){ const isIntl=currentRole()==="intl";
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
-async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
+async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!name){ toast("請先選擇要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   const id=uid("T");
@@ -1037,7 +1067,7 @@ async function assignTaskSel(){ if(dbBlocked()) return; const name=val("asg_who"
     const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
   catch(e){ toast("指派失敗，請稍後再試",true); } }
 // 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
-async function hrNotify(){ if(dbBlocked()) return;
+async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
   if(!txt){ toast("請輸入通知內容",true); return; }
   const ALL={"__all__":["editor","intl","cs","hr"], "__editor__":["editor"], "__cs__":["cs"], "__intl__":["intl"], "__hr__":["hr"]};
@@ -1107,7 +1137,7 @@ function msgsForMe(){
   return allMsgs().filter(m=>want.includes(m.to||"boss")).sort(msgSort);
 }
 const msgOpen=(m)=>!String((m&&m.reply)||"").trim();      // 還沒被回覆
-async function sendMsg(){
+async function sendMsg(){ refreshToday();
   if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
   const to=(val("msg_to")||"hr")==="boss"?"boss":"hr";
   const t=(val("msg_txt")||"").trim();
@@ -1721,7 +1751,7 @@ function clockOutReport(){
     </div>`;
   showModal(T("下班匯報","Clock-out report"), body, async ()=>{ await doClockOut(); closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true; }, T("確認下班","Confirm clock-out"));
 }
-async function doClockOut(){
+async function doClockOut(){ refreshToday();
   const id=shiftId(currentUser(),today); const env=punchEnv();
   try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
        else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
@@ -2091,7 +2121,7 @@ function viewAttend(){
 const RUNWAY_TARGET=60;   // 目標：排程隨時排滿到 60 天（兩個月）後
 function fmtMD(ds){ const p=String(ds||"").split("-"); return p.length===3?`${+p[1]}/${+p[2]}`:ds; }
 // 逐一交辦：每位員工卡片上的快速指派（比照 assignTaskSel，只是對象固定）
-async function flowAssign(idx, name){
+async function flowAssign(idx, name){ refreshToday();
   if(VIEW_AS){ toast("員工視角為唯讀預覽",true); return; }
   const t=val("fa_"+idx).trim(); if(!t){ toast("請輸入要交辦的內容",true); return; }
   const id=uid("T");
