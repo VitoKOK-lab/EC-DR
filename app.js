@@ -1140,6 +1140,8 @@ async function assignFootage(){
   if(!who){ toast("請先選擇員工",true); return; }
   const ids=Array.from(document.querySelectorAll('.afp_vid:checked')).map(o=>o.value).filter(Boolean);
   if(!ids.length){ toast("請勾選至少一支毛片",true); return; }
+  // 清單不再截斷之後「全選」是真的全選，一次幾百支不該手滑就送出去
+  if(ids.length>=20 && !confirm("要把 "+ids.length+" 支毛片一次指派給「"+who+"」嗎？")) return;
   BULK_BUSY=true; let n=0;
   try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
@@ -2200,7 +2202,9 @@ function flowRunwayCard(g, okRunway, pct){
 // 流程中控②：毛片庫存＋指派（勾選未指派毛片、選人一鍵指派）
 function flowStockCard(staff, pool, unassigned, stockDays){
   // ---- ② 毛片庫存＋指派 ----
-  const afpRows=unassigned.slice(0,20).map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);font-weight:400">
+  // 全部列出來，不截斷 —— 這是要動手勾的清單，勾不到的等於不存在，
+  // 而且下面寫「未指派 N 支」跟「全選」都要對得上（v120 之前截在 20 筆，數字對不上）
+  const afpRows=unassigned.map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);font-weight:400">
       <input type="checkbox" class="afp_vid" value="${v.id}" style="width:auto;margin:0;flex:none"> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></label>`).join("");
   const stockCard=`<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -2212,8 +2216,8 @@ function flowStockCard(staff, pool, unassigned, stockDays){
       <select id="afp_who" style="width:auto;min-width:130px"><option value="">指派給誰…</option>${staff.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
       <button class="btn sec sm" type="button" onclick="afpToggleAll(this)">全選</button>
       <button class="btn sm" onclick="assignFootage()">指派勾選的毛片</button></div>
-    <div style="margin-top:6px${unassigned.length>6?';max-height:260px;overflow-y:auto':''}">${afpRows}</div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支</p>`
+    <div style="margin-top:6px${unassigned.length>6?';max-height:360px;overflow-y:auto':''}">${afpRows}</div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支${unassigned.length>20?'（清單可以往下捲，全都在這裡）':''}</p>`
     :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
   </div>`;
   return stockCard;
@@ -2225,7 +2229,8 @@ function flowReviewQueueCard(){
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
   const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
   const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
-    ${pendingReview.length?pendingReview.slice(0,20).map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
+    ${/* 全部列出來：折疊上的數字說有幾支，就要有幾支點得到，不然審不到的那些等於被忘記 */''}
+    ${pendingReview.length?pendingReview.map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
         <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
