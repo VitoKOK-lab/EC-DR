@@ -156,8 +156,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   reset({videos:[v_("S1",{videoCopy:"口播一",rawLink:"http://d"})]}); as("小葵","editor");
   ok("補上毛片連結就回到待認領", viewWork().includes("claimVid('S1')"));
   // 影片庫那邊照舊看得到
-  reset({videos:POOL}); as("Regina","manager"); VID_VIEW="script";
-  ok("影片庫的「有文案・未拍片」照樣列得出來",
+  reset({videos:POOL}); as("Regina","manager"); VID_VIEW="scriptNoSched";
+  ok("影片庫的「未拍・未排程」照樣列得出來",
      viewVideos().includes("'S1'") && viewVideos().includes("'S2'"));
 
   // ══ render 不炸 ══

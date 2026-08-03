@@ -104,9 +104,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   as("小葵","editor");
   await route("POST","/api/videos",{video:{name:"只填片名的",rawName:"只填片名的"}});
   STATE.videos=Object.values(db.videos);                       // 模擬 Firestore 同步回來
-  ok("只填片名的新片會落在「未拍片」", vidSegment(STATE.videos[0])==="script");
-  VID_VIEW="script";
-  ok("影片庫的未拍片分頁看得到", viewVideos().includes("只填片名的"));
+  ok("只填片名的新片會落在「未拍・未排程」", vidSegment(STATE.videos[0])==="scriptNoSched");
+  VID_VIEW="scriptNoSched";
+  ok("影片庫的未拍分頁看得到", viewVideos().includes("只填片名的"));
   ok("還沒拍的不進待認領", !viewWork().includes("只填片名的"));
   ok("片名前面有編號", vidTitle(STATE.videos[0]).startsWith(STATE.videos[0].code));
 
