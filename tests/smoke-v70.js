@@ -50,21 +50,23 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 // ── 分組工具 ──
 reset();
 { const g=staffByGroup();
-  ok("分成四份清單（含人資）", g.length===4);
-  ok("順序＝剪輯 → 員工 → 海外剪輯 → 人資", JSON.stringify(g.map(x=>x.zh))===JSON.stringify(["剪輯","員工","海外剪輯","人資"]));
-  ok("剪輯組只有剪輯", g[0].people.every(u=>u.role==="editor") && g[0].people.length===2);
-  ok("員工組只有不剪片的員工", g[1].people.every(u=>u.role==="cs") && g[1].people.length===2);
-  ok("海外組只有海外剪輯", g[2].people.every(u=>u.role==="intl") && g[2].people.length===2);
+  ok("分成三個區塊（台灣兩排＋巴基斯坦）", g.length===3);
+  ok("順序＝台灣剪輯行銷 → 台灣其他 → 巴基斯坦",
+     JSON.stringify(g.map(x=>x.zh))===JSON.stringify(["台灣・剪輯行銷","台灣・其他","巴基斯坦"]));
+  ok("第一排只有剪輯與行銷", g[0].people.every(u=>["editor","mkt"].includes(u.role)) && g[0].people.length===2);
+  ok("第二排是其餘台灣同仁（含人資）", g[1].people.every(u=>["svc","ship","cs","hr"].includes(u.role)) && g[1].people.length===3);
+  ok("巴基斯坦區只有巴基斯坦同仁", g[2].people.every(u=>u.role==="intl") && g[2].people.length===2);
   ok("組內照原本的排序（一創在前）", g[0].people[0].name==="小葵"); }
 
 // ── 主管交辦：流程中控分三份清單 ──
 reset(); as("Regina","manager");
 let f=viewFlow();
-ok("流程中控有三個小標", f.includes("剪輯（2）") && f.includes("員工（2）") && f.includes("海外剪輯（2）"));
-ok("小標順序：剪輯 → 員工 → 海外剪輯", ascending(order(f,["剪輯（2）","員工（2）","海外剪輯（2）"])));
+ok("流程中控有三個小標", f.includes("台灣・剪輯行銷（2）") && f.includes("台灣・其他（3）") && f.includes("巴基斯坦（2）"));
+ok("小標順序：台灣剪輯行銷 → 台灣其他 → 巴基斯坦",
+   ascending(order(f,["台灣・剪輯行銷（2）","台灣・其他（3）","巴基斯坦（2）"])));
 ok("每個人都在自己的區塊裡", (()=>{
   const seg=(a,b)=>f.slice(f.indexOf(a), b?f.indexOf(b):undefined);
-  const s1=seg("剪輯（2）","員工（2）"), s2=seg("員工（2）","海外剪輯（2）"), s3=seg("海外剪輯（2）");
+  const s1=seg("台灣・剪輯行銷（2）","台灣・其他（3）"), s2=seg("台灣・其他（3）","巴基斯坦（2）"), s3=seg("巴基斯坦（2）");
   return s1.includes("小葵")&&s1.includes("阿明")&&!s1.includes("小美")
       && s2.includes("小美")&&s2.includes("阿凱")&&!s2.includes("Anna")
       && s3.includes("Anna")&&s3.includes("Ben"); })());
@@ -74,9 +76,11 @@ ok("交辦輸入框編號不重複", (()=>{ const ids=(f.match(/id="fa_(\d+)"/g)
 // ── 團隊看板：今日成效也分三份 ──
 reset(); as("小葵","editor");
 let t=viewTeam();
-ok("看板有三個小標", t.includes("剪輯（2）") && t.includes("員工（2）") && t.includes("海外剪輯（2）"));
-ok("看板小標順序一致", ascending(order(t,["剪輯（2）","員工（2）","海外剪輯（2）"])));
-ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===4);
+// 小標要用 </h4> 錨定：篩選下拉裡也有「巴基斯坦（2）」這種字串，會跟小標撞在一起
+const h4=(zh,n)=>`>${zh}（${n}）</h4>`;
+ok("看板有三個小標", [h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)].every(x=>t.includes(x)));
+ok("看板小標順序一致", ascending(order(t,[h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)])));
+ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===3);
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 
 // ── HR 通知：收件人分清單 ──
@@ -85,9 +89,11 @@ let h=viewTeam();
 { const sel=h.split('id="hrn_who"')[1].split("</select>")[0];
   ok("有全體同仁", sel.includes('value="__all__"'));
   ok("可以只發給全體剪輯／員工／海外", sel.includes('value="__editor__"') && sel.includes('value="__cs__"') && sel.includes('value="__intl__"'));
-  ok("個人名單分四組（含人資）", sel.includes('label="剪輯"') && sel.includes('label="員工"') && sel.includes('label="海外剪輯"') && sel.includes('label="人資"'));
-  ok("每一個群組都送得出去", ["__editor__","__cs__","__intl__","__hr__"].every(k=>sel.includes('value="'+k+'"')));
-  ok("分組順序：剪輯→員工→海外", ascending(order(sel,['label="剪輯"','label="員工"','label="海外剪輯"']))); }
+  ok("個人名單依區塊分三組", sel.includes('label="台灣・剪輯行銷"') && sel.includes('label="台灣・其他"') && sel.includes('label="巴基斯坦"'));
+  ok("每一個職位都送得出去", ["__editor__","__cs__","__intl__","__hr__"].every(k=>sel.includes('value="'+k+'"')));
+  ok("整區也送得出去", ["__twmake__","__twrest__","__pk__"].every(k=>sel.includes('value="'+k+'"')));
+  ok("分組順序：台灣剪輯行銷→台灣其他→巴基斯坦",
+     ascending(order(sel,['label="台灣・剪輯行銷"','label="台灣・其他"','label="巴基斯坦"']))); }
 
 // ── HR 看得到回覆 ──
 ok("我發出的通知看得到回覆", h.includes("我發出的通知") && h.includes("小美") && h.includes("回覆：") && h.includes("我下週一交"));

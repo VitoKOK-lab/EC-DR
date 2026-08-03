@@ -68,8 +68,8 @@ reset(); as("管理員","boss");
   bootLogin();
   global.document.getElementById=_get; global.document.createElement=_create;
   const groups=order.filter(x=>String(x).startsWith("#")).map(x=>x.slice(1));
-  ok("登入頁分區順序 Taiwan→員工→海外版→人資→管理層",
-     JSON.stringify(groups)===JSON.stringify(["Taiwan","員工","海外版","人資","管理層"])); }
+  ok("登入頁分區順序 台灣剪輯行銷→台灣其他→巴基斯坦→管理層",
+     JSON.stringify(groups)===JSON.stringify(["台灣・剪輯行銷","台灣・其他","巴基斯坦","管理層"])); }
 
 // ── 員工的分頁與畫面 ──
 reset(); as("小美","cs");
