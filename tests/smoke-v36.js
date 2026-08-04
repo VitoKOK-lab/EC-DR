@@ -82,7 +82,8 @@ ok("馬來庫舊片分頁列出馬來原本", h.includes("Malay original"));
 // --- 原本語言小圖示 ---
 VID_LANG=""; VID_VIEW="old";
 let r=vidTableRow(STATE.videos.find(v=>v.id==="S1"));
-ok("中文原本標「中」", r.includes(">中</span>"));
+// v122：台灣影片庫看得到的本來就全是中文，每列再掛一顆「中」是冗餘，只有非中文才標
+ok("中文原本不再標「中」（清單裡本來就全是中文）", !r.includes(">中</span>"));
 r=vidTableRow(STATE.videos.find(v=>v.id==="S2"));
 ok("泰文原本標「TH」", r.includes(">TH</span>"));
 r=vidTableRow(STATE.videos.find(v=>v.id==="S4"));
