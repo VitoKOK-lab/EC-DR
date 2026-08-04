@@ -292,7 +292,7 @@ reset([]);
   ok("一般員工也看得到人資（大家互相知道）", viewTeam().includes("HR小姐"));
 
   reset([]); as("Regina","manager");
-  STATE.videos=[{id:"P1",code:"",name:"待剪毛片",rawName:"x",stage:"待處理",locale:"",channel:"",
+  STATE.videos=[{id:"P1",code:"",name:"待剪毛片",rawName:"x",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",
     tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null}];
   { const f=viewFlow();
     ok("流程中控可以交辦人資", f.includes("交辦 HR小姐 一件事"));

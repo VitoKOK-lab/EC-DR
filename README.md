@@ -39,7 +39,21 @@ python3 -m http.server 5000
 ## 部署
 
 推送到 `main` 即由 GitHub Pages 自動發布（服務根目錄）。
-改了畫面後，記得把 `index.html` 裡 `app.js?v=` 的版號加一以破快取。
+
+**破快取版本戳**：GitHub Pages 送 `Cache-Control: max-age=600` —— 在那 10 分鐘內瀏覽器
+連問都不會問，直接用快取。所以 `index.html` 的 `app.js?v=…` 一定要跟著程式一起變，
+不然改了使用者也看不到。
+
+版本戳現在是 **`app.js` ＋ `fb.js` 的內容雜湊**，改了程式就自己不一樣，不用記版號：
+
+```bash
+node tests/check-cache-stamp.js --fix   # 更新 index.html 的 ?v=
+```
+
+`node tests/run-all.js` 會檢查它是不是最新的，忘了更新就會紅（CI 也會擋）。
+
+> 之前是寫死的時間戳 `?v=1785586175`，從 8/1 到 8/3 改了五輪都沒人動過它 ——
+> 等於完全沒有防快取的作用，使用者得等 10 分鐘或手動強制重新整理才看得到新版。
 
 ## 使用
 

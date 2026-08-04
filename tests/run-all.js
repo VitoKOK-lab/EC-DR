@@ -40,5 +40,15 @@ try {
   console.log("FAIL  audit-lang.js（執行失敗）"); failed.push("audit-lang.js");
 }
 
-console.log(`\n${suites.length + 2 - failed.length} / ${suites.length + 2} 通過`);
+// 破快取版本戳：改了 app.js／fb.js 就一定要換 index.html 的 ?v=，
+// 不然使用者的瀏覽器會繼續跑舊的程式（GitHub Pages 是 max-age=600）
+try {
+  execFileSync(process.execPath, [path.join(dir, "check-cache-stamp.js")], { stdio: "pipe" });
+  console.log("PASS  check-cache-stamp.js（破快取版本戳是最新的）");
+} catch (e) {
+  console.log("FAIL  check-cache-stamp.js\n" + String(e.stdout || "") + String(e.stderr || ""));
+  failed.push("check-cache-stamp.js");
+}
+
+console.log(`\n${suites.length + 3 - failed.length} / ${suites.length + 3} 通過`);
 if (failed.length) { console.log("失敗：" + failed.join(", ")); process.exit(1); }

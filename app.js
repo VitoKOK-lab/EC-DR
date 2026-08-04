@@ -99,7 +99,6 @@ function dataLabel(x){
 }
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
-function canSchedule(){ const r=currentRole(); return r==="manager" || r==="boss"; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
@@ -710,9 +709,7 @@ function calTWBody(){
     const filled = b.full;
     const empty = (b.total||0)===0;                 // 一支都還沒排
     const cls = filled ? "filled" : (empty ? "empty" : (within10 ? "bad urgent" : "blank"));
-    const canSched = canSchedule();
-    const onclick = canSched ? `onclick="openDay('${ds}')"` : "";
-    cells += `<div class="day ${cls} ${isToday?'today':''} ${!canSched?'locked':''}" ${onclick}>
+    cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
@@ -760,7 +757,6 @@ function viewCal(){
 }
 
 function openDay(ds){
-  if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; }
   // 依上片時間排序（早→晚）；沒時間的排最後
   const odTime = it => ((it.slot&&it.slot.reused)?(it.slot.time||""):(vid(it.videoId)?.publishTime||"")) || "99:99";
   const list = dayVideoList(ds).slice().sort((a,b)=> odTime(a).localeCompare(odTime(b)));
@@ -885,7 +881,6 @@ function odPickVid(){
 }
 // 排入：舊片＝重播（另存一筆排片紀錄）；其餘＝直接設定它的預排上片日
 function odAdd(ds){
-  if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; }
   const id=val("od_vid"); if(!id){ toast(T("請先選一支影片","Pick a video first"),true); return; }
   const v=vid(id)||{};
   if(vidIsOld(v)){
@@ -1417,7 +1412,7 @@ function myMsgFold(){
   const list=myMsgs();
   const unseen=list.filter(m=>!msgOpen(m) && !m.seen).length;
   const who=(m)=>m.to==="boss"?T("主管","Manager"):T("人資","HR");
-  const rows=list.slice(0,12).map(m=>{
+  const rows=list.map(m=>{
     const answered=!msgOpen(m);
     return `<div class="todo ${answered&&m.seen?'done':''}"><span class="tkind">${answered?"💬":"📨"}</span>
       <div class="tmain"><div class="ttitle">${esc(m.title)}</div>
@@ -1576,7 +1571,7 @@ function msgInboxCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">📨 同仁來訊</b>
       <span class="pill ${open.length?'em':'ok'}">${open.length?open.length+" 則待回覆":"都回覆了"}</span></div>
-    ${list.slice(0,20).map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
+    ${list.map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
       <div style="font-size:13.5px"><b>${esc(m.user)}</b>
         <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}${currentRole()==="boss"?"・"+label(m):""}</span></div>
       <div style="margin-top:3px">${esc(m.title)}</div>
@@ -1802,17 +1797,21 @@ function viewWork(){
   return `
   <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
   ${focusBar}
+  ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
+        再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${rejCard}
 
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
+  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
+  ${lowStockCard()}
+
+  ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
-  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
-  ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
       ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
           <div class="ttitle">${esc(vidTitle(v))}</div>
@@ -2248,7 +2247,7 @@ function viewAttend(){
       <span class="pill ${noNote.length?'em':'ok'}">${noNote.length?`${noNote.length} 筆還沒說明`:"都說明了"}</span></div>
     <table class="responsive" style="margin-top:10px">
       <thead><tr><th>日期</th><th>同仁</th><th>異常</th><th>本人說明</th></tr></thead>
-      <tbody>${issueRows.slice(0,60).map(s=>`<tr>
+      <tbody>${issueRows.map(s=>`<tr>
         <td data-label="日期">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）</td>
         <td data-label="同仁"><b>${esc(s.user)}</b></td>
         <td data-label="異常">${esc(attIssues(s).join("、"))}</td>
@@ -2338,7 +2337,10 @@ function flowStockCard(staff, pool, unassigned, stockDays){
   const stockCard=`<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">🎬 毛片庫存＆指派</b>
-      <span class="pill ${stockDays>=7?'ok':'em'}">${pool.length} 支・約可剪 ${stockDays} 天</span></div>
+      <span class="pill ${pool.length>=LOW_STOCK?'ok':'em'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
+    ${pool.length>=LOW_STOCK?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
+      <b style="color:var(--red)">⚠ 毛片剩 ${pool.length} 支，低於 ${LOW_STOCK} 支了 —— 要去拍片了。</b><br>
+      剪輯一天可以剪好幾支，存量不補上來他們就會沒片可剪。</div>`}
     ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
     ${unassigned.length?`
     <div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
@@ -2414,7 +2416,7 @@ function viewFlow(){
   const staff=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const g=scheduleGlance();
-  const pool=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理");
+  const pool=rawStock();   // 只算真的有毛片的（有腳本沒毛片的還不能剪，不算存量）
   const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const doneToday=(STATE.videos||[]).filter(v=>isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
   const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
@@ -2437,7 +2439,7 @@ function viewFlow(){
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
     <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
-    <div><span class="fn ${stockDays>=7?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
+    <div><span class="fn ${pool.length>=LOW_STOCK?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
     <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
   </div>`;
@@ -2798,7 +2800,7 @@ function teamDayCard(u, allTasks){
 function teamNoticeCompose(staff){
   const groups=staffByGroup(staff);
   const mine=allNotices().filter(t=>t.assignedBy===currentUser())
-    .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,12);
+    .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
   const sent={};
   mine.forEach(t=>{ const k=(t.title||"")+"__"+String(t.createdAt||"").slice(0,16); (sent[k]=sent[k]||[]).push(t); });
   const rows=Object.values(sent).map(g=>{
@@ -3142,6 +3144,47 @@ const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
 // 剪輯認領了也沒東西可剪，所以這些不放進待認領（v89）。
 // 只對一創原本適用：二創殼本來就沒有毛片連結（素材來自源片），不能一起排除。
 const vidNotShot=(v)=> !isVersion(v) && !vidHasRaw(v);
+// ── 毛片存量 ──────────────────────────────────────────────────
+// 「有腳本沒毛片」的還不能剪，不算存量 —— 這是老闆判斷「要不要去拍片」的依據，
+// 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
+// 跟待認領池（poolAll 用 !vidNotShot）同一個標準。
+const LOW_STOCK=20;                       // 低於這個支數，老闆就該去拍片了
+function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidHasRaw(v)); }
+function rawStockLow(){ return rawStock().length < LOW_STOCK; }
+// 剪輯也要看得到存量：沒片可剪是他們先發現的，要讓他們叫得動老闆。
+// 只在真的不足時才出現 —— 平常不佔畫面。海外不剪台灣毛片，不給他們看。
+function lowStockCard(){
+  if(myZone()==="intl") return "";
+  const n=rawStock().length; if(n>=LOW_STOCK) return "";
+  const sentToday=allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today);
+  return `<div class="card" style="border-color:var(--red)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🎬 ${T("毛片快沒了","Raw footage running out")}</b>
+      <span class="pill em">${n}/${LOW_STOCK}</span></div>
+    <div style="font-size:13.5px;margin-top:8px;line-height:1.7">${T(
+      "待剪的毛片只剩 <b>"+n+"</b> 支（低於 "+LOW_STOCK+" 支）。剪完就沒得剪了，早點讓老闆知道要去拍片。",
+      "Only <b>"+n+"</b> clips left to cut (below "+LOW_STOCK+"). Let the boss know it's time to shoot.")}</div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      ${sentToday
+        ? `<span class="pill ok">${T("今天已經提醒過了","Already reminded today")}</span>`
+        : `<button class="btn sm" onclick="remindBossShoot()">${T("提醒老闆拍片","Remind the boss to shoot")}</button>`}
+      <span class="muted" style="font-size:12px">${T("同一天只會送一次，不會轟炸","Only one reminder a day")}</span></div>
+  </div>`;
+}
+// 一鍵提醒老闆：走既有的「找主管說一件事」那條路（老闆在流程中控的「同仁來訊」看得到並回覆）
+async function remindBossShoot(){ refreshToday();
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  const n=rawStock().length;
+  if(allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today)){
+    toast(T("今天已經有人提醒過了","Someone already reminded today"),true); return; }
+  const id=uid("M");
+  const txt=T("毛片剩 "+n+" 支（低於 "+LOW_STOCK+" 支），要拍片了。","Only "+n+" clips left (below "+LOW_STOCK+") — time to shoot.");
+  try{ await window.DB.set("tasks", id, {id, kind:"msg", topic:"shoot", user:currentUser(), to:"boss", date:today,
+        title:txt, reply:"", replyBy:"", replyAt:"", seen:false, createdAt:nowIso()});
+    toast(T("已提醒老闆（毛片剩 "+n+" 支）","Boss notified"));
+    logA("提醒老闆拍片", "毛片剩 "+n+" 支");
+  }catch(e){ toast(T("送出失敗，請稍後再試","Failed to send, try again"),true); }
+}
 // 影片庫七分段。兩個獨立的軸交叉出來的：
 //   拍了沒（毛片連結）→ 剪了沒（已完成）→ 過期沒；每一段再分 有沒有排上片日。
 //   ① 未拍・未排程   還沒拍、也還沒排 → 要補排日期的在這裡
@@ -3626,7 +3669,7 @@ function viewPerf(){
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
-  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
+  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
     <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="editVideo('${r.v.id}')">
@@ -3638,7 +3681,7 @@ function viewPerf(){
       <td data-label="讚">${num(r.likes)}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">尚無資料</td></tr>`}</tbody></table>
     </div>
   </div>
-  <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
+  <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
     <tbody>${pRank.map((e,i)=>`<tr><td data-label="#">${i+1}</td><td data-label="商品"><b>${esc(e[0])}</b></td><td data-label="出現影片">${e[1].vids.size} 支</td><td data-label="觀看(觸及)"><b>${num(e[1].views)}</b></td></tr>`).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
@@ -4164,7 +4207,7 @@ function intlLibRows(loc){
   const accts=intlAccounts();                                        // 全清單：option 的 value 用這裡的索引（createLocalFromAcct 依此取帳號）
   const locs = loc ? [loc] : INTL_LOCALES;                            // 指定語言時只列該語言的帳號／版本
   const shownAccts = loc ? intlAccountsFor(loc) : accts;
-  const cards=src.slice(0,200).map(v=>{
+  const cards=src.map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||T("(未命名)","(untitled)");   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
@@ -4233,9 +4276,7 @@ function calLineBody(cfg){
     const within10=ds>=today && ds<=d10s;
     const b=cfg.dayBreak(ds,acc); const filled=b.full; const empty=(b.total||0)===0;
     const cls=filled?"filled":(empty?"empty":(within10?"bad urgent":"blank"));
-    const canSched=canSchedule();
-    const onclick=canSched?`onclick="${dayOpen(ds)}"`:"";
-    cells+=`<div class="day ${cls} ${isToday?'today':''} ${!canSched?'locked':''}" ${onclick}>
+    cells+=`<div class="day ${cls} ${isToday?'today':''}" onclick="${dayOpen(ds)}">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
@@ -4273,7 +4314,6 @@ function calIntlBody(loc){
     targetTip:`${intlDailyTarget()} ${T("支／帳號／天","per account / day")}` });
 }
 function openDayIntl(ds){
-  if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; }
   const acc=intlCurAcct(); const b=intlDayBreak(ds,acc); const list=intlDayList(ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);
     return `<tr>
@@ -4525,7 +4565,7 @@ function chLibRows(ch){
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("目前沒有可製作"+C.verName+"的影片（要是完整已上傳的舊片）。","No videos available yet — they must be fully published.")}</div>`;
   const accts=chAccounts(ch);
-  return src.slice(0,200).map(v=>{
+  return src.map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
     const kidsAll=chVersionsOfSrc(ch, v.id);
     const nArch=kidsAll.filter(isArchived).length;                 // 已上片＝完成任務，封存不再列出
@@ -4581,7 +4621,6 @@ function calChBody(ch){
     targetTip:`${T("每帳號每天","per account / day:")} ${chDailyTarget(ch)} ${T("支","")}` });
 }
 function openDayCh(ch,ds){
-  if(!canSchedule()){ toast(T("只有經理人及管理員可以排程","Only managers and admins can schedule"),true); return; }
   const C=CHANNELS[ch];
   const acc=chCurAcct(ch); const b=chDayBreak(ch,ds,acc); const list=chDayList(ch,ds,acc);
   const rows=list.map(v=>{ const done=(v.published||v.stage==="已完成"); const s=srcOf(v);

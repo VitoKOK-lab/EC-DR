@@ -28,8 +28,8 @@ STATE = {
     K2:{id:"K2",user:"小葵",date:T0,title:"寄樣品",contact:"",report:"",done:false,assignedBy:"Regina",ack:false,createdAt:"b"},
   }, shifts:{ ["小葵__"+T0]:{id:"x",user:"小葵",date:T0,clockIn:T0+"T01:00:00Z",clockOut:""} }, logs:[], deletedVideos:[],
   videos:[
-    {id:"R1",name:"毛片一",rawName:"毛片一",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"R2",name:"毛片二",rawName:"毛片二",stage:"待處理",locale:"",channel:"",assignedTo:"小葵",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"R1",name:"毛片一",rawName:"毛片一",rawLink:"http://raw1",stage:"待處理",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"R2",name:"毛片二",rawName:"毛片二",rawLink:"http://raw2",stage:"待處理",locale:"",channel:"",assignedTo:"小葵",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"W1",name:"剪很久的片",rawName:"剪很久的片",stage:"剪輯中",locale:"",channel:"",claimedBy:"小葵",editor:"小葵",claimedAt:"2020-01-01T00:00:00Z",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"P1",name:"蝦皮殼",rawName:"src",stage:"待處理",channel:"shopee",scheduledDate:"2026-08-01",usageHistory:[],tags:[],products:[],metrics:[]},
   ],
