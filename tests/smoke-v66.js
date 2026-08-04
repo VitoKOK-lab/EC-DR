@@ -35,7 +35,7 @@ function reset(){
             E1:{id:"E1",user:"小葵",date:T0,title:"整理素材",done:false,createdAt:T0} },
     videos:[{id:"V1",name:"小葵的片",rawName:"x",stage:"已完成",editor:"小葵",claimedAt:T0+"T00:00:00",finishedAt:T0+"T04:00:00",
              reviewStatus:"通過",publishedLink:"http://p",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]},
-            {id:"P1",name:"待剪毛片",rawName:"x",stage:"待處理",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]}] };
+            {id:"P1",name:"待剪毛片",rawName:"x",rawLink:"http://raw",stage:"待處理",locale:"",channel:"",tags:[],products:[],usageHistory:[],metrics:[]}] };
   CUR_TAB=null; VIEW_AS=null; WORK_ZONE="shopee"; POOL_FILTER="all"; CAL_PLAT="tw"; CAL_YM=null;
 }
 function as(u,r){ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); }

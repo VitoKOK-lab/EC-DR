@@ -167,5 +167,60 @@ for(const [u,r] of [["小葵","editor"],["Anna","intl"],["HR小姐","hr"],["Regi
   }
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail?1:0);
+// ══════════ ⑨ 毛片存量：只算真的有毛片的，低於 20 支就要提醒（v121）══════════
+// 「有腳本沒毛片」的還不能剪，算進去會讓數字虛胖 —— 老闆截圖上的「157 支」其實
+// 有 128 支只有腳本，警戒線因此永遠不會響。
+function stockFixture(nWithRaw, nScriptOnly){
+  reset(); STATE.videos=[]; STATE.tasks={};
+  for(let i=0;i<nWithRaw;i++) STATE.videos.push(v_("RAW"+i,{name:"有毛片"+i,rawLink:"http://raw"}));
+  for(let i=0;i<nScriptOnly;i++) STATE.videos.push(v_("SCR"+i,{name:"只有腳本"+i,rawLink:"",videoCopy:"腳本"}));
+}
+stockFixture(5, 100); as("Regina","manager");
+ok("只有腳本的不算毛片存量", rawStock().length===5);
+ok("低於 20 支＝存量不足", rawStockLow()===true);
+{ const f=viewFlow();
+  ok("流程中控寫的是真的毛片數（5 不是 105）", f.includes("5 支毛片"));
+  ok("不足時跳紅字提醒老闆去拍片", f.includes("要去拍片了")); }
+stockFixture(25, 100); as("Regina","manager");
+ok("25 支＝存量足夠", rawStockLow()===false);
+ok("足夠時不跳提醒", !viewFlow().includes("要去拍片了"));
+
+// 剪輯也看得到，而且有一顆「提醒老闆拍片」
+stockFixture(5, 100); as("小葵","editor");
+{ const w=viewWork();
+  ok("剪輯看得到毛片快沒了", w.includes("毛片快沒了") && w.includes("5/20"));
+  ok("有「提醒老闆拍片」鍵", w.includes("remindBossShoot()")); }
+stockFixture(25, 100); as("小葵","editor");
+ok("存量夠的時候這張卡不出現（不佔畫面）", !viewWork().includes("毛片快沒了"));
+stockFixture(5, 0); as("Anna","intl");
+ok("海外不剪台灣毛片，不給他們看這張", lowStockCard()==="");
+
+// 送出提醒：同一天只送一次
+stockFixture(5, 0); as("小葵","editor");
+{ let wrote=[]; // 只收 tasks —— logA 也走 DB.set，會把操作紀錄一起塞進來
+  window.DB.set=async(c,id,rec)=>{ if(c==="tasks"){ wrote.push(rec); STATE.tasks[id]=rec; } };
+  remindBossShoot().then(()=>new Promise(r=>setTimeout(r,30))).then(()=>{
+    ok("提醒寫進資料庫、收件人是老闆", wrote.length===1 && wrote[0].to==="boss" && wrote[0].topic==="shoot");
+    ok("訊息帶了目前剩幾支", wrote[0].title.includes("5 支"));
+    const w=viewWork();
+    ok("送過之後改顯示「今天已經提醒過了」", w.includes("今天已經提醒過了") && !w.includes("remindBossShoot()"));
+    // 老闆在流程中控的「同仁來訊」看得到
+    as("管理員","boss");
+    ok("老闆看得到這則提醒", viewFlow().includes("要拍片了"));
+
+    // ══════════ ⑩ 上班計畫的卡片順序＝一天的工作順序 ══════════
+    reset(); as("小葵","editor");
+    { const w2=viewWork();
+      // 用各張卡獨有的標記定位（「待認領」在頂部焦點列也出現過一次，不能直接用字串找）
+      const at=(t)=>w2.indexOf(t);
+      const claimAt=at('id="pool_q"');            // 待認領那張卡的搜尋框
+      ok("今天要做的事在待認領前面", at("今天要做的事")>=0 && at("今天要做的事")<claimAt);
+      ok("待認領在「建立其他版本」前面", claimAt<at("建立其他版本"));
+      ok("少用的（找主管說一件事）排在後面", at("找主管／人資說一件事")>claimAt);
+      ok("傳訊息給同事也排在後面", at("傳訊息給同事")>claimAt); }
+
+    console.log(`\n${pass} passed, ${fail} failed`);
+    process.exit(fail?1:0);
+  });
+}
+

@@ -1797,17 +1797,21 @@ function viewWork(){
   return `
   <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
   ${focusBar}
+  ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
+        再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${rejCard}
 
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
+  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
+  ${lowStockCard()}
+
+  ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
-  ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
-  ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
       ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
           <div class="ttitle">${esc(vidTitle(v))}</div>
@@ -2333,7 +2337,10 @@ function flowStockCard(staff, pool, unassigned, stockDays){
   const stockCard=`<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">🎬 毛片庫存＆指派</b>
-      <span class="pill ${stockDays>=7?'ok':'em'}">${pool.length} 支・約可剪 ${stockDays} 天</span></div>
+      <span class="pill ${pool.length>=LOW_STOCK?'ok':'em'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
+    ${pool.length>=LOW_STOCK?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
+      <b style="color:var(--red)">⚠ 毛片剩 ${pool.length} 支，低於 ${LOW_STOCK} 支了 —— 要去拍片了。</b><br>
+      剪輯一天可以剪好幾支，存量不補上來他們就會沒片可剪。</div>`}
     ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
     ${unassigned.length?`
     <div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
@@ -2409,7 +2416,7 @@ function viewFlow(){
   const staff=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const g=scheduleGlance();
-  const pool=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理");
+  const pool=rawStock();   // 只算真的有毛片的（有腳本沒毛片的還不能剪，不算存量）
   const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const doneToday=(STATE.videos||[]).filter(v=>isPublished(v)&&String(v.finishedAt||"").slice(0,10)===today);
   const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
@@ -2432,7 +2439,7 @@ function viewFlow(){
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
     <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
-    <div><span class="fn ${stockDays>=7?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
+    <div><span class="fn ${pool.length>=LOW_STOCK?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
     <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
   </div>`;
@@ -3137,6 +3144,47 @@ const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
 // 剪輯認領了也沒東西可剪，所以這些不放進待認領（v89）。
 // 只對一創原本適用：二創殼本來就沒有毛片連結（素材來自源片），不能一起排除。
 const vidNotShot=(v)=> !isVersion(v) && !vidHasRaw(v);
+// ── 毛片存量 ──────────────────────────────────────────────────
+// 「有腳本沒毛片」的還不能剪，不算存量 —— 這是老闆判斷「要不要去拍片」的依據，
+// 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
+// 跟待認領池（poolAll 用 !vidNotShot）同一個標準。
+const LOW_STOCK=20;                       // 低於這個支數，老闆就該去拍片了
+function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidHasRaw(v)); }
+function rawStockLow(){ return rawStock().length < LOW_STOCK; }
+// 剪輯也要看得到存量：沒片可剪是他們先發現的，要讓他們叫得動老闆。
+// 只在真的不足時才出現 —— 平常不佔畫面。海外不剪台灣毛片，不給他們看。
+function lowStockCard(){
+  if(myZone()==="intl") return "";
+  const n=rawStock().length; if(n>=LOW_STOCK) return "";
+  const sentToday=allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today);
+  return `<div class="card" style="border-color:var(--red)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🎬 ${T("毛片快沒了","Raw footage running out")}</b>
+      <span class="pill em">${n}/${LOW_STOCK}</span></div>
+    <div style="font-size:13.5px;margin-top:8px;line-height:1.7">${T(
+      "待剪的毛片只剩 <b>"+n+"</b> 支（低於 "+LOW_STOCK+" 支）。剪完就沒得剪了，早點讓老闆知道要去拍片。",
+      "Only <b>"+n+"</b> clips left to cut (below "+LOW_STOCK+"). Let the boss know it's time to shoot.")}</div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      ${sentToday
+        ? `<span class="pill ok">${T("今天已經提醒過了","Already reminded today")}</span>`
+        : `<button class="btn sm" onclick="remindBossShoot()">${T("提醒老闆拍片","Remind the boss to shoot")}</button>`}
+      <span class="muted" style="font-size:12px">${T("同一天只會送一次，不會轟炸","Only one reminder a day")}</span></div>
+  </div>`;
+}
+// 一鍵提醒老闆：走既有的「找主管說一件事」那條路（老闆在流程中控的「同仁來訊」看得到並回覆）
+async function remindBossShoot(){ refreshToday();
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  const n=rawStock().length;
+  if(allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today)){
+    toast(T("今天已經有人提醒過了","Someone already reminded today"),true); return; }
+  const id=uid("M");
+  const txt=T("毛片剩 "+n+" 支（低於 "+LOW_STOCK+" 支），要拍片了。","Only "+n+" clips left (below "+LOW_STOCK+") — time to shoot.");
+  try{ await window.DB.set("tasks", id, {id, kind:"msg", topic:"shoot", user:currentUser(), to:"boss", date:today,
+        title:txt, reply:"", replyBy:"", replyAt:"", seen:false, createdAt:nowIso()});
+    toast(T("已提醒老闆（毛片剩 "+n+" 支）","Boss notified"));
+    logA("提醒老闆拍片", "毛片剩 "+n+" 支");
+  }catch(e){ toast(T("送出失敗，請稍後再試","Failed to send, try again"),true); }
+}
 // 影片庫七分段。兩個獨立的軸交叉出來的：
 //   拍了沒（毛片連結）→ 剪了沒（已完成）→ 過期沒；每一段再分 有沒有排上片日。
 //   ① 未拍・未排程   還沒拍、也還沒排 → 要補排日期的在這裡
