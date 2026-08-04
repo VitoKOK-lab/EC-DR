@@ -43,8 +43,9 @@ openIntlModal("E1");
 ok("editor 開英文版視窗＝中文介面", modalHTML.includes("儲存") && modalHTML.includes("取消") && modalHTML.includes("英文版本") && !modalHTML.includes(">Save<") && !modalHTML.includes("Watch Chinese"));
 ok("editor 英文版視窗教學是中文", modalHTML.includes("先看我們的中文成片"));
 INTL_ACCT="acctEN"; INTL_CAL_YM=null;
-let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
-ok("editor 開海外日視窗＝中文", toastMsg.includes("只有") || toastMsg.includes("Only"));
+// v121：日期視窗全員都進得去了，改成真的驗語言
+modalHTML=""; openDayIntl(T0);
+ok("editor 開海外日視窗＝中文", modalHTML.includes("已排") && !modalHTML.includes("Scheduled"));
 // v115 分區：台灣沒有英文線，改用蝦皮驗中文字串
 WORK_ZONE="shopee"; let h=viewWork();
 ok("editor 建版本清單是中文字串", h.includes("加蝦皮版") && !h.includes("Add Shopee version"));
@@ -70,8 +71,8 @@ ok("intl 來源卡全英文", !modalHTML.includes("影片內容") && !modalHTML.
 WORK_ZONE="en"; h=viewWork();
 ok("intl 徽章用英文（EN）", h.includes(">EN</span>") && !h.includes(">蝦</span>"));
 ok("intl 天數徽章 New", h.includes(">New</span>") || !h.includes(">新</span>"));
-INTL_ACCT="acctEN"; toastMsg=""; toast=(m)=>{toastMsg=String(m);}; openDayIntl(T0); toast=oldToast;
-ok("intl 海外日視窗英文", toastMsg.includes("只有") || toastMsg.includes("Only"));
+INTL_ACCT="acctEN"; modalHTML=""; openDayIntl(T0);
+ok("intl 海外日視窗英文", modalHTML.includes("Scheduled") && !modalHTML.includes("已排"));
 
 // ── 功能防呆 ──
 { let confirmed=false; const _c=global.confirm; global.confirm=()=>{confirmed=true; return false;};

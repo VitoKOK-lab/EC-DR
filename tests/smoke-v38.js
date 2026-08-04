@@ -48,8 +48,9 @@ ok("intl 點源片＝唯讀來源卡（英文）", modalHTML.includes("Source ·
 ok("intl 看不到台灣的編輯欄位", !modalHTML.includes('id="e_stage"') && !modalHTML.includes('id="e_date"') && !modalHTML.includes('id="e_raw"'));
 ok("intl 看不到刪除鍵", !modalHTML.includes("delVideo("));
 ok("intl 來源卡沒有中文洩漏", !modalHTML.includes("影片內容") && !modalHTML.includes("來源・台灣"));
-let toastMsg=""; const oldToast=toast; toast=(m)=>{toastMsg=String(m);}; openDay(T0); toast=oldToast;
-ok("intl 點日視窗 English", toastMsg.includes("只有") || toastMsg.includes("Only"));
+// v121：日期視窗全員都進得去了，所以這裡改成真的驗它的語言（本來只是在驗被擋掉的 toast）
+INTL_ACCT="acctEN"; INTL_CAL_YM=null; modalHTML=""; openDayIntl(T0);
+ok("intl 點日視窗 English", modalHTML.includes("Scheduled") && !modalHTML.includes("已排"));
 
 // --- editor：中文完全不變 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");

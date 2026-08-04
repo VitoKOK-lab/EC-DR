@@ -246,6 +246,54 @@ ok("設好的那支就從清單消失", !origLangSuspects().map(v=>v.id).include
 as("小葵","editor");
 ok("台灣剪輯的池裡也沒有它了", !poolAll().map(v=>v.id).includes("TH1"));
 
+// ══════════ ⑩ 月排程的日期視窗全員都進得去、也改得動（v121）══════════
+// 原本 canSchedule() 只放行經理人與管理員，連日期格子的 onclick 都不給剪輯 ——
+// 但剪輯在影片庫本來就改得到「預排上片日期」，在月曆擋住只是讓他們連
+// 「那天排了什麼」都看不到，擋不住任何東西。
+function calFixture(){
+  reset();
+  const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+  const TOM=D(1);
+  STATE.settings.intlAccounts=[{locale:"en",name:"acctEN"}];
+  STATE.settings.shopeeAccounts=["蝦皮A"];
+  STATE.videos=[
+    {id:"ZH",code:"26ZH",name:"中文毛片",rawName:"中文毛片",videoCopy:"",rawLink:"http://raw",
+     stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:TOM,publishTime:"10:00",
+     publishedLink:"",driveFolder:"",locale:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},
+    {id:"SHP",code:"26SHP",name:"蝦皮版",rawName:"蝦皮版",channel:"shopee",sourceVideoId:"ZH",account:"蝦皮A",
+     stage:"待處理",scheduledDate:TOM,publishedLink:"",driveFolder:"",locale:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},
+    {id:"EN",code:"26EN",name:"英文版",rawName:"英文版",locale:"en",sourceVideoId:"ZH",account:"acctEN",
+     stage:"待處理",scheduledDate:TOM,publishedLink:"",driveFolder:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},
+  ];
+  CAL_PLAT="tw"; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT="acctEN";
+  CH_CAL={shopee:{ym:null,acct:"蝦皮A"},ms:{ym:null,acct:""}};
+  return TOM;
+}
+{ const TOM=calFixture();
+  for(const [u,r] of [["小葵","editor"],["Regina","manager"],["管理員","boss"]]){
+    as(u,r); modalHTML=""; toasts.length=0;
+    openDay(TOM);
+    ok(`${r} 打得開中文月曆的日期視窗`, modalHTML.includes("中文毛片"));
+    ok(`${r} 沒被擋掉`, !toasts.some(t=>t.includes("只有")));
+    ok(`${r} 改得了上片日`, modalHTML.includes("rescheduleVid('ZH'"));
+    ok(`${r} 移得出排程`, modalHTML.includes("unscheduleVid('ZH'"));
+    ok(`${r} 排得進新的片`, modalHTML.includes(`odAdd('${TOM}')`));
+  }
+  // 蝦皮／馬來那條線
+  as("小葵","editor"); modalHTML=""; openDayCh("shopee",TOM);
+  ok("剪輯打得開蝦皮的日期視窗", modalHTML.includes("蝦皮版"));
+  ok("剪輯改得了蝦皮版的日期", modalHTML.includes("chReschedule('shopee','SHP'"));
+  // 海外那條線
+  as("Anna","intl"); modalHTML=""; openDayIntl(TOM);
+  ok("海外剪輯打得開自己的日期視窗", modalHTML.includes("英文版"));
+  ok("海外剪輯改得了自己的日期", modalHTML.includes("intlReschedule('EN'"));
+  // 月曆格子本身要點得下去
+  as("小葵","editor"); CAL_PLAT="tw"; CAL_YM=null;
+  { const c=viewCal();
+    ok("剪輯的月曆格子有 onclick", c.includes("openDay('"));
+    ok("沒有鎖住（locked）的格子", !c.includes("locked")); }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
 })();
