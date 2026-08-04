@@ -61,27 +61,41 @@ const moreTags=(h)=>{ const seg=tagArea(h); const i=seg.indexOf("<details");
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
-// ══════════ ① 沒寫文案的小橘點 ══════════
-reset([v_("A",{videoCopy:""}), v_("B",{videoCopy:"有寫口播"})]); as("管理員","boss");
+// ══════════ ① 「這支還缺什麼」小燈號（v122 起從「沒文案小圓點」擴成整條流程）══════════
+const D2=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+const OKV=(id,o)=>v_(id,Object.assign({videoCopy:"有寫口播",rawLink:"http://raw",scheduledDate:D2(3)},o||{}));
+reset([OKV("A",{videoCopy:""}), OKV("B")]); as("管理員","boss");
 { const h=viewVideos();
-  ok("沒文案的那支有小點", h.includes('class="nocopy"'));
-  ok("只有一支被標到", (h.match(/class="nocopy"/g)||[]).length===1); }
-reset([v_("B",{videoCopy:"有寫口播"})]); as("管理員","boss");
-ok("都有文案就完全不出現", !viewVideos().includes('class="nocopy"'));
-reset([v_("A",{videoCopy:"   "})]); as("管理員","boss");
-ok("文案只有空白也算沒寫", viewVideos().includes('class="nocopy"'));
+  ok("沒文案的那支有燈號", h.includes('class="misspill"') && h.includes("缺文案"));
+  ok("只有一支被標到", (h.match(/class="misspill/g)||[]).length===1); }
+reset([OKV("B")]); as("管理員","boss");
+ok("什麼都齊全就完全不出現", !viewVideos().includes("misspill"));
+reset([OKV("A",{videoCopy:"   "})]); as("管理員","boss");
+ok("文案只有空白也算沒寫", viewVideos().includes("缺文案"));
 // 圖片模式也要標
-reset([v_("A",{videoCopy:""})]); as("管理員","boss"); VID_MODE="grid";
-ok("圖片模式也標得出來", viewVideos().includes('class="nocopy"'));
-// 二創殼的文案是之後翻譯的，不該被標
+reset([OKV("A",{videoCopy:""})]); as("管理員","boss"); VID_MODE="grid";
+ok("圖片模式也標得出來", viewVideos().includes("缺文案"));
+// 流程上的每一步都標得出來
 reset(); as("管理員","boss");
-ok("蝦皮殼不標", noCopyDot(v_("P",{channel:"shopee",videoCopy:""}))==="");
-ok("英文殼不標", noCopyDot(v_("E",{locale:"en",videoCopy:""}))==="");
-ok("一創沒文案才標", noCopyDot(v_("A",{videoCopy:""}))!=="");
-ok("有滑鼠提示講清楚是什麼", noCopyDot(v_("A",{videoCopy:""})).includes("還沒寫文案"));
-// 海外看到的提示是英文
+ok("沒毛片標「缺毛片」", missingPill(OKV("A",{rawLink:""})).includes("缺毛片"));
+ok("沒排日期標「沒排日期」", missingPill(OKV("A",{scheduledDate:null})).includes("沒排日期"));
+ok("該上片了卻沒貼連結 → 標「缺上片連結」而且是紅的",
+   (()=>{ const p=missingPill(OKV("A",{scheduledDate:D2(-1)})); return p.includes("缺上片連結") && p.includes("late"); })());
+ok("上片日還沒到就不算落後", !missingPill(OKV("A",{scheduledDate:D2(3)})).includes("late"));
+ok("貼了連結就不再標", !missingPill(OKV("A",{scheduledDate:D2(-1),publishedLink:"http://p"})).includes("缺上片連結"));
+// 二創殼：沒有腳本／毛片這兩步，但一樣要追上片連結
+ok("蝦皮殼不標缺文案", !missingPill(v_("P",{channel:"shopee",videoCopy:"",scheduledDate:D2(3)})).includes("缺文案"));
+ok("英文殼不標缺毛片", !missingPill(v_("E",{locale:"en",rawLink:"",scheduledDate:D2(3)})).includes("缺毛片"));
+ok("版本殼一樣會追上片連結",
+   missingPill(v_("P2",{channel:"shopee",scheduledDate:D2(-1)})).includes("缺上片連結"));
+ok("noCopyDot 仍然只認一創（相容舊呼叫）", noCopyDot(v_("P3",{channel:"shopee",videoCopy:""}))==="");
+// 缺很多項時：主要那項寫出來，其餘進 title
+{ const p=missingPill(v_("M",{videoCopy:"",rawLink:"",scheduledDate:null}));
+  ok("缺很多項會標 +N", /\+2/.test(p));
+  ok("全部缺的項目都在滑鼠提示裡", p.includes("缺文案") && p.includes("缺毛片") && p.includes("沒排日期")); }
+// 海外看到的是英文
 reset(); as("Anna","intl");
-ok("海外的提示是英文", noCopyDot(v_("A",{videoCopy:""})).includes("No script yet"));
+ok("海外的燈號是英文", missingPill(OKV("A",{videoCopy:""})).includes("needs script"));
 
 // ══════════ ② 商品預設 0 列 ══════════
 reset([v_("V1")]); as("Regina","manager");

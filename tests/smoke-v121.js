@@ -219,6 +219,33 @@ stockFixture(5, 0); as("小葵","editor");
       ok("少用的（找主管說一件事）排在後面", at("找主管／人資說一件事")>claimAt);
       ok("傳訊息給同事也排在後面", at("傳訊息給同事")>claimAt); }
 
+    // ══════════ ⑪ 「缺什麼」燈號：影片出現在哪，燈號就跟到哪（v122）══════════
+    // 一個小燈號直接寫出這支卡在流程的哪一步，不用點進去才知道。
+    reset();
+    const DD=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+    STATE.videos=[
+      v_("LATE",{name:"該上片了",rawLink:"http://raw",videoCopy:"有",scheduledDate:DD(-2),publishedLink:""}),
+      v_("NOCOPY",{name:"沒文案",rawLink:"http://raw",videoCopy:"",scheduledDate:DD(3)}),
+      v_("MINE",{name:"我在剪的",rawLink:"http://raw",videoCopy:"有",scheduledDate:null,
+                 stage:"剪輯中",editor:"小葵",claimedBy:"小葵",claimedAt:T0+"T09:00:00"}),
+    ];
+    as("小葵","editor");
+    { const w=viewWork();
+      ok("上班計畫的「今天要做的事」看得到燈號", w.includes("我在剪的") && w.includes("沒排日期"));
+      ok("待認領池也看得到燈號", w.includes("沒文案") && w.includes("缺文案")); }
+    { VID_VIEW="raw"; VID_LANG=""; VID_TAGS=new Set(); VID_Q=""; ZONE_VIEW="tw";
+      const lib=viewVideos();
+      ok("影片庫看得到燈號", lib.includes("misspill"));
+      ok("該上片沒貼連結的是紅的", lib.includes("misspill late") && lib.includes("缺上片連結")); }
+    as("Regina","manager");
+    { modalHTML=""; openDay(DD(-2));
+      ok("月排程的日期視窗也看得到燈號", modalHTML.includes("缺上片連結")); }
+    // 齊全的片完全不長燈號（不製造雜訊）
+    reset(); STATE.videos=[v_("FULL",{name:"什麼都齊",rawLink:"http://raw",videoCopy:"有",
+      scheduledDate:DD(-2),publishedLink:"http://p",driveFolder:"http://d",stage:"已上片",published:true})];
+    as("小葵","editor"); VID_VIEW="old";
+    ok("齊全的片不長燈號", !viewVideos().includes("misspill"));
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail?1:0);
   });
