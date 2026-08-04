@@ -780,8 +780,9 @@ function openDay(ds){
   }).join("");
   // 排一支影片到這天：所有影片都能選（排程與剪輯是兩條獨立的線）；當天已排過的不再出現
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
-  const timeField = `<div style="min-width:120px"><label style="margin:0 0 2px">${T("上片時間","Time")}</label>
-    <input id="od_time" type="time" value="${autoTime}"></div>`;
+  // 時間欄給彈性寬、按鈕不縮 —— 原本兩者都沒設 flex，窄螢幕上 time input 會撐爆把按鈕壓過去
+  const timeField = `<div style="flex:1 1 130px;min-width:0"><label style="margin:0 0 2px">${T("上片時間","Time")}</label>
+    <input id="od_time" type="time" value="${autoTime}" style="width:100%"></div>`;
   OD_DS=ds;
   const picker = `<div class="card" style="border-color:var(--accent)"><b>${T("排一支影片到這天","Schedule a video on this day")}</b>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
@@ -793,9 +794,9 @@ function openDay(ds){
     </div>
     <div id="od_cats">${odCatTabs(ds)}</div>
     <div id="od_list" style="margin-top:8px">${odSelectHTML(ds)}</div>
-    <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
+    <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end;flex-wrap:nowrap">
       ${timeField}
-      <button class="btn sm" id="od_add" onclick="odAdd('${ds}')">${T("排入","Add")}</button>
+      <button class="btn" id="od_add" style="flex:0 0 auto;min-height:44px;white-space:nowrap" onclick="odAdd('${ds}')">${T("排入","Add")}</button>
     </div>
     <div id="od_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
     <div id="od_reuse" style="display:none">
@@ -811,7 +812,7 @@ function openDay(ds){
   showModal(`${ds}（${currentRole()==="intl"?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(ds+"T00:00:00").getDay()]:weekdayZh(ds)}）`, `
     <div class="card"><b>${T("當日影片","Videos this day")}</b>
       ${summary}
-      <table class="responsive"><thead><tr><th>${T("影片（剪輯・時間・連結）","Video (editor · time · links)")}</th><th>${T("改上片日","Move to")}</th><th>${T("操作","Action")}</th></tr></thead>
+      <table class="responsive daytbl"><thead><tr><th>${T("影片（剪輯・時間・連結）","Video (editor · time · links)")}</th><th>${T("改上片日","Move to")}</th><th>${T("操作","Action")}</th></tr></thead>
       <tbody>${rows||`<tr><td class="muted">${T("當日尚無影片","Nothing scheduled")}</td></tr>`}</tbody></table>
     </div>
     ${picker}`, null);
@@ -1304,7 +1305,7 @@ function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
   return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -1322,7 +1323,7 @@ function workPoolCard(pool, poolShown, poolCnt, me){
       <span id="pool_clear">${poolClearHTML()}</span>
     </div>
     <div id="pool_wrap" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
-    <table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
+    <table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody id="pool_list">${poolRowsHTML(poolShown, me)}</tbody></table>
     </div>
   </div>`;
@@ -3258,13 +3259,14 @@ let VID_UNSCHED=false;     // 只看還沒排日期的（矩陣的第二軸抽�
 let VID_MODE=(typeof localStorage!=="undefined" && localStorage.getItem("ecdr_vidmode")==="grid")?"grid":"list";
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
 let VID_Q="";   // 搜尋字存全域：資料同步重繪時還原，打到一半不會被清掉
-// 一創語言（原本影片的語言）：影片庫用選單切換、每支原本標小圖示分辨
+// 一創語言（原本影片的語言）：影片庫用上面的「原本語言」下拉切換
 const ORIG_LANGS=[["","中文"],["th","泰文"],["en","英文"],["my","馬來西亞"]];
-const ORIG_BADGE={"":"中",th:"TH",en:"EN",my:"MY"};
+const ORIG_LANG_KEYS=ORIG_LANGS.map(x=>x[0]);
 let VID_LANG="";   // 影片庫目前檢視的一創語言（""＝中文）
-function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_BADGE[l]!=null?l:""; }
-function origBadge(v){ const l=origLangOf(v);
-  return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="${T("原本語言","Original language")}: ${esc(origLangLabel(l))}">${l===""?T("中","ZH"):ORIG_BADGE[l]}</span>`; }
+function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_LANG_KEYS.includes(l)?l:""; }
+// v122：清單每一列不再掛語言徽章。上面的「原本語言」下拉一次只顯示一種語言，
+// 選中文就整頁中文、選馬來西亞就整頁馬來 —— 每列再標一次是在重複下拉已經說過的話。
+// 語言只在單支影片的詳細視窗裡標示（那裡才是在看「這一支」而不是一整份清單）。
 // 一創語言的顯示名（依介面語言）："" 中文/Chinese、th 泰文/Thai…
 function origLangLabel(l){ const i=ORIG_LANGS.findIndex(x=>x[0]===l);
   return T((ORIG_LANGS[i]||[])[1]||"中文", ["Chinese","Thai","English","Malaysia"][i<0?0:i]); }
@@ -3307,7 +3309,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v)}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3354,7 +3356,7 @@ function vidCardHTML(v){
   return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v)}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v, vidImplied())}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3425,7 +3427,7 @@ function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classL
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 // 開關只換清單與數字，不整頁重繪（跟搜尋同一條路）
 function vidSetUnsched(on){ VID_UNSCHED=!!on; vidFilter(); }
-function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
+function vidSetLang(lang){ VID_LANG=ORIG_LANG_KEYS.includes(lang)?lang:""; VID_TAGS.clear(); render(); }
 // 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
 // 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
 function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
@@ -3518,10 +3520,16 @@ function viewVideosTW(){
       <button class="btn sm" onclick="newSimpleVideo()">${PLUS()} ${T("新增一支","Add one")}</button>
       <button class="btn sec sm" onclick="batchNewFootage()">${T("批次新增","Batch add")}</button>
     </div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <span class="muted" style="font-size:12px">${T("標籤：","Tags: ")}</span>
-      <span id="vid_tags">${vidTagBtnsHTML()}</span>
-    </div>
+    ${/* 標籤預設收起來（手機上 8 顆按鈕會佔掉三行）。已經選了的照樣寫在收合列上，
+         不然使用者會忘記自己開著篩選 —— 這是漸進揭露，不是把資訊藏起來。 */''}
+    <details class="fold tagfold" id="vid_tagfold" ${VID_TAGS.size?"open":""} style="margin-top:10px">
+      <summary>${T("標籤篩選","Tags")}${VID_TAGS.size
+        ? `<span class="n">${VID_TAGS.size}</span>`
+        : `<span class="muted" style="font-weight:400;font-size:12px;margin-left:6px">${T("點開來挑","tap to filter")}</span>`}</summary>
+      <div class="foldbody"><div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
+        <span id="vid_tags">${vidTagBtnsHTML()}</span>
+      </div></div>
+    </details>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;
 }
@@ -3833,6 +3841,13 @@ function vidNameZoned(v){
 // 依工作流程：寫腳本 → 排日期 → 拍毛片 → 剪 → 上片貼連結。
 // 每一支片在流程中的哪一步卡住，就在片名旁邊直接寫出來，不用點進去才知道。
 // 只有「該上片了卻還沒貼連結」是紅的（那是真的落後）；其餘是還沒輪到的步驟，用琥珀色。
+// 影片庫目前這個分頁／篩選已經表達的事
+function vidImplied(){
+  const out=[];
+  if(VID_VIEW==="script") out.push("raw");    // 「未拍」＝整頁都還沒拍
+  if(VID_UNSCHED) out.push("date");           // 勾了「只看還沒排日期的」
+  return out;
+}
 function vidMissing(v){
   if(!v) return [];
   const out=[];
@@ -3852,8 +3867,12 @@ function vidMissing(v){
   return out;
 }
 // 小燈號：只寫最要緊的那一項，其餘掛在 title 裡（手機上點不到 hover，所以主要那項一定用文字寫出來）
-function missingPill(v){
-  const m=vidMissing(v); if(!m.length) return "";
+// implied＝這個畫面／分頁已經說明過的事，不用在每一列再寫一次。
+// 例：人在「未拍」分頁，整頁都是缺毛片，每列再標一次「缺毛片」是廢話（v122）。
+function missingPill(v, implied){
+  let m=vidMissing(v);
+  if(implied && implied.length) m=m.filter(x=>implied.indexOf(x.k)<0);
+  if(!m.length) return "";
   const first=m[0], late=!!first.late;
   const all=m.map(x=>T(x.zh,x.en)).join("、");
   const more=m.length>1?`+${m.length-1}`:"";
@@ -3877,7 +3896,7 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("影片文案","Script"), (v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')+((currentRole()==="intl"&&!v.locale&&v.videoCopyEn)?`<div class="vt-en">${esc(v.videoCopyEn).replace(/\n/g,'<br>')}</div>`:''))}
       ${row(T("參考來源","Reference"), v.refLink?`<a href="${esc(v.refLink)}" target="_blank" rel="noopener noreferrer">${T("開啟參考來源","Open reference")}</a>`:'')}
       ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(dataLabel(t))}</span>`).join(" "):'')}
-      ${isSourceVid(v)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc(origLangLabel(origLangOf(v)))}`):''}
+      ${isSourceVid(v)?row(T("原本語言","Original language"), esc(origLangLabel(origLangOf(v)))):''}
       ${row(T("片源","Source"), esc(dataLabel(v.source||"")))}
       ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}
@@ -4358,7 +4377,7 @@ function openDayIntl(ds){
       <h3 style="margin:0">${esc(ds)} (${wd}) · ${esc(acc)}</h3>
       <button class="btn sec sm" onclick="closeModal()">×</button></div>
     <div class="muted" style="margin-bottom:8px">${T("已排","Scheduled")} ${b.total}/${b.target}${b.short?T(`（缺 ${b.short}）`,` (need ${b.short})`):T('・已排滿',' · Full')}</div>
-    ${list.length?`<table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
+    ${list.length?`<table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
   </div></div>`;
 }
 // 海外排程調整（比照中文版月曆）：改上片日／移出這一天 — 只動排程日期，影片本身不動
@@ -4665,7 +4684,7 @@ function openDayCh(ch,ds){
       <h3 style="margin:0">${esc(ds)}（${wd}）· ${esc(acc)}</h3>
       <button class="btn sec sm" onclick="closeModal()">×</button></div>
     <div class="muted" style="margin-bottom:8px">${T("已排","Scheduled")} ${b.total}/${b.target}${b.short?T(`（缺 ${b.short}）`,` (need ${b.short})`):T('・已排滿',' · Full')}</div>
-    ${list.length?`<table class="responsive"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
+    ${list.length?`<table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th>${T("狀態","Status")}</th><th>${T("剪輯","Editor")}</th><th>${T("上傳連結","Upload")}</th><th>${T("改期","Move to")}</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="emptyState"><span class="es-mk">✦</span>${T("這天這個帳號還沒有排片。到版本的編輯視窗填「預排上片日期」就會出現在這裡。","Nothing scheduled for this account on this day — set the scheduled upload date in a version's edit window.")}</div>`}
   </div></div>`;
 }
 function chReschedule(ch,id,nd,ds){ if(nd===ds) return; lineReschedule(id, nd, T("已改期至 ","Moved to ")+nd, ()=>openDayCh(ch,ds)); }
