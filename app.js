@@ -772,7 +772,7 @@ function openDay(ds){
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
       upLink?`<a href="${esc(upLink)}" target="_blank">${T("上傳","Upload")}</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">${T("存檔","File")}</a>`:'' ].filter(Boolean).join(' ・ ');
     return `<tr>
-      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
+      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -1304,7 +1304,7 @@ function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
   return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a> ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -1380,7 +1380,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
-      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${enSubLine(v)}`,
+      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
@@ -3307,7 +3307,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${noCopyDot(v)}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v)}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3354,7 +3354,7 @@ function vidCardHTML(v){
   return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidNameZoned(v))}${noCopyDot(v)}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v)}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3829,11 +3829,38 @@ function vidNameZoned(v){
   const bare=sfx.replace(/[（）()\s]/g,"");
   return base.replace(/[（）()\s]/g,"").includes(bare) ? base : (base+sfx);
 }
-function noCopyDot(v){
-  if(!v || isVersion(v)) return "";
-  if(String(v.videoCopy||"").trim()) return "";
-  return `<span class="nocopy" title="${T("還沒寫文案","No script yet")}" aria-label="${T("還沒寫文案","No script yet")}"></span>`;
+// ── 「這支還缺什麼」小燈號 ───────────────────────────────────────
+// 依工作流程：寫腳本 → 排日期 → 拍毛片 → 剪 → 上片貼連結。
+// 每一支片在流程中的哪一步卡住，就在片名旁邊直接寫出來，不用點進去才知道。
+// 只有「該上片了卻還沒貼連結」是紅的（那是真的落後）；其餘是還沒輪到的步驟，用琥珀色。
+function vidMissing(v){
+  if(!v) return [];
+  const out=[];
+  const sch=String(v.scheduledDate||"").slice(0,10);
+  const pub=String(v.publishedLink||"").trim();
+  // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
+  if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
+  if(isVersion(v)){                                   // 版本殼：沒有腳本／毛片這兩步
+    if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
+    if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    return out;
+  }
+  if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
+  if(!vidHasRaw(v))                    out.push({k:"raw",  zh:"缺毛片",  en:"needs footage"});
+  if(!sch)                             out.push({k:"date", zh:"沒排日期", en:"no date"});
+  if(isPublished(v) && !ownDrive(v))   out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+  return out;
 }
+// 小燈號：只寫最要緊的那一項，其餘掛在 title 裡（手機上點不到 hover，所以主要那項一定用文字寫出來）
+function missingPill(v){
+  const m=vidMissing(v); if(!m.length) return "";
+  const first=m[0], late=!!first.late;
+  const all=m.map(x=>T(x.zh,x.en)).join("、");
+  const more=m.length>1?`+${m.length-1}`:"";
+  return `<span class="misspill${late?' late':''}" title="${esc(all)}">${esc(T(first.zh,first.en))}${more}</span>`;
+}
+// 舊的「沒文案」小圓點：保留函式名，改成走同一套燈號
+function noCopyDot(v){ return isVersion(v) ? "" : missingPill(v); }
 function coverThumbHTML(v, cls){
   const u=coverUrl(v);
   return u ? `<img class="${cls||"vthumb"}" src="${esc(u)}" alt="" loading="lazy" decoding="async">`
