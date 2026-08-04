@@ -3259,16 +3259,14 @@ let VID_UNSCHED=false;     // 只看還沒排日期的（矩陣的第二軸抽�
 let VID_MODE=(typeof localStorage!=="undefined" && localStorage.getItem("ecdr_vidmode")==="grid")?"grid":"list";
 let VID_TAGS=new Set();   // 標籤篩選（可複選）
 let VID_Q="";   // 搜尋字存全域：資料同步重繪時還原，打到一半不會被清掉
-// 一創語言（原本影片的語言）：影片庫用選單切換、每支原本標小圖示分辨
+// 一創語言（原本影片的語言）：影片庫用上面的「原本語言」下拉切換
 const ORIG_LANGS=[["","中文"],["th","泰文"],["en","英文"],["my","馬來西亞"]];
-const ORIG_BADGE={"":"中",th:"TH",en:"EN",my:"MY"};
+const ORIG_LANG_KEYS=ORIG_LANGS.map(x=>x[0]);
 let VID_LANG="";   // 影片庫目前檢視的一創語言（""＝中文）
-function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_BADGE[l]!=null?l:""; }
-// 語言徽章只在「不是中文」時才長出來 —— 台灣影片庫裡看得到的本來就全是中文，
-// 每一列都掛一顆「中」只是佔位置、什麼資訊都沒給（v122）。
-function origBadge(v){ const l=origLangOf(v);
-  if(l==="") return "";
-  return `<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--gold);color:var(--gold-dk)" title="${T("原本語言","Original language")}: ${esc(origLangLabel(l))}">${l===""?T("中","ZH"):ORIG_BADGE[l]}</span>`; }
+function origLangOf(v){ const l=String((v&&v.origLang)||""); return ORIG_LANG_KEYS.includes(l)?l:""; }
+// v122：清單每一列不再掛語言徽章。上面的「原本語言」下拉一次只顯示一種語言，
+// 選中文就整頁中文、選馬來西亞就整頁馬來 —— 每列再標一次是在重複下拉已經說過的話。
+// 語言只在單支影片的詳細視窗裡標示（那裡才是在看「這一支」而不是一整份清單）。
 // 一創語言的顯示名（依介面語言）："" 中文/Chinese、th 泰文/Thai…
 function origLangLabel(l){ const i=ORIG_LANGS.findIndex(x=>x[0]===l);
   return T((ORIG_LANGS[i]||[])[1]||"中文", ["Chinese","Thai","English","Malaysia"][i<0?0:i]); }
@@ -3311,7 +3309,7 @@ function vidTableRow(v){
   return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${isSourceVid(v)?origBadge(v):''}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3429,7 +3427,7 @@ function vidTagToggle(t, el){ if(VID_TAGS.has(t)){ VID_TAGS.delete(t); el.classL
 function vidSetView(view){ VID_VIEW=view; VID_TAGS.clear(); render(); }
 // 開關只換清單與數字，不整頁重繪（跟搜尋同一條路）
 function vidSetUnsched(on){ VID_UNSCHED=!!on; vidFilter(); }
-function vidSetLang(lang){ VID_LANG=ORIG_BADGE[lang]!=null?lang:""; VID_TAGS.clear(); render(); }
+function vidSetLang(lang){ VID_LANG=ORIG_LANG_KEYS.includes(lang)?lang:""; VID_TAGS.clear(); render(); }
 // 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
 // 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
 function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
@@ -3898,7 +3896,7 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("影片文案","Script"), (v.videoCopy?esc(zhTW(v.videoCopy)).replace(/\n/g,'<br>'):'')+((currentRole()==="intl"&&!v.locale&&v.videoCopyEn)?`<div class="vt-en">${esc(v.videoCopyEn).replace(/\n/g,'<br>')}</div>`:''))}
       ${row(T("參考來源","Reference"), v.refLink?`<a href="${esc(v.refLink)}" target="_blank" rel="noopener noreferrer">${T("開啟參考來源","Open reference")}</a>`:'')}
       ${row(T("標籤","Tags"), tags.length?tags.map(t=>`<span class="tag">${esc(dataLabel(t))}</span>`).join(" "):'')}
-      ${isSourceVid(v)?row(T("原本語言","Original language"), `${origBadge(v)} ${esc(origLangLabel(origLangOf(v)))}`):''}
+      ${isSourceVid(v)?row(T("原本語言","Original language"), esc(origLangLabel(origLangOf(v)))):''}
       ${row(T("片源","Source"), esc(dataLabel(v.source||"")))}
       ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}

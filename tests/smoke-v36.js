@@ -79,23 +79,23 @@ ok("台灣庫完全看不到泰文原創", !h.includes("Thai original clip"));
 VID_LANG="my"; VID_VIEW="old"; h=viewVideos();
 ok("馬來庫舊片分頁列出馬來原本", h.includes("Malay original"));
 
-// --- 原本語言小圖示 ---
+// --- 原本語言：清單不標、只在單支影片的視窗裡標 ---
+// v122：上面的「原本語言」下拉一次只顯示一種語言，每列再標一次是重複下拉已經說過的話。
 VID_LANG=""; VID_VIEW="old";
-let r=vidTableRow(STATE.videos.find(v=>v.id==="S1"));
-// v122：台灣影片庫看得到的本來就全是中文，每列再掛一顆「中」是冗餘，只有非中文才標
-ok("中文原本不再標「中」（清單裡本來就全是中文）", !r.includes(">中</span>"));
-r=vidTableRow(STATE.videos.find(v=>v.id==="S2"));
-ok("泰文原本標「TH」", r.includes(">TH</span>"));
-r=vidTableRow(STATE.videos.find(v=>v.id==="S4"));
-ok("馬來原本標「MY」", r.includes(">MY</span>"));
-r=vidTableRow(STATE.videos.find(v=>v.id==="V201"));
-ok("二創版不標原本語言（標平台徽章）", !r.includes(">中</span>") && r.includes(">蝦皮<"));
+const langMark=/>(中|TH|EN|MY)<\/span>/;
+for(const id of ["S1","S2","S3","S4","OLD1"]){
+  const r=vidTableRow(STATE.videos.find(v=>v.id===id));
+  ok(`清單列不標原本語言（${id}）`, !langMark.test(r));
+}
+let r=vidTableRow(STATE.videos.find(v=>v.id==="V201"));
+ok("二創版照舊標平台徽章（那不是語言）", !langMark.test(r) && r.includes(">蝦皮<"));
 
 // --- 新增/編輯視窗語言欄位 ---
 openVideoModal("S2", true);
 ok("編輯視窗有原本語言選單且預選泰文", modalHTML.includes('id="e_lang"') && /value="th" selected/.test(modalHTML));
 openVideoModal("S2", false);
-ok("檢視模式顯示原本語言", modalHTML.includes("原本語言") && modalHTML.includes(">TH</span>"));
+// 單支影片的視窗才標語言，而且直接寫全名（不再有徽章縮寫）
+ok("檢視模式顯示原本語言", modalHTML.includes("原本語言") && modalHTML.includes("泰文") && !langMark.test(modalHTML));
 newSimpleVideo();
 ok("新增影片有 sv_lang 選單", modalHTML.includes('id="sv_lang"'));
 batchNewFootage();
