@@ -572,6 +572,7 @@ function applyState(raw){
     { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
+    autoMoveOrigLang();   // 每次載入跑一次；沒東西可搬就立刻結束（見 origAutoMovable）
   } else {
     document.getElementById("app").classList.add("hidden");
     document.getElementById("login").classList.remove("hidden");
@@ -3442,16 +3443,48 @@ function zoneSwitchHTML(){
 // ── 原本語言可能設錯（主管／管理員）──────────────────────────────────
 // 分區靠「原本語言」判斷源片，但這個欄位埋在編輯視窗的「進階」裡、預設收起來，
 // 舊資料幾乎都沒設 → 泰文／英文拍的原創會一直留在台灣區。
-// 這張卡把「標題看起來不是中文、欄位卻還是中文」的挑出來，一次設定。
-// 只給建議、不自動改 —— 猜錯會把片弄到看不見的區去，一定要人確認過才寫。
-function guessOrigLang(v){
-  const t=String((v&&(v.name||v.rawName))||"");
-  if(/[฀-๿]/.test(t)) return "th";                                    // 泰文字母很好認
-  if(/[A-Za-z]/.test(t) && !/[㐀-鿿぀-ヿ]/.test(t)) return "en"; // 有拉丁字母、完全沒有中日韓字
-  return "";
+// 判斷語言不能只看標題 —— 腳本都是老闆寫的，泰文片的標題常常還是中文。
+// 真正洩漏語言的是「影片文案」（口播稿），所以三個欄位一起看。
+const RE_TH=/[฀-๿]/, RE_CJK=/[㐀-鿿぀-ヿ]/, RE_LAT=/[A-Za-z]/;
+// 回傳 {lang, sure}：sure＝不必問人就能直接改（誤判機率低到可以忽略）
+function origLangGuess(v){
+  if(!v) return {lang:"",sure:false};
+  const copy=String(v.videoCopy||"");
+  const all=String(v.rawName||"")+" "+String(v.name||"")+" "+copy;
+  // 泰文字母不可能誤入中文片，只要出現就是泰文 —— 確定
+  if(RE_TH.test(all)) return {lang:"th", sure:true};
+  // 有英文口播稿、整支片一個中日韓字都沒有 —— 中文片的口播稿一定是中文，所以也確定
+  if(copy.trim() && RE_LAT.test(copy) && !RE_CJK.test(all)) return {lang:"en", sure:true};
+  // 只有標題是純英文、沒有口播稿佐證 —— 可能只是英文品牌名（「SKII vs Lancome」），要人看過
+  if(RE_LAT.test(all) && !RE_CJK.test(all)) return {lang:"en", sure:false};
+  return {lang:"", sure:false};
 }
+function guessOrigLang(v){ return origLangGuess(v).lang; }
+// 「確定」的那幾支不必問人，管理員／經理人一進來就自動搬過去。
+// 會寫進操作紀錄、也會跳一則說明；搬錯了在影片裡把「原本語言」改回中文就好。
+function origAutoMovable(v){ return isSourceVid(v) && origLangOf(v)==="" && origLangGuess(v).sure; }
+function origAutoList(){ return (STATE.videos||[]).filter(origAutoMovable); }
+let ORIG_AUTO_RAN=false;
+async function autoMoveOrigLang(){
+  if(ORIG_AUTO_RAN || VIEW_AS || !window.DB) return;
+  if(!["boss","manager"].includes(currentRole())) return;
+  const list=origAutoList(); if(!list.length) return;
+  ORIG_AUTO_RAN=true;   // 先鎖住：寫入會再觸發一次同步，不能讓它自己叫自己
+  const plan=list.map(v=>({v, to:origLangGuess(v).lang}));
+  BULK_BUSY=true; const done=[];
+  try{ for(const p of plan){
+        try{ await window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()}); done.push(p); }catch(e){}
+      } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  if(!done.length) return;
+  logA("自動調整原本語言 "+done.length+" 支", done.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
+  await delay(300);
+  toast(T("已自動把 "+done.length+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
+          "Moved "+done.length+" Thai/English originals to the overseas area"));
+}
+// 猜得到、但不夠確定的才留給人確認
 function origLangSuspects(){
-  return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)==="" && guessOrigLang(v)!=="")
+  return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)==="" && guessOrigLang(v)!=="" && !origLangGuess(v).sure)
     .sort((a,b)=>String(a.code||a.id).localeCompare(String(b.code||b.id)));
 }
 function origLangFixCard(){
@@ -3467,8 +3500,8 @@ function origLangFixCard(){
       <b style="font-size:16px">🌐 ${T("原本語言可能要調整","Check the original language")}</b>
       <span class="pill em">${list.length}</span></div>
     <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.7">${T(
-      "這幾支的標題看起來不是中文，但「原本語言」還是中文，所以它們留在台灣區、台灣剪輯看得到。<br>下拉已經先幫你選好建議的語言，確認後按儲存 —— 設成泰文或英文的會移到海外區。",
-      "These look non-Chinese by title but are still marked Chinese, so they stay in the Taiwan area.<br>The dropdown is pre-filled with a guess — confirm and save; Thai/English ones move to the overseas area.")}</div>
+      "泰文片、以及口播稿是英文的，系統已經自動移到海外區了。<br>剩下這幾支只有標題像英文、沒有口播稿可以佐證（也可能只是英文品牌名），要你看一眼再決定。",
+      "Thai videos and ones with an English script have already been moved automatically.<br>These only look English by title with no script to confirm it — take a look before deciding.")}</div>
     <div style="margin-top:8px${list.length>8?';max-height:320px;overflow-y:auto':''}">${rows}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn sm" onclick="saveOrigLangFixes()">${T("儲存","Save")}</button>
@@ -3968,6 +4001,10 @@ function openVideoModal(id, edit, fromWork){
         </div>
       </div>
     </div>
+    ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
+    <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
+    <div class="muted" style="font-size:11px;margin:4px 0 0">${T(
+      "設成泰文或英文，這支就會移到海外區、台灣剪輯不再看到","Thai or English moves this video to the overseas area")}</div>`:''}
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
@@ -4000,8 +4037,6 @@ function openVideoModal(id, edit, fromWork){
             : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
                <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
       </div>
-      ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
-      <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
       <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
       <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">`, false)}
     ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">
