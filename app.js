@@ -1412,7 +1412,7 @@ function myMsgFold(){
   const list=myMsgs();
   const unseen=list.filter(m=>!msgOpen(m) && !m.seen).length;
   const who=(m)=>m.to==="boss"?T("主管","Manager"):T("人資","HR");
-  const rows=list.slice(0,12).map(m=>{
+  const rows=list.map(m=>{
     const answered=!msgOpen(m);
     return `<div class="todo ${answered&&m.seen?'done':''}"><span class="tkind">${answered?"💬":"📨"}</span>
       <div class="tmain"><div class="ttitle">${esc(m.title)}</div>
@@ -1571,7 +1571,7 @@ function msgInboxCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">📨 同仁來訊</b>
       <span class="pill ${open.length?'em':'ok'}">${open.length?open.length+" 則待回覆":"都回覆了"}</span></div>
-    ${list.slice(0,20).map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
+    ${list.map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
       <div style="font-size:13.5px"><b>${esc(m.user)}</b>
         <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}${currentRole()==="boss"?"・"+label(m):""}</span></div>
       <div style="margin-top:3px">${esc(m.title)}</div>
@@ -2243,7 +2243,7 @@ function viewAttend(){
       <span class="pill ${noNote.length?'em':'ok'}">${noNote.length?`${noNote.length} 筆還沒說明`:"都說明了"}</span></div>
     <table class="responsive" style="margin-top:10px">
       <thead><tr><th>日期</th><th>同仁</th><th>異常</th><th>本人說明</th></tr></thead>
-      <tbody>${issueRows.slice(0,60).map(s=>`<tr>
+      <tbody>${issueRows.map(s=>`<tr>
         <td data-label="日期">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）</td>
         <td data-label="同仁"><b>${esc(s.user)}</b></td>
         <td data-label="異常">${esc(attIssues(s).join("、"))}</td>
@@ -2793,7 +2793,7 @@ function teamDayCard(u, allTasks){
 function teamNoticeCompose(staff){
   const groups=staffByGroup(staff);
   const mine=allNotices().filter(t=>t.assignedBy===currentUser())
-    .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,12);
+    .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
   const sent={};
   mine.forEach(t=>{ const k=(t.title||"")+"__"+String(t.createdAt||"").slice(0,16); (sent[k]=sent[k]||[]).push(t); });
   const rows=Object.values(sent).map(g=>{
@@ -3621,7 +3621,7 @@ function viewPerf(){
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
-  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
+  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
     <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="editVideo('${r.v.id}')">
@@ -3633,7 +3633,7 @@ function viewPerf(){
       <td data-label="讚">${num(r.likes)}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">尚無資料</td></tr>`}</tbody></table>
     </div>
   </div>
-  <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
+  <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
     <tbody>${pRank.map((e,i)=>`<tr><td data-label="#">${i+1}</td><td data-label="商品"><b>${esc(e[0])}</b></td><td data-label="出現影片">${e[1].vids.size} 支</td><td data-label="觀看(觸及)"><b>${num(e[1].views)}</b></td></tr>`).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
@@ -4159,7 +4159,7 @@ function intlLibRows(loc){
   const accts=intlAccounts();                                        // 全清單：option 的 value 用這裡的索引（createLocalFromAcct 依此取帳號）
   const locs = loc ? [loc] : INTL_LOCALES;                            // 指定語言時只列該語言的帳號／版本
   const shownAccts = loc ? intlAccountsFor(loc) : accts;
-  const cards=src.slice(0,200).map(v=>{
+  const cards=src.map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||T("(未命名)","(untitled)");   // 去掉 # 標籤
     const enT=stripHash(v.nameEn);
     // 分開：一支源片可有多支版本；chip 只顯示「語言色點＋狀態」(不寫 US/TH，帳號放 title 提示)
@@ -4517,7 +4517,7 @@ function chLibRows(ch){
   src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
   if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("目前沒有可製作"+C.verName+"的影片（要是完整已上傳的舊片）。","No videos available yet — they must be fully published.")}</div>`;
   const accts=chAccounts(ch);
-  return src.slice(0,200).map(v=>{
+  return src.map(v=>{
     const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
     const kidsAll=chVersionsOfSrc(ch, v.id);
     const nArch=kidsAll.filter(isArchived).length;                 // 已上片＝完成任務，封存不再列出
