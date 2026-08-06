@@ -108,10 +108,14 @@ reset(); hookDB(); chDiscard("shopee","S1");
 ok("兩者都不會動到源片", !calls.some(c=>c[0]==="del"));
 
 // ── 改期／移出排程 ──
-reset(); hookDB(); chReschedule("shopee","A1","2026-08-05",T0);
-ok("蝦皮改期寫入新日期", calls.some(c=>c[0]==="update"&&c[2]==="A1"&&c[3].scheduledDate==="2026-08-05"));
-reset(); hookDB(); intlReschedule("A3","2026-08-06",T0);
-ok("英文改期寫入新日期", calls.some(c=>c[0]==="update"&&c[2]==="A3"&&c[3].scheduledDate==="2026-08-06"));
+// 目標日期一律從 T0 推算，不能寫死 —— 寫死的那天剛好撞到今天時，
+// 「改成同一天＝不寫入」的防呆會生效，測試就會莫名其妙紅一天。
+const D1=new Date(Date.now()+288e5+864e5).toISOString().slice(0,10);      // 明天
+const D2=new Date(Date.now()+288e5+2*864e5).toISOString().slice(0,10);    // 後天
+reset(); hookDB(); chReschedule("shopee","A1",D1,T0);
+ok("蝦皮改期寫入新日期", calls.some(c=>c[0]==="update"&&c[2]==="A1"&&c[3].scheduledDate===D1));
+reset(); hookDB(); intlReschedule("A3",D2,T0);
+ok("英文改期寫入新日期", calls.some(c=>c[0]==="update"&&c[2]==="A3"&&c[3].scheduledDate===D2));
 reset(); hookDB(); chReschedule("shopee","A1",T0,T0);
 ok("改成同一天＝不寫入", !calls.length);
 reset(); hookDB(); chUnschedule("shopee","A1",T0);

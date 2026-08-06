@@ -772,8 +772,12 @@ function openDay(ds){
     // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
       upLink?`<a href="${esc(upLink)}" target="_blank">${T("上傳","Upload")}</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">${T("存檔","File")}</a>`:'' ].filter(Boolean).join(' ・ ');
-    return `<tr>
-      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
+    // 指派給別人的照樣列出來（不然月曆上的「排了幾支」會跟看得到的列數對不上），
+    // 但片名不是連結、點不開；改日期與移出排程照舊 —— 排程跟剪輯是兩條獨立的線
+    const lk=v&&assignLocked(v);
+    const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
+    return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -3113,6 +3117,24 @@ async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套�
 // ===================================================================
 // 是否剪好（可標新/舊片）：已完成上架，或手選過新/舊片
 function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
+// ── 指派鎖（v124）────────────────────────────────────────────────────
+// 主管把某支毛片指派給某位剪輯之後，其他剪輯**照樣看得到**它（數字才對得上、
+// 也才知道這支有人在做），但點不開、整列變灰 —— 直到「上片完成」才恢復正常。
+// ⚠️ 只管源片。版本殼的 assignedTo 存的是「誰建立的」而不是指派（見 chNewVersion），
+// 拿它來鎖會讓剪輯之間互相點不開對方做的蝦皮／馬來版。
+// 「上片完成」＝階段走到已上片、或已經貼了上片連結（已完成只是剪完，還沒上片）。
+function assignAired(v){ return !!(v && (v.stage==="已上片" || String(v.publishedLink||"").trim())); }
+function assignLocked(v){
+  if(!v || !isSourceVid(v)) return false;
+  const who=String(v.assignedTo||"");
+  if(!who || who===currentUser()) return false;
+  if(["boss","manager","hr"].includes(currentRole())) return false;   // 主管一律看得到、打得開
+  return !assignAired(v);
+}
+function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
+  return T("已指派給 "+w+"　上片完成前只有他能編輯", "Assigned to "+w+" — locked until it goes live"); }
+function assignLockPill(v){ return assignLocked(v)
+  ? `<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T(String(v.assignedTo||""),String(v.assignedTo||"")))}</span>` : ""; }
 // 審片流程上線日：這天之前完成的舊片不回溯要求審核（可在 settings.reviewSince 調整）
 function reviewSince(){ return String((STATE&&STATE.settings&&STATE.settings.reviewSince)||"2026-07-27").slice(0,10); }
 // 是否「待審核」＝三個條件同時成立：①剪輯完成 ②還沒審過 ③還沒有上傳網址（有網址＝早就上片，不用審）
@@ -3307,10 +3329,12 @@ function vidTableRow(v){
           if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
           return o; })());
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
-  return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
+  // 指派給別人的照樣列出來（數字才對得上），但整列變灰、點不開
+  const lk=assignLocked(v);
+  return `<tr ${lk?`class="vlock" title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" style="cursor:pointer"`}>
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3354,10 +3378,11 @@ function vidVisibleList(){
 function vidCardHTML(v){
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
-  return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
+  const lk=assignLocked(v);
+  return `<div class="vcard${lk?' vlock':''}" ${lk?`title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}"`}>
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v, vidImplied())}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${assignLockPill(v)}${missingPill(v, vidImplied())}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3730,7 +3755,11 @@ function viewPerf(){
   </div>`;
 }
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
-function editVideo(id){ openVideoModal(id, true); }
+// 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
+// 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
+function editVideo(id){ const v=vid(id);
+  if(assignLocked(v)){ toast(assignLockTip(v), true); return; }
+  openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
 function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); }
