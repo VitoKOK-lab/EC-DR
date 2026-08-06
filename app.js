@@ -572,6 +572,7 @@ function applyState(raw){
     { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
     buildNav(); render();
+    autoMoveOrigLang();   // 每次載入跑一次；沒東西可搬就立刻結束（見 origAutoMovable）
   } else {
     document.getElementById("app").classList.add("hidden");
     document.getElementById("login").classList.remove("hidden");
@@ -771,8 +772,12 @@ function openDay(ds){
     // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
       upLink?`<a href="${esc(upLink)}" target="_blank">${T("上傳","Upload")}</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">${T("存檔","File")}</a>`:'' ].filter(Boolean).join(' ・ ');
-    return `<tr>
-      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${esc(v?vidTitle(v):(it.videoId||""))}</a>${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
+    // 指派給別人的照樣列出來（不然月曆上的「排了幾支」會跟看得到的列數對不上），
+    // 但片名不是連結、點不開；改日期與移出排程照舊 —— 排程跟剪輯是兩條獨立的線
+    const lk=v&&assignLocked(v);
+    const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
+    return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -3112,6 +3117,24 @@ async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套�
 // ===================================================================
 // 是否剪好（可標新/舊片）：已完成上架，或手選過新/舊片
 function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
+// ── 指派鎖（v124）────────────────────────────────────────────────────
+// 主管把某支毛片指派給某位剪輯之後，其他剪輯**照樣看得到**它（數字才對得上、
+// 也才知道這支有人在做），但點不開、整列變灰 —— 直到「上片完成」才恢復正常。
+// ⚠️ 只管源片。版本殼的 assignedTo 存的是「誰建立的」而不是指派（見 chNewVersion），
+// 拿它來鎖會讓剪輯之間互相點不開對方做的蝦皮／馬來版。
+// 「上片完成」＝階段走到已上片、或已經貼了上片連結（已完成只是剪完，還沒上片）。
+function assignAired(v){ return !!(v && (v.stage==="已上片" || String(v.publishedLink||"").trim())); }
+function assignLocked(v){
+  if(!v || !isSourceVid(v)) return false;
+  const who=String(v.assignedTo||"");
+  if(!who || who===currentUser()) return false;
+  if(["boss","manager","hr"].includes(currentRole())) return false;   // 主管一律看得到、打得開
+  return !assignAired(v);
+}
+function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
+  return T("已指派給 "+w+"　上片完成前只有他能編輯", "Assigned to "+w+" — locked until it goes live"); }
+function assignLockPill(v){ return assignLocked(v)
+  ? `<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T(String(v.assignedTo||""),String(v.assignedTo||"")))}</span>` : ""; }
 // 審片流程上線日：這天之前完成的舊片不回溯要求審核（可在 settings.reviewSince 調整）
 function reviewSince(){ return String((STATE&&STATE.settings&&STATE.settings.reviewSince)||"2026-07-27").slice(0,10); }
 // 是否「待審核」＝三個條件同時成立：①剪輯完成 ②還沒審過 ③還沒有上傳網址（有網址＝早就上片，不用審）
@@ -3306,10 +3329,12 @@ function vidTableRow(v){
           if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
           return o; })());
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
-  return `<tr onclick="editVideo('${v.id}')" style="cursor:pointer">
+  // 指派給別人的照樣列出來（數字才對得上），但整列變灰、點不開
+  const lk=assignLocked(v);
+  return `<tr ${lk?`class="vlock" title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" style="cursor:pointer"`}>
     <td data-label="影片" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
     <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
@@ -3353,10 +3378,11 @@ function vidVisibleList(){
 function vidCardHTML(v){
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
-  return `<div class="vcard" onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}">
+  const lk=assignLocked(v);
+  return `<div class="vcard${lk?' vlock':''}" ${lk?`title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}"`}>
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v, vidImplied())}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${assignLockPill(v)}${missingPill(v, vidImplied())}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
@@ -3442,16 +3468,48 @@ function zoneSwitchHTML(){
 // ── 原本語言可能設錯（主管／管理員）──────────────────────────────────
 // 分區靠「原本語言」判斷源片，但這個欄位埋在編輯視窗的「進階」裡、預設收起來，
 // 舊資料幾乎都沒設 → 泰文／英文拍的原創會一直留在台灣區。
-// 這張卡把「標題看起來不是中文、欄位卻還是中文」的挑出來，一次設定。
-// 只給建議、不自動改 —— 猜錯會把片弄到看不見的區去，一定要人確認過才寫。
-function guessOrigLang(v){
-  const t=String((v&&(v.name||v.rawName))||"");
-  if(/[฀-๿]/.test(t)) return "th";                                    // 泰文字母很好認
-  if(/[A-Za-z]/.test(t) && !/[㐀-鿿぀-ヿ]/.test(t)) return "en"; // 有拉丁字母、完全沒有中日韓字
-  return "";
+// 判斷語言不能只看標題 —— 腳本都是老闆寫的，泰文片的標題常常還是中文。
+// 真正洩漏語言的是「影片文案」（口播稿），所以三個欄位一起看。
+const RE_TH=/[฀-๿]/, RE_CJK=/[㐀-鿿぀-ヿ]/, RE_LAT=/[A-Za-z]/;
+// 回傳 {lang, sure}：sure＝不必問人就能直接改（誤判機率低到可以忽略）
+function origLangGuess(v){
+  if(!v) return {lang:"",sure:false};
+  const copy=String(v.videoCopy||"");
+  const all=String(v.rawName||"")+" "+String(v.name||"")+" "+copy;
+  // 泰文字母不可能誤入中文片，只要出現就是泰文 —— 確定
+  if(RE_TH.test(all)) return {lang:"th", sure:true};
+  // 有英文口播稿、整支片一個中日韓字都沒有 —— 中文片的口播稿一定是中文，所以也確定
+  if(copy.trim() && RE_LAT.test(copy) && !RE_CJK.test(all)) return {lang:"en", sure:true};
+  // 只有標題是純英文、沒有口播稿佐證 —— 可能只是英文品牌名（「SKII vs Lancome」），要人看過
+  if(RE_LAT.test(all) && !RE_CJK.test(all)) return {lang:"en", sure:false};
+  return {lang:"", sure:false};
 }
+function guessOrigLang(v){ return origLangGuess(v).lang; }
+// 「確定」的那幾支不必問人，管理員／經理人一進來就自動搬過去。
+// 會寫進操作紀錄、也會跳一則說明；搬錯了在影片裡把「原本語言」改回中文就好。
+function origAutoMovable(v){ return isSourceVid(v) && origLangOf(v)==="" && origLangGuess(v).sure; }
+function origAutoList(){ return (STATE.videos||[]).filter(origAutoMovable); }
+let ORIG_AUTO_RAN=false;
+async function autoMoveOrigLang(){
+  if(ORIG_AUTO_RAN || VIEW_AS || !window.DB) return;
+  if(!["boss","manager"].includes(currentRole())) return;
+  const list=origAutoList(); if(!list.length) return;
+  ORIG_AUTO_RAN=true;   // 先鎖住：寫入會再觸發一次同步，不能讓它自己叫自己
+  const plan=list.map(v=>({v, to:origLangGuess(v).lang}));
+  BULK_BUSY=true; const done=[];
+  try{ for(const p of plan){
+        try{ await window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()}); done.push(p); }catch(e){}
+      } }
+  finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  if(!done.length) return;
+  logA("自動調整原本語言 "+done.length+" 支", done.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
+  await delay(300);
+  toast(T("已自動把 "+done.length+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
+          "Moved "+done.length+" Thai/English originals to the overseas area"));
+}
+// 猜得到、但不夠確定的才留給人確認
 function origLangSuspects(){
-  return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)==="" && guessOrigLang(v)!=="")
+  return (STATE.videos||[]).filter(v=>isSourceVid(v) && origLangOf(v)==="" && guessOrigLang(v)!=="" && !origLangGuess(v).sure)
     .sort((a,b)=>String(a.code||a.id).localeCompare(String(b.code||b.id)));
 }
 function origLangFixCard(){
@@ -3467,8 +3525,8 @@ function origLangFixCard(){
       <b style="font-size:16px">🌐 ${T("原本語言可能要調整","Check the original language")}</b>
       <span class="pill em">${list.length}</span></div>
     <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.7">${T(
-      "這幾支的標題看起來不是中文，但「原本語言」還是中文，所以它們留在台灣區、台灣剪輯看得到。<br>下拉已經先幫你選好建議的語言，確認後按儲存 —— 設成泰文或英文的會移到海外區。",
-      "These look non-Chinese by title but are still marked Chinese, so they stay in the Taiwan area.<br>The dropdown is pre-filled with a guess — confirm and save; Thai/English ones move to the overseas area.")}</div>
+      "泰文片、以及口播稿是英文的，系統已經自動移到海外區了。<br>剩下這幾支只有標題像英文、沒有口播稿可以佐證（也可能只是英文品牌名），要你看一眼再決定。",
+      "Thai videos and ones with an English script have already been moved automatically.<br>These only look English by title with no script to confirm it — take a look before deciding.")}</div>
     <div style="margin-top:8px${list.length>8?';max-height:320px;overflow-y:auto':''}">${rows}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn sm" onclick="saveOrigLangFixes()">${T("儲存","Save")}</button>
@@ -3697,7 +3755,11 @@ function viewPerf(){
   </div>`;
 }
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
-function editVideo(id){ openVideoModal(id, true); }
+// 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
+// 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
+function editVideo(id){ const v=vid(id);
+  if(assignLocked(v)){ toast(assignLockTip(v), true); return; }
+  openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
 function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); }
@@ -3968,6 +4030,10 @@ function openVideoModal(id, edit, fromWork){
         </div>
       </div>
     </div>
+    ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
+    <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
+    <div class="muted" style="font-size:11px;margin:4px 0 0">${T(
+      "設成泰文或英文，這支就會移到海外區、台灣剪輯不再看到","Thai or English moves this video to the overseas area")}</div>`:''}
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
@@ -4000,8 +4066,6 @@ function openVideoModal(id, edit, fromWork){
             : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
                <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
       </div>
-      ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
-      <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>`:''}
       <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
       <label>${T("備註","Notes")}</label><input id="e_note" value="${esc(v.note||"")}" placeholder="${T("補充說明（選填）","Optional notes")}">`, false)}
     ${((currentRole()==="boss"||currentRole()==="manager") && (isPublished(v) || (v.stage==="剪輯中" && !(v.editor||v.claimedBy))))?`<div class="card" style="border-color:var(--accent)">

@@ -188,17 +188,21 @@ for(const [u,r] of [["小葵","editor"],["郁莚","editor"],["小美","cs"],["An
   }
 }
 
-// ══════════ ⑨ 「原本語言可能要調整」清單（v120）══════════
-// 分區靠「原本語言」判斷源片，但那個欄位埋在編輯視窗的「進階」裡、預設收起來，
-// 舊資料幾乎都沒設 —— 這張卡把可疑的挑出來讓主管一次設定。
+// ══════════ ⑨ 原本語言：確定的自動搬、不確定的才問人（v120／v123）══════════
+// 分區靠「原本語言」判斷源片，舊資料幾乎都沒設 —— 泰文／英文拍的原創會一直留在台灣區。
+// v123：判斷不再只看標題（腳本是老闆用中文寫的，標題常常也是中文），
+//       改成標題＋原始片名＋口播稿一起看，並分成「確定」與「不確定」兩種處理。
 function langFixture(){
   reset();
+  ORIG_AUTO_RAN=false;
   const v_=(id,name,o)=>Object.assign({id,code:"26"+id,name,rawName:name,videoCopy:"",rawLink:"http://raw",
     stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:null,publishedLink:"",driveFolder:"",
     locale:"",channel:"",origLang:"",tags:[],products:[],usageHistory:[],metrics:[]},o||{});
   STATE.videos=[
-    v_("TH1","หินธรรมชาติจากคัดลัง ราคา 5,000"),                      // 泰文字 → 建議泰文
-    v_("EN1","Growing Up Taiwanese and Pakistani | Meet Tahir"),      // 純英文 → 建議英文
+    v_("TH1","หินธรรมชาติจากคัดลัง ราคา 5,000"),                      // 泰文字 → 確定泰文
+    v_("TH2","泰國師傅示範：這種石頭不要買",{videoCopy:"วันนี้ผมจะสอน"}),   // 標題中文、口播稿泰文 → 一樣確定
+    v_("ENC","Meet Tahir",{videoCopy:"Today I want to show you three stones"}), // 英文口播稿 → 確定英文
+    v_("EN1","Growing Up Taiwanese and Pakistani | Meet Tahir"),      // 只有標題像英文、沒稿 → 要人看
     v_("ZH1","05. 男生戴珠寶不娘？中東男人的寶石有多霸氣"),              // 中文 → 不列
     v_("NUM","2609041"),                                              // 只有數字 → 不列（猜不出來就別亂猜）
     v_("SET","Already Thai",{origLang:"th"}),                          // 已經設好了 → 不列
@@ -206,19 +210,24 @@ function langFixture(){
   ];
 }
 langFixture(); as("Regina","manager");
+{ const g=(id)=>origLangGuess(vid(id));
+  ok("泰文字＝確定泰文", g("TH1").lang==="th" && g("TH1").sure);
+  ok("標題中文但口播稿是泰文＝一樣確定", g("TH2").lang==="th" && g("TH2").sure);
+  ok("英文口播稿＝確定英文", g("ENC").lang==="en" && g("ENC").sure);
+  ok("只有標題像英文＝猜得到但不確定", g("EN1").lang==="en" && !g("EN1").sure);
+  ok("中文標題不猜", g("ZH1").lang==="");
+  ok("只有數字的不亂猜", g("NUM").lang===""); }
+{ const auto=origAutoList().map(v=>v.id).sort().join(",");
+  ok("自動搬的只收確定的那三支", auto==="ENC,TH1,TH2");
+  ok("不確定的不自動搬", !auto.includes("EN1"));
+  ok("已經設好的不自動搬", !auto.includes("SET"));
+  ok("版本殼不自動搬（只看源片）", !auto.includes("SHP")); }
 { const ids=origLangSuspects().map(v=>v.id).sort().join(",");
-  ok("挑出泰文與英文標題的源片", ids==="EN1,TH1");
-  ok("中文標題不列", !ids.includes("ZH1"));
-  ok("只有數字的不亂猜", !ids.includes("NUM"));
-  ok("已經設好的不列", !ids.includes("SET"));
-  ok("版本殼不列（只看源片）", !ids.includes("SHP"));
-  ok("泰文標題建議泰文", guessOrigLang(vid("TH1"))==="th");
-  ok("英文標題建議英文", guessOrigLang(vid("EN1"))==="en");
-  ok("中文標題不建議", guessOrigLang(vid("ZH1"))===""); }
+  ok("卡片只留不確定的", ids==="EN1");
+  ok("確定的不再問人（已自動搬）", !ids.includes("TH1") && !ids.includes("ENC")); }
 { const c=origLangFixCard();
-  ok("卡片列出兩支", c.includes("หินธรรมชาติ") && c.includes("Growing Up Taiwanese"));
-  ok("每支有自己的下拉", c.includes('id="olf_TH1"') && c.includes('id="olf_EN1"'));
-  ok("下拉預選建議的語言", /id="olf_TH1"[\s\S]*?value="th" selected/.test(c));
+  ok("卡片列出那一支", c.includes("Growing Up Taiwanese"));
+  ok("有自己的下拉且預選建議", /id="olf_EN1"[\s\S]*?value="en" selected/.test(c));
   ok("有儲存鍵", c.includes("saveOrigLangFixes()"));
   ok("影片庫上看得到這張卡", (ZONE_VIEW="tw", viewVideos().includes("原本語言可能要調整"))); }
 for(const [u,r,should] of [["Regina","manager",true],["管理員","boss",true],
@@ -226,23 +235,47 @@ for(const [u,r,should] of [["Regina","manager",true],["管理員","boss",true],
   as(u,r);
   ok(`${r} ${should?"看得到":"看不到"}這張卡`, (origLangFixCard()!=="")===should);
 }
+// 自動搬：確定的三支直接寫，其餘一律不碰
+langFixture(); as("Regina","manager");
+await autoMoveOrigLang(); await wait();
+{ const w=writes.filter(x=>x[0]==="update"&&x[1]==="videos");
+  const m={}; w.forEach(x=>{ m[x[2]]=x[3].origLang; });
+  ok("自動搬了三支", w.length===3);
+  ok("泰文字的設成 th", m.TH1==="th");
+  ok("口播稿是泰文的也設成 th", m.TH2==="th");
+  ok("英文口播稿的設成 en", m.ENC==="en");
+  ok("不確定的沒被自動改", !("EN1" in m));
+  ok("順手更新 updatedAt", w.every(x=>!!x[3].updatedAt));
+  ok("有寫進操作紀錄", writes.some(x=>x[1]==="logs" && String(x[3]&&x[3].action||"").includes("自動調整原本語言")));
+  ok("有跟人說搬了幾支", toasts.some(t=>t.includes("已自動把 3 支"))); }
+// 同一次載入只跑一次（寫入會再觸發一次同步，不能讓它自己叫自己）
+{ const before=writes.length; await autoMoveOrigLang(); await wait();
+  ok("第二次呼叫不重複寫", writes.length===before); }
+// 沒有可搬的就完全不動作
+langFixture(); as("Regina","manager");
+STATE.videos.forEach(v=>{ if(origAutoMovable(v)) v.origLang=origLangGuess(v).lang; });
+await autoMoveOrigLang(); await wait();
+ok("都搬完了就不再寫任何東西", writes.length===0);
+// 剪輯不會觸發自動搬（只有管理員／經理人跑）
+langFixture(); as("小葵","editor");
+await autoMoveOrigLang(); await wait();
+ok("剪輯不觸發自動搬", writes.length===0);
 // 儲存：只寫真的有改的，中文那些不動
 langFixture(); as("Regina","manager");
-fields={olf_TH1:"th", olf_EN1:""};        // 第二支被人改回中文 → 不該寫
+fields={olf_EN1:"en"};
 await saveOrigLangFixes(); await wait();
 { const w=writes.filter(x=>x[0]==="update");
-  ok("只寫有改的那一支", w.length===1 && w[0][1]==="videos" && w[0][2]==="TH1" && w[0][3].origLang==="th");
-  ok("改回中文的那支沒被寫", !w.some(x=>x[2]==="EN1"));
+  ok("只寫有改的那一支", w.length===1 && w[0][1]==="videos" && w[0][2]==="EN1" && w[0][3].origLang==="en");
   ok("順手更新 updatedAt", !!w[0][3].updatedAt); }
 langFixture(); as("Regina","manager");
-fields={olf_TH1:"", olf_EN1:""};
+fields={olf_EN1:""};                       // 被人改回中文 → 不該寫
 await saveOrigLangFixes(); await wait();
 ok("全部維持中文就不寫任何東西", writes.length===0 && toasts.some(t=>t.includes("沒有要調整")));
 // 設好之後就真的換區了
 langFixture(); as("Regina","manager");
 vid("TH1").origLang="th";
 ok("設成泰文之後歸海外", zoneOfVideo(vid("TH1"))==="intl");
-ok("設好的那支就從清單消失", !origLangSuspects().map(v=>v.id).includes("TH1"));
+ok("設好的那支就不再是待搬的", !origAutoList().map(v=>v.id).includes("TH1"));
 as("小葵","editor");
 ok("台灣剪輯的池裡也沒有它了", !poolAll().map(v=>v.id).includes("TH1"));
 

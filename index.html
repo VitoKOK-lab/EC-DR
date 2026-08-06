@@ -48,6 +48,15 @@
             font-size:10.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap;vertical-align:middle;
             background:var(--amberbg);color:var(--gold-dk);border:1px solid var(--gold)}
   .misspill.late{background:var(--redbg);color:var(--red);border-color:#E2B7B0}
+  /* 指派鎖：主管把片指派給某位剪輯後，其他剪輯照樣看得到（數字才對得上）但點不開。
+     用「整列變淡＋游標變禁止」表達，不是隱藏 —— 看得到有這件事，只是不歸自己管。 */
+  .vlock{opacity:.5;cursor:not-allowed}
+  .vlock *{cursor:not-allowed}
+  .lockpill{display:inline-block;flex:none;margin-left:6px;padding:1px 7px;border-radius:999px;
+            font-size:10.5px;font-weight:700;white-space:nowrap;vertical-align:middle;
+            background:var(--chip);color:var(--muted);border:1px solid var(--line)}
+  /* 月排程日視窗裡改日期／移出排程照舊可以按 —— 排程跟剪輯是兩條獨立的線 */
+  tr.vlock input,tr.vlock .btn{opacity:1;cursor:pointer}
   /* 標籤篩選收合列：跟其他折疊同一個外觀，但不佔一整張卡的份量 */
   .tagfold{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0}
   .tagfold>summary{padding:9px 12px;font-size:13.5px}
@@ -666,7 +675,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=b3752acbffb1"></script>
-<script type="module" src="fb.js?v=b3752acbffb1"></script>
+<script src="app.js?v=ad292c5d4b4c"></script>
+<script type="module" src="fb.js?v=ad292c5d4b4c"></script>
 </body>
 </html>
