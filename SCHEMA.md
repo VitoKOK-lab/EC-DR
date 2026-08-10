@@ -358,6 +358,7 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `attendStart` | string | **全公司**出勤起算日 `YYYY-MM-DD`（選填）。留白＝各人以自己的 `users.pwAt` 起算；有填則兩者**取比較晚**的那一天 |
 
 | `pcOnly` | boolean | 只能用電腦登入（預設 `true`）。一般員工用手機會被擋在登入頁；經理人／人資／管理員不受限 |
+| `mobileAllow` | string[] | **個別開放手機打卡**（v125）。`pcOnly` 打開時，這份名單上的人不受限（外務、跑倉庫、外派）。在設定→出勤那一區逐一勾選；空陣列或沒有這個欄位＝沒有人被放行。名單上的人用手機打卡**不再被出勤報表標成異常**（今日出勤的紅字計數會排除他們，那一列改標中性的「手機（已開放）」），但裝置、UA、GPS 照常記錄 |
 | `officeGeo` | object | 公司座標 `{lat,lng}`（選填）。有填才會在出勤頁標出「打卡地點離公司 N 公尺」 |
 | `scheduleHorizonDays` | number | 預排天數視窗 |
 | `intlAccounts` | object[] | 海外 TikTok 帳號清單，每筆 `{locale, name}`（en/th/ms ＋ 帳號名）；建立在地化版本時挑帳號用 |
