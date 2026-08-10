@@ -420,7 +420,17 @@ function bootLogin(){
 }
 // 上下班要用公司電腦打卡：一般員工不給手機登入（經理人／人資／管理員不受限，他們要能隨時處理事情）
 function pcOnlyOn(){ const s=(STATE&&STATE.settings)||{}; return s.pcOnly!==false; }
-function blockedOnMobile(role){ return pcOnlyOn() && isMobileUA() && !["manager","hr","boss"].includes(role||"editor"); }
+// 個別開放手機打卡（v125）：全公司只能用電腦是預設，但總有人本來就不在辦公室
+// （外務、跑倉庫、外派），逼他們回公司才能打卡沒有意義。
+// 在設定裡逐一勾選，勾到的人不受「只能用電腦」限制 —— 而且他們用手機打卡
+// 不再被出勤報表標成異常（不然人資每天都會收到一整排紅字）。
+function mobileAllowList(){ const s=(STATE&&STATE.settings)||{};
+  return Array.isArray(s.mobileAllow) ? s.mobileAllow.map(x=>String(x||"").trim()).filter(Boolean) : []; }
+function mobileAllowed(name){ const n=String(name||"").trim(); return !!n && mobileAllowList().includes(n); }
+function blockedOnMobile(role, name){
+  return pcOnlyOn() && isMobileUA()
+      && !["manager","hr","boss"].includes(role||"editor")
+      && !mobileAllowed(name); }
 // ---------- 密碼：只存雜湊，不存明文（v84）----------
 // PBKDF2-SHA256＋每人一組隨機鹽。算得出來、推不回去 ——
 // 就算整個資料庫被讀走，也拿不到任何人的真實密碼。
@@ -459,7 +469,7 @@ async function loginAs(u){
   // 這裡還不能用 T()：ecdr_role 要登入成功才寫進去，海外同事第一次在新裝置登入時
   // currentRole() 會退回預設的 editor（＝中文）。手上就有 u.role，直接拿它判斷。
   const tr=roleT(u&&u.role);
-  if(blockedOnMobile(u.role)){
+  if(blockedOnMobile(u.role, u.name)){
     alert(tr("請用公司電腦登入。\n\n上下班打卡要在公司電腦上進行，手機不能登入。\n（如有特殊需要請找管理員）",
              "Please log in from a company computer.\n\nClock-in and clock-out must be done on a company computer; phones can't log in.\n(Ask the admin if you need an exception.)"));
     return; }
@@ -2195,7 +2205,9 @@ function viewAttend(){
         <span class="pill ok">已到 ${arrived.length}</span>
         ${lateToday.length?`<span class="pill em">遲到 ${lateToday.length}</span>`:''}
         ${notYet.length?`<span class="pill wa">未打卡 ${notYet.length}</span>`:''}
-        ${arrived.filter(r=>r.sh.inMobile).length?`<span class="pill em">用手機打卡 ${arrived.filter(r=>r.sh.inMobile).length}</span>`:''}
+        ${(()=>{ // 已經開放手機打卡的人不算異常 —— 不然人資每天都會看到一整排紅字
+          const n=arrived.filter(r=>r.sh.inMobile && !mobileAllowed(r.u.name)).length;
+          return n?`<span class="pill em">用手機打卡 ${n}</span>`:''; })()}
         ${arrived.filter(r=>r.sh.inNewDev).length?`<span class="pill wa">換新裝置 ${arrived.filter(r=>r.sh.inNewDev).length}</span>`:''}
       </span></div>
     ${(()=>{ const ns=staff.filter(u=>!attendStartOf(u.name));
@@ -2209,7 +2221,9 @@ function viewAttend(){
                      a.early>0?`<span class="pill wa" style="font-size:10px">早退 ${a.early} 分</span>`:'',
                      a.auto?'<span class="pill" style="font-size:10px">系統補下班</span>':'',
                      a.newDev?'<span class="pill wa" style="font-size:10px">換了新裝置</span>':'',
-                     a.mobile?'<span class="pill em" style="font-size:10px">用手機打的</span>':'',
+                     a.mobile?(mobileAllowed(u.name)
+                        ? '<span class="pill" style="font-size:10px">手機（已開放）</span>'
+                        : '<span class="pill em" style="font-size:10px">用手機打的</span>'):'',
                      (d!=null&&d>500)?`<span class="pill em" style="font-size:10px">離公司 ${d} 公尺</span>`:''].filter(Boolean).join(" ")
           + (hasIssue? (note?`<div style="font-size:12px;margin-top:3px"><span class="muted">說明：</span>${esc(note)}</div>`
                             :'<div style="font-size:12px;margin-top:3px;color:var(--red)">尚未說明原因</div>') : '');
@@ -4870,8 +4884,19 @@ function setWorkHoursCard(s){
       <input id="set_attstart" type="date" value="${esc(s.attendStart||"")}" style="max-width:180px">
       <span class="muted" style="font-size:12px">留白＝各人從自己設定密碼那天起算。填了就以這一天為準（兩者取比較晚的）。這一天之前的打卡只留著參考，不算遲到早退。</span>
     </div>
-    <label style="margin-top:12px" style="display:flex;align-items:center;gap:8px">
+    <label style="margin-top:12px;display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
+    ${(()=>{ const allow=mobileAllowList();
+      const list=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+      if(!list.length) return "";
+      return `<div style="margin:8px 0 0 24px">
+        <div class="muted" style="font-size:12px">上面打開的時候，這裡勾到的人<b>可以</b>用手機打卡（外務、跑倉庫、外派用）。
+          他們用手機打的卡不會被出勤報表標成異常，但裝置與 GPS 照常記錄。</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          ${list.map(u=>`<label style="display:inline-flex;align-items:center;gap:5px;background:var(--panel2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" class="mba_u" value="${esc(u.name)}" ${allow.includes(u.name)?"checked":""} style="width:auto;margin:0">
+            ${esc(u.name)}<span class="muted" style="font-size:11px">${esc(ROLE_LABEL[u.role||"editor"]||"")}</span></label>`).join("")}
+        </div></div>`; })()}
     <label style="margin-top:12px;display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_attask" ${s.attIssueAsk===true?"checked":""} style="width:auto;margin:0"> 請員工說明出勤異常（遲到／早退／忘打下班）</label>
     <div class="muted" style="font-size:12px;margin-top:4px">預設關著。關著的時候員工的工作頁不會跳出「出勤異常待說明」，
@@ -5031,6 +5056,8 @@ async function saveSettings(){
       const hit=TPL_ROLES.find(p=>p[1]===label||p[0]===label);
       return {t, r:hit?hit[0]:"all"}; }).filter(x=>x.t);
     const pcEl=document.getElementById("set_pconly"); settings.pcOnly = pcEl? !!pcEl.checked : true;
+    // 個別開放手機打卡：這一區只有出勤設定畫面才有，所以跟 set_pconly 綁在同一個 if 裡
+    settings.mobileAllow = Array.from(document.querySelectorAll('.mba_u:checked')).map(x=>String(x.value||"").trim()).filter(Boolean);
     const aiEl=document.getElementById("set_attask"); settings.attIssueAsk = aiEl? !!aiEl.checked : false;
     const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
     settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};
