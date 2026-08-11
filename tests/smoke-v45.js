@@ -46,7 +46,7 @@ ok("審片進度卡出現且計數=3", h.includes("審片進度") && h.includes(
 ok("退回段：紅色＋原因", h.includes("被退回，要修") && h.includes("字卡打錯"));
 ok("通過待補段：列出通過但缺連結的片", h.includes("已審過（通過）") && h.includes("通過待補連結"));
 ok("待審核段：列出等審的片＋已審過鍵", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片") && h.includes("editorMarkReviewed('W1')"));
-{ const seg=h.split("審片進度")[1].split("今天要做的事")[0];
+{ const seg=h.split("審片進度")[1].split("最近 7 天剪完的片")[0];   // v128 起下面多一張七天盤點卡，切在它之前
   ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片")); }
 ok("別人的片不出現", !h.includes("EN done cut"));
 
