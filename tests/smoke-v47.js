@@ -43,9 +43,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 WORK_ZONE="shopee"; POOL_FILTER="all";
 let h=viewWork();
-ok("Regina 審過的片亮出來（不沈下去）", h.includes("審過連結齊") && h.includes("Regina 已審過"));
+// v128：名字改包在「由 … 審過」中間 —— 名字擺最前面會被讀成「這一列是那個人的片」
+ok("Regina 審過的片亮出來（不沈下去）", h.includes("審過連結齊") && h.includes("由 Regina 審過"));
 ok("連結齊 → 綠底＋知道了鍵", h.includes("ackReviewedVid('A1')") && h.includes("連結都補齊了"));
-ok("缺連結 → 持續提醒＋標已審過", h.includes("審過缺連結") && h.includes("Regina 已審過"));
+ok("缺連結 → 持續提醒＋標已審過", h.includes("審過缺連結") && h.includes("由 Regina 審過"));
 ok("缺連結的沒有知道了鍵", !h.includes("ackReviewedVid('A2')"));
 { const seg=h.split("審片進度")[1].split("最近 7 天剪完的片")[0];   // v128 起下面多一張七天盤點卡，切在它之前
   ok("按過知道了的不再顯示", !seg.includes("已收起的片"));

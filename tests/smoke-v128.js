@@ -137,5 +137,35 @@ STATE.videos=[ V("A","等審的",{finishedAt:D(-2)+"T15:00:00"}) ];
   ok("管理員也看得到，位置一樣", h.indexOf("毛片庫存＆指派")<h.indexOf("待你審片")
      && h.indexOf("待你審片")<h.indexOf("團隊交辦＆回報")); }
 
+// ══════════ ⑥ 審片進度卡：只看自己的，而且名字不會被讀成「這列是誰的」 ══════════
+// 回報：「這個員工的審片進度只需要看到自己的就好了，不用看到別的剪輯做的東西」。
+// 清單本來就只收自己的片 —— 真正的問題是「泓儒 已審過」把審片的人的名字擺在最前面，
+// 看的人會以為那一列是泓儒的片。名字要包在「由 … 審過」中間。
+reset(); as("小葵","editor");
+STATE.videos=[
+  V("A","我剪的等審中",{finishedAt:D(-2)+"T15:00:00"}),
+  V("B","我剪的Regina審過",{finishedAt:D(-1)+"T15:00:00",reviewStatus:"通過",reviewedBy:"Regina",reviewedAt:D(-1)+"T16:00:00"}),
+  V("C","我剪的自己標的",{finishedAt:D(-1)+"T15:00:00",reviewStatus:"通過",reviewedBy:"小葵",reviewedAt:D(-1)+"T16:00:00"}),
+  V("D","我剪的被退回",{finishedAt:D(-3)+"T15:00:00",reviewStatus:"退回",reviewNote:"字卡打錯"}),
+  V("E","郁莚剪的等審中",{editor:"郁莚",claimedBy:"郁莚",finishedAt:D(-2)+"T15:00:00"}),
+  V("F","郁莚剪的Regina審過",{editor:"郁莚",claimedBy:"郁莚",finishedAt:D(-1)+"T15:00:00",
+     reviewStatus:"通過",reviewedBy:"Regina",reviewedAt:D(-1)+"T16:00:00"}),
+];
+{ const c=workReviewCard("小葵");
+  ok("只列自己剪的", c.includes("我剪的等審中") && c.includes("我剪的Regina審過") && c.includes("我剪的被退回"));
+  ok("別人剪的一支都不列", !c.includes("郁莚剪的等審中") && !c.includes("郁莚剪的Regina審過"));
+  ok("計數只算自己的", c.includes('<span class="pill wa">4</span>'));
+  // 名字包在「由 … 審過」中間，不會被讀成「這一列是 Regina 的片」
+  ok("別人審的寫「由 X 審過」", c.includes("由 Regina 審過"));
+  ok("不再把名字擺在最前面", !c.includes("Regina 已審過"));
+  ok("自己標的寫「自己標的」，不寫自己的名字", c.includes("自己標的"));
+  // 順序：該處理的在上面，做完的在下面
+  ok("被退回的排最上面", c.indexOf("被退回，要修")<c.indexOf("待審核"));
+  ok("待審核排在已審過的上面（本來反過來）", c.indexOf("待審核")<c.indexOf("已審過（通過）"));
+  ok("待審核也標出等了幾天", c.includes("等 3 天")); }
+// 換一個人看，內容跟著換
+{ const c=workReviewCard("郁莚");
+  ok("換人看就只有那個人的", c.includes("郁莚剪的等審中") && !c.includes("我剪的等審中")); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

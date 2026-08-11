@@ -1275,12 +1275,19 @@ function workReviewCard(me){
       ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
         <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
         ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
+    ${/* 順序＝該處理的先來：被退回（要動手）→ 還在等（要追）→ 已審過（做完了，收起來）。
+          v128 之前「已審過」排在「待審核」上面，7 支通過的把該追的擠到最下面，
+          使用者的說法是「審片還是在最下面」。 */''}
+    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
+        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
     ${approvedTodo.length?`<details class="fold" style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
         return n?`<span class="pill em" style="font-size:10px;margin-left:6px">${T(n+" 支還缺連結", n+" need links")}</span>`:""; })()
       }</summary><div class="foldbody">
-      ${approvedTodo.map(v=>{ const who=`${esc(v.reviewedBy||"Regina")} ${T("已審過","approved")}${v.reviewedAt?("・"+esc(String(v.reviewedAt).slice(0,10))):''}`;
+      ${approvedTodo.map(v=>{ const who=reviewByLabel(v, me);
         if(!linksDone(v)) return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
           <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
           <div class="muted" style="font-size:12px;margin-top:2px">${who}</div></div>`;
@@ -1289,12 +1296,17 @@ function workReviewCard(me){
           <span class="muted" style="font-size:12px"> ${who}・${T("連結都補齊了","links all set")}</span></span>
           <button class="btn sec sm" style="flex:none" onclick="ackReviewedVid('${v.id}')" title="${T("收起這則通知","Dismiss this notice")}">${T("知道了","Got it")}</button></div>`; }).join("")}
       </div></details>`:''}
-    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
-      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
   </div>`:'';
   return rejCard;
+}
+// 「是誰按下通過的」寫成一句不會被誤讀的話。
+// 原本寫「泓儒 已審過・2026-08-03」—— 這份清單本來就只有自己的片，
+// 但名字擺在最前面，看的人會以為那一列是泓儒的。名字要包在「由 … 審過」中間。
+function reviewByLabel(v, me){
+  const by=String((v&&v.reviewedBy)||"");
+  const when=(v&&v.reviewedAt)?("・"+esc(String(v.reviewedAt).slice(5,10))):"";
+  if(by && by===me) return T("自己標的","self-marked")+when;
+  return T("由 ","approved by ")+esc(by||"Regina")+T(" 審過","")+when;
 }
 // ── 審片狀態：一支片現在到底審了沒（v128）──────────────────────────
 // 這支等審等幾天了（剪完那天算第 1 天）。
@@ -1311,12 +1323,9 @@ function reviewStateHTML(v){
   if(needsReview(v)) return `<span class="pill wa" style="font-size:10px">${T("還沒審","Not reviewed")}</span>${reviewWaitPill(v)}`;
   if(v.reviewStatus==="退回") return `<span class="pill em" style="font-size:10px">${T("退回","Sent back")}</span>`
     + (v.reviewNote?` <span class="muted" style="font-size:11px">${esc(v.reviewNote)}</span>`:"");
-  if(v.reviewStatus==="通過"){
-    const self=v.reviewedBy && v.reviewedBy===currentUser();
+  if(v.reviewStatus==="通過")
     return `<span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>`
-      + `<span class="muted" style="font-size:11px;margin-left:5px">${esc(v.reviewedBy||"")}${
-          v.reviewedAt?"・"+esc(String(v.reviewedAt).slice(5,10)):""}${self?T("（自己標的）"," (self-marked)"):""}</span>`;
-  }
+      + `<span class="muted" style="font-size:11px;margin-left:5px">${reviewByLabel(v, currentUser())}</span>`;
   if(v.stage==="已上片" || String(v.publishedLink||"").trim())
     return `<span class="pill ok" style="font-size:10px">${T("已上片","Published")}</span>`;
   return `<span class="muted" style="font-size:11px">${T("不需審核","No review needed")}</span>`;
