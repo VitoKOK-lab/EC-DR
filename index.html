@@ -347,12 +347,18 @@
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
   /* 彈窗：淡入上浮進場＋燙金頂線＋標題 ✦ 簽名 */
   /* 彈窗只能上下捲動、禁止左右滑（內容一律收在寬度內） */
-  .modal .box{position:relative;background:var(--panel);border-radius:10px;padding:24px;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:var(--shadow2);border:1px solid var(--line);animation:popIn .32s cubic-bezier(.2,.7,.3,1) both}
+  .modal .box{position:relative;background:var(--panel);border-radius:10px;padding:24px 24px 0;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:var(--shadow2);border:1px solid var(--line);animation:popIn .32s cubic-bezier(.2,.7,.3,1) both}
   .modal .box input,.modal .box select,.modal .box textarea{max-width:100%}
   .modal .box::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--foil);background-size:200% 100%;animation:foilFlow 7s linear infinite}
   .modal h3{font-family:var(--serif);font-weight:700;margin:0 0 16px;letter-spacing:.5px}
   .modal h3::before{content:"✦ ";color:var(--signal);font-size:14px}
   .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+  /* 彈窗底部的按鈕永遠黏在視窗底下。
+     內容一長（交辦工作十幾件、影片一整排），「確認」就會被推到捲動區的下面 ——
+     視窗自己會捲，但使用者捲的是整頁，捲了沒反應，看起來就是「這顆按鈕點不下去」。
+     黏住之後不管內容多長都按得到。只有彈窗裡的 modalFoot 要這樣，設定頁那幾個不動。 */
+  .modal .box .modalFoot{position:sticky;bottom:0;z-index:1;background:var(--panel);
+    margin-top:20px;padding:14px 0 24px;box-shadow:0 -10px 14px -10px rgba(43,24,34,.14)}
 
   /* 月曆 — 質感版：白卡 + 頂部色條標示狀態 + 襯線大數字 */
   .calhead{display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:16px}
@@ -716,7 +722,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=f8820a316911"></script>
-<script type="module" src="fb.js?v=f8820a316911"></script>
+<script src="app.js?v=b9df5e329e1a"></script>
+<script type="module" src="fb.js?v=b9df5e329e1a"></script>
 </body>
 </html>

@@ -1933,16 +1933,31 @@ function clockOutReport(){
       ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?`<span class="pill ok" style="font-size:10px">${T("已完成","Done")}</span>`:`<span class="pill em" style="font-size:10px">${T("未完成","Not done")}</span>`}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
         :`<p class="muted" style="margin:6px 0 0">${T("今日無交辦工作","No tasks today")}</p>`}
     </div>`;
-  showModal(T("下班匯報","Clock-out report"), body, async ()=>{ await doClockOut(); closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true; }, T("確認下班","Confirm clock-out"));
+  showModal(T("下班匯報","Clock-out report"), body, async ()=>{
+    // 沒有真的寫進去就不能把人登出 —— 他會以為自己下班了，隔天才發現沒有紀錄
+    if(!await doClockOut()){
+      toast(T("下班沒有記錄成功，可能是網路斷了。確認有網路之後再按一次；一直不行請跟主管說一聲。",
+              "Clock-out didn't save — you may be offline. Check your connection and press it again."), true);
+      return false; }
+    closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true;
+  }, T("確認下班","Confirm clock-out"));
 }
-async function doClockOut(){ refreshToday();
-  const id=shiftId(currentUser(),today); const env=punchEnv();
-  try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
-       else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
-         inDev:env.dev,inDevUA:env.ua,inMobile:env.mobile,outDev:env.dev,outDevUA:env.ua,outMobile:env.mobile,autoOut:false});
-    rememberDevice(currentUser(), env);
-    grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {outGeo:g}).catch(()=>{}); });
-  }catch(e){}
+// 回傳「有沒有真的寫進資料庫」。
+// 以前這裡把所有錯誤吞掉，外面照樣說「辛苦了，已下班」然後把人登出 ——
+// 寫失敗的人根本沒有下班紀錄，卻完全不知道。這是「無法下班」最惡劣的一種：它裝作成功。
+async function doClockOut(){
+  if(!window.DB) return false;
+  let id, env;
+  try{ refreshToday(); id=shiftId(currentUser(),today); env=punchEnv(); }catch(e){ return false; }
+  try{
+    if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
+    else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
+      inDev:env.dev,inDevUA:env.ua,inMobile:env.mobile,outDev:env.dev,outDevUA:env.ua,outMobile:env.mobile,autoOut:false});
+  }catch(e){ return false; }
+  // 以下是加分項：記不記得住裝置、拿不拿得到座標，都不影響「已經下班」這件事
+  try{ rememberDevice(currentUser(), env); }catch(e){}
+  try{ grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {outGeo:g}).catch(()=>{}); }); }catch(e){}
+  return true;
 }
 // ===================================================================
 // 出勤：班表設定、打卡環境記錄、遲到早退計算、月報表
@@ -1951,9 +1966,13 @@ async function doClockOut(){ refreshToday();
 // ===================================================================
 const DEF_WORK={start:"09:00", end:"18:00", grace:10};
 // 這台裝置的代碼：同一台裝置幫好幾個人打卡時，報表上看得出來
+// localStorage 不是永遠都能用（無痕模式、封鎖第三方儲存、空間滿了都會丟例外）。
+// 這裡是打卡的必經之路，寧可拿一個記不住的臨時代碼，也不能讓整個下班流程炸掉。
 function deviceId(){
-  let d=localStorage.getItem("ecdr_dev");
-  if(!d){ d=Math.random().toString(36).slice(2,8).toUpperCase(); localStorage.setItem("ecdr_dev",d); }
+  let d=null;
+  try{ d=localStorage.getItem("ecdr_dev"); }catch(e){}
+  if(!d){ d=Math.random().toString(36).slice(2,8).toUpperCase();
+          try{ localStorage.setItem("ecdr_dev",d); }catch(e){} }
   return d;
 }
 function isMobileUA(){ return /Mobi|Android|iPhone|iPad|iPod/i.test((navigator&&navigator.userAgent)||""); }
@@ -5317,7 +5336,17 @@ function showModal(title, inner, onConfirm, confirmLabel){
       ${onConfirm?`<button class="btn" id="modalConfirm">${esc(confirmLabel||T("確認送出","Submit"))}</button>`:""}
     </div></div></div>`;
   root.innerHTML = html;
-  if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
+  // 確認鍵：按下去到做完之間先鎖住（避免連點兩次做兩遍），而且**絕不能靜靜失敗** ——
+  // 原本 onConfirm 一丟例外，closeModal 就不會跑，畫面完全沒反應，
+  // 使用者看到的就是「這顆按鈕點不下去」，然後開始重整、重按、找人問。
+  if(onConfirm){ const btn=document.getElementById("modalConfirm");
+    btn.onclick=async()=>{
+      if(btn.disabled) return;
+      btn.disabled=true; const label=btn.textContent; btn.textContent=T("處理中…","Working…");
+      try{ const r=await onConfirm(); if(r!==false) closeModal(); }
+      catch(e){ toast(T("這個動作沒有完成："+((e&&e.message)||e), "That didn't go through: "+((e&&e.message)||e)), true); }
+      finally{ if(btn.isConnected){ btn.disabled=false; btn.textContent=label; } }
+    }; }
 }
 // 改到一半想離開時的提醒（× 鍵與點視窗外都用這一則，講法一致）
 function warnUnsaved(){ toast(T("還沒存檔喔 —— 請按「儲存修改」，不要的話按「取消編輯」",
