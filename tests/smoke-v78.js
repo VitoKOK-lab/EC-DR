@@ -156,7 +156,8 @@ ok("過去的不會回到今天（維持原本行為）", !todayCard().includes(
     const h=viewFlow();
     ok("待你審片改成折疊", h.includes('<summary>🎞 待你審片<span class="n">1</span>'));
     ok("預設是收起來的", !/待你審片[\s\S]{0,80}open/.test(h));
-    ok("排在團隊交辦下面", h.indexOf("待你審片")>h.indexOf("團隊交辦＆回報"));
+    // v128：改排在「毛片庫存＆指派」的下一個 —— 本來在整頁最後面，滑到那裡的人不多，剪完的片一直沒人審
+    ok("排在毛片庫存的下一個、團隊交辦的上面", h.indexOf("毛片庫存＆指派")<h.indexOf("待你審片") && h.indexOf("待你審片")<h.indexOf("團隊交辦＆回報"));
     ok("排在毛片庫存下面", h.indexOf("待你審片")>h.indexOf("毛片庫存"));
     ok("展開後看得到片子與審片鍵", h.includes("待審的片") && h.includes("審片")); }
 

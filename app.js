@@ -1296,6 +1296,56 @@ function workReviewCard(me){
   </div>`:'';
   return rejCard;
 }
+// ── 審片狀態：一支片現在到底審了沒（v128）──────────────────────────
+// 這支等審等幾天了（剪完那天算第 1 天）。
+// 「等 5 天」跟「好像還沒審」是兩回事 —— 前者拿得出去講，後者只能猜。
+function reviewWaitDays(v){ const f=String((v&&v.finishedAt)||"").slice(0,10);
+  if(!f) return null; return daysBetween(f, today)+1; }
+function reviewWaitPill(v){ const d=reviewWaitDays(v); if(d==null) return "";
+  const cls=d>=3?"em":(d>=2?"wa":"");
+  return ` <span class="pill ${cls}" style="font-size:10px">${T("等 "+d+" 天","waiting "+d+"d")}</span>`; }
+// 一支片的審片狀態，寫成人看得懂的一句話。
+// 「通過」要寫出是誰按的 —— 剪輯自己按的跟 Regina 按的長得一樣，不寫出來就分不出來。
+function reviewStateHTML(v){
+  if(!v) return "";
+  if(needsReview(v)) return `<span class="pill wa" style="font-size:10px">${T("還沒審","Not reviewed")}</span>${reviewWaitPill(v)}`;
+  if(v.reviewStatus==="退回") return `<span class="pill em" style="font-size:10px">${T("退回","Sent back")}</span>`
+    + (v.reviewNote?` <span class="muted" style="font-size:11px">${esc(v.reviewNote)}</span>`:"");
+  if(v.reviewStatus==="通過"){
+    const self=v.reviewedBy && v.reviewedBy===currentUser();
+    return `<span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>`
+      + `<span class="muted" style="font-size:11px;margin-left:5px">${esc(v.reviewedBy||"")}${
+          v.reviewedAt?"・"+esc(String(v.reviewedAt).slice(5,10)):""}${self?T("（自己標的）"," (self-marked)"):""}</span>`;
+  }
+  if(v.stage==="已上片" || String(v.publishedLink||"").trim())
+    return `<span class="pill ok" style="font-size:10px">${T("已上片","Published")}</span>`;
+  return `<span class="muted" style="font-size:11px">${T("不需審核","No review needed")}</span>`;
+}
+// 最近 7 天剪完的片（預設摺疊）：一眼看得出哪幾支審過了、哪幾支還在等、等多久。
+// 上面那張「審片進度」只講今天要處理的事；這一張是給剪輯自己盤點用的 ——
+// 「這三支等五天了」拿得出去提醒主管，「好像還沒審」不行。
+function workRecent7Card(me){
+  const from=new Date(Date.now()+288e5-6*864e5).toISOString().slice(0,10);   // 含今天共 7 天
+  const list=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
+      && String(v.finishedAt||"").slice(0,10)>=from)
+    .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
+  if(!list.length) return "";
+  const nWait=list.filter(needsReview).length;
+  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const rows=list.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span style="min-width:0;flex:1 1 220px">
+        <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
+        <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
+      <span style="flex:none">${reviewStateHTML(v)}</span></div>`).join("");
+  return `<details class="fold">
+    <summary>${T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
+      nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
+    <div class="foldbody">
+      <div class="muted" style="font-size:12px;margin-bottom:4px">${T(
+        "還沒審的會寫出等了幾天，可以直接拿這個去問主管。「已審過」後面是按下通過的人 —— 自己標的會註明。",
+        "Unreviewed ones show how many days they've waited. “Approved” shows who pressed it — self-marked ones are labelled.")}</div>
+      ${rows}</div></details>`;
+}
 // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
 function dayBadge(v){ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
   return `<span style="display:inline-flex;min-width:30px;height:30px;padding:0 9px;border-radius:5px;background:${col};color:#fff;font-weight:900;font-size:14px;align-items:center;justify-content:center">${b==="新"?T("新","New"):b}</span>`; }
@@ -1818,6 +1868,8 @@ function viewWork(){
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${rejCard}
+  ${/* 上面那張只講今天要處理的；這一張是最近七天的盤點，預設收起來 */''}
+  ${workRecent7Card(me)}
 
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
@@ -2401,7 +2453,7 @@ function flowReviewQueueCard(){
   const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
     ${/* 全部列出來：折疊上的數字說有幾支，就要有幾支點得到，不然審不到的那些等於被忘記 */''}
     ${pendingReview.length?pendingReview.map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
-        <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>
+        <div style="min-width:0"><a href="javascript:void(0)" onclick="${openRev(v)}" style="font-weight:600">${esc(vidTitle(v))}</a>${reviewWaitPill(v)}
           <div class="muted" style="font-size:12px">${esc(v.editor||v.claimedBy||"")}・完成 ${esc(String(v.finishedAt||"").slice(0,10))}</div></div>
         <button class="btn sm" style="flex:none" onclick="${openRev(v)}">審片</button></div>`).join("")
       :'<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有等審的片 ✓</p>'}
@@ -2483,11 +2535,12 @@ function viewFlow(){
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
   </div>`;
 
+  // 「待你審片」擺在毛片庫存的下一個 —— 原本在整頁最後面，滑到那裡的人不多，
+  // 結果剪輯剪完的片一直沒人審。預設仍然摺疊（標題上的數字就說得完該不該點開）。
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${msgInboxCard()}${runwayCard}${stockCard}
+  ${focus}${msgInboxCard()}${runwayCard}${stockCard}${reviewQueueCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
-  ${staffCards||'<p class="muted">還沒有成員</p>'}
-  ${reviewQueueCard}`;
+  ${staffCards||'<p class="muted">還沒有成員</p>'}`;
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
