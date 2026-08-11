@@ -1933,16 +1933,31 @@ function clockOutReport(){
       ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?`<span class="pill ok" style="font-size:10px">${T("已完成","Done")}</span>`:`<span class="pill em" style="font-size:10px">${T("未完成","Not done")}</span>`}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
         :`<p class="muted" style="margin:6px 0 0">${T("今日無交辦工作","No tasks today")}</p>`}
     </div>`;
-  showModal(T("下班匯報","Clock-out report"), body, async ()=>{ await doClockOut(); closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true; }, T("確認下班","Confirm clock-out"));
+  showModal(T("下班匯報","Clock-out report"), body, async ()=>{
+    // 沒有真的寫進去就不能把人登出 —— 他會以為自己下班了，隔天才發現沒有紀錄
+    if(!await doClockOut()){
+      toast(T("下班沒有記錄成功，可能是網路斷了。確認有網路之後再按一次；一直不行請跟主管說一聲。",
+              "Clock-out didn't save — you may be offline. Check your connection and press it again."), true);
+      return false; }
+    closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true;
+  }, T("確認下班","Confirm clock-out"));
 }
-async function doClockOut(){ refreshToday();
-  const id=shiftId(currentUser(),today); const env=punchEnv();
-  try{ if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
-       else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
-         inDev:env.dev,inDevUA:env.ua,inMobile:env.mobile,outDev:env.dev,outDevUA:env.ua,outMobile:env.mobile,autoOut:false});
-    rememberDevice(currentUser(), env);
-    grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {outGeo:g}).catch(()=>{}); });
-  }catch(e){}
+// 回傳「有沒有真的寫進資料庫」。
+// 以前這裡把所有錯誤吞掉，外面照樣說「辛苦了，已下班」然後把人登出 ——
+// 寫失敗的人根本沒有下班紀錄，卻完全不知道。這是「無法下班」最惡劣的一種：它裝作成功。
+async function doClockOut(){
+  if(!window.DB) return false;
+  let id, env;
+  try{ refreshToday(); id=shiftId(currentUser(),today); env=punchEnv(); }catch(e){ return false; }
+  try{
+    if(myShift()) await window.DB.update("shifts",id,{clockOut:nowIso(), outDev:env.dev, outDevUA:env.ua, outMobile:env.mobile, autoOut:false});
+    else await window.DB.set("shifts",id,{id,user:currentUser(),date:today,clockIn:nowIso(),clockOut:nowIso(),
+      inDev:env.dev,inDevUA:env.ua,inMobile:env.mobile,outDev:env.dev,outDevUA:env.ua,outMobile:env.mobile,autoOut:false});
+  }catch(e){ return false; }
+  // 以下是加分項：記不記得住裝置、拿不拿得到座標，都不影響「已經下班」這件事
+  try{ rememberDevice(currentUser(), env); }catch(e){}
+  try{ grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {outGeo:g}).catch(()=>{}); }); }catch(e){}
+  return true;
 }
 // ===================================================================
 // 出勤：班表設定、打卡環境記錄、遲到早退計算、月報表
@@ -1951,9 +1966,13 @@ async function doClockOut(){ refreshToday();
 // ===================================================================
 const DEF_WORK={start:"09:00", end:"18:00", grace:10};
 // 這台裝置的代碼：同一台裝置幫好幾個人打卡時，報表上看得出來
+// localStorage 不是永遠都能用（無痕模式、封鎖第三方儲存、空間滿了都會丟例外）。
+// 這裡是打卡的必經之路，寧可拿一個記不住的臨時代碼，也不能讓整個下班流程炸掉。
 function deviceId(){
-  let d=localStorage.getItem("ecdr_dev");
-  if(!d){ d=Math.random().toString(36).slice(2,8).toUpperCase(); localStorage.setItem("ecdr_dev",d); }
+  let d=null;
+  try{ d=localStorage.getItem("ecdr_dev"); }catch(e){}
+  if(!d){ d=Math.random().toString(36).slice(2,8).toUpperCase();
+          try{ localStorage.setItem("ecdr_dev",d); }catch(e){} }
   return d;
 }
 function isMobileUA(){ return /Mobi|Android|iPhone|iPad|iPod/i.test((navigator&&navigator.userAgent)||""); }
@@ -2772,6 +2791,98 @@ function teamMonthStat(name, allTasks, ym){
     tAll: tasks.length,
   };
 }
+// ── 本月成效的圖表（v126）────────────────────────────────────────────
+// 原本只有一張七欄的表。表能給精確值，但看不出「誰在哪幾天有產出、誰斷檔、
+// 月底有沒有塞車」—— 那是形狀問題，要用圖。表留著，圖加在上面。
+//
+// 兩張圖各自回答一個問題：
+//   熱力圖  這個月每一天、每個人各完成幾支（時間×人的分布）
+//   長條圖  這個月誰做了多少（單一量的排序比較）
+// 兩張都只列會剪片的人 —— 行銷／客服／出貨不剪片，畫出來整列是空的，
+// 看起來像「這個人沒做事」，那是騙人的。他們的交辦完成在下面的表裡。
+
+// 一個月有幾天（ym = "YYYY-MM"）
+function ymDays(ym){ const y=+String(ym).slice(0,4), m=+String(ym).slice(5,7); return new Date(y,m,0).getDate(); }
+// ym 這個月第 d 天是禮拜幾
+function ymDow(ym,d){ return new Date(`${ym}-${String(d).padStart(2,"0")}T00:00:00`).getDay(); }
+// 一人一列、一天一格：那天完成上片幾支
+function teamHeatData(staff, ym){
+  const days=ymDays(ym);
+  const idx={}; const rows=staff.map(u=>{ const r={u, cells:new Array(days).fill(0), total:0}; idx[u.name]=r; return r; });
+  (STATE.videos||[]).forEach(v=>{
+    if(!isPublished(v)) return;
+    const f=String(v.finishedAt||"").slice(0,10);
+    if(f.slice(0,7)!==ym) return;
+    const r=idx[v.editor]; if(!r) return;
+    const d=+f.slice(8,10); if(!(d>=1&&d<=days)) return;
+    r.cells[d-1]++; r.total++;
+  });
+  const dayTotals=new Array(days).fill(0);
+  rows.forEach(r=>r.cells.forEach((n,i)=>{ dayTotals[i]+=n; }));
+  const max=rows.reduce((a,r)=>Math.max(a, ...r.cells), 0);
+  // 多的排上面，跟下面的長條圖同一個順序 —— 兩張圖的列對得起來才好互相參照
+  rows.sort((a,b)=>b.total-a.total || String(a.u.name).localeCompare(String(b.u.name)));
+  return {days, rows, dayTotals, max};
+}
+// 幾支 → 第幾階顏色（0＝沒有）。五階，最大值撐滿最深的那一階。
+function heatLevel(n, max){
+  if(!n) return 0;
+  if(max<=1) return 5;
+  return Math.max(1, Math.min(5, Math.ceil(n/max*5)));
+}
+function teamHeatCard(staff, ym){
+  const list=staff.filter(u=>!noEdit(u));
+  if(!list.length) return "";
+  const {days, rows, dayTotals, max}=teamHeatData(list, ym);
+  const todayD=(today.slice(0,7)===ym)? +today.slice(8,10) : days;   // 這個月的話，今天之後還沒發生
+  const dow=T("日,一,二,三,四,五,六","Su,Mo,Tu,We,Th,Fr,Sa").split(",");   // 中文一個字、英文兩個字母
+  const head=Array.from({length:days},(_,i)=>{ const d=i+1, w=ymDow(ym,d);
+    return `<th class="hm-d${(w===0||w===6)?' wk':''}${d===todayD?' now':''}" title="${ym}-${String(d).padStart(2,"0")}（${dow[w]}）">${d}</th>`; }).join("");
+  const body=rows.map(r=>`<tr>
+      <th class="hm-n" title="${esc(r.u.name)}">${esc(r.u.name)}</th>
+      ${r.cells.map((n,i)=>{ const d=i+1, future=d>todayD;
+        if(future) return `<td class="hm-c hm-f"></td>`;
+        const lv=heatLevel(n,max);
+        const tip=`${r.u.name}・${ym}-${String(d).padStart(2,"0")} ${dow[ymDow(ym,d)]}　`
+          + (n? T("完成 "+n+" 支","published "+n) : T("沒有完成上片","nothing published"));
+        return `<td class="hm-c l${lv}" title="${esc(tip)}">${n?`<span>${n}</span>`:""}</td>`;
+      }).join("")}
+      <td class="hm-t">${r.total}</td></tr>`).join("");
+  const foot=`<tr><th class="hm-n hm-sum">${T("每日合計","Daily")}</th>
+      ${dayTotals.map((n,i)=>`<td class="hm-c hm-sum">${(i+1)<=todayD&&n?n:""}</td>`).join("")}
+      <td class="hm-t hm-sum">${dayTotals.reduce((a,b)=>a+b,0)}</td></tr>`;
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <b style="font-size:15px">${T("每天完成上片","Published per day")}</b>
+      <span class="hm-key">${T("少","less")}
+        ${[0,1,2,3,4,5].map(l=>`<i class="hm-c l${l}"></i>`).join("")}
+        ${T("多","more")}${max?`　<span class="muted">${T("單日最多 "+max+" 支","peak "+max)}</span>`:""}</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">${T(
+      "顏色越深＝那天完成越多，淺灰格＝那天沒有完成上片；今天之後的日子不畫格子。",
+      "Darker = more finished that day; a pale cell means none. Days after today are left undrawn.")}</div>
+    <div class="hm-wrap"><table class="hm">
+      <thead><tr><th class="hm-n"></th>${head}<th class="hm-t">${T("合計","Total")}</th></tr></thead>
+      <tbody>${body}${foot}</tbody></table></div>
+  </div>`;
+}
+// 本月完成上片排行：單一數量的比較，橫條最好讀（名字長度不影響、直接標數字）
+function teamBarCard(months){
+  const list=months.filter(x=>!noEdit(x.u)).slice().sort((a,b)=>b.m.count-a.m.count || String(a.u.name).localeCompare(String(b.u.name)));
+  if(!list.length) return "";
+  const max=Math.max(1, ...list.map(x=>x.m.count));
+  return `<div class="card">
+    <b style="font-size:15px">${T("本月完成上片","Published this month")}</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">${T(
+      "括號是其中有帶商品的支數。","In brackets: how many carried a product.")}</div>
+    <div class="barlist">${list.map(({u,m})=>`
+      <div class="bl-row" title="${esc(u.name)}：${T("完成 "+m.count+" 支","published "+m.count)}${m.sales?T("，帶商品 "+m.sales+" 支",", "+m.sales+" with product"):""}">
+        <span class="bl-n">${esc(u.name)}</span>
+        <span class="bl-track"><span class="bl-bar" style="width:${m.count?Math.max(2,Math.round(m.count/max*100)):0}%"></span></span>
+        <span class="bl-v">${m.count}${m.sales?`<i>（${m.sales}）</i>`:""}</span>
+      </div>`).join("")}</div>
+  </div>`;
+}
 // 一件交辦的顯示：誰交辦的 → 收到沒 → 做完沒 → 處理結果
 function teamTaskRow(t){
   const st=t.done?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`
@@ -2912,6 +3023,11 @@ function viewTeam(){
   ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
     <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
   <h3 style="margin:24px 0 10px">${T("本月成效","This month")} <span class="muted" style="font-size:13px;font-weight:400">${T(+ym.slice(0,4)+" 年 "+(+ym.slice(5,7))+" 月", ym)}</span></h3>
+  ${teamHeatCard(staff, ym)}
+  ${teamBarCard(months)}
+  ${staff.some(noEdit)?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
+    "上面兩張圖只列會剪片的同仁 —— 行銷／客服／出貨不剪片，畫進去整列都是空的，看起來會像沒做事。他們的交辦完成與出勤在下面的表裡。",
+    "The two charts above only list people who cut videos. Everyone else's tasks and attendance are in the table below.")}</div>`:''}
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th><th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th><th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
@@ -5220,7 +5336,17 @@ function showModal(title, inner, onConfirm, confirmLabel){
       ${onConfirm?`<button class="btn" id="modalConfirm">${esc(confirmLabel||T("確認送出","Submit"))}</button>`:""}
     </div></div></div>`;
   root.innerHTML = html;
-  if(onConfirm){ document.getElementById("modalConfirm").onclick=async()=>{ const r=await onConfirm(); if(r!==false) closeModal(); }; }
+  // 確認鍵：按下去到做完之間先鎖住（避免連點兩次做兩遍），而且**絕不能靜靜失敗** ——
+  // 原本 onConfirm 一丟例外，closeModal 就不會跑，畫面完全沒反應，
+  // 使用者看到的就是「這顆按鈕點不下去」，然後開始重整、重按、找人問。
+  if(onConfirm){ const btn=document.getElementById("modalConfirm");
+    btn.onclick=async()=>{
+      if(btn.disabled) return;
+      btn.disabled=true; const label=btn.textContent; btn.textContent=T("處理中…","Working…");
+      try{ const r=await onConfirm(); if(r!==false) closeModal(); }
+      catch(e){ toast(T("這個動作沒有完成："+((e&&e.message)||e), "That didn't go through: "+((e&&e.message)||e)), true); }
+      finally{ if(btn.isConnected){ btn.disabled=false; btn.textContent=label; } }
+    }; }
 }
 // 改到一半想離開時的提醒（× 鍵與點視窗外都用這一則，講法一致）
 function warnUnsaved(){ toast(T("還沒存檔喔 —— 請按「儲存修改」，不要的話按「取消編輯」",

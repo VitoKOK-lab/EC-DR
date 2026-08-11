@@ -57,6 +57,47 @@
             background:var(--chip);color:var(--muted);border:1px solid var(--line)}
   /* 月排程日視窗裡改日期／移出排程照舊可以按 —— 排程跟剪輯是兩條獨立的線 */
   tr.vlock input,tr.vlock .btn{opacity:1;cursor:pointer}
+  /* ===== 本月成效的圖表（v126）=====
+     熱力圖用「一個色相、由淺到深」的序列色階 —— 深淺就是多寡，不用彩虹。
+     最淺的一階故意接近底色（＝幾乎沒有），所以每一格有數字直接標在上面，
+     底下也留著原本那張精確數字的表，不必只靠顏色判讀。 */
+  .hm-wrap{overflow-x:auto;margin-top:10px;-webkit-overflow-scrolling:touch}
+  table.hm{border-collapse:separate;border-spacing:2px;font-size:11px}
+  table.hm th,table.hm td{padding:0;font-weight:400}
+  table.hm .hm-n{position:sticky;left:0;z-index:1;background:var(--panel);
+    text-align:left;padding:0 8px 0 0;white-space:nowrap;font-size:12px;font-weight:600;
+    text-transform:none;letter-spacing:0;font-family:var(--sans);color:var(--txt)}
+  table.hm .hm-d{color:var(--faint);font-size:10px;text-align:center;min-width:17px;padding-bottom:2px;
+    letter-spacing:0;font-family:var(--sans)}
+  table.hm .hm-d.wk{color:var(--gold-dk)}
+  /* 今天：底下加一條線，跟週末的金色分得開（只靠顏色深淺分不出來） */
+  table.hm .hm-d.now{color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent)}
+  table.hm .hm-c{width:17px;height:17px;border-radius:3px;text-align:center;line-height:17px}
+  table.hm .hm-c span{font-size:9.5px;font-weight:700}
+  /* 序列色階：同一個金色相，L 由淺到深，每階至少差 0.06。
+     這幾條不綁在 table.hm 底下 —— 上面的圖例也要用同一組顏色，不然圖例會是空白的。 */
+  .hm-c.l0{background:var(--panel2);color:var(--txt)}
+  .hm-c.l1{background:#EFE4C6;color:var(--txt)}
+  .hm-c.l2{background:#DCCB9C;color:var(--txt)}
+  .hm-c.l3{background:#C5B382;color:var(--txt)}
+  .hm-c.l4{background:#A2894F;color:#fff}
+  .hm-c.l5{background:#6B5829;color:#fff}
+  /* 還沒到的日子：完全不畫格子，讓整片格線在今天就停住 —— 一眼就看得出月份走到哪 */
+  table.hm .hm-c.hm-f{background:transparent}
+  table.hm .hm-t{padding-left:8px;font-size:12px;font-weight:700;text-align:right;white-space:nowrap;
+    letter-spacing:0;font-family:var(--sans);color:var(--txt)}
+  table.hm .hm-sum{color:var(--muted);font-weight:600;background:transparent}
+  .hm-key{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)}
+  .hm-key i{display:inline-block;width:12px;height:12px;border-radius:3px}
+  /* 橫條排行：細長條、資料端圓角、數字直接標在旁邊（不必再配一個圖例） */
+  .barlist{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+  .bl-row{display:flex;align-items:center;gap:8px}
+  .bl-n{flex:0 0 76px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600}
+  .bl-track{flex:1;min-width:0;height:12px;background:var(--panel2);border-radius:3px;overflow:hidden}
+  .bl-bar{display:block;height:100%;background:var(--accent);border-radius:0 3px 3px 0}
+  .bl-v{flex:none;font-size:13px;font-weight:700;min-width:44px;text-align:right}
+  .bl-v i{font-style:normal;font-weight:400;font-size:11px;color:var(--muted)}
+  @media (max-width:520px){ .bl-n{flex-basis:60px} }
   /* 標籤篩選收合列：跟其他折疊同一個外觀，但不佔一整張卡的份量 */
   .tagfold{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0}
   .tagfold>summary{padding:9px 12px;font-size:13.5px}
@@ -306,12 +347,18 @@
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
   /* 彈窗：淡入上浮進場＋燙金頂線＋標題 ✦ 簽名 */
   /* 彈窗只能上下捲動、禁止左右滑（內容一律收在寬度內） */
-  .modal .box{position:relative;background:var(--panel);border-radius:10px;padding:24px;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:var(--shadow2);border:1px solid var(--line);animation:popIn .32s cubic-bezier(.2,.7,.3,1) both}
+  .modal .box{position:relative;background:var(--panel);border-radius:10px;padding:24px 24px 0;max-width:680px;width:100%;max-height:88vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;box-shadow:var(--shadow2);border:1px solid var(--line);animation:popIn .32s cubic-bezier(.2,.7,.3,1) both}
   .modal .box input,.modal .box select,.modal .box textarea{max-width:100%}
   .modal .box::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--foil);background-size:200% 100%;animation:foilFlow 7s linear infinite}
   .modal h3{font-family:var(--serif);font-weight:700;margin:0 0 16px;letter-spacing:.5px}
   .modal h3::before{content:"✦ ";color:var(--signal);font-size:14px}
   .modalFoot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+  /* 彈窗底部的按鈕永遠黏在視窗底下。
+     內容一長（交辦工作十幾件、影片一整排），「確認」就會被推到捲動區的下面 ——
+     視窗自己會捲，但使用者捲的是整頁，捲了沒反應，看起來就是「這顆按鈕點不下去」。
+     黏住之後不管內容多長都按得到。只有彈窗裡的 modalFoot 要這樣，設定頁那幾個不動。 */
+  .modal .box .modalFoot{position:sticky;bottom:0;z-index:1;background:var(--panel);
+    margin-top:20px;padding:14px 0 24px;box-shadow:0 -10px 14px -10px rgba(43,24,34,.14)}
 
   /* 月曆 — 質感版：白卡 + 頂部色條標示狀態 + 襯線大數字 */
   .calhead{display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:16px}
@@ -675,7 +722,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=eb1fbd2604e5"></script>
-<script type="module" src="fb.js?v=eb1fbd2604e5"></script>
+<script src="app.js?v=b9df5e329e1a"></script>
+<script type="module" src="fb.js?v=b9df5e329e1a"></script>
 </body>
 </html>
