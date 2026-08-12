@@ -49,6 +49,9 @@ function reset(){
 // 「待認領」那張卡的折疊區段
 const poolFold=(h)=>{ const parts=h.split('<details class="fold"');
   return parts.find(p=>p.includes("待認領（毛片＋二創版本）"))||""; };
+// 這個折疊展開了沒：只看 <details …> 那個標籤本身有沒有 open 屬性。
+// v129 起標籤上多了 data-fold="…"（記住開合用），不能再靠「前 10 個字裡有沒有 open」。
+const foldIsOpen=(chunk)=>/(^|\s)open(\s|>|$)/.test(String(chunk).split(">")[0]);
 const inPool=(h)=>{ const seg=(h.split("待認領（毛片＋二創版本）")[1]||"").split("</table>")[0];
   return POOL.map(v=>v.id).filter(id=>seg.includes("'"+id+"'")); };
 let pass=0, fail=0;
@@ -59,18 +62,18 @@ reset();
 { const w=viewWork();
   ok("搜尋框用 oninput（邊打邊篩）", /id="pool_q"[^>]*oninput="setPoolQ\(this\.value\)"/.test(w));
   ok("影片庫也是邊打邊篩（行為一致）", viewVideos().includes('id="vid_q"') && /id="vid_q"[^>]*oninput=/.test(viewVideos()));
-  ok("按 Enter 也還是有效（習慣按的人不會壞）", w.includes("if(event.key==='Enter')setPoolQ(this.value)")); }
+  ok("按 Enter 也還是有效（習慣按的人不會壞）", w.includes("if(enterKey(event))setPoolQ(this.value)")); }
 
 // ══ ② 搜尋之後折疊要自己打開（不用再點一次「待認領」）══
 reset();
-ok("沒搜尋時：待認領維持收合（不佔畫面）", !/^ class="fold" open|^ open/.test(poolFold(viewWork()).slice(0,12)) && !poolFold(viewWork()).slice(0,10).includes("open"));
+ok("沒搜尋時：待認領維持收合（不佔畫面）", !foldIsOpen(poolFold(viewWork())));
 reset(); setPoolQ("珠寶");
-ok("一搜尋：待認領自動展開", poolFold(viewWork()).slice(0,10).includes("open"));
+ok("一搜尋：待認領自動展開", foldIsOpen(poolFold(viewWork())));
 ok("搜尋結果就在展開的折疊裡", JSON.stringify(inPool(viewWork()))===JSON.stringify(["P1","P3"]));
 reset(); setPoolFilter("shopee");
-ok("點快選分類：待認領也自動展開", poolFold(viewWork()).slice(0,10).includes("open"));
+ok("點快選分類：待認領也自動展開", foldIsOpen(poolFold(viewWork())));
 reset(); setPoolQ("珠寶"); setPoolQ("");
-ok("清掉搜尋字：折疊回到收合", !poolFold(viewWork()).slice(0,10).includes("open"));
+ok("清掉搜尋字：折疊回到收合", !foldIsOpen(poolFold(viewWork())));
 
 // ══ ②-b 按 Enter 之後也不能把待認領收掉（要能直接點搜到的片名）══
 reset();
@@ -80,7 +83,7 @@ reset();
   ok("Enter 走的是 setPoolQ（跟打字同一條路）", onkey.includes("setPoolQ(this.value)"));
   setPoolQ("珠寶");                       // ← Enter 觸發的就是這個
   const w=viewWork();
-  ok("按 Enter 後待認領仍然展開（沒被縮到最小）", poolFold(w).slice(0,10).includes("open"));
+  ok("按 Enter 後待認領仍然展開（沒被縮到最小）", foldIsOpen(poolFold(w)));
   ok("按 Enter 後搜到的片名點得到", w.includes("editVideo('P1')") && w.includes("editVideo('P3')"));
   ok("按 Enter 後搜尋字還在框裡", w.includes(`id="pool_q" value="珠寶"`)); }
 

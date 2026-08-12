@@ -377,6 +377,11 @@ function closeHeaderMenu(){
   const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
   pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
+// 摺疊開合的記錄：toggle 不會冒泡，所以掛在捕獲階段（往下走的時候一樣會經過 document）
+try{ document.addEventListener("toggle", (e)=>{
+  const d=e&&e.target; if(!d||d.tagName!=="DETAILS") return;
+  const k=d.getAttribute&&d.getAttribute("data-fold"); if(k) FOLD_OPEN[k]=!!d.open;
+}, true); }catch(e){}
 // 關分頁／重新整理／按上一頁時，如果彈窗裡還有沒存的修改就先問一聲。
 // （文案打了一大段還沒存，手滑重整就沒了 —— 這是唯一救得回來的時機）
 // 瀏覽器只認「有沒有取消事件」，自訂訊息現在都被忽略，所以文字寫什麼不重要。
@@ -597,6 +602,11 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // 給字串型 onclick="fn('...')" 用：跳脫反斜線與單引號，避免名稱含 ' 時把 JS 字串截斷
 const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+// 注音／拼音選字的時候按 Enter 只是「挑這個字」，不是要送出。
+// 那一下的 keydown 照樣會跑進來、event.key 也還是 'Enter' ——
+// 沒擋掉的話字還沒選完就被送出，而且直接存檔（回報：格子的文字會被送出而且存檔）。
+// isComposing 是標準做法；少數舊瀏覽器不給就退回看 keyCode 229（IME 專用碼）。
+function enterKey(e){ return !!e && e.key==="Enter" && !e.isComposing && e.keyCode!==229; }
 // ===== 簡體 → 繁體（OpenCC，只在「顯示」時轉換，不動資料庫）=====
 let __s2t=null; const __s2tCache=new Map();
 function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2tCache.get(s); if(r===undefined){ try{ r=__s2t(s); }catch(e){ r=s; } __s2tCache.set(s,r); } return r; }
@@ -650,7 +660,7 @@ function pwGateHTML(){
     <label style="margin-top:14px">${T("新密碼（至少 "+PW_MIN+" 碼）","New password (at least "+PW_MIN+" characters)")}</label>
     <input id="pwg1" type="password" autocomplete="new-password" placeholder="${T("輸入新密碼","Enter a new password")}">
     <label style="margin-top:10px">${T("再輸入一次","Enter it again")}</label>
-    <input id="pwg2" type="password" autocomplete="new-password" placeholder="${T("再輸入一次","Enter it again")}" onkeydown="if(event.key==='Enter')savePwGate()">
+    <input id="pwg2" type="password" autocomplete="new-password" placeholder="${T("再輸入一次","Enter it again")}" onkeydown="if(enterKey(event))savePwGate()">
     <button class="btn" style="width:100%;margin-top:14px;font-size:16px;padding:12px" onclick="savePwGate()">${T("設定密碼並開始使用","Save and start")}</button>
     <div class="muted" style="font-size:12px;margin-top:10px">${T("忘記密碼時，請管理員到「設定 → 成員」幫你重設。","If you forget it, ask the admin to reset it in Settings → Members.")}</div>
   </div>`;
@@ -676,6 +686,9 @@ function render(){
   const same=(LAST_RENDER_TAB===CUR_TAB);
   const sy=same?window.scrollY:0;
   const vsOld=v.querySelector(".vidscroll"); const vst=(same&&vsOld)?vsOld.scrollTop:0;
+  // 自己會捲動的區塊（待認領清單…）也要記位置。認領一支之後清單重畫，
+  // 沒有這段就會跳回那一塊的最上面，下一支要重新捲下去找。
+  const keep=same?keepScrollSnapshot(v):{};
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
@@ -689,7 +702,18 @@ function render(){
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
+  keepScrollRestore(v, keep);
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
+}
+// 帶 class="keepscroll" 且有 id 的區塊，重繪前後把捲動位置接回去
+function keepScrollSnapshot(v){
+  const m={};
+  try{ (v.querySelectorAll(".keepscroll[id]")||[]).forEach(el=>{ if(el.scrollTop) m[el.id]=el.scrollTop; }); }catch(e){}
+  return m;
+}
+function keepScrollRestore(v, m){
+  if(!m) return;
+  try{ Object.keys(m).forEach(id=>{ const el=v.querySelector('[id="'+id+'"]'); if(el) el.scrollTop=m[id]; }); }catch(e){}
 }
 
 // ===================================================================
@@ -1023,9 +1047,20 @@ function isMsg(t){ return !!(t && t.kind==="msg"); }        // 員工主動發�
 function isTask(t){ return !!(t && !t.kind); }
 function realTasks(list){ return (list||[]).filter(isTask); }
 function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isNotice); }
+// 今天要做的事：今天排的 ＋ **以前排的但還沒做完的**。
+// 原本只有「主管交辦的」會延到隔天，自己排的沒做完隔天就消失 —— 那等於幫人忘記，
+// 而且看板上也查不到它去哪了。沒做完就一直留在原本的位置，直到打勾為止。
+// 排在未來的不算（那些在「之後要做」，到那天才會進來）。
+function taskOverdue(t){ return isTask(t) && !t.done && String(t.date||"")<today; }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>isTask(t) && t.user===currentUser() && (t.date===today || (t.assignedBy && !t.done)))
-  .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+  .filter(t=>isTask(t) && t.user===currentUser() && (t.date===today || taskOverdue(t)))
+  .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))
+             || String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+// 沒做完的事拖了幾天（今天排的回 0）。畫面上要標出來，不然清單會無聲地越積越長。
+function taskLateDays(t){ const d=String((t&&t.date)||""); if(!d || d>=today) return 0; return daysBetween(d, today); }
+function taskLatePill(t){ const n=taskLateDays(t); if(!n) return "";
+  return ` <span class="pill ${n>=3?'em':'wa'}" style="font-size:10px">${
+    n===1?T("昨天沒做完","from yesterday"):T(n+" 天前的", n+"d overdue")}</span>`; }
 // 我的 HR 通知：今天發的，加上以前發但我還沒按「收到」的（不會漏看）
 function myNotices(){ return allNotices()
   .filter(t=>t.user===currentUser() && (t.date===today || !t.ack))
@@ -1081,7 +1116,10 @@ function workPresets(){
 }
 // 今天已經有的（不管是自己加的還是主管交辦的）就不要重複帶入
 function presetPending(){
-  const have=new Set(myTasks().map(t=>String(t.title||"").trim()));
+  // 只看「今天」已經帶進來的。myTasks() 現在會把以前沒做完的一起帶著（v130），
+  // 拿它來判斷會讓昨天沒做完的那件「填寫今日工作日誌」把今天的按鈕吃掉 ——
+  // 每日固定工作是一天一件，昨天那件是昨天的帳。
+  const have=new Set(myTasks().filter(t=>t.date===today).map(t=>String(t.title||"").trim()));
   return workPresets().filter(t=>!have.has(t));
 }
 async function addPresetTask(title){ refreshToday();
@@ -1275,12 +1313,19 @@ function workReviewCard(me){
       ${rejected.map(v=>`<div style="margin-top:6px;padding:9px;background:var(--redbg);border-radius:5px">
         <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a>
         ${v.reviewNote?`<div class="muted" style="font-size:12px;margin-top:2px">${T("退回原因","Reason")}：${esc(v.reviewNote)}</div>`:''}</div>`).join("")}</div>`:''}
-    ${approvedTodo.length?`<details class="fold" style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
+    ${/* 順序＝該處理的先來：被退回（要動手）→ 還在等（要追）→ 已審過（做完了，收起來）。
+          v128 之前「已審過」排在「待審核」上面，7 支通過的把該追的擠到最下面，
+          使用者的說法是「審片還是在最下面」。 */''}
+    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
+        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
+    ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
         return n?`<span class="pill em" style="font-size:10px;margin-left:6px">${T(n+" 支還缺連結", n+" need links")}</span>`:""; })()
       }</summary><div class="foldbody">
-      ${approvedTodo.map(v=>{ const who=`${esc(v.reviewedBy||"Regina")} ${T("已審過","approved")}${v.reviewedAt?("・"+esc(String(v.reviewedAt).slice(0,10))):''}`;
+      ${approvedTodo.map(v=>{ const who=reviewByLabel(v, me);
         if(!linksDone(v)) return `<div style="margin-top:6px;padding:9px;background:var(--amberbg);border-radius:5px">
           <a href="javascript:void(0)" onclick="${openFn(v)}"><b>${shpBadge(v)}${esc(vidTitle(v))}</b></a> <span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>
           <div class="muted" style="font-size:12px;margin-top:2px">${who}</div></div>`;
@@ -1289,12 +1334,17 @@ function workReviewCard(me){
           <span class="muted" style="font-size:12px"> ${who}・${T("連結都補齊了","links all set")}</span></span>
           <button class="btn sec sm" style="flex:none" onclick="ackReviewedVid('${v.id}')" title="${T("收起這則通知","Dismiss this notice")}">${T("知道了","Got it")}</button></div>`; }).join("")}
       </div></details>`:''}
-    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
-      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a> <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
   </div>`:'';
   return rejCard;
+}
+// 「是誰按下通過的」寫成一句不會被誤讀的話。
+// 原本寫「泓儒 已審過・2026-08-03」—— 這份清單本來就只有自己的片，
+// 但名字擺在最前面，看的人會以為那一列是泓儒的。名字要包在「由 … 審過」中間。
+function reviewByLabel(v, me){
+  const by=String((v&&v.reviewedBy)||"");
+  const when=(v&&v.reviewedAt)?("・"+esc(String(v.reviewedAt).slice(5,10))):"";
+  if(by && by===me) return T("自己標的","self-marked")+when;
+  return T("由 ","approved by ")+esc(by||"Regina")+T(" 審過","")+when;
 }
 // ── 審片狀態：一支片現在到底審了沒（v128）──────────────────────────
 // 這支等審等幾天了（剪完那天算第 1 天）。
@@ -1311,12 +1361,9 @@ function reviewStateHTML(v){
   if(needsReview(v)) return `<span class="pill wa" style="font-size:10px">${T("還沒審","Not reviewed")}</span>${reviewWaitPill(v)}`;
   if(v.reviewStatus==="退回") return `<span class="pill em" style="font-size:10px">${T("退回","Sent back")}</span>`
     + (v.reviewNote?` <span class="muted" style="font-size:11px">${esc(v.reviewNote)}</span>`:"");
-  if(v.reviewStatus==="通過"){
-    const self=v.reviewedBy && v.reviewedBy===currentUser();
+  if(v.reviewStatus==="通過")
     return `<span class="pill ok" style="font-size:10px">${T("已審過","Approved")}</span>`
-      + `<span class="muted" style="font-size:11px;margin-left:5px">${esc(v.reviewedBy||"")}${
-          v.reviewedAt?"・"+esc(String(v.reviewedAt).slice(5,10)):""}${self?T("（自己標的）"," (self-marked)"):""}</span>`;
-  }
+      + `<span class="muted" style="font-size:11px;margin-left:5px">${reviewByLabel(v, currentUser())}</span>`;
   if(v.stage==="已上片" || String(v.publishedLink||"").trim())
     return `<span class="pill ok" style="font-size:10px">${T("已上片","Published")}</span>`;
   return `<span class="muted" style="font-size:11px">${T("不需審核","No review needed")}</span>`;
@@ -1337,7 +1384,7 @@ function workRecent7Card(me){
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
         <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
       <span style="flex:none">${reviewStateHTML(v)}</span></div>`).join("");
-  return `<details class="fold">
+  return `<details class="fold" ${foldState("work.recent7", false)}>
     <summary>${T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
       nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
     <div class="foldbody">
@@ -1384,19 +1431,36 @@ function workPoolCard(pool, poolShown, poolCnt, me){
     <div id="pool_tabs" class="vtabs" style="margin-top:10px">${poolTabsHTML(poolCnt)}</div>
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
       <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、來源…）","Find a video (name, code, source…)")}"
-        style="flex:1;min-width:150px" oninput="setPoolQ(this.value)" onkeydown="if(event.key==='Enter')setPoolQ(this.value)">
+        style="flex:1;min-width:150px" oninput="setPoolQ(this.value)" onkeydown="if(enterKey(event))setPoolQ(this.value)">
       <span id="pool_clear">${poolClearHTML()}</span>
     </div>
-    <div id="pool_wrap" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
+    <div id="pool_wrap" class="keepscroll" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody id="pool_list">${poolRowsHTML(poolShown, me)}</tbody></table>
     </div>
   </div>`;
 }
 // 折疊區塊：次要的東西收進來，點了才展開
+// ── 摺疊的開合狀態要撐得過重繪（v129）──────────────────────────────
+// Firestore 一同步就整頁重繪。認領一支毛片之後，「待認領」自己收起來、
+// 使用者被丟回頁面上方 —— 要再點開、再捲下去才能認領下一支，一連認領五支就痛苦五次。
+// 只記使用者「明確按過」的那幾個；沒碰過的照原本的預設值。
+let FOLD_OPEN={};
+// 只標一個 data-fold；開合由下面那個委派監聽器記錄。
+// 不用 inline 的 ontoggle —— 那要把 key 逃脫兩層，屬性值裡還會冒出 this.open。
+// data-fold 放的是標題的雜湊、不是標題本身：標題原文寫進屬性等於把同一段字
+// 在 DOM 裡出現兩次，任何「找到標題再往後看」的程式（含測試）都會被前面那個假的絆倒。
+function foldKey(s){ let h=0; const t=String(s==null?"":s);
+  for(let i=0;i<t.length;i++) h=(h*31 + t.charCodeAt(i))|0;
+  return "f"+(h>>>0).toString(36); }
+function foldState(key, defOpen){
+  const k=foldKey(key);
+  const on = Object.prototype.hasOwnProperty.call(FOLD_OPEN, k) ? FOLD_OPEN[k] : !!defOpen;
+  return `data-fold="${k}"${on?" open":""}`;
+}
 function fold(title, count, body, open){
   if(!body) return "";
-  return `<details class="fold" ${open?"open":""}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
+  return `<details class="fold" ${foldState(title, open)}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
     <div class="foldbody">${body}</div></details>`;
 }
 // 我排在未來的工作（到那天才會進今日待辦）
@@ -1440,7 +1504,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
     const ttl=esc(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
-    rows.push(todoRow(assigned?"📌":"•", ttl, sub+note, act, t.done));
+    rows.push(todoRow(assigned?"📌":"•", ttl+taskLatePill(t), sub+note, act, t.done));
   });
   // ③ 手上的影片
   myWork.forEach(v=>{
@@ -1465,8 +1529,8 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     <div style="margin-top:6px">${rows.join("")||`<div class="emptyState"><span class="es-mk">✦</span>${T("今天沒有待辦，可以到下面認領工作","Nothing today — claim something below")}</div>`}</div>
     ${presets}
     <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
-      <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(event.key==='Enter')createTask()">
-      <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(event.key==='Enter')createTask()">${contactDatalist('wp_contact_dl')}
+      <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(enterKey(event))createTask()">
+      <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(enterKey(event))createTask()">${contactDatalist('wp_contact_dl')}
       <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
       <button class="btn sm" style="flex:none" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button>
     </div>
@@ -1498,7 +1562,7 @@ function myMsgFold(){
   const body=`<div class="row" style="gap:6px;flex-wrap:wrap">
       ${toSel}
       <input id="msg_txt" placeholder="${T("想說的事（請假、反映問題、需要什麼…）","What's on your mind…")}" style="flex:2;min-width:150px"
-        onkeydown="if(event.key==='Enter')sendMsg()">
+        onkeydown="if(enterKey(event))sendMsg()">
       <button class="btn sm" style="flex:none" onclick="sendMsg()">${T("送出","Send")}</button>
     </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`;
   return fold(T("找主管／人資說一件事","Message HR / manager"), unseen||null, body, false);
@@ -1573,7 +1637,7 @@ function p2pInboxCard(){
         : `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
              <span class="pill ok" style="font-size:10px;flex:none">${T("已收到","Got it")}</span>
              <input id="p2pr_${m.id}" placeholder="${T("回覆他…","Reply…")}" style="flex:1;min-width:150px"
-               onkeydown="if(event.key==='Enter')p2pReply('${m.id}')">
+               onkeydown="if(enterKey(event))p2pReply('${m.id}')">
              <button class="btn sm" style="flex:none" onclick="p2pReply('${m.id}')">${T("回覆","Reply")}</button></div>`}
     </div>`).join("");
   return `<div class="card" style="border-color:var(--gold)">
@@ -1605,7 +1669,7 @@ function p2pFold(){
     ? `<div class="row" style="gap:6px;flex-wrap:wrap">
         <select id="p2p_to" style="width:auto;min-width:120px"><option value="">${T("傳給誰…","To…")}</option>${targets.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
         <input id="p2p_txt" placeholder="${T("想跟同事說的事…","Message a colleague…")}" style="flex:2;min-width:150px"
-          onkeydown="if(event.key==='Enter')sendP2P()">
+          onkeydown="if(enterKey(event))sendP2P()">
         <button class="btn sm" style="flex:none" onclick="sendP2P()">${T("送出","Send")}</button>
       </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`
     : `<p class="muted" style="font-size:13px;margin:0">${T("目前沒有可以傳訊息的同事。","No colleagues to message yet.")}</p>`;
@@ -1643,7 +1707,7 @@ function msgInboxCard(){
       <div style="margin-top:3px">${esc(m.title)}</div>
       ${msgOpen(m)
         ? `<div class="row" style="gap:6px;margin-top:6px">
-             <input id="mr_${m.id}" placeholder="回覆他…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')msgReply('${m.id}')">
+             <input id="mr_${m.id}" placeholder="回覆他…" style="flex:1;min-width:0" onkeydown="if(enterKey(event))msgReply('${m.id}')">
              <button class="btn sm" style="flex:none" onclick="msgReply('${m.id}')">回覆</button></div>`
         : `<div style="margin-top:4px;font-size:13px"><span class="muted">${esc(m.replyBy||"")} 回覆：</span>${esc(m.reply)}
              <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span></div>`}
@@ -2175,7 +2239,7 @@ function workIssueCard(){
       <div class="muted" style="font-size:12px;margin-top:2px">${T("上班","In")} ${esc(String(s.clockIn||"").slice(11,16)||"—")}　${T("下班","Out")} ${esc(String(s.clockOut||"").slice(11,16)||"—")}</div>
       <div class="row" style="gap:6px;margin-top:6px">
         <input id="isn_${esc(s.id)}" placeholder="${T("原因（例：交通事故、看醫生、主管同意提早離開）","Reason")}" style="flex:1;min-width:0"
-          onkeydown="if(event.key==='Enter')saveIssueNote('${esc(jsEsc(s.id))}')">
+          onkeydown="if(enterKey(event))saveIssueNote('${esc(jsEsc(s.id))}')">
         <button class="btn sm" style="flex:none" onclick="saveIssueNote('${esc(jsEsc(s.id))}')">${T("送出","Send")}</button>
       </div></div>`).join("")}
   </div>`;
@@ -2239,7 +2303,7 @@ function myAttendCard(){
     <div class="muted" style="font-size:12px;margin-top:8px">
       ${m+1} 月出勤 ${s.days} 天${w.flex?"":`・遲到 ${s.late} 次・早退 ${s.early} 次`}${s.noOut?`・${s.noOut} 天沒打下班`:""}
       ${st?`　<span style="opacity:.75">出勤自 ${esc(st)} 起算</span>`:'　<span style="opacity:.75">還沒開始起算（設定密碼後才開始）</span>'}</div>
-    ${attRows(me,ym).length?`<details class="fold" style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
+    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
       <div class="foldbody">${attDetailTable(me, ym)}</div></details>`:""}
   </div>`;
 }
@@ -2479,7 +2543,9 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       return `<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
         <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
         <span class="linetitle">${esc(vidTitle(v))}</span></div>`; }).join("");
-    const tasks=realTasks(allTasks).filter(t=>t.user===name&&(t.date===today||(t.assignedBy&&!t.done))).sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+    // 跟員工自己看到的那份一致：今天排的 ＋ 以前排的但還沒做完的（不分是誰排的）
+    const tasks=realTasks(allTasks).filter(t=>t.user===name&&(t.date===today||taskOverdue(t)))
+      .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))||String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
     const taskRows=tasks.map(t=>{
       const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
         :(t.assignedBy&&!t.ack)?'<span class="pill em" style="font-size:10px">未讀</span>'
@@ -2500,7 +2566,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
       ${(wipRows&&!isCS)?`<div style="margin-top:8px">${wipRows}</div>`:''}
       ${taskRows?`<div style="margin-top:8px">${taskRows}</div>`:`<p class="muted" style="font-size:12px;margin:8px 0 0">今天還沒有交辦事項</p>`}
       ${readOnly?'':`<div class="row" style="gap:6px;margin-top:10px">
-        <input id="fa_${idx}" placeholder="交辦 ${esc(name)} 一件事…" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')flowAssign(${idx},'${esc(jsEsc(name))}')">
+        <input id="fa_${idx}" placeholder="交辦 ${esc(name)} 一件事…" style="flex:1;min-width:0" onkeydown="if(enterKey(event))flowAssign(${idx},'${esc(jsEsc(name))}')">
         <button class="btn sm" style="flex:none" onclick="flowAssign(${idx},'${esc(jsEsc(name))}')">交辦</button></div>`}
     </div>`; }
 function viewFlow(){
@@ -2711,10 +2777,10 @@ function dashAssignTaskCard(){
       <div><label>選擇員工</label>
         <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs"])}</select></div>
       <div><label>交辦內容</label>
-        <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(event.key==='Enter')assignTaskSel()"></div>
+        <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(enterKey(event))assignTaskSel()"></div>
     </div>
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
-      <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(event.key==='Enter')assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
+      <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>`;
 }
@@ -3007,7 +3073,7 @@ function teamNoticeCompose(staff){
         ${STAFF_ROLES.map(r=>{ const n=staff.filter(u=>(u.role||"editor")===r).length;
             return n?`<option value="__${r}__">全體${esc(ROLE_LABEL[r])}（${n}）</option>`:""; }).join("")}
         ${groups.map(g=>`<optgroup label="${esc(g.zh)}">${g.people.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`).join("")}</select>
-      <input id="hrn_txt" placeholder="要通知大家的事…" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')hrNotify()">
+      <input id="hrn_txt" placeholder="要通知大家的事…" style="flex:1;min-width:180px" onkeydown="if(enterKey(event))hrNotify()">
       <button class="btn sm" style="flex:none" onclick="hrNotify()">送出通知</button>
     </div>
     ${rows?`<div style="margin-top:12px"><b style="font-size:13px">我發出的通知</b>${rows}</div>`:''}
@@ -3033,7 +3099,7 @@ function teamFilterBar(all, shown){
         .filter(r=>all.some(u=>(u.role||"editor")===r) || TEAM_GROUP===r)   // 沒有人的職位不列出來（剛開的職位不佔位）
         .map(r=>opt(r, ROLE_LABEL[r], ROLE_GROUP_EN[r])).join("")}</select>
     <input value="${esc(TEAM_Q)}" placeholder="${T("找人…","Find someone…")}" style="flex:1;min-width:110px"
-      onchange="teamSetQ(this.value)" onkeydown="if(event.key==='Enter')teamSetQ(this.value)">
+      onchange="teamSetQ(this.value)" onkeydown="if(enterKey(event))teamSetQ(this.value)">
     ${(TEAM_GROUP!=="all"||TEAM_Q)?`<span class="muted" style="font-size:12px">${T("顯示 "+shown.length+" / "+all.length+" 人","Showing "+shown.length+" of "+all.length)}</span>`:""}
   </div>`;
 }
@@ -3763,7 +3829,7 @@ function viewVideosTW(){
     </div>
     ${/* 標籤預設收起來（手機上 8 顆按鈕會佔掉三行）。已經選了的照樣寫在收合列上，
          不然使用者會忘記自己開著篩選 —— 這是漸進揭露，不是把資訊藏起來。 */''}
-    <details class="fold tagfold" id="vid_tagfold" ${VID_TAGS.size?"open":""} style="margin-top:10px">
+    <details class="fold tagfold" id="vid_tagfold" ${foldState("vid.tags", VID_TAGS.size>0)} style="margin-top:10px">
       <summary>${T("標籤篩選","Tags")}${VID_TAGS.size
         ? `<span class="n">${VID_TAGS.size}</span>`
         : `<span class="muted" style="font-weight:400;font-size:12px;margin-left:6px">${T("點開來挑","tap to filter")}</span>`}</summary>
@@ -3850,7 +3916,7 @@ function viewLog(){
     <div class="card">
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">
         <input id="lg_q" value="${esc(LOG_Q)}" placeholder="搜尋人名、動作、對象…" style="flex:2;min-width:150px"
-          onchange="logSetQ(this.value)" onkeydown="if(event.key==='Enter')logSetQ(this.value)">
+          onchange="logSetQ(this.value)" onkeydown="if(enterKey(event))logSetQ(this.value)">
         <select id="lg_who" style="width:auto" onchange="logSetWho(this.value)">
           <option value="">全部的人</option>
           ${who.map(n=>`<option value="${esc(n)}" ${LOG_WHO===n?"selected":""}>${esc(n)}</option>`).join("")}</select>
@@ -5084,7 +5150,7 @@ function setContactsCard(contactList, contactRows){
   return `<div class="card"><b>對接窗口名單（${contactList.length}）</b>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>窗口名稱</th><th></th></tr></thead>
     <tbody>${contactRows||`<tr><td class="muted">尚無對接窗口</td></tr>`}</tbody></table>
-    <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addContact()">
+    <div class="row" style="gap:8px;margin-top:12px"><input id="ct_name" placeholder="新增對接窗口名稱" style="flex:1;min-width:150px" onkeydown="if(enterKey(event))addContact()">
       <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
   </div>`;
 }
@@ -5158,7 +5224,7 @@ function viewSettings(){
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
       ${otherTags().map(t=>`<span class="tag" style="display:inline-flex;align-items:center;gap:6px">${esc(t)} <a href="javascript:void(0)" onclick="delVideoTag('${esc(jsEsc(t))}')" style="color:var(--red);text-decoration:none;font-weight:800">×</a></span>`).join("")||'<span class="muted">尚無自訂標籤</span>'}
     </div>
-    <div class="row" style="gap:8px;margin-top:12px"><input id="tag_new" placeholder="新增標籤名稱" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addVideoTagSel()">
+    <div class="row" style="gap:8px;margin-top:12px"><input id="tag_new" placeholder="新增標籤名稱" style="flex:1;min-width:150px" onkeydown="if(enterKey(event))addVideoTagSel()">
       <button class="btn" onclick="addVideoTagSel()">＋ 新增標籤</button></div>
   </div>
   ${setContactsCard(contactList, contactRows)}
