@@ -209,7 +209,7 @@
 | `id` | string | 文件 ID |
 | `kind` | string | 空＝交辦工作；`notice`＝HR 通知 |
 | `user` | string | 對象（= users.name） |
-| `date` | string | `YYYY-MM-DD`，當天計畫。**⚠️ 這是「排在哪一天」，不是「只有那一天看得到」**：`myTasks()` 收「`date` 是今天」＋「`date` 比今天早而且還沒 `done`」——沒做完的一直留在原本的位置直到打勾（v130；在那之前只有主管交辦的會延，自己排的隔天就消失）。排在未來的（`date > today`）不進今天，留在「之後要做」 |
+| `date` | string | `YYYY-MM-DD`，當天計畫。**⚠️ 這是「排在哪一天」，不是「只有那一天看得到」**（v130）。`myTasks()` 收三種：① `date` 是今天 ② `date` 比今天早**而且還沒 `done`**（沒做完就一直留著，沒有天數上限）③ **`doneAt` 是今天**（做完的當天還留著，隔天才收掉 —— 用 `doneAt` 不是 `date`，不然一件拖三天今天才做完的會一打勾就從畫面蒸發）。排在未來的（`date > today`）不進今天，留在「之後要做」 |
 | `title` | string | 工作項目／通知內容 |
 | `contact` | string | 對接窗口（選填，通知不用） |
 | `report` | string | 回報狀況（進度；通知不用） |

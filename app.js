@@ -1052,8 +1052,12 @@ function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isN
 // 而且看板上也查不到它去哪了。沒做完就一直留在原本的位置，直到打勾為止。
 // 排在未來的不算（那些在「之後要做」，到那天才會進來）。
 function taskOverdue(t){ return isTask(t) && !t.done && String(t.date||"")<today; }
+// 做完的當天還要留著，隔天才收掉。勾完就當場消失會讓人以為東西不見了，也沒辦法反悔。
+// 要看 doneAt（哪一天做完的）不是 date（哪一天排的）—— 一件拖了三天的事今天才做完，
+// 它的 date 是三天前，只看 date 的話一打勾就從畫面上蒸發。
+function taskDoneToday(t){ return !!(t && t.done && String(t.doneAt||"").slice(0,10)===today); }
 function myTasks(){ return Object.values((STATE&&STATE.tasks)||{})
-  .filter(t=>isTask(t) && t.user===currentUser() && (t.date===today || taskOverdue(t)))
+  .filter(t=>isTask(t) && t.user===currentUser() && (t.date===today || taskOverdue(t) || taskDoneToday(t)))
   .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))
              || String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
 // 沒做完的事拖了幾天（今天排的回 0）。畫面上要標出來，不然清單會無聲地越積越長。
@@ -2544,7 +2548,7 @@ function flowStaffCard(u, idx, allTasks, readOnly){
         <span class="pill ${slow?'em':'wa'}" style="font-size:10px;flex:none">${b==="新"?"新":("第"+b+"天")}</span>
         <span class="linetitle">${esc(vidTitle(v))}</span></div>`; }).join("");
     // 跟員工自己看到的那份一致：今天排的 ＋ 以前排的但還沒做完的（不分是誰排的）
-    const tasks=realTasks(allTasks).filter(t=>t.user===name&&(t.date===today||taskOverdue(t)))
+    const tasks=realTasks(allTasks).filter(t=>t.user===name&&(t.date===today||taskOverdue(t)||taskDoneToday(t)))
       .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))||String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
     const taskRows=tasks.map(t=>{
       const st=t.done?'<span class="pill ok" style="font-size:10px">完成</span>'
