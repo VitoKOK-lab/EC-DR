@@ -377,6 +377,11 @@ function closeHeaderMenu(){
   const pop=document.getElementById("hmenuPop"), gear=document.getElementById("hgearBtn"); if(!pop) return;
   pop.classList.add("hidden"); if(gear) gear.classList.remove("on"); }
 document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeHeaderMenu(); });
+// 摺疊開合的記錄：toggle 不會冒泡，所以掛在捕獲階段（往下走的時候一樣會經過 document）
+try{ document.addEventListener("toggle", (e)=>{
+  const d=e&&e.target; if(!d||d.tagName!=="DETAILS") return;
+  const k=d.getAttribute&&d.getAttribute("data-fold"); if(k) FOLD_OPEN[k]=!!d.open;
+}, true); }catch(e){}
 // 關分頁／重新整理／按上一頁時，如果彈窗裡還有沒存的修改就先問一聲。
 // （文案打了一大段還沒存，手滑重整就沒了 —— 這是唯一救得回來的時機）
 // 瀏覽器只認「有沒有取消事件」，自訂訊息現在都被忽略，所以文字寫什麼不重要。
@@ -676,6 +681,9 @@ function render(){
   const same=(LAST_RENDER_TAB===CUR_TAB);
   const sy=same?window.scrollY:0;
   const vsOld=v.querySelector(".vidscroll"); const vst=(same&&vsOld)?vsOld.scrollTop:0;
+  // 自己會捲動的區塊（待認領清單…）也要記位置。認領一支之後清單重畫，
+  // 沒有這段就會跳回那一塊的最上面，下一支要重新捲下去找。
+  const keep=same?keepScrollSnapshot(v):{};
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
@@ -689,7 +697,18 @@ function render(){
   v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
+  keepScrollRestore(v, keep);
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
+}
+// 帶 class="keepscroll" 且有 id 的區塊，重繪前後把捲動位置接回去
+function keepScrollSnapshot(v){
+  const m={};
+  try{ (v.querySelectorAll(".keepscroll[id]")||[]).forEach(el=>{ if(el.scrollTop) m[el.id]=el.scrollTop; }); }catch(e){}
+  return m;
+}
+function keepScrollRestore(v, m){
+  if(!m) return;
+  try{ Object.keys(m).forEach(id=>{ const el=v.querySelector('[id="'+id+'"]'); if(el) el.scrollTop=m[id]; }); }catch(e){}
 }
 
 // ===================================================================
@@ -1282,7 +1301,7 @@ function workReviewCard(me){
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
         <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
         <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
-    ${approvedTodo.length?`<details class="fold" style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
+    ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
         return n?`<span class="pill em" style="font-size:10px;margin-left:6px">${T(n+" 支還缺連結", n+" need links")}</span>`:""; })()
@@ -1346,7 +1365,7 @@ function workRecent7Card(me){
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
         <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
       <span style="flex:none">${reviewStateHTML(v)}</span></div>`).join("");
-  return `<details class="fold">
+  return `<details class="fold" ${foldState("work.recent7", false)}>
     <summary>${T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
       nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
     <div class="foldbody">
@@ -1396,16 +1415,33 @@ function workPoolCard(pool, poolShown, poolCnt, me){
         style="flex:1;min-width:150px" oninput="setPoolQ(this.value)" onkeydown="if(event.key==='Enter')setPoolQ(this.value)">
       <span id="pool_clear">${poolClearHTML()}</span>
     </div>
-    <div id="pool_wrap" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
+    <div id="pool_wrap" class="keepscroll" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
     <tbody id="pool_list">${poolRowsHTML(poolShown, me)}</tbody></table>
     </div>
   </div>`;
 }
 // 折疊區塊：次要的東西收進來，點了才展開
+// ── 摺疊的開合狀態要撐得過重繪（v129）──────────────────────────────
+// Firestore 一同步就整頁重繪。認領一支毛片之後，「待認領」自己收起來、
+// 使用者被丟回頁面上方 —— 要再點開、再捲下去才能認領下一支，一連認領五支就痛苦五次。
+// 只記使用者「明確按過」的那幾個；沒碰過的照原本的預設值。
+let FOLD_OPEN={};
+// 只標一個 data-fold；開合由下面那個委派監聽器記錄。
+// 不用 inline 的 ontoggle —— 那要把 key 逃脫兩層，屬性值裡還會冒出 this.open。
+// data-fold 放的是標題的雜湊、不是標題本身：標題原文寫進屬性等於把同一段字
+// 在 DOM 裡出現兩次，任何「找到標題再往後看」的程式（含測試）都會被前面那個假的絆倒。
+function foldKey(s){ let h=0; const t=String(s==null?"":s);
+  for(let i=0;i<t.length;i++) h=(h*31 + t.charCodeAt(i))|0;
+  return "f"+(h>>>0).toString(36); }
+function foldState(key, defOpen){
+  const k=foldKey(key);
+  const on = Object.prototype.hasOwnProperty.call(FOLD_OPEN, k) ? FOLD_OPEN[k] : !!defOpen;
+  return `data-fold="${k}"${on?" open":""}`;
+}
 function fold(title, count, body, open){
   if(!body) return "";
-  return `<details class="fold" ${open?"open":""}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
+  return `<details class="fold" ${foldState(title, open)}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
     <div class="foldbody">${body}</div></details>`;
 }
 // 我排在未來的工作（到那天才會進今日待辦）
@@ -2248,7 +2284,7 @@ function myAttendCard(){
     <div class="muted" style="font-size:12px;margin-top:8px">
       ${m+1} 月出勤 ${s.days} 天${w.flex?"":`・遲到 ${s.late} 次・早退 ${s.early} 次`}${s.noOut?`・${s.noOut} 天沒打下班`:""}
       ${st?`　<span style="opacity:.75">出勤自 ${esc(st)} 起算</span>`:'　<span style="opacity:.75">還沒開始起算（設定密碼後才開始）</span>'}</div>
-    ${attRows(me,ym).length?`<details class="fold" style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
+    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
       <div class="foldbody">${attDetailTable(me, ym)}</div></details>`:""}
   </div>`;
 }
@@ -3772,7 +3808,7 @@ function viewVideosTW(){
     </div>
     ${/* 標籤預設收起來（手機上 8 顆按鈕會佔掉三行）。已經選了的照樣寫在收合列上，
          不然使用者會忘記自己開著篩選 —— 這是漸進揭露，不是把資訊藏起來。 */''}
-    <details class="fold tagfold" id="vid_tagfold" ${VID_TAGS.size?"open":""} style="margin-top:10px">
+    <details class="fold tagfold" id="vid_tagfold" ${foldState("vid.tags", VID_TAGS.size>0)} style="margin-top:10px">
       <summary>${T("標籤篩選","Tags")}${VID_TAGS.size
         ? `<span class="n">${VID_TAGS.size}</span>`
         : `<span class="muted" style="font-weight:400;font-size:12px;margin-left:6px">${T("點開來挑","tap to filter")}</span>`}</summary>
