@@ -85,7 +85,9 @@ ok("排定日期到了就自動出現在今天", todayCard().includes("到期的
 ok("到期的不會再留在「之後要做」", myFutureTasks().length===0);
 reset([task("O1",{title:"昨天沒做完",date:YESTER})]);
 as("小葵","editor");
-ok("過去的不會回到今天（維持原本行為）", !todayCard().includes("昨天沒做完"));
+// v130：沒做完的就一直留在「今天要做的事」，不管是誰排的 —— 隔天消失等於幫人忘記
+ok("以前沒做完的照樣留在今天", todayCard().includes("昨天沒做完"));
+ok("而且標出來是拖過來的", todayCard().includes("昨天沒做完") && /昨天沒做完|天前的/.test(todayCard()));
 
 // ── 新增工作可以指定日期 ──
 (async()=>{

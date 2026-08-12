@@ -62,7 +62,7 @@ reset();
 { const w=viewWork();
   ok("搜尋框用 oninput（邊打邊篩）", /id="pool_q"[^>]*oninput="setPoolQ\(this\.value\)"/.test(w));
   ok("影片庫也是邊打邊篩（行為一致）", viewVideos().includes('id="vid_q"') && /id="vid_q"[^>]*oninput=/.test(viewVideos()));
-  ok("按 Enter 也還是有效（習慣按的人不會壞）", w.includes("if(event.key==='Enter')setPoolQ(this.value)")); }
+  ok("按 Enter 也還是有效（習慣按的人不會壞）", w.includes("if(enterKey(event))setPoolQ(this.value)")); }
 
 // ══ ② 搜尋之後折疊要自己打開（不用再點一次「待認領」）══
 reset();
