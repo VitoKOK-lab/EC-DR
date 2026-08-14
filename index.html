@@ -57,6 +57,17 @@
             background:var(--chip);color:var(--muted);border:1px solid var(--line)}
   /* 月排程日視窗裡改日期／移出排程照舊可以按 —— 排程跟剪輯是兩條獨立的線 */
   tr.vlock input,tr.vlock .btn{opacity:1;cursor:pointer}
+  /* 公司／品牌切換列：一進來就知道自己在看哪一家。只有一家公司時整條不出現。 */
+  .brandbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;padding:5px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:9px}
+  .brandb{flex:1 1 auto;min-width:110px;padding:9px 14px;border:1px solid transparent;border-radius:6px;
+    background:transparent;color:var(--muted);font-size:14px;font-weight:600;font-family:inherit;
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:background .15s,color .15s}
+  .brandb:hover{background:var(--panel)}
+  .brandb .n{font-size:11px;font-weight:700;opacity:.65;font-family:var(--latin)}
+  .brandb.on{background:var(--panel);color:var(--txt);border-color:var(--gold);box-shadow:var(--shadow)}
+  .brandb.on .n{color:var(--gold-dk);opacity:1}
+  @media (max-width:520px){ .brandb{min-width:0;padding:9px 8px;font-size:13px} }
   /* ===== 本月成效的圖表（v126）=====
      熱力圖用「一個色相、由淺到深」的序列色階 —— 深淺就是多寡，不用彩虹。
      最淺的一階故意接近底色（＝幾乎沒有），所以每一格有數字直接標在上面，
@@ -722,7 +733,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=75ca7bac2a76"></script>
-<script type="module" src="fb.js?v=75ca7bac2a76"></script>
+<script src="app.js?v=b6eb2e3e1a17"></script>
+<script type="module" src="fb.js?v=b6eb2e3e1a17"></script>
 </body>
 </html>

@@ -114,7 +114,8 @@ STATE.videos=[ V("小葵",1), V("小葵",1) ];
   // 今天之後的日子不畫格子 —— 不然月底一大片空白會被讀成「都沒做」
   const future=(c.match(/hm-f/g)||[]).length;
   ok("今天之後的日子不畫格子", future===Math.max(0, ymDays(YM)-DD));
-  ok("今天那一欄有標出來", c.includes("hm-d now"));
+  // 今天剛好是週末時 class 會是 "hm-d wk now"，不能死比 "hm-d now"
+  ok("今天那一欄有標出來", /class="hm-d[^"]*\bnow\b/.test(c));
   // 完全沒有人剪片時不要硬擠一張空圖
   ok("沒有會剪片的人就整張卡不出現", teamHeatCard([{name:"江瑩",role:"mkt"}], YM)===""); }
 

@@ -133,13 +133,16 @@ function nextVideoCode(seen){
   const re=new RegExp("^"+pre+"(\\d{3})$");
   let seq=0;
   const scan=(arr)=>(arr||[]).forEach(v=>{ const m=String((v&&v.code)||"").match(re); if(m) seq=Math.max(seq,+m[1]); });
-  scan(STATE&&STATE.videos); scan(STATE&&STATE.deletedVideos); scan(seen);
+  // ⚠️ 掃 videosAll／deletedVideosAll：編號是全公司共用的流水號，
+  // 只掃目前品牌的話，兩家在同一天各自新增就會撞到同一個編號。
+  scan((STATE&&(STATE.videosAll||STATE.videos))); scan((STATE&&(STATE.deletedVideosAll||STATE.deletedVideos))); scan(seen);
   return pre+String(seq+1).padStart(3,"0");
 }
 // 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 2）。每筆寫入都用這個確保一致。
 function newVideoRecord(over){
   const s=STATE.settings||{};
   const rec={ id: newVideoId(), code: nextVideoCode(),
+    brand: BRAND,   // 目前在哪一家就建在哪一家（"" ＝第一家，既有資料天生就是）
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:"",   // 預設不分類（流量型是多數，不特別標）
     source:(s.sources&&s.sources[0])||"", stage:"待處理",
@@ -194,7 +197,11 @@ function dayTargets(date){ const wd=new Date((date||today)+"T00:00:00").getDay()
   return {"流量型":+t["流量型"]||0,"寵粉":(+t["寵粉"]||0)+(+t["帶貨型"]||0),"代理招商":+t["代理招商"]||0}; }   // 舊資料的帶貨型併入寵粉
 function daySumLegacy(date){ const t=dayTargets(date); return (t["流量型"]||0)+(t["寵粉"]||0)+(t["代理招商"]||0); }
 // 每日應上片數（單一數字，不分類型）；未設定則沿用舊的「星期×類型」加總
-function daySum(date){ const v=STATE.settings&&STATE.settings.dailyTarget;
+function daySum(date){
+  // 各家可以有自己的每日上片目標；沒設就沿用全公司那個數字
+  const b=brandList().find(x=>x.id===BRAND);
+  if(b && b.dailyTarget>0) return b.dailyTarget;
+  const v=STATE.settings&&STATE.settings.dailyTarget;
   return (v!=null&&v!=="")?(+v||0):daySumLegacy(date); }
 // 某天已排數量、缺口、是否排滿（以「總支數」計，不分類型）
 function dayBreakdown(date){ const list=dayVideoList(date);
@@ -210,8 +217,50 @@ function myInProgressCount(bucket){ return inProgressCount(currentUser(), bucket
 // 是否已過預排上片日（→ 已上傳、視為舊片，可重播）
 function airedPast(v){ const d=String(v.scheduledDate||"").slice(0,10); return !!d && d < today; }
 
+// ===== 公司／品牌（v131）==============================================
+// 同一批剪輯服務好幾家公司。人、出勤、交辦是共用的（一天只上一次班），
+// 分開的只有「內容」那一半：影片庫、月排程、待認領、毛片庫存、指派、成效。
+//
+// 第一家用空字串 "" —— 既有幾百支影片沒有 brand 欄位，天生就屬於它，
+// 一筆資料都不用搬。跟 origLang:""＝中文、locale:""＝台灣同一個手法。
+const BRAND_DEF={id:"", name:"泰熙爾札娜"};
+function brandList(){
+  const s=(STATE&&STATE.settings)||{};
+  const extra=(Array.isArray(s.brands)?s.brands:[])
+    .filter(b=>b && String(b.id||"").trim() && String(b.name||"").trim())
+    .map(b=>({id:String(b.id).trim(), name:String(b.name).trim(), dailyTarget:+b.dailyTarget||0}));
+  const first={id:"", name:String(s.brandName||"").trim()||BRAND_DEF.name, dailyTarget:0};
+  const seen=new Set([""]);
+  return [first].concat(extra.filter(b=>!seen.has(b.id) && seen.add(b.id)));
+}
+function brandIds(){ return brandList().map(b=>b.id); }
+function brandOf(v){ return String((v&&v.brand)||""); }
+function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
+function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
+let BRAND=(()=>{ try{ return localStorage.getItem("ecdr_brand")||""; }catch(e){ return ""; } })();
+function setBrand(id){
+  const v=brandIds().includes(String(id||"")) ? String(id||"") : "";
+  if(v===BRAND) return;
+  BRAND=v; try{ localStorage.setItem("ecdr_brand", v); }catch(e){}
+  // 換家等於換一整份資料：重新切片再重畫（月曆／分頁的暫存狀態也一起歸零）
+  CAL_YM=null; INTL_CAL_YM=null; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
+  VID_Q=""; POOL_Q=""; POOL_FILTER="all"; VID_TAGS=new Set();
+  applyState(LAST_RAW);
+}
+// 頂部的公司切換列。只有一家公司時完全不顯示 —— 不要為了一個選項佔一整條。
+function brandBar(){
+  if(!brandMulti()) return "";
+  const list=brandList();
+  return `<div class="brandbar">${list.map(b=>{
+    const n=((STATE&&STATE.videosAll)||[]).filter(v=>brandOf(v)===b.id).length;
+    return `<button class="brandb ${BRAND===b.id?'on':''}" onclick="setBrand('${esc(jsEsc(b.id))}')">${esc(b.name)}<span class="n">${n}</span></button>`;
+  }).join("")}</div>`;
+}
+
 // ---------- 寫入路由（操作 Firestore） ----------
-function vidLocal(id){ return (STATE.videos||[]).find(v=>v.id===id) || (STATE.deletedVideos||[]).find(v=>v.id===id); }
+// 操作紀錄／回收桶用的反查：跨品牌都要找得到，不然別家的片在紀錄上只剩一串 ID
+function vidLocal(id){ return (STATE.videosAll||STATE.videos||[]).find(v=>v.id===id)
+  || (STATE.deletedVideosAll||STATE.deletedVideos||[]).find(v=>v.id===id); }
 // 操作紀錄（稽核）：記下「誰、何時、做了什麼、對象」
 function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean); // api, videos, V190, finish
   if(seg[1]==="videos" && seg[2]){ const v=vidLocal(seg[2]); return v?vidTitle(v):seg[2]; }
@@ -562,11 +611,23 @@ function decorate(raw){
   const st=JSON.parse(JSON.stringify(raw));
   // 軟刪除：把 deleted 的影片抽到「回收桶」，其餘畫面一律只看到未刪除的
   const allV=st.videos||[];
-  st.deletedVideos=allV.filter(v=>v.deleted);
-  st.videos=allV.filter(v=>!v.deleted);
+  st.deletedVideosAll=allV.filter(v=>v.deleted);
+  st.videosAll=allV.filter(v=>!v.deleted);
+  // ── 公司／品牌切片（v131）────────────────────────────────────────
+  // 品牌是一個橫跨整個系統的維度：影片庫、月排程、待認領、毛片庫存、指派、
+  // 儀表板、成效…… 有 48 個地方在讀 STATE.videos。與其改 48 個地方
+  // （改漏一個就是某家的片混進另一家的數字裡），在資料進來的這一刻就切好，
+  // 其餘全部自動繼承正確行為。
+  // 要跨品牌看的只有三種人：編號產生器（全公司不能撞號）、品牌切換器的計數、
+  // 操作紀錄的片名反查 —— 那幾個明確去讀 videosAll／deletedVideosAll。
+  STATE=st;                                    // brandOf/brandIds 要讀 settings，先接上
+  const bset=new Set(brandIds());
+  if(BRAND && !bset.has(BRAND)) BRAND="";      // 品牌被刪掉了就退回預設那家
+  st.videos=st.videosAll.filter(v=>brandOf(v)===BRAND);
+  st.deletedVideos=st.deletedVideosAll.filter(v=>brandOf(v)===BRAND);
   const s=st.settings||{}; const win=s.reuseWindowDays||30;
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
-  STATE=st; return st;
+  return st;
 }
 function applyState(raw){
   if(!raw) return;
@@ -699,7 +760,10 @@ function render(){
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
-  v.innerHTML = viewAsBanner + banner + fn();
+  // 公司切換列擺在最上面：一進來就知道自己在看哪一家，不會把長照的片排進札娜的月曆。
+  // 出勤與設定不分公司，那兩頁不放（放了反而讓人以為出勤也分家）。
+  const bb = ["attend","settings","log","trash"].includes(CUR_TAB) ? "" : brandBar();
+  v.innerHTML = viewAsBanner + banner + bb + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   keepScrollRestore(v, keep);
@@ -1119,6 +1183,17 @@ function workPresets(){
   return dailyTemplates().filter(x=>x.r==="all"||x.r===r).map(x=>String(x.t).trim());
 }
 // 今天已經有的（不管是自己加的還是主管交辦的）就不要重複帶入
+// 設定頁：多長一列公司出來（純畫面，按「確認送出設定」才會存）
+function addBrandRow(){
+  const tb=(document.querySelectorAll(".brd_name")[0]||{}).closest ? document.querySelectorAll(".brd_name")[0].closest("tbody") : null;
+  if(!tb){ toast("找不到公司清單",true); return; }
+  const tr=document.createElement("tr");
+  tr.innerHTML='<td data-label="代號"><input class="brd_id" placeholder="care" style="font-size:13px"></td>'
+    +'<td data-label="公司名稱"><input class="brd_name" placeholder="長照機構" style="font-size:13px"></td>'
+    +'<td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" placeholder="沿用上面的" style="font-size:13px"></td>'
+    +'<td data-label=""><button class="btn sec sm" onclick="this.closest(\'tr\').remove()">✕</button></td>';
+  tb.appendChild(tr);
+}
 function presetPending(){
   // 只看「今天」已經帶進來的。myTasks() 現在會把以前沒做完的一起帶著（v130），
   // 拿它來判斷會讓昨天沒做完的那件「填寫今日工作日誌」把今天的按鈕吃掉 ——
@@ -5118,6 +5193,25 @@ function setWorkHoursCard(s){
     <div class="muted" style="font-size:12px;margin-top:4px">標籤、片源、影片類型這些是你自己設的中文，海外剪輯的畫面全是英文，混在裡面會很突兀。
       上面是內建的對照，可以改也可以加；沒列到的就照原樣顯示（品牌名、人名本來就不該硬翻）。</div>
 
+    ${(()=>{ const list=brandList();
+      return `<label style="margin-top:18px">公司／品牌</label>
+      <div class="muted" style="font-size:12px;margin:-2px 0 6px">同一批剪輯服務好幾家公司時用。<b>人、出勤、交辦是共用的</b>（一天只上一次班），
+        分開的只有影片庫、月排程、待認領、毛片庫存與成效。第一家是原本的資料，只能改名字不能刪。
+        代號請用英文或數字（存進資料庫用的，之後不要再改）。</div>
+      <table class="responsive"><thead><tr><th>代號</th><th>公司名稱</th><th style="width:150px">每日上片目標</th><th style="width:70px"></th></tr></thead>
+      <tbody>${list.map((b,i)=>`<tr>
+        <td data-label="代號">${i===0?'<span class="muted">（原本的）</span>'
+          :`<input class="brd_id" value="${esc(b.id)}" placeholder="care" style="font-size:13px">`}</td>
+        <td data-label="公司名稱"><input class="brd_name" value="${esc(b.name)}" style="font-size:13px"></td>
+        <td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" value="${b.dailyTarget||""}"
+          placeholder="沿用上面的" style="font-size:13px"></td>
+        <td data-label="">${i===0?'':`<button class="btn sec sm" onclick="this.closest('tr').remove()">✕</button>`}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn sec sm" onclick="addBrandRow()">＋ 新增一家公司</button>
+        <span class="muted" style="font-size:12px">刪掉一家不會刪影片 —— 那些片會回到第一家，之後把代號加回來就找得回來。</span>
+      </div>`; })()}
+
     <label style="margin-top:14px">全公司出勤起算日（選填）</label>
     <div class="row" style="gap:8px;align-items:center">
       <input id="set_attstart" type="date" value="${esc(s.attendStart||"")}" style="max-width:180px">
@@ -5283,6 +5377,23 @@ async function saveSettings(){
     settings.workEnd=(val("set_wend")||DEF_WORK.end);
     settings.lateGraceMin=Math.max(0, parseInt(val("set_grace"))||0);
     settings.attendStart=(val("set_attstart")||"").trim();
+    // 公司／品牌：第一列是原本那家（只存名字），其餘要有代號才算數
+    { const ids=Array.from(document.querySelectorAll(".brd_id"));
+      const names=Array.from(document.querySelectorAll(".brd_name"));
+      const tgs=Array.from(document.querySelectorAll(".brd_target"));
+      if(names.length){
+        settings.brandName=String(names[0].value||"").trim()||"泰熙爾札娜";
+        const out=[], seen=new Set([""]);
+        // 第一列沒有代號欄，所以 ids 比 names 少一個 —— 用 names 的索引往回推
+        for(let i=1;i<names.length;i++){
+          const id=String((ids[i-1]&&ids[i-1].value)||"").trim();
+          const nm=String(names[i].value||"").trim();
+          if(!id || !nm || seen.has(id)) continue;
+          seen.add(id);
+          out.push({id, name:nm, dailyTarget:+((tgs[i]&&tgs[i].value)||0)||0});
+        }
+        settings.brands=out;
+      } }
     // 海外英文說法：一行一個「中文=English」；跟內建一樣的就不用另外存
     settings.dataEn=(val("set_dataen")||"").split("\n").reduce((acc,line)=>{
       const i=line.indexOf("="); if(i<0) return acc;
