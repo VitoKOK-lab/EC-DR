@@ -436,6 +436,11 @@
   #tutBanner{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:80;max-width:92vw;
     background:var(--espresso);color:#f5ead7;border:1px solid var(--gold);border-radius:999px;
     padding:9px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow2);text-align:center}
+  #tutBanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center}
+  /* 教學模式的出口：放在橫幅上，最好找、也不會被那層點擊攔截擋到 */
+  #tutOff{flex:none;background:var(--panel);color:var(--txt);border:1px solid var(--gold);
+    border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;font-family:inherit;white-space:nowrap}
+  #tutOff:hover{background:var(--amberbg)}
   #tutTip{position:fixed;z-index:81;max-width:280px;background:#1b1814;color:#f5ead7;border:1px solid var(--gold);
     border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.5;box-shadow:var(--shadow2);pointer-events:none}
   #tutTip b{color:#e8d39a;display:block;margin-bottom:3px;font-size:13px}
@@ -737,7 +742,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=28ff6c4813ef"></script>
-<script type="module" src="fb.js?v=28ff6c4813ef"></script>
+<script src="app.js?v=65ab6c7982da"></script>
+<script type="module" src="fb.js?v=65ab6c7982da"></script>
 </body>
 </html>
