@@ -127,15 +127,31 @@ function uid(prefix){
 // 改成 時間戳(base36) + 亂數，各自產生、永不重複。
 function newVideoId(){ return uid("V"); }
 // 人看的編號：民國年＋月日（7 碼）＋當日序號（3 碼）。含回收桶一起掃，才不會重覆。
+// 每一家公司有自己的一套編號（v132）。
+// code 是「人看的編號」，不是文件 ID（那個是 V+時間戳+亂數，本來就永不重複），
+// 所以各家各自從 001 開始不會有任何資料問題。
+// 想在編號上一眼看出是哪一家，就在設定裡給那家一個前綴（例如 C、S）——
+// 留空就跟原本一模一樣。前綴只留英數與 -，免得跑進正規式裡爆掉。
+// 各家的標籤／片源／投放平台完全不一樣（長照的關鍵字跟珠寶毫無關係），
+// 所以這幾個設定欄位要跟著帳號走。做法：欄位名加上帳號代號的後綴。
+//   第一家 → videoTags / sources / postPlatforms（原本的欄位，既有資料不動）
+//   其他家 → videoTags__care / sources__care / postPlatforms__care
+// 這樣連 Firestore 的 arrayAdd／arrayDel 都能照用（欄位名本來就是參數）。
+function brandField(base){ return BRAND ? (base+"__"+BRAND) : base; }
+function brandSetting(base){ const st=(STATE&&STATE.settings)||{}; return st[brandField(base)]; }
+function brandCodePrefix(id){
+  const b=brandList().find(x=>x.id===String(id===undefined?BRAND:(id||"")));
+  return String((b&&b.codePrefix)||"").replace(/[^A-Za-z0-9-]/g,"").slice(0,6);
+}
 function nextVideoCode(seen){
   const [Y,M,D]=today.split("-");
-  const pre=`${(+Y-1911)}${M}${D}`;
-  const re=new RegExp("^"+pre+"(\\d{3})$");
+  const pre=brandCodePrefix()+`${(+Y-1911)}${M}${D}`;
+  const re=new RegExp("^"+pre.replace(/[-]/g,"\\$&")+"(\\d{3})$");
   let seq=0;
   const scan=(arr)=>(arr||[]).forEach(v=>{ const m=String((v&&v.code)||"").match(re); if(m) seq=Math.max(seq,+m[1]); });
-  // ⚠️ 掃 videosAll／deletedVideosAll：編號是全公司共用的流水號，
-  // 只掃目前品牌的話，兩家在同一天各自新增就會撞到同一個編號。
-  scan((STATE&&(STATE.videosAll||STATE.videos))); scan((STATE&&(STATE.deletedVideosAll||STATE.deletedVideos))); scan(seen);
+  // 只掃這一家的（STATE.videos 已經依品牌切過）＋這一家回收桶裡的。
+  // 各家獨立計號，所以不需要、也不應該掃到別家去。
+  scan(STATE&&STATE.videos); scan(STATE&&STATE.deletedVideos); scan(seen);
   return pre+String(seq+1).padStart(3,"0");
 }
 // 影片的「完整標準結構」— 對應 SCHEMA.md（schemaVersion 2）。每筆寫入都用這個確保一致。
@@ -145,7 +161,7 @@ function newVideoRecord(over){
     brand: BRAND,   // 目前在哪一家就建在哪一家（"" ＝第一家，既有資料天生就是）
     name:"", rawName:"", videoCopy:"", tags:[], subTag:"",
     mainType:"",   // 預設不分類（流量型是多數，不特別標）
-    source:(s.sources&&s.sources[0])||"", stage:"待處理",
+    source:((brandSetting("sources")||[])[0])||"", stage:"待處理",
     editor:"", claimedBy:"", claimedAt:"", finishedAt:"", durationMin:null, assignedTo:"",
     createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(),   // 誰、何時建立（全員權限相同，靠這個追蹤）
     updatedAt:"", scheduledDate:null, publishTime:"", platforms:[],
@@ -228,8 +244,10 @@ function brandList(){
   const s=(STATE&&STATE.settings)||{};
   const extra=(Array.isArray(s.brands)?s.brands:[])
     .filter(b=>b && String(b.id||"").trim() && String(b.name||"").trim())
-    .map(b=>({id:String(b.id).trim(), name:String(b.name).trim(), dailyTarget:+b.dailyTarget||0}));
-  const first={id:"", name:String(s.brandName||"").trim()||BRAND_DEF.name, dailyTarget:0};
+    .map(b=>({id:String(b.id).trim(), name:String(b.name).trim(), dailyTarget:+b.dailyTarget||0,
+              codePrefix:String(b.codePrefix||"")}));
+  const first={id:"", name:String(s.brandName||"").trim()||BRAND_DEF.name, dailyTarget:0,
+    codePrefix:String(s.brandCodePrefix||"")};
   const seen=new Set([""]);
   return [first].concat(extra.filter(b=>!seen.has(b.id) && seen.add(b.id)));
 }
@@ -237,24 +255,39 @@ function brandIds(){ return brandList().map(b=>b.id); }
 function brandOf(v){ return String((v&&v.brand)||""); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
+// 選過的帳號記在 localStorage。**「有沒有選過」跟「選了哪一家」是兩件事** ——
+// 空字串是合法的答案（＝第一家），所以要看 key 在不在，不能看值是不是空的。
 let BRAND=(()=>{ try{ return localStorage.getItem("ecdr_brand")||""; }catch(e){ return ""; } })();
+function brandPicked(){ try{ return localStorage.getItem("ecdr_brand")!==null; }catch(e){ return true; } }
 function setBrand(id){
   const v=brandIds().includes(String(id||"")) ? String(id||"") : "";
-  if(v===BRAND) return;
-  BRAND=v; try{ localStorage.setItem("ecdr_brand", v); }catch(e){}
+  const first=!brandPicked();
+  try{ localStorage.setItem("ecdr_brand", v); }catch(e){}
+  if(v===BRAND && !first) return;
+  BRAND=v;
   // 換家等於換一整份資料：重新切片再重畫（月曆／分頁的暫存狀態也一起歸零）
   CAL_YM=null; INTL_CAL_YM=null; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
-  VID_Q=""; POOL_Q=""; POOL_FILTER="all"; VID_TAGS=new Set();
+  VID_Q=""; POOL_Q=""; POOL_FILTER="all"; VID_TAGS=new Set(); CUR_TAB=null;
   applyState(LAST_RAW);
 }
-// 頂部的公司切換列。只有一家公司時完全不顯示 —— 不要為了一個選項佔一整條。
-function brandBar(){
-  if(!brandMulti()) return "";
+// 齒輪選單裡的「切換影音帳號」：忘掉這次的選擇，回到選擇畫面
+function pickBrandAgain(){
+  try{ localStorage.removeItem("ecdr_brand"); }catch(e){}
+  applyState(LAST_RAW);
+}
+// 登入後選一次的畫面。只有兩家以上、而且還沒選過的時候才出現 ——
+// 大部分的人一輩子只會看到這一次，所以不做成每一頁都佔一條的常駐切換列。
+function brandPickHTML(){
   const list=brandList();
-  return `<div class="brandbar">${list.map(b=>{
-    const n=((STATE&&STATE.videosAll)||[]).filter(v=>brandOf(v)===b.id).length;
-    return `<button class="brandb ${BRAND===b.id?'on':''}" onclick="setBrand('${esc(jsEsc(b.id))}')">${esc(b.name)}<span class="n">${n}</span></button>`;
-  }).join("")}</div>`;
+  return `<div class="brandpick">
+    <div class="bp-t">${T("要處理哪一個影音帳號？","Which account are you working on?")}</div>
+    <div class="bp-s">${T("選一次就好，之後每次登入都會直接進到這一個。<br>要換的時候，按右上角齒輪裡的「切換影音帳號」。",
+      "Pick once — you'll land here every time from now on.<br>To change it later, use “Switch account” in the gear menu.")}</div>
+    <div class="bp-list">${list.map(b=>{
+      const n=((STATE&&STATE.videosAll)||[]).filter(v=>brandOf(v)===b.id).length;
+      return `<button class="brandb ${BRAND===b.id&&brandPicked()?'on':''}" onclick="setBrand('${esc(jsEsc(b.id))}')">
+        <span>${esc(b.name)}</span><span class="n">${T(n+" 支影片", n+" videos")}</span></button>`;
+    }).join("")}</div></div>`;
 }
 
 // ---------- 寫入路由（操作 Firestore） ----------
@@ -644,6 +677,10 @@ function applyState(raw){
     { const pb=document.getElementById("pwBtn"); if(pb){ pb.style.display=(currentRole()!=="boss")?"":"none"; pb.textContent=isIntl?"🔒 Change password":"🔒 改密碼"; } }
     // 海外剪輯：頂列全英文；新手教學內容是中文，對海外剪輯直接隱藏
     { const tb=document.getElementById("tutBtn"); if(tb){ tb.style.display=isIntl?"none":""; } }
+    // 「切換影音帳號」只有真的有兩家以上時才長出來
+    { const bb=document.getElementById("brandBtn");
+      if(bb){ bb.style.display=brandMulti()?"":"none";
+        bb.textContent=(brandMulti()&&brandPicked())?("🎬 "+T("切換影音帳號（目前：","Switch account (now: ")+brandName(BRAND)+(currentRole()==="intl"?")":"）")):("🎬 "+T("切換影音帳號","Switch account")); } }
     { const lb=document.getElementById("logoutBtn"); if(lb) lb.textContent=isIntl?"Log out":"登出"; }
     { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
@@ -760,10 +797,11 @@ function render(){
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
-  // 公司切換列擺在最上面：一進來就知道自己在看哪一家，不會把長照的片排進札娜的月曆。
-  // 出勤與設定不分公司，那兩頁不放（放了反而讓人以為出勤也分家）。
-  const bb = ["attend","settings","log","trash"].includes(CUR_TAB) ? "" : brandBar();
-  v.innerHTML = viewAsBanner + banner + bb + fn();
+  // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
+  if(brandMulti() && !brandPicked()){
+    v.classList.remove("anim"); v.innerHTML = brandPickHTML(); LAST_RENDER_TAB="__brand"; return;
+  }
+  v.innerHTML = viewAsBanner + banner + fn();
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   keepScrollRestore(v, keep);
@@ -1190,6 +1228,7 @@ function addBrandRow(){
   const tr=document.createElement("tr");
   tr.innerHTML='<td data-label="代號"><input class="brd_id" placeholder="care" style="font-size:13px"></td>'
     +'<td data-label="公司名稱"><input class="brd_name" placeholder="長照機構" style="font-size:13px"></td>'
+    +'<td data-label="編號前綴"><input class="brd_pfx" maxlength="6" placeholder="例 C" style="font-size:13px"></td>'
     +'<td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" placeholder="沿用上面的" style="font-size:13px"></td>'
     +'<td data-label=""><button class="btn sec sm" onclick="this.closest(\'tr\').remove()">✕</button></td>';
   tb.appendChild(tr);
@@ -3389,10 +3428,12 @@ const DEFAULT_TAGS=["新片","舊片","寵粉","珠寶介紹","子女傳承","�
 const TAG_RENAME={"每日寵粉":"寵粉","珠寶":"珠寶介紹","招商":"代理招商","代理":"代理招商"};
 function renameTag(t){ t=String(t||"").trim(); return TAG_RENAME[t]||t; }
 const NEWOLD_TAGS=["新片","舊片"];
-function videoTags(){ const t=STATE&&STATE.settings&&STATE.settings.videoTags;
-  const src=(Array.isArray(t)&&t.length)?t:DEFAULT_TAGS;
+function videoTags(){ const t=brandSetting("videoTags");
+  // DEFAULT_TAGS 與下面那組補進來的都是珠寶生意的字。只有第一家該吃到 ——
+  // 長照的關鍵字跟珠寶毫無關係，硬塞給它等於每次選標籤都要跳過一半（v132）。
+  const src=(Array.isArray(t)&&t.length)?t : (BRAND?["新片","舊片"]:DEFAULT_TAGS);
   const out=[]; src.forEach(x=>{ const r=renameTag(x); if(r&&!out.includes(r)) out.push(r); });
-  ["寵粉","珠寶介紹","子女傳承","代理招商"].forEach(x=>{ if(!out.includes(x)) out.push(x); }); // 確保新標籤一定可選
+  if(!BRAND) ["寵粉","珠寶介紹","子女傳承","代理招商"].forEach(x=>{ if(!out.includes(x)) out.push(x); });
   return out; }
 // 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
 function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
@@ -3429,16 +3470,19 @@ function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) r
 async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
   if(!add.length || !window.DB) return;
   try{
-    if(window.DB.arrayAdd){ for(const t of add) await window.DB.arrayAdd("meta","settings","videoTags",t); }
-    else if(window.DB.setSettings){ await window.DB.setSettings({videoTags:cur.concat(add)}); }
+    const F=brandField("videoTags");
+    if(window.DB.arrayAdd){ for(const t of add) await window.DB.arrayAdd("meta","settings",F,t); }
+    else if(window.DB.setSettings){ await window.DB.setSettings({[F]:cur.concat(add)}); }
   }catch(e){} }
 // 標籤編輯器（管理員・設定頁）
 async function addVideoTagSel(){ const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
   const cur=videoTags(); if(cur.includes(t)){ toast("已有這個標籤",true); return; }
-  try{ await dbArrayAdd("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:cur.concat([t])})); logA("新增標籤",t);
+  try{ const F=brandField("videoTags");
+    await dbArrayAdd("meta","settings",F,t,()=>window.DB.setSettings({[F]:cur.concat([t])})); logA("新增標籤",t);
     const e=document.getElementById("tag_new"); if(e) e.value=""; toast("已新增標籤「"+t+"」"); }catch(e){ toast("新增失敗",true); } }
 async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
-  try{ await dbArrayDel("meta","settings","videoTags",t,()=>window.DB.setSettings({videoTags:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
+  try{ const F=brandField("videoTags");
+    await dbArrayDel("meta","settings",F,t,()=>window.DB.setSettings({[F]:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
 
 // ===================================================================
 // 影片庫
@@ -4314,7 +4358,7 @@ function openVideoModal(id, edit, fromWork){
     if(v.channel){ toast(T("這支不在你的區","Not in your area"),true); return; }
   }
   const s=STATE.settings||{};
-  const sources=s.sources||["老闆自拍","外部公司"];
+  const sources=brandSetting("sources")||["老闆自拍","外部公司"];
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   const stages=["待處理","剪輯中","已完成","已上片"];
   const tags=videoTagsOf(v);
@@ -5198,11 +5242,13 @@ function setWorkHoursCard(s){
       <div class="muted" style="font-size:12px;margin:-2px 0 6px">同一批剪輯服務好幾家公司時用。<b>人、出勤、交辦是共用的</b>（一天只上一次班），
         分開的只有影片庫、月排程、待認領、毛片庫存與成效。第一家是原本的資料，只能改名字不能刪。
         代號請用英文或數字（存進資料庫用的，之後不要再改）。</div>
-      <table class="responsive"><thead><tr><th>代號</th><th>公司名稱</th><th style="width:150px">每日上片目標</th><th style="width:70px"></th></tr></thead>
+      <table class="responsive"><thead><tr><th>代號</th><th>公司名稱</th><th style="width:120px">編號前綴</th><th style="width:130px">每日上片目標</th><th style="width:70px"></th></tr></thead>
       <tbody>${list.map((b,i)=>`<tr>
         <td data-label="代號">${i===0?'<span class="muted">（原本的）</span>'
           :`<input class="brd_id" value="${esc(b.id)}" placeholder="care" style="font-size:13px">`}</td>
         <td data-label="公司名稱"><input class="brd_name" value="${esc(b.name)}" style="font-size:13px"></td>
+        <td data-label="編號前綴"><input class="brd_pfx" value="${esc(b.codePrefix||"")}" maxlength="6"
+          placeholder="${i===0?"（不加）":"例 C"}" style="font-size:13px"></td>
         <td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" value="${b.dailyTarget||""}"
           placeholder="沿用上面的" style="font-size:13px"></td>
         <td data-label="">${i===0?'':`<button class="btn sec sm" onclick="this.closest('tr').remove()">✕</button>`}</td></tr>`).join("")}
@@ -5344,7 +5390,7 @@ async function migratePamperTag(){ if(dbBlocked()) return;
       if(tags.includes("每日寵粉")){ const nt=[...new Set(tags.map(t=>t==="每日寵粉"?"寵粉":t))];
         const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
         try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} } }
-    const cur=videoTags(); if(cur.includes("每日寵粉")){ try{ await window.DB.setSettings({videoTags:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }catch(e){} }
+    const cur=videoTags(); if(cur.includes("每日寵粉")){ try{ await window.DB.setSettings({[brandField("videoTags")]:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }catch(e){} }
   } finally { BULK_BUSY=false; applyState(LAST_RAW); }
   logA("整理標籤 每日寵粉→寵粉", n+" 支"); await delay(300); toast("完成：已把 "+n+" 支影片的「每日寵粉」改成「寵粉」");
 }
@@ -5381,8 +5427,10 @@ async function saveSettings(){
     { const ids=Array.from(document.querySelectorAll(".brd_id"));
       const names=Array.from(document.querySelectorAll(".brd_name"));
       const tgs=Array.from(document.querySelectorAll(".brd_target"));
+      const pfx=Array.from(document.querySelectorAll(".brd_pfx"));
       if(names.length){
         settings.brandName=String(names[0].value||"").trim()||"泰熙爾札娜";
+        settings.brandCodePrefix=String((pfx[0]&&pfx[0].value)||"").replace(/[^A-Za-z0-9-]/g,"").slice(0,6);
         const out=[], seen=new Set([""]);
         // 第一列沒有代號欄，所以 ids 比 names 少一個 —— 用 names 的索引往回推
         for(let i=1;i<names.length;i++){
@@ -5390,7 +5438,8 @@ async function saveSettings(){
           const nm=String(names[i].value||"").trim();
           if(!id || !nm || seen.has(id)) continue;
           seen.add(id);
-          out.push({id, name:nm, dailyTarget:+((tgs[i]&&tgs[i].value)||0)||0});
+          out.push({id, name:nm, dailyTarget:+((tgs[i]&&tgs[i].value)||0)||0,
+                    codePrefix:String((pfx[i]&&pfx[i].value)||"").replace(/[^A-Za-z0-9-]/g,"").slice(0,6)});
         }
         settings.brands=out;
       } }
@@ -5412,7 +5461,7 @@ async function saveSettings(){
     const la=parseFloat(val("set_olat")), ln=parseFloat(val("set_olng"));
     settings.officeGeo=(isFinite(la)&&isFinite(ln))?{lat:la,lng:ln}:{};
   }
-  if(plats.length) settings.postPlatforms=plats;
+  if(plats.length) settings[brandField("postPlatforms")]=plats;
   // 海外設定：帳號清單（語言=帳號名）＋每帳號每日目標
   if(document.getElementById("set_intlacct")){
     settings.intlAccounts=(val("set_intlacct")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
@@ -5500,7 +5549,7 @@ const DEFAULT_PLATFORMS=[
   {name:"FB 粉專（Zanagems）", utm:"fb_zanagems"},
   {name:"LINE 社群（珠寶社群）", utm:"line_group"}
 ];
-function postPlatforms(){ const p=STATE.settings&&STATE.settings.postPlatforms; return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
+function postPlatforms(){ const p=brandSetting("postPlatforms"); return (Array.isArray(p)&&p.length)?p:DEFAULT_PLATFORMS; }
 // 依平台一條導購連結，最短：只用 utm_source（月底靠訂單時間對應商品）
 function platformUtm(base, utm){ if(!base) return ""; const sep=base.includes("?")?"&":"?"; return base+sep+"utm_source="+encodeURIComponent(utm||""); }
 // 影片編號（無自訂 code 則取 id 數字，如 V001→001）；外顯片名以成品標題名稱為主

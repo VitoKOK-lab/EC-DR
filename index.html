@@ -57,17 +57,20 @@
             background:var(--chip);color:var(--muted);border:1px solid var(--line)}
   /* 月排程日視窗裡改日期／移出排程照舊可以按 —— 排程跟剪輯是兩條獨立的線 */
   tr.vlock input,tr.vlock .btn{opacity:1;cursor:pointer}
-  /* 公司／品牌切換列：一進來就知道自己在看哪一家。只有一家公司時整條不出現。 */
-  .brandbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;padding:5px;
-    background:var(--panel2);border:1px solid var(--line);border-radius:9px}
-  .brandb{flex:1 1 auto;min-width:110px;padding:9px 14px;border:1px solid transparent;border-radius:6px;
-    background:transparent;color:var(--muted);font-size:14px;font-weight:600;font-family:inherit;
-    display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:background .15s,color .15s}
-  .brandb:hover{background:var(--panel)}
-  .brandb .n{font-size:11px;font-weight:700;opacity:.65;font-family:var(--latin)}
-  .brandb.on{background:var(--panel);color:var(--txt);border-color:var(--gold);box-shadow:var(--shadow)}
-  .brandb.on .n{color:var(--gold-dk);opacity:1}
-  @media (max-width:520px){ .brandb{min-width:0;padding:9px 8px;font-size:13px} }
+  /* 選影音帳號：登入後選一次，之後就記住了。大部分的人一輩子只會看到這一次。
+     所以不做成常駐的切換列 —— 那會在每一頁都佔一條，換來一年按一次的功能。 */
+  .brandpick{max-width:560px;margin:36px auto}
+  .brandpick .bp-t{font-family:var(--serif);font-size:22px;font-weight:700;letter-spacing:.5px}
+  .brandpick .bp-s{color:var(--muted);font-size:13.5px;margin:8px 0 20px;line-height:1.8}
+  .brandpick .bp-list{display:flex;flex-direction:column;gap:10px}
+  .brandb{width:100%;padding:18px 20px;border:1px solid var(--line);border-radius:9px;background:var(--panel);
+    color:var(--txt);font-size:16px;font-weight:700;font-family:inherit;text-align:left;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:var(--shadow);
+    transition:border-color .15s,box-shadow .15s,transform .1s}
+  .brandb:hover{border-color:var(--gold);box-shadow:var(--shadow2);transform:translateY(-1px)}
+  .brandb .n{font-size:12.5px;font-weight:600;color:var(--muted);font-family:var(--sans);white-space:nowrap}
+  .brandb.on{border-color:var(--gold);background:var(--amberbg)}
+  .brandb.on .n{color:var(--gold-dk)}
   /* ===== 本月成效的圖表（v126）=====
      熱力圖用「一個色相、由淺到深」的序列色階 —— 深淺就是多寡，不用彩虹。
      最淺的一階故意接近底色（＝幾乎沒有），所以每一格有數字直接標在上面，
@@ -709,6 +712,7 @@
     <div class="hmenu">
       <button class="hgear" id="hgearBtn" onclick="toggleHeaderMenu(event)" title="更多設定">⚙</button>
       <div class="hmenuPop hidden" id="hmenuPop">
+        <button id="brandBtn" style="display:none" onclick="pickBrandAgain();closeHeaderMenu()" title="換一個影音帳號來處理">🎬 切換影音帳號</button>
         <button id="tutBtn" onclick="toggleTutorial();closeHeaderMenu()" title="開啟後把游標停在按鈕或欄位上就會出現說明">✦ 新手教學</button>
         <button id="pwBtn" style="display:none" onclick="changeMyPw();closeHeaderMenu()" title="修改自己的登入密碼">🔒 改密碼</button>
       </div>
@@ -733,7 +737,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=b6eb2e3e1a17"></script>
-<script type="module" src="fb.js?v=b6eb2e3e1a17"></script>
+<script src="app.js?v=28ff6c4813ef"></script>
+<script type="module" src="fb.js?v=28ff6c4813ef"></script>
 </body>
 </html>

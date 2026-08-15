@@ -245,10 +245,27 @@
 > | `STATE.videosAll` | 全部公司（未刪除） | 只有三個：`nextVideoCode`（編號全公司共用不能撞號）、`brandBar` 的計數、`vidLocal`（操作紀錄／回收桶反查別家的片名） |
 > | `STATE.videos` | **只有目前這家** | 其餘 48 個地方原封不動，自動拿到對的東西 |
 >
-> `deletedVideosAll` / `deletedVideos` 同理。切換用 `setBrand(id)`（存 localStorage `ecdr_brand`，
-> 重新整理還在原來那家）；設定裡把某家刪掉時 `decorate` 會把 `BRAND` 退回 `""`，不會把人卡在空畫面。
-> 每家可以有自己的每日上片目標（`settings.brands[].dailyTarget`），沒設就沿用 `settings.dailyTarget`。
-> 切換列只在**有兩家以上**時出現；出勤／設定／操作紀錄／回收桶那四頁不放（那些本來就不分公司）。
+> `deletedVideosAll` / `deletedVideos` 同理。設定裡把某家刪掉時 `decorate` 會把 `BRAND` 退回 `""`，不會把人卡在空畫面。
+>
+> **登入後選一次，之後不再問（v132）**：有兩家以上而且這台裝置還沒選過時，`render()` 先顯示
+> `brandPickHTML()` 讓他挑；`setBrand(id)` 寫進 localStorage `ecdr_brand`，之後每次登入直接進那一家。
+> 要換就按齒輪選單的「🎬 切換影音帳號」（`pickBrandAgain()`，把 key 刪掉、回到選擇畫面）。
+> **⚠️「有沒有選過」與「選了哪一家」是兩件事** —— 空字串是合法答案（＝第一家），
+> 所以 `brandPicked()` 看的是 key 在不在，不是值是不是空的。
+> 不做常駐的切換列：大部分的人一輩子只會選一次，不值得每一頁都佔一條。
+>
+> **各家分開的東西**（v132）：
+>
+> | 項目 | 第一家 | 其他家 |
+> |---|---|---|
+> | 每日上片目標 | `settings.dailyTarget` | `settings.brands[].dailyTarget`（沒設就沿用左邊） |
+> | 影片編號 | `1150815001` | 各自從 001 起算；可選填 `codePrefix`（例 `C1150815001`）|
+> | 標籤／片源／投放平台 | `videoTags`／`sources`／`postPlatforms` | `videoTags__care` 等（`brandField(base)` 加後綴）|
+>
+> 影片編號 `code` 是**人看的編號**，不是文件 ID（那個是 `V`+時間戳+亂數，本來就永不重複），
+> 所以各家各自從 001 開始不會有任何資料問題。
+> `DEFAULT_TAGS` 與程式裡補的「寵粉／珠寶介紹／子女傳承／代理招商」都是珠寶生意的字，
+> **只有第一家吃得到** —— 硬塞給長照等於每次選標籤都要跳過一半。
 >
 > **主管交辦（v67 更名，原「老闆指派」）**：Regina／管理員在「流程中控」或「儀表板」派工，
 > 對方的工作頁會出現，按小小的「**收到**」開始執行，填滿 12 字處理狀況才能打勾完成。

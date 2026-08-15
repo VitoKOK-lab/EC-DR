@@ -63,8 +63,8 @@ load([], BRANDS);
   ok("第一家是原本的資料，代號是空字串", l[0].id==="" && l[0].name==="泰熙爾札娜");
   ok("後面接設定裡加的兩家", l[1].id==="care" && l[1].name==="長照機構" && l[2].id==="sunny");
   ok("brandName 可以改第一家的名字", (load([],BRANDS), STATE.settings.brandName="金曜石", brandList()[0].name==="金曜石"));
-  ok("只有一家時不顯示切換列", (load([],[]), brandMulti()===false && brandBar()===""));
-  ok("有兩家以上才顯示", (load([],BRANDS), brandMulti()===true && brandBar().includes("brandbar"))); }
+  ok("只有一家時不用問要進哪一家", (load([],[]), brandMulti()===false));
+  ok("兩家以上才要問", (load([],BRANDS), brandMulti()===true)); }
 load([], BRANDS);
 ok("沒填代號或名字的那幾筆直接忽略", (()=>{ load([], [{id:"",name:"沒代號"},{id:"x",name:""},{id:"ok",name:"有效"}]);
   return brandList().length===2 && brandList()[1].id==="ok"; })());
@@ -112,27 +112,48 @@ BRAND=""; load([ V("札娜的",""), V("長照的","care") ]);
 VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set(); VID_Q=""; VID_UNSCHED=false; ZONE_VIEW="tw";
 ok("影片庫只有這家的", viewVideos().includes("札娜的") && !viewVideos().includes("長照的"));
 
-// ══════════ ④ 必須跨公司的那三個 ══════════
-// 編號是全公司共用的流水號 —— 只掃自己那家，兩家同一天新增就會撞號
-BRAND=""; load([ V("札娜","",{code:nextVideoCode()}) ]);
+// ══════════ ④ 編號：每一家自己一套（v132）══════════
+// code 是「人看的編號」，不是文件 ID（那個是 V+時間戳+亂數，本來就永不重複），
+// 所以各家各自從 001 開始不會有任何資料問題。
 { const [Y,M,DD]=today.split("-"); const pre=`${(+Y-1911)}${M}${DD}`;
-  load([ V("札娜","",{code:pre+"001"}), V("長照","care",{code:pre+"002"}), V("Sunny","sunny",{code:pre+"003"}) ]);
-  BRAND=""; const c1=nextVideoCode();
-  BRAND="care"; load([ V("札娜","",{code:pre+"001"}), V("長照","care",{code:pre+"002"}), V("Sunny","sunny",{code:pre+"003"}) ]);
-  const c2=nextVideoCode();
-  ok("編號跨公司接續，不會撞號", c1===pre+"004" && c2===pre+"004");
-  ok("而且不是只看自己那家（那樣會給 002）", c2!==pre+"002" && c2!==pre+"003"); }
+  const mk=()=>[ V("札娜一","",{code:pre+"001"}), V("札娜二","",{code:pre+"002"}), V("札娜三","",{code:pre+"003"}),
+                 V("長照一","care",{code:pre+"001"}) ];
+  BRAND=""; load(mk());
+  ok("札娜接自己的：已有 001~003 → 給 004", nextVideoCode()===pre+"004");
+  BRAND="care"; load(mk());
+  ok("長照只算自己的：已有 001 → 給 002（不會被札娜的 003 影響）", nextVideoCode()===pre+"002");
+  BRAND="sunny"; load(mk());
+  ok("全新的一家從 001 開始", nextVideoCode()===pre+"001"); }
+// 回收桶裡的也要算，不然救回來會撞號
+{ const [Y,M,DD]=today.split("-"); const pre=`${(+Y-1911)}${M}${DD}`;
+  BRAND="care"; load([ V("長照刪掉的","care",{code:pre+"005",deleted:true}) ]);
+  ok("自己家回收桶裡的編號也要避開", nextVideoCode()===pre+"006"); }
+// 想在編號上一眼看出是哪一家 → 給那家一個前綴
+{ const [Y,M,DD]=today.split("-"); const pre=`${(+Y-1911)}${M}${DD}`;
+  const B2=[{id:"care",name:"長照機構",codePrefix:"C"},{id:"sunny",name:"Boss Sunny",codePrefix:"S"}];
+  BRAND="care"; load([], B2);
+  ok("有前綴就加在前面", nextVideoCode()==="C"+pre+"001");
+  BRAND="care"; load([ V("長照","care",{code:"C"+pre+"007"}) ], B2);
+  ok("有前綴時照樣接續自己的號", nextVideoCode()==="C"+pre+"008");
+  BRAND="sunny"; load([ V("長照","care",{code:"C"+pre+"007"}) ], B2);
+  ok("別家的前綴不會被誤認", nextVideoCode()==="S"+pre+"001");
+  BRAND="care"; load([], [{id:"care",name:"長照",codePrefix:"C/#$%"}]);
+  ok("前綴裡的怪字元會被清掉（不然正規式會爆）", nextVideoCode()==="C"+pre+"001");
+  BRAND=""; load([], B2);
+  ok("第一家沒設前綴就跟原本一模一樣", nextVideoCode()===pre+"001"); }
+
+// ══════════ ④b 這兩個還是要跨公司 ══════════
 // 回收桶／操作紀錄的片名反查：別家的片也要查得到，不然紀錄上只剩一串 ID
 BRAND=""; load(VIDS());
 { const other=STATE.videosAll.find(v=>brandOf(v)==="care");
   ok("反查得到別家的片名", !!vidLocal(other.id) && vidLocal(other.id).name==="長照一");
   ok("反查得到別家已刪的片", !!vidLocal(STATE.deletedVideosAll.find(v=>brandOf(v)==="care").id)); }
-// 切換列的數字要算全部，不是只算目前這家
+// 選帳號畫面：列出每一家、標出目前這家、數字要算全部
 BRAND="care"; load(VIDS());
-{ const bar=brandBar();
-  ok("切換列列出三家", bar.includes("泰熙爾札娜") && bar.includes("長照機構") && bar.includes("Boss Sunny"));
-  ok("每家標自己的支數", bar.includes(">3</span>") && bar.includes(">2</span>") && bar.includes(">1</span>"));
-  ok("目前這家有標記", /class="brandb on"[^>]*>長照機構/.test(bar)); }
+{ const pick=brandPickHTML();
+  ok("選帳號畫面列出三家", pick.includes("泰熙爾札娜") && pick.includes("長照機構") && pick.includes("Boss Sunny"));
+  ok("每家標自己的支數", pick.includes("3 支影片") && pick.includes("2 支影片") && pick.includes("1 支影片"));
+  ok("按下去會選那一家", pick.includes("setBrand('care')") && pick.includes("setBrand('sunny')")); }
 
 // ══════════ ⑤ 新影片建在目前這家 ══════════
 BRAND="care"; load([]);
@@ -163,16 +184,51 @@ BRAND="";
 decorate(LAST_RAW);
 ok("換一家，交辦與出勤照樣在", myTasks().length===1 && !!(STATE.shifts||{})[shiftId("小葵",today)]);
 
-// ══════════ ⑧ 切換列擺在哪：出勤／設定／紀錄／回收桶不放 ══════════
-// 那幾頁本來就不分公司，放了反而讓人以為出勤也分家。
+// ══════════ ⑧ 登入後選一次，之後不再問 ══════════
+// 「有沒有選過」跟「選了哪一家」是兩件事 —— 空字串是合法答案（＝第一家），
+// 所以要看 localStorage 的 key 在不在，不能看值是不是空的。
+load([], BRANDS);
+localStorage.removeItem("ecdr_brand");
+ok("沒選過 → 要先問", brandPicked()===false);
+setBrand("care");
+ok("選了之後就記住", brandPicked()===true && BRAND==="care");
+setBrand("");
+ok("選第一家（空字串）也算選過", brandPicked()===true && BRAND==="");
+pickBrandAgain();
+ok("按「切換影音帳號」→ 回到要問的狀態", brandPicked()===false);
+localStorage.setItem("ecdr_brand","care"); BRAND="care";
 { const raw_=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8");
-  const m=raw_.match(/const bb\s*=\s*\[([^\]]*)\]\.includes\(CUR_TAB\)\s*\?\s*""\s*:\s*brandBar\(\)/);
-  ok("render 有這條白名單", !!m);
-  const skip=m?m[1].replace(/["'\s]/g,"").split(","):[];
-  ok("出勤不放", skip.includes("attend"));
-  ok("設定不放", skip.includes("settings"));
-  ok("操作紀錄與回收桶不放", skip.includes("log") && skip.includes("trash"));
-  ok("影片庫／月排程／上班計畫要放", !skip.includes("videos") && !skip.includes("cal") && !skip.includes("work")); }
+  ok("render 裡有「還沒選就先顯示選擇畫面」", /brandMulti\(\)\s*&&\s*!brandPicked\(\)/.test(raw_));
+  ok("不再有常駐的切換列", !/function brandBar\(/.test(raw_));
+  ok("齒輪選單有切換影音帳號", fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8").includes("pickBrandAgain()")); }
+
+// ══════════ ⑨ 標籤／片源／投放平台各家分開（v132）══════════
+// 長照的關鍵字跟珠寶毫無關係，共用一份等於兩邊都不能用。
+// 欄位名加帳號後綴：第一家用原本的欄位（既有資料不動），其他家用 xxx__代號。
+BRAND=""; ok("第一家用原本的欄位名", brandField("videoTags")==="videoTags");
+BRAND="care"; ok("其他家加後綴", brandField("videoTags")==="videoTags__care" && brandField("sources")==="sources__care");
+{ LAST_RAW=raw([], BRANDS);
+  LAST_RAW.settings.videoTags=["珠寶介紹","寵粉"];
+  LAST_RAW.settings.videoTags__care=["機構日常","衛教"];
+  LAST_RAW.settings.sources=["老闆自拍"];
+  LAST_RAW.settings.sources__care=["護理師拍的"];
+  LAST_RAW.settings.postPlatforms=[{name:"IG 珠寶",utm:"ig1"}];
+  LAST_RAW.settings.postPlatforms__care=[{name:"長照 FB",utm:"fb2"}];
+  BRAND=""; decorate(LAST_RAW);
+  ok("第一家看到自己的標籤", videoTags().includes("珠寶介紹") && !videoTags().includes("機構日常"));
+  ok("第一家看到自己的片源", brandSetting("sources")[0]==="老闆自拍");
+  ok("第一家看到自己的平台", postPlatforms()[0].name==="IG 珠寶");
+  BRAND="care"; decorate(LAST_RAW);
+  ok("長照看到自己的標籤", videoTags().includes("機構日常") && !videoTags().includes("珠寶介紹"));
+  ok("長照看到自己的片源", brandSetting("sources")[0]==="護理師拍的");
+  ok("長照看到自己的平台", postPlatforms()[0].name==="長照 FB");
+  BRAND="sunny"; decorate(LAST_RAW);
+  ok("完全沒設過的那家退回預設值（不是拿別家的）",
+     !videoTags().includes("機構日常") && !videoTags().includes("珠寶介紹")
+     && postPlatforms()[0].name!=="長照 FB" && postPlatforms()[0].name!=="IG 珠寶");
+  BRAND="care"; decorate(LAST_RAW);
+  ok("新影片的預設片源用這家的", newVideoRecord().source==="護理師拍的"); }
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
