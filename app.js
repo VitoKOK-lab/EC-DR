@@ -5712,7 +5712,13 @@ function toggleTutorial(){
   const b=document.getElementById("tutBtn"), ban=document.getElementById("tutBanner");
   document.body.classList.toggle("tut",TUT_ON);
   if(b) b.classList.toggle("on",TUT_ON);
-  if(TUT_ON){ if(ban){ ban.textContent="教學模式開啟中：把游標停在任何按鈕或欄位上看說明（此模式下點按鈕只會看說明、不會執行）。再按一次「教學」關閉。"; ban.classList.remove("hidden"); } }
+  if(TUT_ON){ if(ban){
+    // 橫幅上直接放一顆關閉鍵：這是教學模式裡最好找、也最不會被擋到的出口。
+    // 只寫「再按一次教學關閉」不夠 —— 那顆藏在齒輪選單裡，找不到的人就卡住了。
+    // 文字寫短一點，關閉鍵才跟它同一行 —— 被擠到第二行的按鈕看起來像另一件事
+    ban.innerHTML='<span>教學模式：把游標停在任何按鈕上看說明（點下去不會真的執行）</span>'
+      + '<button id="tutOff" onclick="toggleTutorial()">關閉教學</button>';
+    ban.classList.remove("hidden"); } }
   else { if(ban) ban.classList.add("hidden"); tutHide(); }
 }
 function tutHide(){ const tip=document.getElementById("tutTip"); if(tip) tip.classList.add("hidden"); if(TUT_CUR){ TUT_CUR.classList.remove("tut-hl"); TUT_CUR=null; } clearTimeout(TUT_TIMER); }
@@ -5733,9 +5739,15 @@ function tutShowFor(target){
 document.addEventListener("mouseover", function(e){ if(!TUT_ON) return; clearTimeout(TUT_TIMER); const t=e.target; TUT_TIMER=setTimeout(()=>tutShowFor(t),280); });
 document.addEventListener("mouseleave", function(){ if(TUT_ON) tutHide(); });
 document.addEventListener("click", function(e){ if(!TUT_ON) return;
-  if(e.target.closest("#tutBtn")) return;            // 讓「教學」按鈕能關閉
+  // ⚠️ 出口一定要放行，而且是「整條路」都要放行。
+  // 原本只放行 #tutBtn，但那顆在齒輪選單裡 —— 齒輪自己也是 button，一樣被擋掉，
+  // 選單根本打不開，於是教學模式**開了就關不掉**（回報：新手教學按了以後關不掉）。
+  // 現在放行：關閉鍵、齒輪、整個齒輪選單、以及底部橫幅上的關閉鍵。
+  if(e.target.closest("#tutBtn, #tutOff, #hgearBtn, .hmenu")) return;
   const act=e.target.closest('button,a,input,select,textarea,.vtab,[data-tab],td[onclick]');
   if(!act) return;
   e.preventDefault(); e.stopPropagation();
   tutShowFor(e.target);
 }, true);
+// 再給一條退路：按 Esc 直接離開教學模式（滑鼠點不到的時候至少鍵盤救得回來）
+document.addEventListener("keydown", function(e){ if(TUT_ON && e.key==="Escape") toggleTutorial(); });
