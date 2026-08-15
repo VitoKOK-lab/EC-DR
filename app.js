@@ -5715,7 +5715,8 @@ function toggleTutorial(){
   if(TUT_ON){ if(ban){
     // 橫幅上直接放一顆關閉鍵：這是教學模式裡最好找、也最不會被擋到的出口。
     // 只寫「再按一次教學關閉」不夠 —— 那顆藏在齒輪選單裡，找不到的人就卡住了。
-    ban.innerHTML='教學模式開啟中：把游標停在任何按鈕或欄位上看說明（此模式下點按鈕只會看說明、不會執行）。'
+    // 文字寫短一點，關閉鍵才跟它同一行 —— 被擠到第二行的按鈕看起來像另一件事
+    ban.innerHTML='<span>教學模式：把游標停在任何按鈕上看說明（點下去不會真的執行）</span>'
       + '<button id="tutOff" onclick="toggleTutorial()">關閉教學</button>';
     ban.classList.remove("hidden"); } }
   else { if(ban) ban.classList.add("hidden"); tutHide(); }
