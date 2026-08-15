@@ -116,6 +116,39 @@ STATE.settings.dailyTemplates=[{t:"填寫今日工作日誌",r:"all"}];
 as("小葵","editor");
 ok("今天帶進來過就不再提示", !presetPending().includes("填寫今日工作日誌"));
 
+// ══════════ ②b 做完的當天留著、隔天才消失；沒做完的不管幾天前都找得回來 ══════════
+// 回報：「未完成的前七天的也要找回來」「已完成的當天還要留著，過一天才消失」
+reset([
+  TASK("W1",{title:"七天前沒做完的",date:D(-7)}),
+  TASK("W2",{title:"三十天前沒做完的",date:D(-30)}),
+  TASK("W3",{title:"拖了三天今天才做完",date:D(-3),done:true,doneAt:D(0)+"T14:00:00"}),
+  TASK("W4",{title:"昨天排昨天做完",date:D(-1),done:true,doneAt:D(-1)+"T14:00:00"}),
+  TASK("W5",{title:"今天排今天做完",date:D(0),done:true,doneAt:D(0)+"T11:00:00"}),
+  TASK("W6",{title:"很久以前就做完的",date:D(-9),done:true,doneAt:D(-9)+"T14:00:00"}),
+]);
+as("小葵","editor");
+{ const ids=myTasks().map(t=>t.id);
+  ok("七天前沒做完的找得回來", ids.includes("W1"));
+  ok("更久以前沒做完的也找得回來（沒有上限）", ids.includes("W2"));
+  ok("拖了三天今天才做完的，今天還看得到（不會一打勾就蒸發）", ids.includes("W3"));
+  ok("今天排今天做完的，今天還看得到", ids.includes("W5"));
+  ok("昨天做完的今天就不見了", !ids.includes("W4"));
+  ok("很久以前做完的當然不見", !ids.includes("W6")); }
+ok("taskDoneToday 認的是完成日不是排定日",
+   taskDoneToday(STATE.tasks.W3)===true && taskDoneToday(STATE.tasks.W4)===false);
+ok("沒有 doneAt 的舊資料不會被誤判成今天完成",
+   taskDoneToday({done:true, doneAt:""})===false && taskDoneToday({done:true})===false);
+{ const h=viewWork();
+  ok("畫面上看得到七天前沒做完的", h.includes("七天前沒做完的"));
+  ok("畫面上看得到今天剛做完的", h.includes("拖了三天今天才做完"));
+  ok("畫面上看不到昨天做完的", !h.includes("昨天排昨天做完")); }
+// 主管那一份也一樣
+as("Regina","manager");
+{ const h=viewFlow();
+  ok("主管也看得到部屬七天前沒做完的", h.includes("七天前沒做完的"));
+  ok("主管也看得到今天剛做完的", h.includes("拖了三天今天才做完"));
+  ok("主管看不到昨天做完的", !h.includes("昨天排昨天做完")); }
+
 // ══════════ ③ 剪輯手上沒剪完的影片，本來就不會隔天消失（釘住它） ══════════
 reset([]);
 as("小葵","editor");
