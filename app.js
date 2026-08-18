@@ -1208,7 +1208,8 @@ function contactOptions(){ const set=new Set();
   return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b))); }
 function contactDatalist(id){ return `<datalist id="${id}">${contactOptions().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>`; }
 // 任務裡輸入的新窗口，自動寫入後台名單，方便日後在設定裡修改／刪除
-function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
+function rememberContact(name){ if(VIEW_AS) return;   // 員工視角是唯讀預覽，連順手記下的窗口都不該寫進去
+  const c=String(name||"").trim(); if(!c) return;
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===c)) return;
   cur.push(c); try{ window.DB.setSettings({contacts:cur}); }catch(e){} }
 // 後台名單管理（限管理員・設定頁）
@@ -3500,7 +3501,11 @@ function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) r
   const has=(el)=>!!el && Array.from(el.querySelectorAll('input')).some(x=>x.value===v);
   if(box && !has(box) && !has(more)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
   inp.value=''; }
-async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
+async function persistNewTags(tags){
+  // ⚠️ saveVideo 是先叫這支、後面才走有守衛的寫入。員工視角下影片存不進去，
+  //    新標籤卻會偷偷寫進設定裡 —— 唯讀預覽就該完全不留痕跡。
+  if(VIEW_AS) return;
+  const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
   if(!add.length || !window.DB) return;
   try{
     const F=brandField("videoTags");
@@ -3508,12 +3513,14 @@ async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[])
     else if(window.DB.setSettings){ await window.DB.setSettings({[F]:cur.concat(add)}); }
   }catch(e){} }
 // 標籤編輯器（管理員・設定頁）
-async function addVideoTagSel(){ const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
+async function addVideoTagSel(){ if(dbBlocked()) return;
+  const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
   const cur=videoTags(); if(cur.includes(t)){ toast("已有這個標籤",true); return; }
   try{ const F=brandField("videoTags");
     await dbArrayAdd("meta","settings",F,t,()=>window.DB.setSettings({[F]:cur.concat([t])})); logA("新增標籤",t);
     const e=document.getElementById("tag_new"); if(e) e.value=""; toast("已新增標籤「"+t+"」"); }catch(e){ toast("新增失敗",true); } }
-async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
+async function delVideoTag(t){ if(dbBlocked()) return;
+  if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
   try{ const F=brandField("videoTags");
     await dbArrayDel("meta","settings",F,t,()=>window.DB.setSettings({[F]:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
 
@@ -5194,6 +5201,36 @@ function setIntlCard(s){
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
+// 匯率／加乘讀取：讀不出合法數字時，**原封不動保留原本存著的那個數字**。
+//
+// 以前是 parseFloat(val(...)) → 空白或全形字就是 NaN → (rate>0?rate:1) → 悄悄存成 1。
+// 後果是海外平台的售價把台幣數字掛上美金符號（10000 元變成 $10,000）—— 看起來很正常的錯，
+// 沒有人會發現。改成 1 是最糟的選擇：它既不是使用者的意思，也不是原本的值。
+//
+// 為什麼不是直接擋下整份設定？因為匯率跟班表、密碼、標籤是同一顆「確認送出設定」，
+// 為了一格匯率把管理員剛改好的班表一起退回去，比留著舊匯率更討厭。
+// 所以：舊值照留、其他設定照存，然後用紅字明確告訴他哪一格沒吃進去。
+const RATE_ROW_LABEL={en:"英文", th:"泰文", ms:"馬來", shopee:"蝦皮"};
+function readRates(prev){
+  const old=prev||{}; const rates={}; const bad=[];
+  ["en","th","ms","shopee"].forEach(loc=>{
+    const o=old[loc]||{};
+    const keep={rate:(+o.rate>0?+o.rate:1), mult:(+o.mult>0?+o.mult:1)};
+    const got={};
+    ["rate","mult"].forEach(kind=>{
+      if(loc==="shopee" && kind==="rate"){ got.rate=1; return; }   // 蝦皮＝台幣，畫面上沒有匯率欄
+      const el=document.getElementById("set_"+kind+"_"+loc);
+      if(!el){ got[kind]=keep[kind]; return; }                     // 這一格沒渲染出來就不管它，也不用警告
+      const raw=String(el.value==null?"":el.value).trim();
+      const n=Number(raw);   // 用 Number 不用 parseFloat："1.2abc" 要被擋掉，不能只取前面那段
+      if(raw==="" || !isFinite(n) || n<=0){ got[kind]=keep[kind]; bad.push(RATE_ROW_LABEL[loc]+(kind==="rate"?"匯率":"加乘")); }
+      else got[kind]=n;
+    });
+    rates[loc]={code:DEFAULT_CURRENCY[loc], rate:got.rate, mult:got.mult};
+  });
+  return {rates, bad,
+    warn: bad.length ? ("「"+bad.join("」「")+"」沒有填成大於 0 的數字，那幾格維持原本的設定沒有變動") : ""};
+}
 // 設定：四平台商品價格換算（匯率＋售價加乘倍數）
 function setRatesCard(s){
   const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
@@ -5455,6 +5492,7 @@ async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  let rateWarn="";
   // 管理員密碼：留空＝不改；要改的話存雜湊、把明文清掉（跟員工密碼同一套規則）
   const pw=(val("set_pw")||"").trim();
   if(pw){
@@ -5511,11 +5549,8 @@ async function saveSettings(){
       const i=line.indexOf("="); const loc=(i>=0?line.slice(0,i):"en").trim().toLowerCase(); const name=(i>=0?line.slice(i+1):line).trim();
       return {locale:loc, name}; }).filter(a=>a.name && ["en","th"].includes(a.locale));   // 只收 en/th；馬來帳號請填在「馬來設定」
     settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
-    settings.exchangeRates={};
-    ["en","th","ms","shopee"].forEach(loc=>{
-      const rate=(loc==="shopee")?1:parseFloat(val("set_rate_"+loc));   // 蝦皮＝台幣，匯率固定 1
-      const mult=parseFloat(val("set_mult_"+loc));
-      settings.exchangeRates[loc]={code:DEFAULT_CURRENCY[loc], rate:(rate>0?rate:1), mult:(mult>0?mult:1)}; });
+    const rr=readRates((STATE&&STATE.settings||{}).exchangeRates);   // 讀不出來的那幾格保留原本的值，不會靜默變成 1
+    settings.exchangeRates=rr.rates; rateWarn=rr.warn;
   }
   // 蝦皮設定：帳號清單（一行一個）＋每帳號每日目標
   if(document.getElementById("set_shpacct")){
@@ -5527,7 +5562,11 @@ async function saveSettings(){
     settings.msAccounts=(val("set_msacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
     settings.msDailyTarget=parseInt(val("set_mstarget"))||0;
   }
-  await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
+  // 匯率有格子讀不出來的話，成功訊息要換成紅字警告 —— toast 只有一格，
+  // 讓 writeAdmin 先跳「已更新設定」再被蓋掉的話，人只會看到後面那一則，
+  // 所以乾脆不讓它跳，由我們自己講完整的那一句。
+  const okSave=await writeAdmin("PUT","/api/settings",{settings}, rateWarn?"":"已更新設定");
+  if(okSave && rateWarn) toast("設定已更新，但"+rateWarn, true);
 }
 
 // ===================================================================
