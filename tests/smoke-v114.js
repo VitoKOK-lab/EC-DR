@@ -79,16 +79,29 @@ ok("圖片模式也標得出來", viewVideos().includes("缺文案"));
 reset(); as("管理員","boss");
 ok("沒毛片標「缺毛片」", missingPill(OKV("A",{rawLink:""})).includes("缺毛片"));
 ok("沒排日期標「沒排日期」", missingPill(OKV("A",{scheduledDate:null})).includes("沒排日期"));
-ok("該上片了卻沒貼連結 → 標「缺上片連結」而且是紅的",
-   (()=>{ const p=missingPill(OKV("A",{scheduledDate:D2(-1)})); return p.includes("缺上片連結") && p.includes("late"); })());
-ok("上片日還沒到就不算落後", !missingPill(OKV("A",{scheduledDate:D2(3)})).includes("late"));
-ok("貼了連結就不再標", !missingPill(OKV("A",{scheduledDate:D2(-1),publishedLink:"http://p"})).includes("缺上片連結"));
-// 二創殼：沒有腳本／毛片這兩步，但一樣要追上片連結
+// ── 「缺上片連結」只對二創殼亮（v136）──────────────────────────
+// 台灣源片的編輯視窗**沒有**上片連結那一格（只有存檔／毛片／參考來源），
+// 所以那個欄位對源片永遠是空的 —— 正式資料 610 支影片有 0 支填得起來。
+// 拿填不了的欄位當缺漏，就是對所有人亮一個永遠熄不掉的紅字，燈號會整組失去意義。
+ok("源片不再標「缺上片連結」（那一格根本沒有地方可以填）",
+   !missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("缺上片連結"));
+ok("源片就算過了上片日也不算落後了",
+   !missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("late"));
+ok("源片其他該標的照標（沒有連坐拿掉別的燈號）",
+   missingPill(OKV("A",{scheduledDate:D2(-1),rawLink:""})).includes("缺毛片"));
+// 二創殼：沒有腳本／毛片這兩步，但它的編輯視窗有「上傳連結」欄位，所以照追
 ok("蝦皮殼不標缺文案", !missingPill(v_("P",{channel:"shopee",videoCopy:"",scheduledDate:D2(3)})).includes("缺文案"));
 ok("英文殼不標缺毛片", !missingPill(v_("E",{locale:"en",rawLink:"",scheduledDate:D2(3)})).includes("缺毛片"));
-ok("版本殼一樣會追上片連結",
+ok("版本殼一樣會追上片連結（它有那一格）",
    missingPill(v_("P2",{channel:"shopee",scheduledDate:D2(-1)})).includes("缺上片連結"));
-ok("noCopyDot 仍然只認一創（相容舊呼叫）", noCopyDot(v_("P3",{channel:"shopee",videoCopy:""}))==="");
+ok("版本殼該上片沒貼＝紅的",
+   missingPill(v_("P3",{channel:"shopee",scheduledDate:D2(-1)})).includes("late"));
+ok("版本殼上片日還沒到就不算落後",
+   !missingPill(v_("P4",{channel:"shopee",scheduledDate:D2(3)})).includes("late"));
+ok("版本殼貼了連結就不再標",
+   !missingPill(v_("P5",{channel:"shopee",scheduledDate:D2(-1),publishedLink:"http://p"})).includes("缺上片連結"));
+// noCopyDot 已刪：它是 missingPill 上線前的相容外皮，最後一個呼叫端在 v114 就拿掉了，
+// 只剩這支測試在幫它續命。留著沒有人叫的 function ＝ 讀 code 的人要多想一次「這是幹嘛的」。
 // 缺很多項時：主要那項寫出來，其餘進 title
 { const p=missingPill(v_("M",{videoCopy:"",rawLink:"",scheduledDate:null}));
   ok("缺很多項會標 +N", /\+2/.test(p));

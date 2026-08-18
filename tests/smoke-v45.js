@@ -25,11 +25,15 @@ STATE = {
     intlAccounts:[{locale:"en",name:"acctEN"}], shopeeAccounts:["acctSHP"], msAccounts:["acctMS"], exchangeRates:{} },
   schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
   videos:[
-    // 小葵：等審 1、通過待補 1（缺上傳連結）、退回 1、已審完成正常 1
+    // 小葵：等審 1、通過待補 1（缺存檔連結）、退回 1、已審完成正常 1
+    // v136：源片的編輯視窗沒有「上片連結」那一格，所以源片只看存檔連結有沒有補齊；
+    //       拿一個填不了的欄位當「還沒補齊」，這張卡會永遠叫、剪輯按了「知道了」才走得掉。
     {id:"W1",name:"等審的片",rawName:"等審的片",stage:"已完成",editor:"小葵",finishedAt:T0+"T02:00:00Z",reviewStatus:"",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
-    {id:"W2",name:"通過待補連結",rawName:"通過待補連結",stage:"已完成",editor:"小葵",finishedAt:T0+"T03:00:00Z",reviewStatus:"通過",driveFolder:"http://d",publishedLink:"",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    {id:"W2",name:"通過待補連結",rawName:"通過待補連結",stage:"已完成",editor:"小葵",finishedAt:T0+"T03:00:00Z",reviewStatus:"通過",driveFolder:"",publishedLink:"",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"W3",name:"被退回的片",rawName:"被退回的片",stage:"剪輯中",editor:"小葵",claimedBy:"小葵",claimedAt:T0+"T01:00:00Z",reviewStatus:"退回",reviewNote:"字卡打錯",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     {id:"W4",name:"全部完成的片",rawName:"全部完成的片",stage:"已完成",editor:"小葵",finishedAt:T0+"T04:00:00Z",reviewStatus:"通過",driveFolder:"http://d",publishedLink:"http://p",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
+    // 源片有存檔連結就算補齊了 —— 沒有上片連結不能再讓它一直掛在卡上叫
+    {id:"W5",name:"有存檔沒上片連結",rawName:"有存檔沒上片連結",stage:"已完成",editor:"小葵",finishedAt:T0+"T04:30:00Z",reviewStatus:"通過",driveFolder:"http://d",publishedLink:"",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]},
     // Anna 的英文殼等審（測 shell 分支＋intl 英文）
     {id:"E9",name:"EN done cut",rawName:"src",stage:"已完成",editor:"Anna",finishedAt:T0+"T05:00:00Z",reviewStatus:"",locale:"en",sourceVideoId:"W4",account:"acctEN",usageHistory:[],tags:[],products:[],metrics:[]},
   ],
@@ -47,7 +51,9 @@ ok("退回段：紅色＋原因", h.includes("被退回，要修") && h.includes
 ok("通過待補段：列出通過但缺連結的片", h.includes("已審過（通過）") && h.includes("通過待補連結"));
 ok("待審核段：列出等審的片＋已審過鍵", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片") && h.includes("editorMarkReviewed('W1')"));
 { const seg=h.split("審片進度")[1].split("最近 7 天剪完的片")[0];   // v128 起下面多一張七天盤點卡，切在它之前
-  ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片")); }
+  ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片"));
+  // v136：源片填不了上片連結，所以有存檔連結就算補齊 —— 不能讓它永遠掛在卡上叫
+  ok("源片有存檔連結就算補齊，不會再一直掛在審片卡上", !seg.includes("有存檔沒上片連結")); }
 ok("別人的片不出現", !h.includes("EN done cut"));
 
 // intl 視角英文

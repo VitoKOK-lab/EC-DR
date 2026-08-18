@@ -20,10 +20,10 @@ const NO_EDIT_ROLES=["mkt","svc","ship","cs","hr"];
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],
+  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   hr:      [["team","團隊看板"],["attend","出勤"]],   // 人資：團隊看板（交辦狀況＋成效）＋出勤（打卡、遲到早退、月報表）
@@ -179,6 +179,10 @@ function newVideoRecord(over){
     refLink:"",   // 參考來源網址：這支的靈感／參考影片是哪來的
     cover:"",     // 封面圖網址（Firebase Storage，上傳時已壓縮）
     usageHistory:[], totalUsed:0,
+    // 影片庫：""＝影片庫A（走完整生產流程）、"大流"＝影片庫大流（直接放成品）
+    lib:"",
+    // 大流的二創：不另外開一筆影片，直接記在原片底下。名字、封面、存檔資料夾都沿用原片
+    remakes:[],
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
 }
@@ -195,12 +199,17 @@ function usageList(v){ return ((v&&v.usageHistory)||[]).map(d=> (d&&typeof d==="
 // 某日的影片 = 手動排片(slots) ∪ 已完成且上片日=該日的影片（去重）
 function dayVideoList(date){
   const seen=new Set(); const out=[];
-  ((STATE.schedule||{})[date]?.slots||[]).forEach(s=>{ if(s.videoId && !seen.has(s.videoId)){ seen.add(s.videoId); out.push({videoId:s.videoId, slot:s}); } });
+  // 排程裡的每一格都是一次明確的「排片」動作，各自列一列 —— 不能按 videoId 併掉：
+  // 大流的二創沿用原片的名字與 id，同一天排原片＋第 2 版的話，併掉就少一列，
+  // 月曆上的「已排 N」也會跟看得到的列數對不上。slotIdx 帶出去給搬天／移出用。
+  ((STATE.schedule||{})[date]?.slots||[]).forEach((s,i)=>{ if(s.videoId){ seen.add(s.videoId); out.push({videoId:s.videoId, slot:s, slotIdx:i}); } });
   // 海外二創(locale)／蝦皮二創(channel)版本走各自的排程月曆，不計入台灣月排程
   // 排程與剪輯是兩條獨立的線：一個人先把日期排好，其他人再照著剪。
   // 所以「排到這天」的影片一律算進來，不管剪完了沒 —— v99 之前這裡卡了 stage，
   // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
-  (STATE.videos||[]).forEach(v=>{ if(isSourceVid(v) && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  // 出片面：影片庫A 與大流一起算。大流的片是成品，排進來就是當天要出的其中一支，
+  // 「今天到底出幾支」不該分它從哪個庫來（生產面的數字才要分，見 decorate）。
+  allLibVideos().forEach(v=>{ if(isSourceVid(v) && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -253,6 +262,26 @@ function brandList(){
 }
 function brandIds(){ return brandList().map(b=>b.id); }
 function brandOf(v){ return String((v&&v.brand)||""); }
+
+// ── 影片庫大流（v137）──────────────────────────────────────────────
+// 兩個影片庫：A＝原本那個（走毛片→剪輯→審片的完整流程），大流＝直接放成品。
+// 沿用這個專案一路在用的「空字串＝預設」寫法，既有 610 支影片一筆都不用改。
+const DF_LIB="大流";
+function isDF(v){ return String((v&&v.lib)||"")===DF_LIB; }
+// 大流的片：decorate 把它從 STATE.videos 抽出去了，要看它一律走這裡
+function dfVideos(){ return (STATE&&STATE.videosDF)||[]; }
+// 兩個庫加在一起 —— 只有「出片面」的東西該用它（月排程、當天已排幾支）。
+// ⚠️ 生產面（毛片庫存、待認領、審片、未拍、剪輯 KPI）一律不准用，那是 STATE.videos。
+// 快取住是因為 vidxBuild 的快取靠陣列身分比對；每次回傳新陣列會讓索引每次重建。
+let ALLLIB=null, ALLLIB_A=null, ALLLIB_D=null;
+function allLibVideos(){
+  const a=(STATE&&STATE.videos)||[], d=(STATE&&STATE.videosDF)||[];
+  if(ALLLIB && ALLLIB_A===a && ALLLIB_D===d) return ALLLIB;
+  ALLLIB = d.length ? a.concat(d) : a;    // 沒有大流就直接沿用原陣列，不多配置也不破壞索引快取
+  ALLLIB_A=a; ALLLIB_D=d; return ALLLIB;
+}
+// 誰看得到「影片庫大流」：管理員、經理人、剪輯（海外不做大流）
+function seesDF(){ return ["boss","manager","editor"].includes(currentRole()); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
 // 選過的帳號記在 localStorage。**「有沒有選過」跟「選了哪一家」是兩件事** ——
@@ -376,7 +405,8 @@ async function route(method, path, body){
     if(action==="reuse" && method==="POST"){
       const date=body.date; const link=(body.link||"").trim(); const time=body.time||""; const drive=(body.drive||"").trim();
       if(!date) throw new Error("請選擇重播上片日期");
-      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time};
+      const ver=Math.max(1, Math.min(99, +body.ver||1));   // 1＝原片；2 以上＝第幾版二創（大流才用得到）
+      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time, ver};
       await dbArrayAdd("schedule", date, "slots", slot, ()=>{
         const day=(STATE.schedule||{})[date]||{slots:[]};
         return window.DB.scheduleSet(date,{slots:(day.slots||[]).concat([slot])}); });
@@ -425,6 +455,32 @@ async function route(method, path, body){
   throw new Error("不支援的操作");
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ── 批次寫入：分批平行 ＋ 誠實回報 ────────────────────────────────
+// 以前每個批次迴圈都長這樣：`try{ await update(...); n++; }catch(e){}`，
+// 然後只報 n。指派 100 支、掉了 30 支，畫面照樣說「已指派 70 支」——
+// 沒有人會發現那 30 支還留在公用池。這跟 v127 的「下班按了沒反應卻不報錯」
+// 是同一個病：**吞掉失敗就等於假裝成功**。
+// 一次一趟也慢：100 支＝100 趟來回，期間 BULK_BUSY 把整個畫面凍住十幾秒。
+// 分批平行的 allSettled 一次解決兩件事 —— 快十倍，而且天生就知道誰失敗。
+const BULK_CHUNK=10;   // 一次送 10 筆：夠快，又不會一口氣打爆連線
+async function bulkRun(items, fn){
+  const list=Array.from(items||[]); const ok=[], bad=[];
+  for(let i=0;i<list.length;i+=BULK_CHUNK){
+    const part=list.slice(i, i+BULK_CHUNK);
+    // fn 同步就丟例外的話，map 會在進 allSettled 之前先炸掉 —— 包一層擋住
+    const rs=await Promise.allSettled(part.map(it=>Promise.resolve().then(()=>fn(it))));
+    rs.forEach((r,j)=>{ (r.status==="fulfilled"?ok:bad).push(part[j]); });
+  }
+  return {ok, bad, done:ok.length, failed:bad.length};
+}
+// toast 只有一格，第二則會蓋掉第一則 —— 成功與失敗要併成同一句講完
+function bulkToast(r, okMsg, unit){
+  const u=unit||T("筆","");
+  if(r && r.failed) toast(okMsg + T("；但有 "+r.failed+" "+u+"沒有寫進去，請檢查網路後再按一次",
+                                    "; "+r.failed+" "+u+" failed to save — check your connection and try again"), true);
+  else toast(okMsg);
+}
 async function write(method, path, body, okMsg){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，離開後才能操作",true); return false; }
   try{ await route(method, path, body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg) toast(okMsg); return true; }
@@ -658,6 +714,19 @@ function decorate(raw){
   if(BRAND && !bset.has(BRAND)) BRAND="";      // 品牌被刪掉了就退回預設那家
   st.videos=st.videosAll.filter(v=>brandOf(v)===BRAND);
   st.deletedVideos=st.deletedVideosAll.filter(v=>brandOf(v)===BRAND);
+  // ── 影片庫大流（v137）─────────────────────────────────────────────
+  // 大流的片是「成果」不是「生產」：它沒經過拍片、沒經過剪片，直接就是成品。
+  // 所以生產面的每一個數字都不能算它 —— 毛片庫存、待認領池、審片清單、未拍、
+  // 剪輯 KPI。混進去的話「還要不要去拍片」這種判斷會整個失真。
+  //
+  // 切法刻意跟品牌相反：品牌是把「別家的」濾掉，這裡是把「大流的」**抽出去**，
+  // 讓 STATE.videos 只剩影片庫A。理由是生產流程有幾十個地方在讀 STATE.videos，
+  // 而要看到大流的只有月排程那少少幾個地方 —— 讓多數自動正確、少數明確加回來，
+  // 比反過來安全得多（改漏一個生產流程的地方，數字錯了不會有人發現）。
+  st.videosDF=st.videos.filter(isDF);
+  st.videos=st.videos.filter(v=>!isDF(v));
+  st.deletedVideosDF=st.deletedVideos.filter(isDF);
+  st.deletedVideos=st.deletedVideos.filter(v=>!isDF(v));
   const s=st.settings||{}; const win=s.reuseWindowDays||30;
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
   return st;
@@ -720,7 +789,9 @@ function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2t
 // ⚠️ 要新增／移除影片請整個換掉 STATE.videos，不要就地 push。
 let VIDX=null, VIDX_SRC=null, VIDX_N=-1;
 function vidxBuild(){
-  const vs=(STATE&&STATE.videos)||[];
+  // 索引要含大流：vid(id) 是全系統的通用反查，月排程、操作紀錄、二創都靠它。
+  // STATE.videos 已經把大流抽走了，所以這裡要自己接回來（見 decorate 的說明）。
+  const vs=allLibVideos();
   if(VIDX_SRC===vs && VIDX_N===vs.length) return VIDX;
   const byId=new Map(), bySrc=new Map();
   vs.forEach(v=>{ byId.set(v.id, v);
@@ -795,7 +866,7 @@ function render(){
       "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
   // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -903,7 +974,9 @@ function openDay(ds){
     const ed = reused ? (it.slot.by||"") : (v?.editor||"");
     const upLink = reused ? (it.slot.publishedLink||"") : (v?.publishedLink||v?.socialLink||"");
     const drive = reused ? (it.slot.driveFolder||v?.driveFolder||"") : (v?.driveFolder||"");
-    const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
+    // 同一支片同一天可能有兩格（原片＋二創），所以要指名是第幾格，不然永遠動到第一格
+  const si = (it.slotIdx==null?-1:it.slotIdx);
+  const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value,${si})` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
@@ -913,10 +986,10 @@ function openDay(ds){
     const lk=v&&assignLocked(v);
     const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
-      <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
+      <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
     </tr>`;
   }).join("");
   // 排一支影片到這天：所有影片都能選（排程與剪輯是兩條獨立的線）；當天已排過的不再出現
@@ -940,6 +1013,13 @@ function openDay(ds){
       <button class="btn" id="od_add" style="flex:0 0 auto;min-height:44px;white-space:nowrap" onclick="odAdd('${ds}')">${T("排入","Add")}</button>
     </div>
     <div id="od_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
+    <div id="od_ver" style="display:none">
+      <label style="margin:8px 0 2px">${T("要排哪一版","Which version")}</label>
+      <select id="od_verSel"></select>
+      <div class="muted" style="font-size:12px;margin-top:4px">${T(
+        "二創沿用原片的名字，所以排進來會長得一樣 —— 選了版本之後，月排程上會標一個數字分辨。",
+        "Remakes reuse the original's name; picking a version tags it with a number on the schedule.")}</div>
+    </div>
     <div id="od_reuse" style="display:none">
       <label style="margin:8px 0 2px">${T("存檔位置（雲端備份・自動帶入，同一支都一樣）","File location (auto-filled)")}</label>
       <input id="od_drive" placeholder="${T("這支影片的雲端備份連結","Cloud backup link")}">
@@ -969,7 +1049,8 @@ const OD_CATS=[["all","全部","All"],["raw","還沒剪好的毛片","Raw · not
 // 分類鈕之前的共同底：排除當天已排過的，再套「只看還沒排的」
 function odBase(ds){
   const used=new Set(dayVideoList(ds).map(it=>it.videoId));
-  let list=(STATE.videos||[]).filter(v=>isSourceVid(v) && !used.has(v.id));   // 版本殼走各自的月曆
+  // 大流的片也排得進來（成果面共用同一份月排程）；版本殼走各自的月曆
+  let list=allLibVideos().filter(v=>isSourceVid(v) && !used.has(v.id));
   // 「只看還沒排的」＝濾掉已經排在今天或之後的；舊片的排程日在過去，重播不受影響
   if(OD_UNSCHED) list=list.filter(v=>!(v.scheduledDate && String(v.scheduledDate).slice(0,10)>=today));
   return list;
@@ -1011,6 +1092,13 @@ function odFilter(){
 // 換一支影片時：帶出存檔位置、切換重播專用欄位、把「按下去會發生什麼」寫清楚
 function odPickVid(){
   const id=val("od_vid"), v=vid(id), old=!!v && vidIsOld(v);
+  // 版本選單只在「大流的片、而且真的做過二創」時出現 —— 沒做過二創就只有原片一個選項，
+  // 多一個永遠只能選同一項的下拉只是雜訊
+  { const opts=(v&&isDF(v))?dfVerOptions(v):[];
+    const box=document.getElementById("od_ver"); const sel=document.getElementById("od_verSel");
+    const on=opts.length>1;
+    if(box) box.style.display=on?"":"none";
+    if(sel && on) sel.innerHTML=opts.map(([n,l])=>`<option value="${n}">${esc(l)}</option>`).join(""); }
   const d=document.getElementById("od_drive"); if(d) d.value=OD_DRIVE[id]||"";
   const box=document.getElementById("od_reuse"); if(box) box.style.display=old?"":"none";
   const btn=document.getElementById("od_add"); if(btn) btn.textContent=old?T("排入重播","Add rerun"):T("排入","Add");
@@ -1026,20 +1114,26 @@ function odAdd(ds){
   const id=val("od_vid"); if(!id){ toast(T("請先選一支影片","Pick a video first"),true); return; }
   const v=vid(id)||{};
   if(vidIsOld(v)){
-    write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},
-      T("已排入重播","Rerun scheduled")).then(ok=>{ if(ok) openDay(ds); });
+    // 大流的二創沿用原片的名字，排進來會長得一樣 —— 帶上版本號才分得出是哪一版
+    const ver=(isDF(v) && document.getElementById("od_verSel")) ? (+val("od_verSel")||1) : 1;
+    write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim(),ver},
+      T(ver>1?("已排入第 "+ver+" 版"):"已排入重播","Rerun scheduled")).then(ok=>{ if(ok) openDay(ds); });
   }else{
     write("PUT",`/api/videos/${id}`,{video:{scheduledDate:ds, publishTime:val("od_time")}},
       T("已排到 "+ds,"Scheduled for "+ds)).then(ok=>{ if(ok) openDay(ds); });
   }
 }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
-async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
-  const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
+async function moveReuse(id, oldDate, newDate, slotIdx){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
+  const day=(STATE.schedule||{})[oldDate]||{slots:[]};
+  // slotIdx 指名是哪一格（同一支片同一天可能排了原片＋二創兩格）；沒帶就退回找第一格
+  const idx=(slotIdx!=null && slotIdx>=0 && (day.slots||[])[slotIdx] && day.slots[slotIdx].videoId===id)
+    ? slotIdx : (day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
   const link=(idx>=0?(day.slots[idx].publishedLink||""):"");
+  const ver=(idx>=0?dfVerOf(day.slots[idx]):1);   // 版本號要跟著搬，不然搬完就分不出是哪一版
   try{
     if(idx>=0) await route("DELETE",`/api/schedule/${oldDate}/slot/${idx}`,{});
-    await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
+    await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso(),ver}});
     const v=vid(id);
     const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===oldDate);
     if(window.DB&&window.DB.arrayDel){
@@ -1069,10 +1163,11 @@ async function unscheduleVid(id, ds){
   }catch(e){ toast(e.message||"移出失敗",true); }
 }
 // 移出排程（舊片重播）：只移除這天的重播，影片保留、使用次數同步退回
-async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
+async function unscheduleReuse(id, ds, slotIdx){ if(dbBlocked()) return;
   const v=vid(id)||{};
   const slots=((STATE.schedule||{})[ds]||{}).slots||[];
-  const idx=slots.findIndex(s=>s.videoId===id && s.reused);
+  const idx=(slotIdx!=null && slotIdx>=0 && slots[slotIdx] && slots[slotIdx].videoId===id)
+    ? slotIdx : slots.findIndex(s=>s.videoId===id && s.reused);
   if(idx<0){ toast("找不到這天的重播排程",true); return; }
   if(!confirm("把「"+vidTitle(v)+"」的重播移出「"+ds+"」？\n\n只移除這天的重播排程，影片不會刪除。")) return;
   try{
@@ -1182,7 +1277,8 @@ function contactOptions(){ const set=new Set();
   return Array.from(set).sort((a,b)=>String(a).localeCompare(String(b))); }
 function contactDatalist(id){ return `<datalist id="${id}">${contactOptions().map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>`; }
 // 任務裡輸入的新窗口，自動寫入後台名單，方便日後在設定裡修改／刪除
-function rememberContact(name){ const c=String(name||"").trim(); if(!c) return;
+function rememberContact(name){ if(VIEW_AS) return;   // 員工視角是唯讀預覽，連順手記下的窗口都不該寫進去
+  const c=String(name||"").trim(); if(!c) return;
   const cur=settingsContacts(); if(cur.some(x=>String(x).trim()===c)) return;
   cur.push(c); try{ window.DB.setSettings({contacts:cur}); }catch(e){} }
 // 後台名單管理（限管理員・設定頁）
@@ -1309,11 +1405,11 @@ async function assignFootage(){
   if(!ids.length){ toast("請勾選至少一支毛片",true); return; }
   // 清單不再截斷之後「全選」是真的全選，一次幾百支不該手滑就送出去
   if(ids.length>=20 && !confirm("要把 "+ids.length+" 支毛片一次指派給「"+who+"」嗎？")) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(ids, id=>window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("指派毛片 "+n+" 支", who);
-  await delay(300); toast("已指派 "+n+" 支給「"+who+"」（他認領後才開始計時）");
+  logA("指派毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), who);
+  await delay(300); bulkToast(r, "已指派 "+r.done+" 支給「"+who+"」（他認領後才開始計時）", "支");
 }
 // 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
 // 防呆：只收回台灣毛片；海外/蝦皮二創殼的 assignedTo＝建立者本人，收回會讓它跑進所有人的清單
@@ -1322,11 +1418,11 @@ async function unassignEditor(name){
   const list=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && v.assignedTo===name);
   if(!list.length){ toast("「"+name+"」沒有待認領的指派毛片",true); return; }
   if(!confirm("把指派給「"+name+"」但還沒認領的 "+list.length+" 支毛片收回公用池？")) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const v of list){ try{ await window.DB.update("videos",v.id,{assignedTo:""}); n++; }catch(e){} } }
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(list, v=>window.DB.update("videos",v.id,{assignedTo:""})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("收回指派毛片 "+n+" 支", name);
-  await delay(300); toast("已收回 "+n+" 支到公用池");
+  logA("收回指派毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), name);
+  await delay(300); bulkToast(r, "已收回 "+r.done+" 支到公用池", "支");
 }
 function ackTask(id){ const t=taskById(id);
   dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:isNotice(t)?"收到 HR 通知":"收到交辦工作", target:(t&&t.title)||id}); }
@@ -1418,7 +1514,10 @@ function workReviewCard(me){
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
   // 存檔連結要是「自己剪的那一支」；只是繼承源片的資料夾不算補齊，提醒不能提早消失
-  const linksDone=(v)=>!!(ownDrive(v) && String(v.publishedLink||"").trim());
+  // 同一個病灶的第二個受害者：源片填不了上片連結，linksDone 就永遠是 false，
+  // 「已審過」的片會一直掛在這張卡上叫，剪輯按了「知道了」才走得掉。
+  // 源片只看存檔連結（那一格填得到），二創殼才連上片連結一起看。
+  const linksDone=(v)=>!!(ownDrive(v) && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
@@ -2315,10 +2414,12 @@ async function autoCloseOpenShifts(){
   const me=currentUser(); if(!me) return;
   const open=Object.values((STATE&&STATE.shifts)||{})
     .filter(s=>s&&s.user===me&&s.clockIn&&!s.clockOut&&String(s.date||"")<today);
-  for(const s of open){
-    const wh=workHoursOf(me);
-    try{ await window.DB.update("shifts", s.id, {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}); }catch(e){}
-  }
+  const wh=workHoursOf(me);
+  // 這支是登入時的背景補登，不跳 toast（開機就彈一則系統訊息只會嚇到人）；
+  // 但失敗也不能無聲無息 —— 寫進操作紀錄。反正沒補成功的下次登入還會再補一次。
+  const r=await bulkRun(open, s=>window.DB.update("shifts", s.id,
+    {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}));
+  if(r.failed) logA("自動補下班失敗 "+r.failed+" 筆", me);
 }
 // 出勤異常＝遲到或早退（系統補下班也算，因為當天沒打下班）
 function attIssues(sh){
@@ -2610,8 +2711,8 @@ function flowStockCard(staff, pool, unassigned, stockDays){
   const stockCard=`<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">🎬 毛片庫存＆指派</b>
-      <span class="pill ${pool.length>=LOW_STOCK?'ok':'em'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
-    ${pool.length>=LOW_STOCK?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
+      <span class="pill ${rawStockLow(pool.length)?'em':'ok'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
+    ${!rawStockLow(pool.length)?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
       <b style="color:var(--red)">⚠ 毛片剩 ${pool.length} 支，低於 ${LOW_STOCK} 支了 —— 要去拍片了。</b><br>
       剪輯一天可以剪好幾支，存量不補上來他們就會沒片可剪。</div>`}
     ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
@@ -2714,7 +2815,7 @@ function viewFlow(){
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
     <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
-    <div><span class="fn ${pool.length>=LOW_STOCK?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
+    <div><span class="fn ${rawStockLow(pool.length)?'warn':''}">${pool.length}</span><span class="fl">毛片庫存</span></div>
     <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
   </div>`;
@@ -3342,18 +3443,23 @@ function batchNewFootage(){ if(dbBlocked()) return;
       items.push({name, videoCopy:vcopy, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
     // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
-    let ok=0; BULK_BUSY=true; const made=[];
+    // 編號要先全部算完再寫：nextVideoCode(made) 得看著已產生的那幾支才不會撞號，
+    // 這段是同步的，跟寫入無關，所以先跑完再一次批次送出去。
+    const made=[];
+    for(let i=0;i<items.length;i++){
+      made.push(newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
+        videoCopy:items[i].videoCopy,
+        rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
+        tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}));   // 有銷售商品 → 自動帶「寵粉」
+    }
+    BULK_BUSY=true; let r={done:0,failed:0};
     try{
-      for(let i=0;i<items.length;i++){
-        const rec=newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
-          videoCopy:items[i].videoCopy,
-          rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
-          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]});   // 有銷售商品 → 自動帶「寵粉」
-        made.push(rec);
-        try{ await window.DB.set("videos", rec.id, rec); ok++; }catch(e){} }
-      if(ok) logA("批次新增毛片 "+ok+" 支", "");
+      r=await bulkRun(made, rec=>window.DB.set("videos", rec.id, rec));
+      if(r.done) logA("批次新增毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), "");
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast(T("已新增 "+ok+" 支毛片",ok+" clips added")); return true;
+    await delay(300);
+    bulkToast(r, T("已新增 "+r.done+" 支毛片", r.done+" clips added"), T("支","clips"));
+    return true;
   });
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")); }
@@ -3467,7 +3573,11 @@ function addTagOpt(id){ const inp=document.getElementById(id+'_new'); if(!inp) r
   const has=(el)=>!!el && Array.from(el.querySelectorAll('input')).some(x=>x.value===v);
   if(box && !has(box) && !has(more)){ box.insertAdjacentHTML('beforeend', tagChip(id,v,true)); }
   inp.value=''; }
-async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
+async function persistNewTags(tags){
+  // ⚠️ saveVideo 是先叫這支、後面才走有守衛的寫入。員工視角下影片存不進去，
+  //    新標籤卻會偷偷寫進設定裡 —— 唯讀預覽就該完全不留痕跡。
+  if(VIEW_AS) return;
+  const cur=videoTags(); const add=(tags||[]).filter(t=>t && !cur.includes(t));
   if(!add.length || !window.DB) return;
   try{
     const F=brandField("videoTags");
@@ -3475,12 +3585,14 @@ async function persistNewTags(tags){ const cur=videoTags(); const add=(tags||[])
     else if(window.DB.setSettings){ await window.DB.setSettings({[F]:cur.concat(add)}); }
   }catch(e){} }
 // 標籤編輯器（管理員・設定頁）
-async function addVideoTagSel(){ const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
+async function addVideoTagSel(){ if(dbBlocked()) return;
+  const t=(val("tag_new")||"").trim(); if(!t){ toast("請輸入標籤名稱",true); return; }
   const cur=videoTags(); if(cur.includes(t)){ toast("已有這個標籤",true); return; }
   try{ const F=brandField("videoTags");
     await dbArrayAdd("meta","settings",F,t,()=>window.DB.setSettings({[F]:cur.concat([t])})); logA("新增標籤",t);
     const e=document.getElementById("tag_new"); if(e) e.value=""; toast("已新增標籤「"+t+"」"); }catch(e){ toast("新增失敗",true); } }
-async function delVideoTag(t){ if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
+async function delVideoTag(t){ if(dbBlocked()) return;
+  if(!confirm("刪除標籤「"+t+"」？（已套用在影片上的不受影響）")) return;
   try{ const F=brandField("videoTags");
     await dbArrayDel("meta","settings",F,t,()=>window.DB.setSettings({[F]:videoTags().filter(x=>x!==t)})); logA("刪除標籤",t); toast("已刪除標籤「"+t+"」"); }catch(e){ toast("刪除失敗",true); } }
 
@@ -3546,12 +3658,15 @@ const vidNotShot=(v)=> !isVersion(v) && !vidHasRaw(v);
 // 跟待認領池（poolAll 用 !vidNotShot）同一個標準。
 const LOW_STOCK=20;                       // 低於這個支數，老闆就該去拍片了
 function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidHasRaw(v)); }
-function rawStockLow(){ return rawStock().length < LOW_STOCK; }
+// 「毛片存量不足」只能有一個定義。以前這支沒有人呼叫，兩個用到它的地方各自
+// 把 `< LOW_STOCK` 抄了一遍 —— 門檻哪天要改就會改漏一個。
+// 已經算好數量的呼叫端可以直接傳進來，不必再掃一次 STATE.videos。
+function rawStockLow(n){ return (n==null?rawStock().length:n) < LOW_STOCK; }
 // 剪輯也要看得到存量：沒片可剪是他們先發現的，要讓他們叫得動老闆。
 // 只在真的不足時才出現 —— 平常不佔畫面。海外不剪台灣毛片，不給他們看。
 function lowStockCard(){
   if(myZone()==="intl") return "";
-  const n=rawStock().length; if(n>=LOW_STOCK) return "";
+  const n=rawStock().length; if(!rawStockLow(n)) return "";
   const sentToday=allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today);
   return `<div class="card" style="border-color:var(--red)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -3829,6 +3944,158 @@ function vidSetLang(lang){ VID_LANG=ORIG_LANG_KEYS.includes(lang)?lang:""; VID_T
 // 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
 // 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
 function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
+
+// ===================================================================
+// 影片庫大流（v137）
+// 影片庫A 走的是「寫腳本→排日期→拍毛片→剪→審→上片」那一整條線。
+// 大流不是 —— 它放的是**已經做完的成品**（以前沒進過系統的舊片），直接建檔就好。
+// 所以這裡只有四個欄位：檔名、封面、存檔連結、文案。沒有毛片、沒有認領、沒有審片。
+// ===================================================================
+let DF_Q="";
+// 存檔連結顯示成一顆短連結，不要把整條網址攤在清單上（一條 Google Drive 網址
+// 有 80 幾個字，三支片就把整列擠爆了）
+function dfDriveLink(v, label){
+  const u=String((v&&v.driveFolder)||"").trim();
+  if(!u) return '<span class="muted">—</span>';
+  return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">${esc(label||"存檔")}</a>`;
+}
+function dfRemakes(v){ return Array.isArray(v&&v.remakes)?v.remakes:[]; }
+// ── 版本編號：原片＝1，第 n 次二創＝n+1 ───────────────────────────
+// 二創沿用原片的名字，所以月排程上兩支長得一模一樣。加一個數字才分得出
+// 「這天出的是原片，那天出的是重剪過的第 2 版」。1 不標（那是原片，標了只是雜訊）。
+function dfVerOf(slot){ const n=+((slot&&slot.ver)||1); return (n>=1&&n<=99)?n:1; }
+function dfVerPill(slot){
+  const n=dfVerOf(slot); if(n<2) return "";
+  return ` <span class="tag verpill" title="${T("這是重剪過的第 "+n+" 版（二創）","Re-cut version "+n)}">${n}</span>`;
+}
+// 這支片可以排的版本：原片 ＋ 已經做過的每一次二創
+function dfVerOptions(v){
+  const out=[[1, T("原片","Original")]];
+  dfRemakes(v).forEach((r,i)=>out.push([i+2, T("第 "+(i+2)+" 版（二創・"+(r.by||"")+"）","Version "+(i+2))]));
+  return out;
+}
+// 大流清單：新的排前面
+function dfList(){
+  const q=String(DF_Q||"").trim().toLowerCase();
+  let list=dfVideos().filter(v=>!isVersion(v));
+  if(q) list=list.filter(v=>[v.name,v.rawName,v.code,v.videoCopy].some(x=>String(x||"").toLowerCase().includes(q)));
+  return list.slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+}
+function dfSetQ(s){ DF_Q=s; const el=document.getElementById("df_rows"); if(el) el.innerHTML=dfRowsHTML(); }
+function dfRowsHTML(){
+  const list=dfList();
+  if(!list.length) return `<p class="muted" style="margin:10px 0 0">${DF_Q?"沒有符合的影片。":"還沒有影片 —— 按上面的「＋ 直接加一支」開始。"}</p>`;
+  return list.map(v=>{
+    const rm=dfRemakes(v);
+    // 二創沿用原片的名字與資料夾，所以清單上永遠只有一列；做過幾次寫在名字旁邊
+    const rmPill=rm.length?`<span class="pill wa" title="${esc(rm.map(r=>`${r.by}・${String(r.at||"").slice(0,10)}`).join("\n"))}">${T("二創","Remake")} ×${rm.length}</span>`:"";
+    const sch=String(v.scheduledDate||"").slice(0,10);
+    const schPill=sch?`<span class="pill ok">${esc(sch.slice(5))} ${T("已排","scheduled")}</span>`:`<span class="muted" style="font-size:12px">${T("還沒排","not scheduled")}</span>`;
+    return `<div class="row" style="gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      ${coverThumbHTML(v,"vthumb")}
+      <div style="flex:1;min-width:140px">
+        <div style="font-weight:600">${esc(zhTW(v.name||v.rawName||""))}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${dfDriveLink(v)}${rmPill?" · ":""}${rmPill} · ${schPill}</div>
+      </div>
+      <button class="btn sec sm" onclick="dfEdit('${v.id}')">${T("編輯","Edit")}</button>
+      ${seesDF()?`<button class="btn sm" onclick="dfRemake('${v.id}')">${T("做二創","Remake")}</button>`:""}
+    </div>`;
+  }).join("");
+}
+function viewVideosDF(){
+  if(!seesDF()) return `<h2>影片庫大流</h2><div class="card"><p class="muted">這個分頁沒有開放給你的職位。</p></div>`;
+  const list=dfList(), n=dfVideos().filter(v=>!isVersion(v)).length;
+  const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
+  const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
+  return `<h2>影片庫大流</h2>
+  <div class="card">
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
+      所以大流的片<b>不會</b>算進毛片庫存、待認領、審片、未拍那些生產面的數字 —— 但它<b>會</b>排進月排程，也算進當天的出片數。
+    </div>
+    <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
+      <span class="pill">${n} 支</span>
+      <span class="pill ${nSched?'ok':''}">${nSched} 支已排程</span>
+      <span class="pill ${nRemake?'wa':''}">二創 ${nRemake} 次</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm" onclick="dfAdd()">${PLUS()} 直接加一支</button>
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <input id="df_q" placeholder="搜尋檔名／文案" value="${esc(DF_Q)}" oninput="dfSetQ(this.value)" style="flex:1;min-width:150px">
+    </div>
+    <div id="df_rows" class="keepscroll" style="margin-top:6px${list.length>12?';max-height:560px;overflow-y:auto':''}">${dfRowsHTML()}</div>
+  </div>`;
+}
+// ── 直接加一支（檔名／封面／存檔連結／文案）──────────────────────
+// 封面要上傳到 Firebase Storage、檔名用影片 id，所以新增的時候還沒有 id 可以掛。
+// 那一格只在「編輯」時出現（先建檔、再補封面），跟影片庫A 的編輯視窗用同一個元件。
+function dfFormHTML(v, id){
+  v=v||{};
+  return `
+    ${id?coverSlotHTML(v, id):""}
+    <label>檔名 · 必填</label>
+    <input id="df_name" value="${esc(zhTW(v.name||v.rawName||""))}" placeholder="這支影片的名字" onkeydown="if(enterKey(event))document.getElementById('modalConfirm').click()">
+    <label style="margin-top:10px">存檔連結（雲端資料夾或檔案）</label>
+    <input id="df_drive" value="${esc(v.driveFolder||"")}" placeholder="https://drive.google.com/...">
+    <div class="muted" style="font-size:12px;margin-top:4px">貼整條網址就好，清單上只會顯示成一顆「存檔」的連結。</div>
+    <label style="margin-top:10px">文案</label>
+    <textarea id="df_copy" style="min-height:96px" placeholder="貼文文案／口播稿">${esc(zhTW(v.videoCopy||""))}</textarea>
+    ${id?"":'<div class="muted" style="font-size:12px;margin-top:10px">封面在建好之後按「編輯」上傳。</div>'}`;
+}
+function dfAdd(){
+  if(dbBlocked()) return;
+  showModal("直接加一支到大流", dfFormHTML(null, ""), async ()=>{
+    const name=zhTW(val("df_name").trim());
+    if(!name){ toast("請輸入檔名",true); return false; }
+    // 直接就是成品：stage 一步到位，不進待處理、不進待認領、不進審片
+    const video={ lib:DF_LIB, name, rawName:name,
+      videoCopy:zhTW(val("df_copy").trim()), driveFolder:val("df_drive").trim(),
+      stage:"已完成", published:true, finishedAt:nowIso(), backupDone:true, socialScheduled:true,
+      reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),   // 成品不需要審，先標好免得跑進審片清單
+      tags:["舊片"] };
+    return await write("POST","/api/videos",{video},"已加入影片庫大流");
+  });
+}
+function dfEdit(id){
+  if(dbBlocked()) return;
+  const v=vid(id); if(!v||!isDF(v)){ toast("找不到這支影片",true); return; }
+  showModal("編輯（大流）", dfFormHTML(v, id), async ()=>{
+    const name=zhTW(val("df_name").trim());
+    if(!name){ toast("請輸入檔名",true); return false; }
+    // 封面不在這裡送 —— 它是上傳當下就寫進資料庫的（coverChosen），這裡再送一次會蓋掉
+    return await write("PUT","/api/videos/"+id,
+      {video:{name, rawName:name, videoCopy:zhTW(val("df_copy").trim()),
+              driveFolder:val("df_drive").trim()}}, "已更新");
+  });
+}
+// ── 二創：不另開一筆影片，直接記在原片底下 ────────────────────────
+// 名字、封面、存檔資料夾全部沿用原片 —— 所以清單上永遠只有一列，
+// 資料夾也只需要顯示一個（成品本來就都存在同一個地方）。
+function dfRemake(id){
+  if(dbBlocked()) return;
+  const v=vid(id); if(!v||!isDF(v)){ toast("二創只能選影片庫大流裡面的片",true); return; }
+  const rm=dfRemakes(v);
+  const hist=rm.length?`<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.8">已經做過 ${rm.length} 次：<br>${
+    rm.map((r,i)=>`${i+1}. ${esc(r.by||"")}・${esc(String(r.at||"").slice(0,10))}${r.note?("・"+esc(r.note)):""}`).join("<br>")}</div>`:"";
+  showModal("做二創：" + zhTW(v.name||v.rawName||""), `
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      二創剪好之後存回<b>同一個資料夾</b>，名字也沿用原片 —— 系統不會另外開一筆，
+      只會在這支片底下記一次。
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center">
+      <span class="muted" style="font-size:13px">存檔位置</span>${dfDriveLink(v,"開啟資料夾")}
+    </div>
+    <label style="margin-top:10px">備註（選填）</label>
+    <input id="dfr_note" placeholder="這次改了什麼？（選填）">
+    ${hist}`, async ()=>{
+    const entry={ id:uid("R"), by:currentUser(), at:nowIso(), note:val("dfr_note").trim() };
+    const ok=await dbArrayAdd("videos", id, "remakes", entry,
+      ()=>window.DB.update("videos", id, {remakes:dfRemakes(vid(id)).concat([entry]), updatedAt:nowIso()}));
+    logA("大流二創", vidTitle(v));
+    toast("已記下這次二創（第 "+(rm.length+1)+" 次）");
+    return ok!==false;
+  });
+}
 function zoneSwitchHTML(){
   if(myZone()!=="both") return "";
   const n=(z)=>(STATE.videos||[]).filter(v=>zoneOfVideo(v)===z).length;
@@ -3868,16 +4135,19 @@ async function autoMoveOrigLang(){
   const list=origAutoList(); if(!list.length) return;
   ORIG_AUTO_RAN=true;   // 先鎖住：寫入會再觸發一次同步，不能讓它自己叫自己
   const plan=list.map(v=>({v, to:origLangGuess(v).lang}));
-  BULK_BUSY=true; const done=[];
-  try{ for(const p of plan){
-        try{ await window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()}); done.push(p); }catch(e){}
-      } }
+  BULK_BUSY=true; let r={ok:[],done:0,failed:0};
+  try{ r=await bulkRun(plan, p=>window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  if(!done.length) return;
-  logA("自動調整原本語言 "+done.length+" 支", done.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
+  // ⚠️ 失敗了也**不能**把 ORIG_AUTO_RAN 放開：這支是在 applyState 裡被呼叫的，
+  // 而它自己的 finally 又會呼叫 applyState —— 放開鎖就是「失敗→重試→失敗」的無限迴圈。
+  // 沒搬成的下次重新整理頁面才會再試一次，失敗數用 toast 講出來就好。
+  if(!r.done && !r.failed) return;
+  if(!r.done){ await delay(300); bulkToast(r, T("原本語言沒有調整成功","Nothing was moved"), T("支","clips")); return; }
+  logA("自動調整原本語言 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""),
+       r.ok.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
   await delay(300);
-  toast(T("已自動把 "+done.length+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
-          "Moved "+done.length+" Thai/English originals to the overseas area"));
+  bulkToast(r, T("已自動把 "+r.done+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
+                 "Moved "+r.done+" Thai/English originals to the overseas area"), T("支","clips"));
 }
 // 猜得到、但不夠確定的才留給人確認
 function origLangSuspects(){
@@ -3912,13 +4182,12 @@ async function saveOrigLangFixes(){
   if(!changes.length){ toast(T("沒有要調整的（都還是中文）","Nothing to change"),true); return; }
   if(!confirm(T("要調整 "+changes.length+" 支影片的原本語言嗎？\n設成泰文或英文的會移到海外區。",
                "Update the original language of "+changes.length+" videos?"))) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const c of changes){
-        try{ await window.DB.update("videos", c.v.id, {origLang:c.to, updatedAt:nowIso()}); n++; }catch(e){}
-      } }
+  BULK_BUSY=true; let r={ok:[],done:0,failed:0};
+  try{ r=await bulkRun(changes, c=>window.DB.update("videos", c.v.id, {origLang:c.to, updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("調整原本語言 "+n+" 支", changes.map(c=>vidTitle(c.v)).join("、").slice(0,120));
-  await delay(300); toast(T("已調整 "+n+" 支","Updated "+n));
+  logA("調整原本語言 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""),
+       r.ok.map(c=>vidTitle(c.v)).join("、").slice(0,120));
+  await delay(300); bulkToast(r, T("已調整 "+r.done+" 支","Updated "+r.done), T("支","clips"));
 }
 function viewVideosTW(){
   const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
@@ -3931,7 +4200,7 @@ function viewVideosTW(){
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
-  return `<h2>${T("影片庫","Library")}</h2>
+  return `<h2>${T("影片庫A","Library A")}</h2>
   ${origLangFixCard()}
   <div class="card">
     ${zoneSwitchHTML()}
@@ -4282,16 +4551,28 @@ function vidImplied(){
   if(VID_UNSCHED) out.push("date");           // 勾了「只看還沒排日期的」
   return out;
 }
+// 「上片連結」只有二創殼追得到 —— 它的編輯視窗有那一格（i_pub／{p}_pub）。
+// 台灣源片的編輯視窗**根本沒有這個輸入格**，所以那個欄位對源片永遠是空的
+// （實際資料：610 支影片有 0 支填得起來）。拿一個填不了的欄位當缺漏，
+// 等於對所有人亮一個永遠熄不掉的紅字 —— 燈號就失去意義了，看到紅色也不會再有人當一回事。
+function needPostLink(v){ return isVersion(v); }
 function vidMissing(v){
   if(!v) return [];
   const out=[];
   const sch=String(v.scheduledDate||"").slice(0,10);
   const pub=String(v.publishedLink||"").trim();
-  // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
-  if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
   if(isVersion(v)){                                   // 版本殼：沒有腳本／毛片這兩步
+    // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
+    if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
     if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    return out;
+  }
+  if(isDF(v)){
+    // 大流放的是成品：沒有毛片這一步（它本來就不用拍），所以不能標「缺毛片」——
+    // 那會變成又一個永遠熄不掉的燈號。它只有兩件事真的可能缺：存檔連結與文案。
+    if(!String(v.driveFolder||"").trim()) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    if(!String(v.videoCopy||"").trim())   out.push({k:"copy",  zh:"缺文案",     en:"needs script"});
     return out;
   }
   if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
@@ -4313,7 +4594,6 @@ function missingPill(v, implied){
   return `<span class="misspill${late?' late':''}" title="${esc(all)}">${esc(T(first.zh,first.en))}${more}</span>`;
 }
 // 舊的「沒文案」小圓點：保留函式名，改成走同一套燈號
-function noCopyDot(v){ return isVersion(v) ? "" : missingPill(v); }
 function coverThumbHTML(v, cls){
   const u=coverUrl(v);
   return u ? `<img class="${cls||"vthumb"}" src="${esc(u)}" alt="" loading="lazy" decoding="async">`
@@ -5159,6 +5439,36 @@ function setIntlCard(s){
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
+// 匯率／加乘讀取：讀不出合法數字時，**原封不動保留原本存著的那個數字**。
+//
+// 以前是 parseFloat(val(...)) → 空白或全形字就是 NaN → (rate>0?rate:1) → 悄悄存成 1。
+// 後果是海外平台的售價把台幣數字掛上美金符號（10000 元變成 $10,000）—— 看起來很正常的錯，
+// 沒有人會發現。改成 1 是最糟的選擇：它既不是使用者的意思，也不是原本的值。
+//
+// 為什麼不是直接擋下整份設定？因為匯率跟班表、密碼、標籤是同一顆「確認送出設定」，
+// 為了一格匯率把管理員剛改好的班表一起退回去，比留著舊匯率更討厭。
+// 所以：舊值照留、其他設定照存，然後用紅字明確告訴他哪一格沒吃進去。
+const RATE_ROW_LABEL={en:"英文", th:"泰文", ms:"馬來", shopee:"蝦皮"};
+function readRates(prev){
+  const old=prev||{}; const rates={}; const bad=[];
+  ["en","th","ms","shopee"].forEach(loc=>{
+    const o=old[loc]||{};
+    const keep={rate:(+o.rate>0?+o.rate:1), mult:(+o.mult>0?+o.mult:1)};
+    const got={};
+    ["rate","mult"].forEach(kind=>{
+      if(loc==="shopee" && kind==="rate"){ got.rate=1; return; }   // 蝦皮＝台幣，畫面上沒有匯率欄
+      const el=document.getElementById("set_"+kind+"_"+loc);
+      if(!el){ got[kind]=keep[kind]; return; }                     // 這一格沒渲染出來就不管它，也不用警告
+      const raw=String(el.value==null?"":el.value).trim();
+      const n=Number(raw);   // 用 Number 不用 parseFloat："1.2abc" 要被擋掉，不能只取前面那段
+      if(raw==="" || !isFinite(n) || n<=0){ got[kind]=keep[kind]; bad.push(RATE_ROW_LABEL[loc]+(kind==="rate"?"匯率":"加乘")); }
+      else got[kind]=n;
+    });
+    rates[loc]={code:DEFAULT_CURRENCY[loc], rate:got.rate, mult:got.mult};
+  });
+  return {rates, bad,
+    warn: bad.length ? ("「"+bad.join("」「")+"」沒有填成大於 0 的數字，那幾格維持原本的設定沒有變動") : ""};
+}
 // 設定：四平台商品價格換算（匯率＋售價加乘倍數）
 function setRatesCard(s){
   const rateRow=(loc,label)=>{ const r=(s.exchangeRates&&s.exchangeRates[loc])||{}; const code=r.code||DEFAULT_CURRENCY[loc];
@@ -5383,35 +5693,44 @@ function viewSettings(){
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）
 async function migratePamperTag(){ if(dbBlocked()) return;
   if(!confirm("把所有影片與標籤清單裡的「每日寵粉」改成「寵粉」？")) return;
-  const all=(STATE.videos||[]).concat(STATE.deletedVideos||[]);
-  BULK_BUSY=true; let n=0;
+  const hit=(STATE.videos||[]).concat(STATE.deletedVideos||[])
+    .filter(v=>(Array.isArray(v.tags)?v.tags:[]).includes("每日寵粉"));
+  BULK_BUSY=true; let r={done:0,failed:0}; let setErr=false;
   try{
-    for(const v of all){ const tags=Array.isArray(v.tags)?v.tags:[];
-      if(tags.includes("每日寵粉")){ const nt=[...new Set(tags.map(t=>t==="每日寵粉"?"寵粉":t))];
-        const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
-        try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} } }
-    const cur=videoTags(); if(cur.includes("每日寵粉")){ try{ await window.DB.setSettings({[brandField("videoTags")]:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }catch(e){} }
+    r=await bulkRun(hit, v=>{ const nt=[...new Set(v.tags.map(t=>t==="每日寵粉"?"寵粉":t))];
+      const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
+      return window.DB.update("videos",v.id,patch); });
+    const cur=videoTags();
+    if(cur.includes("每日寵粉")){
+      try{ await window.DB.setSettings({[brandField("videoTags")]:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }
+      catch(e){ setErr=true; }   // 標籤清單沒改到＝下拉選單裡還會看到舊名字，要講
+    }
   } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("整理標籤 每日寵粉→寵粉", n+" 支"); await delay(300); toast("完成：已把 "+n+" 支影片的「每日寵粉」改成「寵粉」");
+  logA("整理標籤 每日寵粉→寵粉", r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""));
+  await delay(300);
+  if(setErr) toast("已改 "+r.done+" 支影片，但標籤清單本身沒更新成功，請再按一次",true);
+  else bulkToast(r, "完成：已把 "+r.done+" 支影片的「每日寵粉」改成「寵粉」", "支");
 }
 async function convertExistingToTW(){ if(dbBlocked()) return;
   if(!__s2t){ toast("簡繁轉換尚未就緒（可能網路載入中），請稍候再試",true); return; }
   const vids=(STATE.videos||[]);
   if(!confirm("把現有 "+vids.length+" 支影片的標題與文案的簡體字轉成繁體存回？此動作會直接更新資料。")) return;
-  BULK_BUSY=true; let n=0;
-  try{
-    for(const v of vids){ const patch={};
-      ["name","rawName","videoCopy","note"].forEach(k=>{ const o=v[k]||""; const c=zhTW(o); if(c!==o) patch[k]=c; });
-      if(Object.keys(patch).length){ try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} }
-    }
-  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("簡體轉繁體 "+n+" 支", "影片庫");
-  await delay(300); toast("完成：已把 "+n+" 支影片的簡體字轉為繁體");
+  // 先算出真的要改的（沒有簡體字的不必送出去），再一次批次寫
+  const jobs=[];
+  vids.forEach(v=>{ const patch={};
+    ["name","rawName","videoCopy","note"].forEach(k=>{ const o=v[k]||""; const c=zhTW(o); if(c!==o) patch[k]=c; });
+    if(Object.keys(patch).length) jobs.push({v, patch}); });
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(jobs, j=>window.DB.update("videos",j.v.id,j.patch)); }
+  finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("簡體轉繁體 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), "影片庫");
+  await delay(300); bulkToast(r, "完成：已把 "+r.done+" 支影片的簡體字轉為繁體", "支");
 }
 async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
   const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  let rateWarn="";
   // 管理員密碼：留空＝不改；要改的話存雜湊、把明文清掉（跟員工密碼同一套規則）
   const pw=(val("set_pw")||"").trim();
   if(pw){
@@ -5468,11 +5787,8 @@ async function saveSettings(){
       const i=line.indexOf("="); const loc=(i>=0?line.slice(0,i):"en").trim().toLowerCase(); const name=(i>=0?line.slice(i+1):line).trim();
       return {locale:loc, name}; }).filter(a=>a.name && ["en","th"].includes(a.locale));   // 只收 en/th；馬來帳號請填在「馬來設定」
     settings.intlDailyTarget=parseInt(val("set_intltarget"))||0;
-    settings.exchangeRates={};
-    ["en","th","ms","shopee"].forEach(loc=>{
-      const rate=(loc==="shopee")?1:parseFloat(val("set_rate_"+loc));   // 蝦皮＝台幣，匯率固定 1
-      const mult=parseFloat(val("set_mult_"+loc));
-      settings.exchangeRates[loc]={code:DEFAULT_CURRENCY[loc], rate:(rate>0?rate:1), mult:(mult>0?mult:1)}; });
+    const rr=readRates((STATE&&STATE.settings||{}).exchangeRates);   // 讀不出來的那幾格保留原本的值，不會靜默變成 1
+    settings.exchangeRates=rr.rates; rateWarn=rr.warn;
   }
   // 蝦皮設定：帳號清單（一行一個）＋每帳號每日目標
   if(document.getElementById("set_shpacct")){
@@ -5484,7 +5800,11 @@ async function saveSettings(){
     settings.msAccounts=(val("set_msacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
     settings.msDailyTarget=parseInt(val("set_mstarget"))||0;
   }
-  await writeAdmin("PUT","/api/settings",{settings},"已更新設定");
+  // 匯率有格子讀不出來的話，成功訊息要換成紅字警告 —— toast 只有一格，
+  // 讓 writeAdmin 先跳「已更新設定」再被蓋掉的話，人只會看到後面那一則，
+  // 所以乾脆不讓它跳，由我們自己講完整的那一句。
+  const okSave=await writeAdmin("PUT","/api/settings",{settings}, rateWarn?"":"已更新設定");
+  if(okSave && rateWarn) toast("設定已更新，但"+rateWarn, true);
 }
 
 // ===================================================================
@@ -5521,18 +5841,41 @@ function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
   if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }
-  withAdmin(async ()=>{
-    BULK_BUSY=true; let vc=0;
+  return withAdmin(async ()=>{   // 回傳 promise：呼叫端（和測試）才等得到它真的做完
+    // ⚠️ videosAll 不是 videos：STATE.videos 只有「目前這家公司」的片（v131 的品牌切片），
+    // 拿它改名的話，同一個剪輯在另外兩家公司的片會永遠掛在舊名字上、而且沒有人會發現。
+    // ⚠️ assignedTo 也要改：漏掉的話那支片會被鎖給一個不存在的人，誰都點不開（v124 的指派鎖）。
+    const all=(STATE.videosAll||STATE.videos||[]);
+    const jobs=[];
+    all.forEach(v=>{ const patch={};
+      if(v.editor===oldName) patch.editor=nn;
+      if(v.claimedBy===oldName) patch.claimedBy=nn;
+      if(v.assignedTo===oldName) patch.assignedTo=nn;
+      if(Object.keys(patch).length) jobs.push({v, patch}); });
+    BULK_BUSY=true; let r={done:0,failed:0}; let swapped=false, why="";
     try{
-      const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
-      await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
-      for(const v of (STATE.videos||[])){ const patch={}; let t=false;
-        if(v.editor===oldName){ patch.editor=nn; t=true; } if(v.claimedBy===oldName){ patch.claimedBy=nn; t=true; }
-        if(t){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} } }
-      await window.DB.del("users", oldName);
+      // 順序很重要：先改影片、全部成功了才動 users。
+      // 反過來做的話，中途失敗會讓「新名字已存在」，下次再按改名會被同名檢查擋住 —— 修不回來。
+      // 先改影片的話，舊帳號原封不動還在，管理員直接再按一次改名就能把剩下的補完。
+      r=await bulkRun(jobs, j=>window.DB.update("videos", j.v.id, j.patch));
+      if(r.failed){ why="有 "+r.failed+" 筆影片沒改到"; }
+      else{
+        const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
+        try{
+          await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
+          await window.DB.del("users", oldName);
+          swapped=true;
+        }catch(e){ why="影片都改好了，但帳號本身沒換過來"; }
+      }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    if(!swapped){
+      logA("成員改名未完成","「"+oldName+"」→「"+nn+"」（"+why+"）");
+      await delay(300);
+      toast("改名沒有完成："+why+"，帳號仍然是「"+oldName+"」。請檢查網路後再按一次改名",true);
+      return;
+    }
     logA("成員改名","「"+oldName+"」→「"+nn+"」");
-    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
+    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+r.done+" 筆同步）");
   });
 }
 // ===================================================================

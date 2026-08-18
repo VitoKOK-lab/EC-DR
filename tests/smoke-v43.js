@@ -41,7 +41,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 // ---- manager 首頁＝流程中控 ----
 localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
 const tabs=myTabs().map(t=>t[0]);
-ok("manager 分頁＝flow/team/videos/cal", JSON.stringify(tabs)===JSON.stringify(["flow","team","videos","cal"]));
+ok("manager 分頁＝flow/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["flow","team","videos","videosDF","cal"]));
 let h=viewFlow();
 ok("備片警報卡（未達60天→紅色警示）", h.includes("備片存量") && h.includes("要拍片了") && h.includes("準備腳本"));
 ok("排程存量數字與目標", h.includes(`/${60}`)||h.includes("60"));

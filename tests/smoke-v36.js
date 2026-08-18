@@ -45,7 +45,9 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 const edTabs=JSON.stringify(myTabs());
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-ok("intl tab ids identical to editor (labels English)", JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(JSON.parse(edTabs).map(t=>t[0])));
+// v137：海外不做「影片庫大流」，所以 intl 的分頁不再跟 editor 完全一樣 —— 差的就是那一個
+ok("intl tabs = editor tabs minus 影片庫大流（海外不做大流）",
+   JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(JSON.parse(edTabs).map(t=>t[0]).filter(x=>x!=="videosDF")));
 
 // --- 全角色全分頁渲染（intl 現在跑中文頁） ---
 for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]]){
