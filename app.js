@@ -425,6 +425,32 @@ async function route(method, path, body){
   throw new Error("不支援的操作");
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ── 批次寫入：分批平行 ＋ 誠實回報 ────────────────────────────────
+// 以前每個批次迴圈都長這樣：`try{ await update(...); n++; }catch(e){}`，
+// 然後只報 n。指派 100 支、掉了 30 支，畫面照樣說「已指派 70 支」——
+// 沒有人會發現那 30 支還留在公用池。這跟 v127 的「下班按了沒反應卻不報錯」
+// 是同一個病：**吞掉失敗就等於假裝成功**。
+// 一次一趟也慢：100 支＝100 趟來回，期間 BULK_BUSY 把整個畫面凍住十幾秒。
+// 分批平行的 allSettled 一次解決兩件事 —— 快十倍，而且天生就知道誰失敗。
+const BULK_CHUNK=10;   // 一次送 10 筆：夠快，又不會一口氣打爆連線
+async function bulkRun(items, fn){
+  const list=Array.from(items||[]); const ok=[], bad=[];
+  for(let i=0;i<list.length;i+=BULK_CHUNK){
+    const part=list.slice(i, i+BULK_CHUNK);
+    // fn 同步就丟例外的話，map 會在進 allSettled 之前先炸掉 —— 包一層擋住
+    const rs=await Promise.allSettled(part.map(it=>Promise.resolve().then(()=>fn(it))));
+    rs.forEach((r,j)=>{ (r.status==="fulfilled"?ok:bad).push(part[j]); });
+  }
+  return {ok, bad, done:ok.length, failed:bad.length};
+}
+// toast 只有一格，第二則會蓋掉第一則 —— 成功與失敗要併成同一句講完
+function bulkToast(r, okMsg, unit){
+  const u=unit||T("筆","");
+  if(r && r.failed) toast(okMsg + T("；但有 "+r.failed+" "+u+"沒有寫進去，請檢查網路後再按一次",
+                                    "; "+r.failed+" "+u+" failed to save — check your connection and try again"), true);
+  else toast(okMsg);
+}
 async function write(method, path, body, okMsg){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，離開後才能操作",true); return false; }
   try{ await route(method, path, body||{}); await delay(140); logA(okMsg||(method+" "+path), logTarget(path)); if(okMsg) toast(okMsg); return true; }
@@ -1309,11 +1335,11 @@ async function assignFootage(){
   if(!ids.length){ toast("請勾選至少一支毛片",true); return; }
   // 清單不再截斷之後「全選」是真的全選，一次幾百支不該手滑就送出去
   if(ids.length>=20 && !confirm("要把 "+ids.length+" 支毛片一次指派給「"+who+"」嗎？")) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const id of ids){ try{ await window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()}); n++; }catch(e){} } }
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(ids, id=>window.DB.update("videos",id,{assignedTo:who,updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("指派毛片 "+n+" 支", who);
-  await delay(300); toast("已指派 "+n+" 支給「"+who+"」（他認領後才開始計時）");
+  logA("指派毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), who);
+  await delay(300); bulkToast(r, "已指派 "+r.done+" 支給「"+who+"」（他認領後才開始計時）", "支");
 }
 // 收回指派給某員工、但他還沒認領（仍待處理）的毛片，回到公用池
 // 防呆：只收回台灣毛片；海外/蝦皮二創殼的 assignedTo＝建立者本人，收回會讓它跑進所有人的清單
@@ -1322,11 +1348,11 @@ async function unassignEditor(name){
   const list=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && v.assignedTo===name);
   if(!list.length){ toast("「"+name+"」沒有待認領的指派毛片",true); return; }
   if(!confirm("把指派給「"+name+"」但還沒認領的 "+list.length+" 支毛片收回公用池？")) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const v of list){ try{ await window.DB.update("videos",v.id,{assignedTo:""}); n++; }catch(e){} } }
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(list, v=>window.DB.update("videos",v.id,{assignedTo:""})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("收回指派毛片 "+n+" 支", name);
-  await delay(300); toast("已收回 "+n+" 支到公用池");
+  logA("收回指派毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), name);
+  await delay(300); bulkToast(r, "已收回 "+r.done+" 支到公用池", "支");
 }
 function ackTask(id){ const t=taskById(id);
   dbUpdate("tasks", id, {ack:true, ackAt:nowIso()}, {action:isNotice(t)?"收到 HR 通知":"收到交辦工作", target:(t&&t.title)||id}); }
@@ -2315,10 +2341,12 @@ async function autoCloseOpenShifts(){
   const me=currentUser(); if(!me) return;
   const open=Object.values((STATE&&STATE.shifts)||{})
     .filter(s=>s&&s.user===me&&s.clockIn&&!s.clockOut&&String(s.date||"")<today);
-  for(const s of open){
-    const wh=workHoursOf(me);
-    try{ await window.DB.update("shifts", s.id, {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}); }catch(e){}
-  }
+  const wh=workHoursOf(me);
+  // 這支是登入時的背景補登，不跳 toast（開機就彈一則系統訊息只會嚇到人）；
+  // 但失敗也不能無聲無息 —— 寫進操作紀錄。反正沒補成功的下次登入還會再補一次。
+  const r=await bulkRun(open, s=>window.DB.update("shifts", s.id,
+    {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}));
+  if(r.failed) logA("自動補下班失敗 "+r.failed+" 筆", me);
 }
 // 出勤異常＝遲到或早退（系統補下班也算，因為當天沒打下班）
 function attIssues(sh){
@@ -3342,18 +3370,23 @@ function batchNewFootage(){ if(dbBlocked()) return;
       items.push({name, videoCopy:vcopy, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
     // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
-    let ok=0; BULK_BUSY=true; const made=[];
+    // 編號要先全部算完再寫：nextVideoCode(made) 得看著已產生的那幾支才不會撞號，
+    // 這段是同步的，跟寫入無關，所以先跑完再一次批次送出去。
+    const made=[];
+    for(let i=0;i<items.length;i++){
+      made.push(newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
+        videoCopy:items[i].videoCopy,
+        rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
+        tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}));   // 有銷售商品 → 自動帶「寵粉」
+    }
+    BULK_BUSY=true; let r={done:0,failed:0};
     try{
-      for(let i=0;i<items.length;i++){
-        const rec=newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
-          videoCopy:items[i].videoCopy,
-          rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
-          tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]});   // 有銷售商品 → 自動帶「寵粉」
-        made.push(rec);
-        try{ await window.DB.set("videos", rec.id, rec); ok++; }catch(e){} }
-      if(ok) logA("批次新增毛片 "+ok+" 支", "");
+      r=await bulkRun(made, rec=>window.DB.set("videos", rec.id, rec));
+      if(r.done) logA("批次新增毛片 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), "");
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-    await delay(300); toast(T("已新增 "+ok+" 支毛片",ok+" clips added")); return true;
+    await delay(300);
+    bulkToast(r, T("已新增 "+r.done+" 支毛片", r.done+" clips added"), T("支","clips"));
+    return true;
   });
 }
 function claimVid(id){ write("POST",`/api/videos/${id}/claim`,{},T("已認領，加入我的工作","Claimed — added to your work")); }
@@ -3868,16 +3901,19 @@ async function autoMoveOrigLang(){
   const list=origAutoList(); if(!list.length) return;
   ORIG_AUTO_RAN=true;   // 先鎖住：寫入會再觸發一次同步，不能讓它自己叫自己
   const plan=list.map(v=>({v, to:origLangGuess(v).lang}));
-  BULK_BUSY=true; const done=[];
-  try{ for(const p of plan){
-        try{ await window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()}); done.push(p); }catch(e){}
-      } }
+  BULK_BUSY=true; let r={ok:[],done:0,failed:0};
+  try{ r=await bulkRun(plan, p=>window.DB.update("videos", p.v.id, {origLang:p.to, updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  if(!done.length) return;
-  logA("自動調整原本語言 "+done.length+" 支", done.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
+  // ⚠️ 失敗了也**不能**把 ORIG_AUTO_RAN 放開：這支是在 applyState 裡被呼叫的，
+  // 而它自己的 finally 又會呼叫 applyState —— 放開鎖就是「失敗→重試→失敗」的無限迴圈。
+  // 沒搬成的下次重新整理頁面才會再試一次，失敗數用 toast 講出來就好。
+  if(!r.done && !r.failed) return;
+  if(!r.done){ await delay(300); bulkToast(r, T("原本語言沒有調整成功","Nothing was moved"), T("支","clips")); return; }
+  logA("自動調整原本語言 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""),
+       r.ok.map(p=>vidTitle(p.v)+"→"+p.to).join("、").slice(0,200));
   await delay(300);
-  toast(T("已自動把 "+done.length+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
-          "Moved "+done.length+" Thai/English originals to the overseas area"));
+  bulkToast(r, T("已自動把 "+r.done+" 支泰文／英文原創移到海外區（操作紀錄查得到，改回中文就會搬回來）",
+                 "Moved "+r.done+" Thai/English originals to the overseas area"), T("支","clips"));
 }
 // 猜得到、但不夠確定的才留給人確認
 function origLangSuspects(){
@@ -3912,13 +3948,12 @@ async function saveOrigLangFixes(){
   if(!changes.length){ toast(T("沒有要調整的（都還是中文）","Nothing to change"),true); return; }
   if(!confirm(T("要調整 "+changes.length+" 支影片的原本語言嗎？\n設成泰文或英文的會移到海外區。",
                "Update the original language of "+changes.length+" videos?"))) return;
-  BULK_BUSY=true; let n=0;
-  try{ for(const c of changes){
-        try{ await window.DB.update("videos", c.v.id, {origLang:c.to, updatedAt:nowIso()}); n++; }catch(e){}
-      } }
+  BULK_BUSY=true; let r={ok:[],done:0,failed:0};
+  try{ r=await bulkRun(changes, c=>window.DB.update("videos", c.v.id, {origLang:c.to, updatedAt:nowIso()})); }
   finally{ BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("調整原本語言 "+n+" 支", changes.map(c=>vidTitle(c.v)).join("、").slice(0,120));
-  await delay(300); toast(T("已調整 "+n+" 支","Updated "+n));
+  logA("調整原本語言 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""),
+       r.ok.map(c=>vidTitle(c.v)).join("、").slice(0,120));
+  await delay(300); bulkToast(r, T("已調整 "+r.done+" 支","Updated "+r.done), T("支","clips"));
 }
 function viewVideosTW(){
   const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
@@ -5383,30 +5418,38 @@ function viewSettings(){
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）
 async function migratePamperTag(){ if(dbBlocked()) return;
   if(!confirm("把所有影片與標籤清單裡的「每日寵粉」改成「寵粉」？")) return;
-  const all=(STATE.videos||[]).concat(STATE.deletedVideos||[]);
-  BULK_BUSY=true; let n=0;
+  const hit=(STATE.videos||[]).concat(STATE.deletedVideos||[])
+    .filter(v=>(Array.isArray(v.tags)?v.tags:[]).includes("每日寵粉"));
+  BULK_BUSY=true; let r={done:0,failed:0}; let setErr=false;
   try{
-    for(const v of all){ const tags=Array.isArray(v.tags)?v.tags:[];
-      if(tags.includes("每日寵粉")){ const nt=[...new Set(tags.map(t=>t==="每日寵粉"?"寵粉":t))];
-        const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
-        try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} } }
-    const cur=videoTags(); if(cur.includes("每日寵粉")){ try{ await window.DB.setSettings({[brandField("videoTags")]:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }catch(e){} }
+    r=await bulkRun(hit, v=>{ const nt=[...new Set(v.tags.map(t=>t==="每日寵粉"?"寵粉":t))];
+      const patch={tags:nt}; if(v.subTag==="每日寵粉") patch.subTag="寵粉";
+      return window.DB.update("videos",v.id,patch); });
+    const cur=videoTags();
+    if(cur.includes("每日寵粉")){
+      try{ await window.DB.setSettings({[brandField("videoTags")]:[...new Set(cur.map(t=>t==="每日寵粉"?"寵粉":t))]}); }
+      catch(e){ setErr=true; }   // 標籤清單沒改到＝下拉選單裡還會看到舊名字，要講
+    }
   } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("整理標籤 每日寵粉→寵粉", n+" 支"); await delay(300); toast("完成：已把 "+n+" 支影片的「每日寵粉」改成「寵粉」");
+  logA("整理標籤 每日寵粉→寵粉", r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""));
+  await delay(300);
+  if(setErr) toast("已改 "+r.done+" 支影片，但標籤清單本身沒更新成功，請再按一次",true);
+  else bulkToast(r, "完成：已把 "+r.done+" 支影片的「每日寵粉」改成「寵粉」", "支");
 }
 async function convertExistingToTW(){ if(dbBlocked()) return;
   if(!__s2t){ toast("簡繁轉換尚未就緒（可能網路載入中），請稍候再試",true); return; }
   const vids=(STATE.videos||[]);
   if(!confirm("把現有 "+vids.length+" 支影片的標題與文案的簡體字轉成繁體存回？此動作會直接更新資料。")) return;
-  BULK_BUSY=true; let n=0;
-  try{
-    for(const v of vids){ const patch={};
-      ["name","rawName","videoCopy","note"].forEach(k=>{ const o=v[k]||""; const c=zhTW(o); if(c!==o) patch[k]=c; });
-      if(Object.keys(patch).length){ try{ await window.DB.update("videos",v.id,patch); n++; }catch(e){} }
-    }
-  } finally { BULK_BUSY=false; applyState(LAST_RAW); }
-  logA("簡體轉繁體 "+n+" 支", "影片庫");
-  await delay(300); toast("完成：已把 "+n+" 支影片的簡體字轉為繁體");
+  // 先算出真的要改的（沒有簡體字的不必送出去），再一次批次寫
+  const jobs=[];
+  vids.forEach(v=>{ const patch={};
+    ["name","rawName","videoCopy","note"].forEach(k=>{ const o=v[k]||""; const c=zhTW(o); if(c!==o) patch[k]=c; });
+    if(Object.keys(patch).length) jobs.push({v, patch}); });
+  BULK_BUSY=true; let r={done:0,failed:0};
+  try{ r=await bulkRun(jobs, j=>window.DB.update("videos",j.v.id,j.patch)); }
+  finally { BULK_BUSY=false; applyState(LAST_RAW); }
+  logA("簡體轉繁體 "+r.done+" 支"+(r.failed?("（失敗 "+r.failed+" 支）"):""), "影片庫");
+  await delay(300); bulkToast(r, "完成：已把 "+r.done+" 支影片的簡體字轉為繁體", "支");
 }
 async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
@@ -5521,18 +5564,41 @@ function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;
   if((STATE.users||[]).some(u=>u.name===nn)){ toast("已有同名成員「"+nn+"」",true); return; }
-  withAdmin(async ()=>{
-    BULK_BUSY=true; let vc=0;
+  return withAdmin(async ()=>{   // 回傳 promise：呼叫端（和測試）才等得到它真的做完
+    // ⚠️ videosAll 不是 videos：STATE.videos 只有「目前這家公司」的片（v131 的品牌切片），
+    // 拿它改名的話，同一個剪輯在另外兩家公司的片會永遠掛在舊名字上、而且沒有人會發現。
+    // ⚠️ assignedTo 也要改：漏掉的話那支片會被鎖給一個不存在的人，誰都點不開（v124 的指派鎖）。
+    const all=(STATE.videosAll||STATE.videos||[]);
+    const jobs=[];
+    all.forEach(v=>{ const patch={};
+      if(v.editor===oldName) patch.editor=nn;
+      if(v.claimedBy===oldName) patch.claimedBy=nn;
+      if(v.assignedTo===oldName) patch.assignedTo=nn;
+      if(Object.keys(patch).length) jobs.push({v, patch}); });
+    BULK_BUSY=true; let r={done:0,failed:0}; let swapped=false, why="";
     try{
-      const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
-      await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
-      for(const v of (STATE.videos||[])){ const patch={}; let t=false;
-        if(v.editor===oldName){ patch.editor=nn; t=true; } if(v.claimedBy===oldName){ patch.claimedBy=nn; t=true; }
-        if(t){ try{ await window.DB.update("videos", v.id, patch); vc++; }catch(e){} } }
-      await window.DB.del("users", oldName);
+      // 順序很重要：先改影片、全部成功了才動 users。
+      // 反過來做的話，中途失敗會讓「新名字已存在」，下次再按改名會被同名檢查擋住 —— 修不回來。
+      // 先改影片的話，舊帳號原封不動還在，管理員直接再按一次改名就能把剩下的補完。
+      r=await bulkRun(jobs, j=>window.DB.update("videos", j.v.id, j.patch));
+      if(r.failed){ why="有 "+r.failed+" 筆影片沒改到"; }
+      else{
+        const u=(STATE.users||[]).find(x=>x.name===oldName)||{name:oldName};
+        try{
+          await window.DB.set("users", nn, Object.assign({}, u, {name:nn}));
+          await window.DB.del("users", oldName);
+          swapped=true;
+        }catch(e){ why="影片都改好了，但帳號本身沒換過來"; }
+      }
     } finally { BULK_BUSY=false; applyState(LAST_RAW); }
+    if(!swapped){
+      logA("成員改名未完成","「"+oldName+"」→「"+nn+"」（"+why+"）");
+      await delay(300);
+      toast("改名沒有完成："+why+"，帳號仍然是「"+oldName+"」。請檢查網路後再按一次改名",true);
+      return;
+    }
     logA("成員改名","「"+oldName+"」→「"+nn+"」");
-    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+vc+" 筆同步）");
+    await delay(300); toast("已將「"+oldName+"」改名為「"+nn+"」（影片 "+r.done+" 筆同步）");
   });
 }
 // ===================================================================
