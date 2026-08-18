@@ -20,10 +20,10 @@ const NO_EDIT_ROLES=["mkt","svc","ship","cs","hr"];
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫"],["cal","月排程"]],
+  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   hr:      [["team","團隊看板"],["attend","出勤"]],   // 人資：團隊看板（交辦狀況＋成效）＋出勤（打卡、遲到早退、月報表）
@@ -179,6 +179,10 @@ function newVideoRecord(over){
     refLink:"",   // 參考來源網址：這支的靈感／參考影片是哪來的
     cover:"",     // 封面圖網址（Firebase Storage，上傳時已壓縮）
     usageHistory:[], totalUsed:0,
+    // 影片庫：""＝影片庫A（走完整生產流程）、"大流"＝影片庫大流（直接放成品）
+    lib:"",
+    // 大流的二創：不另外開一筆影片，直接記在原片底下。名字、封面、存檔資料夾都沿用原片
+    remakes:[],
     locked:false, published:false, backupDone:false, socialScheduled:false };
   return Object.assign(rec, over||{});
 }
@@ -200,7 +204,9 @@ function dayVideoList(date){
   // 排程與剪輯是兩條獨立的線：一個人先把日期排好，其他人再照著剪。
   // 所以「排到這天」的影片一律算進來，不管剪完了沒 —— v99 之前這裡卡了 stage，
   // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
-  (STATE.videos||[]).forEach(v=>{ if(isSourceVid(v) && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  // 出片面：影片庫A 與大流一起算。大流的片是成品，排進來就是當天要出的其中一支，
+  // 「今天到底出幾支」不該分它從哪個庫來（生產面的數字才要分，見 decorate）。
+  allLibVideos().forEach(v=>{ if(isSourceVid(v) && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -253,6 +259,26 @@ function brandList(){
 }
 function brandIds(){ return brandList().map(b=>b.id); }
 function brandOf(v){ return String((v&&v.brand)||""); }
+
+// ── 影片庫大流（v137）──────────────────────────────────────────────
+// 兩個影片庫：A＝原本那個（走毛片→剪輯→審片的完整流程），大流＝直接放成品。
+// 沿用這個專案一路在用的「空字串＝預設」寫法，既有 610 支影片一筆都不用改。
+const DF_LIB="大流";
+function isDF(v){ return String((v&&v.lib)||"")===DF_LIB; }
+// 大流的片：decorate 把它從 STATE.videos 抽出去了，要看它一律走這裡
+function dfVideos(){ return (STATE&&STATE.videosDF)||[]; }
+// 兩個庫加在一起 —— 只有「出片面」的東西該用它（月排程、當天已排幾支）。
+// ⚠️ 生產面（毛片庫存、待認領、審片、未拍、剪輯 KPI）一律不准用，那是 STATE.videos。
+// 快取住是因為 vidxBuild 的快取靠陣列身分比對；每次回傳新陣列會讓索引每次重建。
+let ALLLIB=null, ALLLIB_A=null, ALLLIB_D=null;
+function allLibVideos(){
+  const a=(STATE&&STATE.videos)||[], d=(STATE&&STATE.videosDF)||[];
+  if(ALLLIB && ALLLIB_A===a && ALLLIB_D===d) return ALLLIB;
+  ALLLIB = d.length ? a.concat(d) : a;    // 沒有大流就直接沿用原陣列，不多配置也不破壞索引快取
+  ALLLIB_A=a; ALLLIB_D=d; return ALLLIB;
+}
+// 誰看得到「影片庫大流」：管理員、經理人、剪輯（海外不做大流）
+function seesDF(){ return ["boss","manager","editor"].includes(currentRole()); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
 // 選過的帳號記在 localStorage。**「有沒有選過」跟「選了哪一家」是兩件事** ——
@@ -684,6 +710,19 @@ function decorate(raw){
   if(BRAND && !bset.has(BRAND)) BRAND="";      // 品牌被刪掉了就退回預設那家
   st.videos=st.videosAll.filter(v=>brandOf(v)===BRAND);
   st.deletedVideos=st.deletedVideosAll.filter(v=>brandOf(v)===BRAND);
+  // ── 影片庫大流（v137）─────────────────────────────────────────────
+  // 大流的片是「成果」不是「生產」：它沒經過拍片、沒經過剪片，直接就是成品。
+  // 所以生產面的每一個數字都不能算它 —— 毛片庫存、待認領池、審片清單、未拍、
+  // 剪輯 KPI。混進去的話「還要不要去拍片」這種判斷會整個失真。
+  //
+  // 切法刻意跟品牌相反：品牌是把「別家的」濾掉，這裡是把「大流的」**抽出去**，
+  // 讓 STATE.videos 只剩影片庫A。理由是生產流程有幾十個地方在讀 STATE.videos，
+  // 而要看到大流的只有月排程那少少幾個地方 —— 讓多數自動正確、少數明確加回來，
+  // 比反過來安全得多（改漏一個生產流程的地方，數字錯了不會有人發現）。
+  st.videosDF=st.videos.filter(isDF);
+  st.videos=st.videos.filter(v=>!isDF(v));
+  st.deletedVideosDF=st.deletedVideos.filter(isDF);
+  st.deletedVideos=st.deletedVideos.filter(v=>!isDF(v));
   const s=st.settings||{}; const win=s.reuseWindowDays||30;
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
   return st;
@@ -746,7 +785,9 @@ function zhTW(s){ s=(s==null?"":String(s)); if(!__s2t||!s) return s; let r=__s2t
 // ⚠️ 要新增／移除影片請整個換掉 STATE.videos，不要就地 push。
 let VIDX=null, VIDX_SRC=null, VIDX_N=-1;
 function vidxBuild(){
-  const vs=(STATE&&STATE.videos)||[];
+  // 索引要含大流：vid(id) 是全系統的通用反查，月排程、操作紀錄、二創都靠它。
+  // STATE.videos 已經把大流抽走了，所以這裡要自己接回來（見 decorate 的說明）。
+  const vs=allLibVideos();
   if(VIDX_SRC===vs && VIDX_N===vs.length) return VIDX;
   const byId=new Map(), bySrc=new Map();
   vs.forEach(v=>{ byId.set(v.id, v);
@@ -821,7 +862,7 @@ function render(){
       "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
   // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -995,7 +1036,8 @@ const OD_CATS=[["all","全部","All"],["raw","還沒剪好的毛片","Raw · not
 // 分類鈕之前的共同底：排除當天已排過的，再套「只看還沒排的」
 function odBase(ds){
   const used=new Set(dayVideoList(ds).map(it=>it.videoId));
-  let list=(STATE.videos||[]).filter(v=>isSourceVid(v) && !used.has(v.id));   // 版本殼走各自的月曆
+  // 大流的片也排得進來（成果面共用同一份月排程）；版本殼走各自的月曆
+  let list=allLibVideos().filter(v=>isSourceVid(v) && !used.has(v.id));
   // 「只看還沒排的」＝濾掉已經排在今天或之後的；舊片的排程日在過去，重播不受影響
   if(OD_UNSCHED) list=list.filter(v=>!(v.scheduledDate && String(v.scheduledDate).slice(0,10)>=today));
   return list;
@@ -3875,6 +3917,144 @@ function vidSetLang(lang){ VID_LANG=ORIG_LANG_KEYS.includes(lang)?lang:""; VID_T
 // 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
 // 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
 function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
+
+// ===================================================================
+// 影片庫大流（v137）
+// 影片庫A 走的是「寫腳本→排日期→拍毛片→剪→審→上片」那一整條線。
+// 大流不是 —— 它放的是**已經做完的成品**（以前沒進過系統的舊片），直接建檔就好。
+// 所以這裡只有四個欄位：檔名、封面、存檔連結、文案。沒有毛片、沒有認領、沒有審片。
+// ===================================================================
+let DF_Q="";
+// 存檔連結顯示成一顆短連結，不要把整條網址攤在清單上（一條 Google Drive 網址
+// 有 80 幾個字，三支片就把整列擠爆了）
+function dfDriveLink(v, label){
+  const u=String((v&&v.driveFolder)||"").trim();
+  if(!u) return '<span class="muted">—</span>';
+  return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">${esc(label||"存檔")}</a>`;
+}
+function dfRemakes(v){ return Array.isArray(v&&v.remakes)?v.remakes:[]; }
+// 大流清單：新的排前面
+function dfList(){
+  const q=String(DF_Q||"").trim().toLowerCase();
+  let list=dfVideos().filter(v=>!isVersion(v));
+  if(q) list=list.filter(v=>[v.name,v.rawName,v.code,v.videoCopy].some(x=>String(x||"").toLowerCase().includes(q)));
+  return list.slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+}
+function dfSetQ(s){ DF_Q=s; const el=document.getElementById("df_rows"); if(el) el.innerHTML=dfRowsHTML(); }
+function dfRowsHTML(){
+  const list=dfList();
+  if(!list.length) return `<p class="muted" style="margin:10px 0 0">${DF_Q?"沒有符合的影片。":"還沒有影片 —— 按上面的「＋ 直接加一支」開始。"}</p>`;
+  return list.map(v=>{
+    const rm=dfRemakes(v);
+    // 二創沿用原片的名字與資料夾，所以清單上永遠只有一列；做過幾次寫在名字旁邊
+    const rmPill=rm.length?`<span class="pill wa" title="${esc(rm.map(r=>`${r.by}・${String(r.at||"").slice(0,10)}`).join("\n"))}">${T("二創","Remake")} ×${rm.length}</span>`:"";
+    const sch=String(v.scheduledDate||"").slice(0,10);
+    const schPill=sch?`<span class="pill ok">${esc(sch.slice(5))} ${T("已排","scheduled")}</span>`:`<span class="muted" style="font-size:12px">${T("還沒排","not scheduled")}</span>`;
+    return `<div class="row" style="gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      ${coverThumbHTML(v,"vthumb")}
+      <div style="flex:1;min-width:140px">
+        <div style="font-weight:600">${esc(zhTW(v.name||v.rawName||""))}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${dfDriveLink(v)}${rmPill?" · ":""}${rmPill} · ${schPill}</div>
+      </div>
+      <button class="btn sec sm" onclick="dfEdit('${v.id}')">${T("編輯","Edit")}</button>
+      ${seesDF()?`<button class="btn sm" onclick="dfRemake('${v.id}')">${T("做二創","Remake")}</button>`:""}
+    </div>`;
+  }).join("");
+}
+function viewVideosDF(){
+  if(!seesDF()) return `<h2>影片庫大流</h2><div class="card"><p class="muted">這個分頁沒有開放給你的職位。</p></div>`;
+  const list=dfList(), n=dfVideos().filter(v=>!isVersion(v)).length;
+  const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
+  const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
+  return `<h2>影片庫大流</h2>
+  <div class="card">
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
+      所以大流的片<b>不會</b>算進毛片庫存、待認領、審片、未拍那些生產面的數字 —— 但它<b>會</b>排進月排程，也算進當天的出片數。
+    </div>
+    <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">
+      <span class="pill">${n} 支</span>
+      <span class="pill ${nSched?'ok':''}">${nSched} 支已排程</span>
+      <span class="pill ${nRemake?'wa':''}">二創 ${nRemake} 次</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm" onclick="dfAdd()">${PLUS()} 直接加一支</button>
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <input id="df_q" placeholder="搜尋檔名／文案" value="${esc(DF_Q)}" oninput="dfSetQ(this.value)" style="flex:1;min-width:150px">
+    </div>
+    <div id="df_rows" class="keepscroll" style="margin-top:6px${list.length>12?';max-height:560px;overflow-y:auto':''}">${dfRowsHTML()}</div>
+  </div>`;
+}
+// ── 直接加一支（檔名／封面／存檔連結／文案）──────────────────────
+// 封面要上傳到 Firebase Storage、檔名用影片 id，所以新增的時候還沒有 id 可以掛。
+// 那一格只在「編輯」時出現（先建檔、再補封面），跟影片庫A 的編輯視窗用同一個元件。
+function dfFormHTML(v, id){
+  v=v||{};
+  return `
+    ${id?coverSlotHTML(v, id):""}
+    <label>檔名 · 必填</label>
+    <input id="df_name" value="${esc(zhTW(v.name||v.rawName||""))}" placeholder="這支影片的名字" onkeydown="if(enterKey(event))document.getElementById('modalConfirm').click()">
+    <label style="margin-top:10px">存檔連結（雲端資料夾或檔案）</label>
+    <input id="df_drive" value="${esc(v.driveFolder||"")}" placeholder="https://drive.google.com/...">
+    <div class="muted" style="font-size:12px;margin-top:4px">貼整條網址就好，清單上只會顯示成一顆「存檔」的連結。</div>
+    <label style="margin-top:10px">文案</label>
+    <textarea id="df_copy" style="min-height:96px" placeholder="貼文文案／口播稿">${esc(zhTW(v.videoCopy||""))}</textarea>
+    ${id?"":'<div class="muted" style="font-size:12px;margin-top:10px">封面在建好之後按「編輯」上傳。</div>'}`;
+}
+function dfAdd(){
+  if(dbBlocked()) return;
+  showModal("直接加一支到大流", dfFormHTML(null, ""), async ()=>{
+    const name=zhTW(val("df_name").trim());
+    if(!name){ toast("請輸入檔名",true); return false; }
+    // 直接就是成品：stage 一步到位，不進待處理、不進待認領、不進審片
+    const video={ lib:DF_LIB, name, rawName:name,
+      videoCopy:zhTW(val("df_copy").trim()), driveFolder:val("df_drive").trim(),
+      stage:"已完成", published:true, finishedAt:nowIso(), backupDone:true, socialScheduled:true,
+      reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),   // 成品不需要審，先標好免得跑進審片清單
+      tags:["舊片"] };
+    return await write("POST","/api/videos",{video},"已加入影片庫大流");
+  });
+}
+function dfEdit(id){
+  if(dbBlocked()) return;
+  const v=vid(id); if(!v||!isDF(v)){ toast("找不到這支影片",true); return; }
+  showModal("編輯（大流）", dfFormHTML(v, id), async ()=>{
+    const name=zhTW(val("df_name").trim());
+    if(!name){ toast("請輸入檔名",true); return false; }
+    // 封面不在這裡送 —— 它是上傳當下就寫進資料庫的（coverChosen），這裡再送一次會蓋掉
+    return await write("PUT","/api/videos/"+id,
+      {video:{name, rawName:name, videoCopy:zhTW(val("df_copy").trim()),
+              driveFolder:val("df_drive").trim()}}, "已更新");
+  });
+}
+// ── 二創：不另開一筆影片，直接記在原片底下 ────────────────────────
+// 名字、封面、存檔資料夾全部沿用原片 —— 所以清單上永遠只有一列，
+// 資料夾也只需要顯示一個（成品本來就都存在同一個地方）。
+function dfRemake(id){
+  if(dbBlocked()) return;
+  const v=vid(id); if(!v||!isDF(v)){ toast("二創只能選影片庫大流裡面的片",true); return; }
+  const rm=dfRemakes(v);
+  const hist=rm.length?`<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.8">已經做過 ${rm.length} 次：<br>${
+    rm.map((r,i)=>`${i+1}. ${esc(r.by||"")}・${esc(String(r.at||"").slice(0,10))}${r.note?("・"+esc(r.note)):""}`).join("<br>")}</div>`:"";
+  showModal("做二創：" + zhTW(v.name||v.rawName||""), `
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      二創剪好之後存回<b>同一個資料夾</b>，名字也沿用原片 —— 系統不會另外開一筆，
+      只會在這支片底下記一次。
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px;align-items:center">
+      <span class="muted" style="font-size:13px">存檔位置</span>${dfDriveLink(v,"開啟資料夾")}
+    </div>
+    <label style="margin-top:10px">備註（選填）</label>
+    <input id="dfr_note" placeholder="這次改了什麼？（選填）">
+    ${hist}`, async ()=>{
+    const entry={ id:uid("R"), by:currentUser(), at:nowIso(), note:val("dfr_note").trim() };
+    const ok=await dbArrayAdd("videos", id, "remakes", entry,
+      ()=>window.DB.update("videos", id, {remakes:dfRemakes(vid(id)).concat([entry]), updatedAt:nowIso()}));
+    logA("大流二創", vidTitle(v));
+    toast("已記下這次二創（第 "+(rm.length+1)+" 次）");
+    return ok!==false;
+  });
+}
 function zoneSwitchHTML(){
   if(myZone()!=="both") return "";
   const n=(z)=>(STATE.videos||[]).filter(v=>zoneOfVideo(v)===z).length;
@@ -3979,7 +4159,7 @@ function viewVideosTW(){
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
-  return `<h2>${T("影片庫","Library")}</h2>
+  return `<h2>${T("影片庫A","Library A")}</h2>
   ${origLangFixCard()}
   <div class="card">
     ${zoneSwitchHTML()}

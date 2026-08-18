@@ -42,7 +42,7 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 // --- 分頁：二創區併入上班計畫 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let tabs=myTabs().map(t=>t[0]);
-ok("editor tabs = work/team/videos/cal", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
+ok("editor tabs = work/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","videosDF","cal"]));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
 ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
