@@ -88,7 +88,8 @@ ok("蝦皮殼不標缺文案", !missingPill(v_("P",{channel:"shopee",videoCopy:"
 ok("英文殼不標缺毛片", !missingPill(v_("E",{locale:"en",rawLink:"",scheduledDate:D2(3)})).includes("缺毛片"));
 ok("版本殼一樣會追上片連結",
    missingPill(v_("P2",{channel:"shopee",scheduledDate:D2(-1)})).includes("缺上片連結"));
-ok("noCopyDot 仍然只認一創（相容舊呼叫）", noCopyDot(v_("P3",{channel:"shopee",videoCopy:""}))==="");
+// noCopyDot 已刪：它是 missingPill 上線前的相容外皮，最後一個呼叫端在 v114 就拿掉了，
+// 只剩這支測試在幫它續命。留著沒有人叫的 function ＝ 讀 code 的人要多想一次「這是幹嘛的」。
 // 缺很多項時：主要那項寫出來，其餘進 title
 { const p=missingPill(v_("M",{videoCopy:"",rawLink:"",scheduledDate:null}));
   ok("缺很多項會標 +N", /\+2/.test(p));

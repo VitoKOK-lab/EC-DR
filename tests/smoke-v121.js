@@ -184,6 +184,22 @@ ok("低於 20 支＝存量不足", rawStockLow()===true);
 stockFixture(25, 100); as("Regina","manager");
 ok("25 支＝存量足夠", rawStockLow()===false);
 ok("足夠時不跳提醒", !viewFlow().includes("要去拍片了"));
+// 門檻只能有一個定義：以前 rawStockLow 沒有人呼叫，用到它的兩個地方各抄了一次
+// `< LOW_STOCK`，門檻哪天要改就會改漏一個。呼叫端算好數量可以直接傳進來。
+ok("已經算好數量的可以直接傳進來（不必再掃一次影片庫）",
+   rawStockLow(LOW_STOCK-1)===true && rawStockLow(LOW_STOCK)===false);
+{ const APP=require("fs").readFileSync(require("path").join(__dirname,"..","app.js"),"utf8");
+  const CODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
+  // 拿 LOW_STOCK 去比大小的地方只能有一個（rawStockLow 自己）；
+  // 其他地方出現 LOW_STOCK 是把「20」印在句子裡給人看，那個沒問題。
+  const cmps=CODE.match(/[<>]=?\s*LOW_STOCK|LOW_STOCK\s*[<>]=?/g)||[];
+  ok("只有 rawStockLow 拿 LOW_STOCK 去比大小（門檻要改不會改漏）"+
+     (cmps.length!==1?("：找到 "+cmps.length+" 處"):""), cmps.length===1); }
+// 存量足夠時，中控的數字不該掛警告色
+{ stockFixture(25, 100); as("Regina","manager");
+  ok("足夠：毛片庫存數字不是紅的", /class="fn ">\s*25/.test(viewFlow())||!/fn warn">25/.test(viewFlow()));
+  stockFixture(5, 100); as("Regina","manager");
+  ok("不足：毛片庫存數字要標紅", /class="fn warn">5</.test(viewFlow())); }
 
 // 剪輯也看得到，而且有一顆「提醒老闆拍片」
 stockFixture(5, 100); as("小葵","editor");

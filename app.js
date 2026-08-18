@@ -2639,8 +2639,8 @@ function flowStockCard(staff, pool, unassigned, stockDays){
   const stockCard=`<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">🎬 毛片庫存＆指派</b>
-      <span class="pill ${pool.length>=LOW_STOCK?'ok':'em'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
-    ${pool.length>=LOW_STOCK?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
+      <span class="pill ${rawStockLow(pool.length)?'em':'ok'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
+    ${!rawStockLow(pool.length)?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
       <b style="color:var(--red)">⚠ 毛片剩 ${pool.length} 支，低於 ${LOW_STOCK} 支了 —— 要去拍片了。</b><br>
       剪輯一天可以剪好幾支，存量不補上來他們就會沒片可剪。</div>`}
     ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
@@ -2743,7 +2743,7 @@ function viewFlow(){
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
     <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
-    <div><span class="fn ${pool.length>=LOW_STOCK?'':'warn'}">${pool.length}</span><span class="fl">毛片庫存</span></div>
+    <div><span class="fn ${rawStockLow(pool.length)?'warn':''}">${pool.length}</span><span class="fl">毛片庫存</span></div>
     <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
   </div>`;
@@ -3586,12 +3586,15 @@ const vidNotShot=(v)=> !isVersion(v) && !vidHasRaw(v);
 // 跟待認領池（poolAll 用 !vidNotShot）同一個標準。
 const LOW_STOCK=20;                       // 低於這個支數，老闆就該去拍片了
 function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidHasRaw(v)); }
-function rawStockLow(){ return rawStock().length < LOW_STOCK; }
+// 「毛片存量不足」只能有一個定義。以前這支沒有人呼叫，兩個用到它的地方各自
+// 把 `< LOW_STOCK` 抄了一遍 —— 門檻哪天要改就會改漏一個。
+// 已經算好數量的呼叫端可以直接傳進來，不必再掃一次 STATE.videos。
+function rawStockLow(n){ return (n==null?rawStock().length:n) < LOW_STOCK; }
 // 剪輯也要看得到存量：沒片可剪是他們先發現的，要讓他們叫得動老闆。
 // 只在真的不足時才出現 —— 平常不佔畫面。海外不剪台灣毛片，不給他們看。
 function lowStockCard(){
   if(myZone()==="intl") return "";
-  const n=rawStock().length; if(n>=LOW_STOCK) return "";
+  const n=rawStock().length; if(!rawStockLow(n)) return "";
   const sentToday=allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today);
   return `<div class="card" style="border-color:var(--red)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -4355,7 +4358,6 @@ function missingPill(v, implied){
   return `<span class="misspill${late?' late':''}" title="${esc(all)}">${esc(T(first.zh,first.en))}${more}</span>`;
 }
 // 舊的「沒文案」小圓點：保留函式名，改成走同一套燈號
-function noCopyDot(v){ return isVersion(v) ? "" : missingPill(v); }
 function coverThumbHTML(v, cls){
   const u=coverUrl(v);
   return u ? `<img class="${cls||"vthumb"}" src="${esc(u)}" alt="" loading="lazy" decoding="async">`
