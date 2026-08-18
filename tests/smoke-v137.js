@@ -58,7 +58,10 @@ function reset(videos){
   modalHTML=""; viewEl.innerHTML=""; writes=[]; toasts=[]; errToasts=[]; fields={};
   global.window.DB={ set:async(c,id,o)=>{writes.push(["set",c,id,o]);},
     update:async(c,id,p)=>{writes.push(["update",c,id,p]);},
-    del:async(c,id)=>{writes.push(["del",c,id]);}, scheduleSet:async()=>{}, setSettings:async()=>{} };
+    del:async(c,id)=>{writes.push(["del",c,id]);},
+    // 排程走 dbArrayAdd，沒有 arrayAdd 就退回 scheduleSet —— 這裡要記下來才驗得到 slot
+    scheduleSet:async(d,o)=>{writes.push(["sched","schedule",d,o]); (STATE.schedule||(STATE.schedule={}))[d]=o;},
+    setSettings:async()=>{} };
   const raw={ users:[{name:"小葵",role:"editor"},{name:"Regina",role:"manager"},
                      {name:"管理員",role:"boss"},{name:"Anna",role:"intl"}],
     settings:{dailyTarget:4,videoTags:["新片","舊片"],sources:["自製"],postPlatforms:[],intlAccounts:[],
@@ -72,6 +75,11 @@ function reset(videos){
 const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); };
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
+// 最後一次寫進排程的那一格
+function lastSlot(){
+  const w=writes.filter(x=>x[0]==="sched"); if(!w.length) return null;
+  const slots=(w[w.length-1][3]||{}).slots||[]; return slots[slots.length-1]||null;
+}
 
 (async()=>{
 
@@ -185,6 +193,112 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   ok("清單上這支片只有一列", (rows.match(/dfEdit\('8'\)/g)||[]).length===1);
   ok("二創次數標在同一列上", rows.includes("×2"));
   ok("誰做的、哪天做的收在滑鼠提示裡", rows.includes("小葵") && rows.includes("泓儒")); }
+
+// ══════════ ⑥b 版本號：二創沿用原片的名字，月排程上要分得出是哪一版 ══════════
+// 原片＝1（不標，標了只是雜訊），第 n 次二創＝n+1。
+{ reset([d_("8",{remakes:[{id:"R1",by:"泓儒",at:T0+"T10:00:00"},{id:"R2",by:"小葵",at:T0+"T11:00:00"}]})]);
+  const opts=dfVerOptions(vid("8"));
+  ok("做過 2 次二創 → 可以排 3 個版本（原片＋2 版）", opts.length===3);
+  ok("原片是第 1 版", opts[0][0]===1 && opts[0][1].includes("原片"));
+  ok("第一次二創是第 2 版", opts[1][0]===2);
+  ok("版本選項寫得出是誰剪的", opts[1][1].includes("泓儒"));
+  ok("沒做過二創的片只有原片一個選項", dfVerOptions(d_("9")).length===1); }
+{ ok("第 1 版不標數字（那是原片）", dfVerPill({ver:1})==="" && dfVerPill({})==="");
+  ok("第 2 版標一個 2", dfVerPill({ver:2}).includes(">2<"));
+  ok("第 3 版標一個 3", dfVerPill({ver:3}).includes(">3<"));
+  ok("版本號用 verpill 的樣式（跟一般標籤分得開）", dfVerPill({ver:2}).includes("verpill"));
+  ok("滑鼠移上去說得出這是重剪過的第幾版", dfVerPill({ver:2}).includes("第 2 版"));
+  ok("亂七八糟的值退回 1、不會印出怪東西", dfVerPill({ver:"x"})==="" && dfVerPill({ver:999})===""); }
+// 排入時版本號要真的寫進排程
+{ reset([d_("8",{remakes:[{id:"R1",by:"泓儒",at:T0+"T10:00:00"}]})]);
+  as("Regina","manager");
+  fields.od_vid="8"; fields.od_time="16:00"; fields.od_verSel="2";
+  await odAdd(D(3));
+  await new Promise(r=>setTimeout(r,60));
+  const slot=lastSlot();
+  ok("排入之後排程裡有這一筆", !!slot);
+  ok("排程那一筆帶著版本號 2", !!slot && dfVerOf(slot)===2); }
+// 沒選版本（一般影片庫A 的舊片）不能被硬塞版本號
+{ reset([a_("1",{stage:"已完成",published:true,tags:["舊片"],scheduledDate:D(-5),finishedAt:T0+"T09:00:00"})]);
+  as("Regina","manager");
+  fields.od_vid="1"; fields.od_time="16:00"; fields.od_verSel="3";   // 選單根本不會出現，但就算有值也不能吃
+  await odAdd(D(3));
+  await new Promise(r=>setTimeout(r,60));
+  const slot=lastSlot();
+  ok("影片庫A 的片一律是第 1 版（不吃版本選單）", !slot || dfVerOf(slot)===1); }
+// 當日清單標得出來
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[{videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"16:00",ver:2}]};
+  as("Regina","manager"); modalHTML=""; openDay(D(2));
+  ok("當日清單標出「2」", /class="tag verpill"[^>]*>2</.test(modalHTML));
+  ok("片名照樣是原片的名字（二創本來就沿用）", modalHTML.includes("大流片8")); }
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[{videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"16:00",ver:1}]};
+  as("Regina","manager"); modalHTML=""; openDay(D(2));
+  ok("原片不標數字", !modalHTML.includes("verpill")); }
+// 同一天排原片＋第 2 版：以前會被按 videoId 併成一列（二創沿用原片的 id），
+// 併掉的話少一列、月曆上的「已排 N」也跟看得到的列數對不上
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[
+    {videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"10:00",ver:1},
+    {videoId:"8",reused:true,by:"小葵",at:T0+"T10:05:00",time:"16:00",ver:2}]};
+  ok("同一天的兩個版本各自列一列", dayVideoList(D(2)).length===2);
+  as("Regina","manager"); modalHTML=""; openDay(D(2));
+  ok("畫面上真的兩列", (modalHTML.match(/移出排程/g)||[]).length===2);
+  ok("只有第 2 版那一列標數字", (modalHTML.match(/verpill/g)||[]).length===1);
+  ok("「已排」的數字跟列數對得上", modalHTML.includes("已排 2/")); }
+// 兩格並存的時候，搬天／移出要動到指名的那一格，不能永遠動第一格
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[
+    {videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"10:00",ver:1},
+    {videoId:"8",reused:true,by:"小葵",at:T0+"T10:05:00",time:"16:00",ver:2}]};
+  as("Regina","manager"); modalHTML=""; openDay(D(2));
+  ok("每一列都帶著自己的格號", /moveReuse\('8','[^']+',this\.value,0\)/.test(modalHTML)
+                          && /moveReuse\('8','[^']+',this\.value,1\)/.test(modalHTML));
+  ok("移出排程也帶著格號", /unscheduleReuse\('8','[^']+',0\)/.test(modalHTML)
+                       && /unscheduleReuse\('8','[^']+',1\)/.test(modalHTML)); }
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[
+    {videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"10:00",ver:1},
+    {videoId:"8",reused:true,by:"小葵",at:T0+"T10:05:00",time:"16:00",ver:2}]};
+  as("Regina","manager"); writes=[];
+  await moveReuse("8", D(2), D(5), 1);     // 指名搬第 2 版
+  await new Promise(r=>setTimeout(r,60));
+  ok("指名搬第 2 版，搬過去的就是第 2 版", dfVerOf(lastSlot())===2); }
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[
+    {videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"10:00",ver:1},
+    {videoId:"8",reused:true,by:"小葵",at:T0+"T10:05:00",time:"16:00",ver:2}]};
+  as("Regina","manager"); writes=[];
+  await moveReuse("8", D(2), D(5), 0);     // 指名搬原片
+  await new Promise(r=>setTimeout(r,60));
+  ok("指名搬原片，搬過去的就是原片", dfVerOf(lastSlot())===1); }
+// 搬到別天版本號要跟著走 —— 漏掉的話搬完就分不出是哪一版了
+{ reset([d_("8")]);
+  STATE.schedule[D(2)]={slots:[{videoId:"8",reused:true,by:"泓儒",at:T0+"T10:00:00",time:"16:00",ver:3}]};
+  as("Regina","manager"); writes=[];
+  await moveReuse("8", D(2), D(5));
+  await new Promise(r=>setTimeout(r,60));
+  const slot=lastSlot();
+  ok("搬到別天之後版本號還是 3", !!slot && dfVerOf(slot)===3); }
+// 版本選單只在真的做過二創時才出現
+{ reset([d_("8",{remakes:[{id:"R1",by:"泓儒",at:T0+"T10:00:00"}]}), d_("9"), a_("1")]);
+  as("Regina","manager"); modalHTML=""; openDay(D(3));
+  ok("排片選單裡有版本欄位的容器", modalHTML.includes('id="od_ver"'));
+  ok("預設是收起來的（沒選到有二創的片就不該出現）", /id="od_ver" style="display:none"/.test(modalHTML)); }
+
+// ══════════ ⑥c 燈號：不能對大流要求它本來就沒有的東西 ══════════
+// 大流放的是成品，沒有毛片這一步。標「缺毛片」就是又一個永遠熄不掉的紅字
+// （跟 v136 修掉的「缺上片連結」同一類病）。
+{ const full=d_("8",{driveFolder:"http://d",videoCopy:"有文案"});
+  ok("齊全的大流片完全不長燈號", missingPill(full)==="");
+  ok("大流不標「缺毛片」（它本來就不用拍）", !missingPill(d_("9",{rawLink:"",driveFolder:"http://d",videoCopy:"有"})).includes("缺毛片"));
+  ok("大流不標「沒排日期」（還沒排是正常的，不是缺漏）", !missingPill(d_("9",{scheduledDate:null,driveFolder:"http://d",videoCopy:"有"})).includes("沒排日期"));
+  ok("大流不標「缺上片連結」", !missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3)})).includes("缺上片連結"));
+  ok("大流沒填存檔連結要標出來（那是它真的該有的）",
+     missingPill(d_("9",{driveFolder:"",videoCopy:"有"})).includes("缺存檔連結"));
+  ok("大流沒填文案也要標出來", missingPill(d_("9",{driveFolder:"http://d",videoCopy:""})).includes("缺文案"));
+  ok("影片庫A 照樣會標缺毛片（沒有連坐改壞）", missingPill(a_("1",{rawLink:""})).includes("缺毛片")); }
 
 // ══════════ ⑦ 權限：海外看不到大流 ══════════
 { reset([d_("8")]);

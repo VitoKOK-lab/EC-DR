@@ -199,7 +199,10 @@ function usageList(v){ return ((v&&v.usageHistory)||[]).map(d=> (d&&typeof d==="
 // 某日的影片 = 手動排片(slots) ∪ 已完成且上片日=該日的影片（去重）
 function dayVideoList(date){
   const seen=new Set(); const out=[];
-  ((STATE.schedule||{})[date]?.slots||[]).forEach(s=>{ if(s.videoId && !seen.has(s.videoId)){ seen.add(s.videoId); out.push({videoId:s.videoId, slot:s}); } });
+  // 排程裡的每一格都是一次明確的「排片」動作，各自列一列 —— 不能按 videoId 併掉：
+  // 大流的二創沿用原片的名字與 id，同一天排原片＋第 2 版的話，併掉就少一列，
+  // 月曆上的「已排 N」也會跟看得到的列數對不上。slotIdx 帶出去給搬天／移出用。
+  ((STATE.schedule||{})[date]?.slots||[]).forEach((s,i)=>{ if(s.videoId){ seen.add(s.videoId); out.push({videoId:s.videoId, slot:s, slotIdx:i}); } });
   // 海外二創(locale)／蝦皮二創(channel)版本走各自的排程月曆，不計入台灣月排程
   // 排程與剪輯是兩條獨立的線：一個人先把日期排好，其他人再照著剪。
   // 所以「排到這天」的影片一律算進來，不管剪完了沒 —— v99 之前這裡卡了 stage，
@@ -402,7 +405,8 @@ async function route(method, path, body){
     if(action==="reuse" && method==="POST"){
       const date=body.date; const link=(body.link||"").trim(); const time=body.time||""; const drive=(body.drive||"").trim();
       if(!date) throw new Error("請選擇重播上片日期");
-      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time};
+      const ver=Math.max(1, Math.min(99, +body.ver||1));   // 1＝原片；2 以上＝第幾版二創（大流才用得到）
+      const slot={videoId:id, publishedLink:link, driveFolder:drive, reused:true, by:user, at:nowIso(), time, ver};
       await dbArrayAdd("schedule", date, "slots", slot, ()=>{
         const day=(STATE.schedule||{})[date]||{slots:[]};
         return window.DB.scheduleSet(date,{slots:(day.slots||[]).concat([slot])}); });
@@ -970,7 +974,9 @@ function openDay(ds){
     const ed = reused ? (it.slot.by||"") : (v?.editor||"");
     const upLink = reused ? (it.slot.publishedLink||"") : (v?.publishedLink||v?.socialLink||"");
     const drive = reused ? (it.slot.driveFolder||v?.driveFolder||"") : (v?.driveFolder||"");
-    const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value)` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
+    // 同一支片同一天可能有兩格（原片＋二創），所以要指名是第幾格，不然永遠動到第一格
+  const si = (it.slotIdx==null?-1:it.slotIdx);
+  const onChg = reused ? `moveReuse('${it.videoId}','${ds}',this.value,${si})` : `rescheduleVid('${it.videoId}',this.value,'${ds}')`;
     const tm = reused ? (it.slot.time||"") : (v?.publishTime||"");
     // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
@@ -980,10 +986,10 @@ function openDay(ds){
     const lk=v&&assignLocked(v);
     const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
-      <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}')`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
+      <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
     </tr>`;
   }).join("");
   // 排一支影片到這天：所有影片都能選（排程與剪輯是兩條獨立的線）；當天已排過的不再出現
@@ -1007,6 +1013,13 @@ function openDay(ds){
       <button class="btn" id="od_add" style="flex:0 0 auto;min-height:44px;white-space:nowrap" onclick="odAdd('${ds}')">${T("排入","Add")}</button>
     </div>
     <div id="od_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
+    <div id="od_ver" style="display:none">
+      <label style="margin:8px 0 2px">${T("要排哪一版","Which version")}</label>
+      <select id="od_verSel"></select>
+      <div class="muted" style="font-size:12px;margin-top:4px">${T(
+        "二創沿用原片的名字，所以排進來會長得一樣 —— 選了版本之後，月排程上會標一個數字分辨。",
+        "Remakes reuse the original's name; picking a version tags it with a number on the schedule.")}</div>
+    </div>
     <div id="od_reuse" style="display:none">
       <label style="margin:8px 0 2px">${T("存檔位置（雲端備份・自動帶入，同一支都一樣）","File location (auto-filled)")}</label>
       <input id="od_drive" placeholder="${T("這支影片的雲端備份連結","Cloud backup link")}">
@@ -1079,6 +1092,13 @@ function odFilter(){
 // 換一支影片時：帶出存檔位置、切換重播專用欄位、把「按下去會發生什麼」寫清楚
 function odPickVid(){
   const id=val("od_vid"), v=vid(id), old=!!v && vidIsOld(v);
+  // 版本選單只在「大流的片、而且真的做過二創」時出現 —— 沒做過二創就只有原片一個選項，
+  // 多一個永遠只能選同一項的下拉只是雜訊
+  { const opts=(v&&isDF(v))?dfVerOptions(v):[];
+    const box=document.getElementById("od_ver"); const sel=document.getElementById("od_verSel");
+    const on=opts.length>1;
+    if(box) box.style.display=on?"":"none";
+    if(sel && on) sel.innerHTML=opts.map(([n,l])=>`<option value="${n}">${esc(l)}</option>`).join(""); }
   const d=document.getElementById("od_drive"); if(d) d.value=OD_DRIVE[id]||"";
   const box=document.getElementById("od_reuse"); if(box) box.style.display=old?"":"none";
   const btn=document.getElementById("od_add"); if(btn) btn.textContent=old?T("排入重播","Add rerun"):T("排入","Add");
@@ -1094,20 +1114,26 @@ function odAdd(ds){
   const id=val("od_vid"); if(!id){ toast(T("請先選一支影片","Pick a video first"),true); return; }
   const v=vid(id)||{};
   if(vidIsOld(v)){
-    write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim()},
-      T("已排入重播","Rerun scheduled")).then(ok=>{ if(ok) openDay(ds); });
+    // 大流的二創沿用原片的名字，排進來會長得一樣 —— 帶上版本號才分得出是哪一版
+    const ver=(isDF(v) && document.getElementById("od_verSel")) ? (+val("od_verSel")||1) : 1;
+    write("POST",`/api/videos/${id}/reuse`,{date:ds,time:val("od_time"),link:(val("od_link")||"").trim(),drive:(val("od_drive")||"").trim(),ver},
+      T(ver>1?("已排入第 "+ver+" 版"):"已排入重播","Rerun scheduled")).then(ok=>{ if(ok) openDay(ds); });
   }else{
     write("PUT",`/api/videos/${id}`,{video:{scheduledDate:ds, publishTime:val("od_time")}},
       T("已排到 "+ds,"Scheduled for "+ds)).then(ok=>{ if(ok) openDay(ds); });
   }
 }
 // 移動「重播」排片到別天（同步更新使用紀錄的日期）
-async function moveReuse(id, oldDate, newDate){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
-  const day=(STATE.schedule||{})[oldDate]||{slots:[]}; const idx=(day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
+async function moveReuse(id, oldDate, newDate, slotIdx){ if(!newDate||newDate===oldDate) return; if(dbBlocked()) return;
+  const day=(STATE.schedule||{})[oldDate]||{slots:[]};
+  // slotIdx 指名是哪一格（同一支片同一天可能排了原片＋二創兩格）；沒帶就退回找第一格
+  const idx=(slotIdx!=null && slotIdx>=0 && (day.slots||[])[slotIdx] && day.slots[slotIdx].videoId===id)
+    ? slotIdx : (day.slots||[]).findIndex(s=>s.videoId===id && s.reused);
   const link=(idx>=0?(day.slots[idx].publishedLink||""):"");
+  const ver=(idx>=0?dfVerOf(day.slots[idx]):1);   // 版本號要跟著搬，不然搬完就分不出是哪一版
   try{
     if(idx>=0) await route("DELETE",`/api/schedule/${oldDate}/slot/${idx}`,{});
-    await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso()}});
+    await route("POST",`/api/schedule/${newDate}/slot`,{slot:{videoId:id,publishedLink:link,reused:true,by:currentUser(),at:nowIso(),ver}});
     const v=vid(id);
     const hits=(v.usageHistory||[]).filter(u=>u&&typeof u==="object"&&u.date===oldDate);
     if(window.DB&&window.DB.arrayDel){
@@ -1137,10 +1163,11 @@ async function unscheduleVid(id, ds){
   }catch(e){ toast(e.message||"移出失敗",true); }
 }
 // 移出排程（舊片重播）：只移除這天的重播，影片保留、使用次數同步退回
-async function unscheduleReuse(id, ds){ if(dbBlocked()) return;
+async function unscheduleReuse(id, ds, slotIdx){ if(dbBlocked()) return;
   const v=vid(id)||{};
   const slots=((STATE.schedule||{})[ds]||{}).slots||[];
-  const idx=slots.findIndex(s=>s.videoId===id && s.reused);
+  const idx=(slotIdx!=null && slotIdx>=0 && slots[slotIdx] && slots[slotIdx].videoId===id)
+    ? slotIdx : slots.findIndex(s=>s.videoId===id && s.reused);
   if(idx<0){ toast("找不到這天的重播排程",true); return; }
   if(!confirm("把「"+vidTitle(v)+"」的重播移出「"+ds+"」？\n\n只移除這天的重播排程，影片不會刪除。")) return;
   try{
@@ -3933,6 +3960,20 @@ function dfDriveLink(v, label){
   return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">${esc(label||"存檔")}</a>`;
 }
 function dfRemakes(v){ return Array.isArray(v&&v.remakes)?v.remakes:[]; }
+// ── 版本編號：原片＝1，第 n 次二創＝n+1 ───────────────────────────
+// 二創沿用原片的名字，所以月排程上兩支長得一模一樣。加一個數字才分得出
+// 「這天出的是原片，那天出的是重剪過的第 2 版」。1 不標（那是原片，標了只是雜訊）。
+function dfVerOf(slot){ const n=+((slot&&slot.ver)||1); return (n>=1&&n<=99)?n:1; }
+function dfVerPill(slot){
+  const n=dfVerOf(slot); if(n<2) return "";
+  return ` <span class="tag verpill" title="${T("這是重剪過的第 "+n+" 版（二創）","Re-cut version "+n)}">${n}</span>`;
+}
+// 這支片可以排的版本：原片 ＋ 已經做過的每一次二創
+function dfVerOptions(v){
+  const out=[[1, T("原片","Original")]];
+  dfRemakes(v).forEach((r,i)=>out.push([i+2, T("第 "+(i+2)+" 版（二創・"+(r.by||"")+"）","Version "+(i+2))]));
+  return out;
+}
 // 大流清單：新的排前面
 function dfList(){
   const q=String(DF_Q||"").trim().toLowerCase();
@@ -4525,6 +4566,13 @@ function vidMissing(v){
     if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
     if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    return out;
+  }
+  if(isDF(v)){
+    // 大流放的是成品：沒有毛片這一步（它本來就不用拍），所以不能標「缺毛片」——
+    // 那會變成又一個永遠熄不掉的燈號。它只有兩件事真的可能缺：存檔連結與文案。
+    if(!String(v.driveFolder||"").trim()) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    if(!String(v.videoCopy||"").trim())   out.push({k:"copy",  zh:"缺文案",     en:"needs script"});
     return out;
   }
   if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
