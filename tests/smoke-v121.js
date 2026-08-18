@@ -240,7 +240,11 @@ stockFixture(5, 0); as("小葵","editor");
     reset();
     const DD=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
     STATE.videos=[
-      v_("LATE",{name:"該上片了",rawLink:"http://raw",videoCopy:"有",scheduledDate:DD(-2),publishedLink:""}),
+      // 「缺上片連結」v136 起只對二創殼亮（源片的編輯視窗沒有那一格可以填），
+      // 所以要紅字的用蝦皮殼；源片這支改用「剪完了卻沒有存檔連結」當缺漏。
+      v_("LATEP",{name:"殼該上片了",channel:"shopee",scheduledDate:DD(-2),publishedLink:""}),
+      v_("LATE",{name:"該上片了",rawLink:"http://raw",videoCopy:"有",scheduledDate:DD(-2),
+                 stage:"已完成",published:true,driveFolder:"",publishedLink:""}),
       v_("NOCOPY",{name:"沒文案",rawLink:"http://raw",videoCopy:"",scheduledDate:DD(3)}),
       v_("MINE",{name:"我在剪的",rawLink:"http://raw",videoCopy:"有",scheduledDate:null,
                  stage:"剪輯中",editor:"小葵",claimedBy:"小葵",claimedAt:T0+"T09:00:00"}),
@@ -252,10 +256,10 @@ stockFixture(5, 0); as("小葵","editor");
     { VID_VIEW="raw"; VID_LANG=""; VID_TAGS=new Set(); VID_Q=""; ZONE_VIEW="tw";
       const lib=viewVideos();
       ok("影片庫看得到燈號", lib.includes("misspill"));
-      ok("該上片沒貼連結的是紅的", lib.includes("misspill late") && lib.includes("缺上片連結")); }
+      ok("二創殼該上片沒貼連結的是紅的", lib.includes("misspill late") && lib.includes("缺上片連結")); }
     as("Regina","manager");
     { modalHTML=""; openDay(DD(-2));
-      ok("月排程的日期視窗也看得到燈號", modalHTML.includes("缺上片連結")); }
+      ok("月排程的日期視窗也看得到燈號", /misspill/.test(modalHTML)); }
     // 齊全的片完全不長燈號（不製造雜訊）
     reset(); STATE.videos=[v_("FULL",{name:"什麼都齊",rawLink:"http://raw",videoCopy:"有",
       scheduledDate:DD(-2),publishedLink:"http://p",driveFolder:"http://d",stage:"已上片",published:true})];

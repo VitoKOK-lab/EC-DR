@@ -1445,7 +1445,10 @@ function workReviewCard(me){
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
   // 存檔連結要是「自己剪的那一支」；只是繼承源片的資料夾不算補齊，提醒不能提早消失
-  const linksDone=(v)=>!!(ownDrive(v) && String(v.publishedLink||"").trim());
+  // 同一個病灶的第二個受害者：源片填不了上片連結，linksDone 就永遠是 false，
+  // 「已審過」的片會一直掛在這張卡上叫，剪輯按了「知道了」才走得掉。
+  // 源片只看存檔連結（那一格填得到），二創殼才連上片連結一起看。
+  const linksDone=(v)=>!!(ownDrive(v) && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
@@ -4327,14 +4330,19 @@ function vidImplied(){
   if(VID_UNSCHED) out.push("date");           // 勾了「只看還沒排日期的」
   return out;
 }
+// 「上片連結」只有二創殼追得到 —— 它的編輯視窗有那一格（i_pub／{p}_pub）。
+// 台灣源片的編輯視窗**根本沒有這個輸入格**，所以那個欄位對源片永遠是空的
+// （實際資料：610 支影片有 0 支填得起來）。拿一個填不了的欄位當缺漏，
+// 等於對所有人亮一個永遠熄不掉的紅字 —— 燈號就失去意義了，看到紅色也不會再有人當一回事。
+function needPostLink(v){ return isVersion(v); }
 function vidMissing(v){
   if(!v) return [];
   const out=[];
   const sch=String(v.scheduledDate||"").slice(0,10);
   const pub=String(v.publishedLink||"").trim();
-  // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
-  if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
   if(isVersion(v)){                                   // 版本殼：沒有腳本／毛片這兩步
+    // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
+    if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
     if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     return out;
