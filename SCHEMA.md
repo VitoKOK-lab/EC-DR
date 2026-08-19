@@ -458,10 +458,20 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `image` | string | 商品圖片網址（選填） |
 | `officialUrl` | string | 官網商品頁網址。空＝還沒建立官網頁，畫面上會提醒「請先新增商品才能往下配影片」 |
 | `shoplineLink` | string | 保留欄位，供未來接 Shopline 連結（目前畫面未使用） |
-| `assignedCurator` | string | 指派給哪位選品人員（＝`users.name`）。空＝尚未指派。用 `POST /api/products/:id/assign` 改，不需要密碼（工作指派，不是敏感資料，比照 `material.assign` 的權限） |
 | `activeVideoId` | string | **正式配對的影片 id**。空＝還沒定案；老闆核准配對時寫入（見下方 `matches.approve`）＝「1 商品 → 1 影片」正式建立 |
 | `createdBy` / `createdAt` | string | 建立者／建立時間 |
 | `updatedAt` | string(ISO) | 最後更新時間 |
+
+> **不指派特定選品人員**：早期版本有 `assignedCurator`（指派給誰），拿掉了——「選品行銷」是一個職位，
+> 不是個人任務指派；任何有這個職位的人都能認領任何商品，不需要先分派。
+>
+> **貼網址自動帶入名稱／SKU／圖片**：新增商品時填「商品網址」按「🔍 自動抓取」，`fetchProductMeta(url)`
+> 透過公開 CORS 代理（`api.allorigins.win`）讀回網頁 HTML，交給 `parseProductMetaHTML(html)`
+> 解析 Open Graph（`og:title`／`og:image`）與 JSON-LD 商品結構化資料（`Product.sku`／`mpn`／`gtin13`）。
+> 純字串解析、不依賴瀏覽器 DOM API，離線測試（`tests/smoke-v138.js`）能直接餵假 HTML 驗證，
+> 不用連真的網路。抓不到就留空，欄位本來就可以手動填或修正；純前端方案的取捨是**依賴第三方代理的
+> 穩定度、抓不到結構化資料的網站會抓空**——之後真的常態需要更準的話，再考慮加一個 Cloud Function
+> 在後端抓（目前系統完全沒有後端，加這個要先開通 Firebase 付費方案）。
 
 ## 6. `matches/{id}` — 選品配對（v138）
 
@@ -496,6 +506,12 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 > **「已完成影片」／「僅有腳本」沿用既有的 `isPublished()`／`vidNotShot()`**（`matchVidDone()`／
 > `matchVidScript()`），不是另開一套判斷標準——影片庫的「有文案・未拍片」（`script` 分段）本來就是
 > 同一件事，沒必要在選品配對這裡重新定義一次「拍了沒」。
+>
+> **選片優先推薦影片庫大流**：候選片源＝`STATE.videosDF`（影片庫大流，見上方「兩個影片庫」）＋
+> `STATE.videos`（影片庫A），大流的片排在前面（`isDF()` 排序）——大流是現成成品，選品行銷應該先看
+> 這裡有沒有現成的可以用，庫A（要走完整生產流程的片）才是關鍵字搜尋補位用的。`vid(id)`／`vidTitle()`
+> 這些通用查找本來就含大流（見「影片索引」那一節），所以配對紀錄、老闆審核卡引用大流的片一樣正常
+> 顯示，不需要另外處理。
 
 ---
 

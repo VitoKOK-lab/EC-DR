@@ -109,14 +109,7 @@ const scriptVid=(id,o)=>Object.assign({}, doneVid(id,o), {id,code:id,name:"腳�
   await route("POST","/api/products",{product:{name:"祖母綠戒指",sku:"EMR-R001"}});
   const p=STATE.products[0];
   ok("商品建立成功", !!p && p.name==="祖母綠戒指" && p.sku==="EMR-R001");
-  ok("新商品預設尚未指派、尚未正式配對", p.assignedCurator==="" && p.activeVideoId===""); }
-{ reset(); as("Amy","pick");
-  await route("POST","/api/products",{product:{name:"祖母綠戒指"}});
-  const pid=STATE.products[0].id;
-  await route("POST",`/api/products/${pid}/assign`,{assignee:"Amy"});
-  ok("指派選品人員", STATE.products[0].assignedCurator==="Amy");
-  await route("POST",`/api/products/${pid}/assign`,{assignee:""});
-  ok("取消指派", STATE.products[0].assignedCurator===""); }
+  ok("新商品預設尚未正式配對", p.activeVideoId===""); }
 
 // ══════════ ③ 建立配對：一次「建立並送審」，不用兩趟湊 id ══════════
 { reset(); as("Amy","pick");
@@ -207,7 +200,7 @@ const scriptVid=(id,o)=>Object.assign({}, doneVid(id,o), {id,code:id,name:"腳�
 // render() 會先擋「請先設定密碼」的關卡，測試假使用者沒有 pwHash 一定會卡在那一關，
 // 畫面邏辯本身要驗證的是 view 函式，不是密碼關卡。
 { reset([doneVid("V1"), scriptVid("S1")]);
-  await route("POST","/api/products",{product:{name:"祖母綠戒指",sku:"EMR-R001",assignedCurator:"Amy"}});
+  await route("POST","/api/products",{product:{name:"祖母綠戒指",sku:"EMR-R001"}});
   const pid=STATE.products[0].id;
   await route("POST","/api/matches",{match:{productId:pid,primaryVideoId:"V1"}, submit:true});
   as("Amy","pick");
@@ -229,6 +222,49 @@ const scriptVid=(id,o)=>Object.assign({}, doneVid(id,o), {id,code:id,name:"腳�
   ok("同一支不能同時是主選又是備選——設備選會把主選讓出來", MATCH_BACKUP_ID==="V1" && MATCH_PRIMARY_ID===null);
   setMatchVideo("primary","V2");
   ok("再設另一支為主選", MATCH_PRIMARY_ID==="V2" && MATCH_BACKUP_ID==="V1"); }
+
+// ══════════ ⑪ 貼商品網址自動抓：解析 og:title／og:image／JSON-LD sku（純字串解析，離線可測） ══════════
+{ const html = `<!doctype html><html><head>
+    <title>備用標題（沒有 og:title 才會用到）</title>
+    <meta property="og:title" content="祖母綠戒指 &amp; 純銀托座">
+    <meta property="og:image" content="https://shop.example.com/img/r001.jpg">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"祖母綠戒指","sku":"EMR-R001","image":"https://shop.example.com/img/r001-ld.jpg"}</script>
+  </head><body></body></html>`;
+  const meta = parseProductMetaHTML(html);
+  ok("抓到 og:title（HTML 實體要還原成文字）", meta.name==="祖母綠戒指 & 純銀托座");
+  ok("抓到 og:image", meta.image==="https://shop.example.com/img/r001.jpg");
+  ok("抓到 JSON-LD 裡的 sku", meta.sku==="EMR-R001"); }
+{ const html = `<html><head><title>只有標題的網站</title></head><body></body></html>`;
+  const meta = parseProductMetaHTML(html);
+  ok("沒有 og:title 時退回 <title>", meta.name==="只有標題的網站");
+  ok("抓不到圖片就是空字串，不是 undefined／null", meta.image==="");
+  ok("抓不到 sku 就是空字串", meta.sku===""); }
+{ const html = `<html><head><script type="application/ld+json">not valid json{{{</script></head></html>`;
+  let threw=false, meta=null;
+  try{ meta=parseProductMetaHTML(html); }catch(e){ threw=true; }
+  ok("JSON-LD 壞掉不會讓整個解析炸掉", !threw && meta && meta.sku===""); }
+{ ok("空字串／undefined 輸入不會炸", (()=>{ try{ parseProductMetaHTML(); parseProductMetaHTML(""); return true; }catch(e){ return false; } })()); }
+
+// ══════════ ⑫ 選片優先推薦「影片庫大流」，庫A用搜尋補 ══════════
+const dfVid=(id,o)=>Object.assign(doneVid(id,o), {lib:"大流"});
+{ reset([dfVid("D1",{name:"大流成品一"}), doneVid("V1",{name:"庫A完成片一"})]);
+  ok("大流的片有進到 STATE.videosDF", (STATE.videosDF||[]).some(v=>v.id==="D1"));
+  ok("大流的片不會混進 STATE.videos（生產面數字才不會被大流污染）", !(STATE.videos||[]).some(v=>v.id==="D1"));
+  MATCH_VTAB="done"; MATCH_VFILTER="all"; MATCH_VQ="";
+  const html=matchVideoListHTML();
+  ok("選片清單看得到大流的片", html.includes("大流成品一"));
+  ok("選片清單也看得到庫A的片（不是只剩大流）", html.includes("庫A完成片一"));
+  ok("大流的片排在庫A前面", html.indexOf("大流成品一") < html.indexOf("庫A完成片一"));
+  ok("大流的片標了「大流」徽章", html.includes('color:var(--gold-dk)">大流<')); }
+{ reset([dfVid("D1",{name:"大流成品一"})]);
+  ok("大流的片一樣算「等待選品中」（沒有商品訂它就是等待中）", videoAwaitingCuration(STATE.videosDF[0]));
+  await route("POST","/api/products",{product:{name:"P"}});
+  const pid=STATE.products[0].id;
+  await route("POST","/api/matches",{match:{productId:pid,primaryVideoId:"D1"}, submit:true});
+  as("Regina","manager");
+  await route("POST",`/api/matches/${STATE.matches[0].id}/approve`,{finalVideoId:"D1"});
+  ok("大流的片核准後一樣正式配對、不再等待選品中",
+     STATE.products[0].activeVideoId==="D1" && !videoAwaitingCuration(vid("D1"))); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

@@ -198,7 +198,7 @@ function newVideoRecord(over){
 function newProductId(){ return uid("PD"); }
 function newProductRecord(over){
   const rec={ id:newProductId(), name:"", sku:"", image:"", officialUrl:"", shoplineLink:"",
-    assignedCurator:"", activeVideoId:"",
+    activeVideoId:"",
     createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(), updatedAt:"" };
   return Object.assign(rec, over||{});
 }
@@ -498,9 +498,6 @@ async function route(method, path, body){
     }
     const id=seg[1], p=(STATE.products||[]).find(x=>x.id===id), action=seg[2];
     if(!p) throw new Error("找不到商品");
-    if(action==="assign" && method==="POST"){
-      await window.DB.update("products", id, {assignedCurator:body.assignee||"", updatedAt:nowIso()}); return;
-    }
     if(method==="PUT"){
       const patch=Object.assign({}, body.product); delete patch.id; patch.updatedAt=nowIso();
       await window.DB.update("products", id, patch); return;
@@ -4581,7 +4578,6 @@ function pickMatchProduct(id){
   MATCH_PRODUCT_ID=id||null; MATCH_PRIMARY_ID=null; MATCH_BACKUP_ID=null; MATCH_EDITING_ID=null; render();
 }
 function matchProductInfoHTML(p){
-  const mine=p.assignedCurator===currentUser();
   const av=p.activeVideoId?vid(p.activeVideoId):null;
   return `<div class="card" style="background:var(--panel2);margin-top:10px">
     <div class="row">
@@ -4591,31 +4587,90 @@ function matchProductInfoHTML(p){
     <p class="muted" style="margin:10px 0 4px;font-size:13px">官網商品網址</p>
     ${p.officialUrl?`<a href="${esc(p.officialUrl)}" target="_blank">${esc(p.officialUrl)}</a>`
       :`<span class="pill wa">尚未建立官網商品頁，請先新增商品才能往下配影片</span>`}
-    <p class="muted" style="margin-top:10px;font-size:13px">指派給：${esc(p.assignedCurator||"尚未指派")}</p>
-    <button class="btn sm sec" onclick="assignMatchProduct('${esc(jsEsc(p.id))}')">${mine?"取消指派給我":"指派給我"}</button>
     ${av?`<p style="margin-top:10px"><span class="pill ok">✅ 已正式配對：${esc(vidTitle(av))}</span></p>`:""}
   </div>`;
 }
-async function assignMatchProduct(pid){
-  const p=(STATE.products||[]).find(x=>x.id===pid); if(!p) return;
-  const assignee=(p.assignedCurator===currentUser())?"":currentUser();
-  await write("POST",`/api/products/${pid}/assign`,{assignee}, assignee?"已指派給你":"已取消指派");
+
+// 貼商品網址→自動抓名稱／SKU／圖片：純前端用公開 CORS 代理讀網頁 HTML，
+// 解析 Open Graph（og:title／og:image）與商品結構化資料（JSON-LD Product 的 sku／mpn／gtin）。
+// 抓不到就回傳空字串，不擋流程——欄位本來就可以手動填或修正。
+function decodeHtmlEntities(s){
+  return String(s==null?"":s).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m,e)=>{
+    if(e[0]==="#"){ const cp=(e[1].toLowerCase()==="x")?parseInt(e.slice(2),16):parseInt(e.slice(1),10);
+      return isNaN(cp)?m:String.fromCodePoint(cp); }
+    const map={amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:" "}; return map[e.toLowerCase()]||m;
+  });
+}
+function parseProductMetaHTML(html){
+  const s=String(html||"");
+  const metaContent=(prop)=>{
+    const esc_=prop.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const re1=new RegExp('<meta[^>]+(?:property|name)=["\']'+esc_+'["\'][^>]*content=["\']([^"\']*)["\']',"i");
+    const re2=new RegExp('<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']'+esc_+'["\']',"i");
+    const m=s.match(re1)||s.match(re2); return m?m[1].trim():"";
+  };
+  let name=metaContent("og:title");
+  if(!name){ const tm=s.match(/<title[^>]*>([^<]*)<\/title>/i); if(tm) name=tm[1].trim(); }
+  let image=metaContent("og:image");
+  let sku="";
+  const ldBlocks=s.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)||[];
+  for(const block of ldBlocks){
+    const jsonText=block.replace(/^<script[^>]*>/i,"").replace(/<\/script>$/i,"");
+    try{
+      const data=JSON.parse(jsonText);
+      const items=Array.isArray(data)?data:(data["@graph"]||[data]);
+      for(const it of items){
+        if(!it) continue;
+        const types=Array.isArray(it["@type"])?it["@type"]:[it["@type"]];
+        if(!types.includes("Product")) continue;
+        sku=it.sku||it.mpn||it.gtin13||it.productID||sku;
+        if(!name) name=it.name||name;
+        if(!image){ const im=it.image; image=Array.isArray(im)?im[0]:((im&&im.url)||im)||image; }
+        if(sku) break;
+      }
+    }catch(e){}
+    if(sku) break;
+  }
+  return { name:decodeHtmlEntities(name), image:decodeHtmlEntities(image), sku:decodeHtmlEntities(sku) };
+}
+async function fetchProductMeta(url){
+  const u=String(url||"").trim();
+  if(!/^https?:\/\//i.test(u)) throw new Error("請先輸入正確的網址（需以 http(s):// 開頭）");
+  const res=await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent(u));
+  if(!res.ok) throw new Error("讀不到這個網址（HTTP "+res.status+"）");
+  return parseProductMetaHTML(await res.text());
+}
+async function autoFillProduct(){
+  const url=val("pd_url").trim();
+  if(!url){ toast("請先輸入商品網址",true); return; }
+  const btn=document.getElementById("pd_fetch");
+  if(btn){ btn.disabled=true; btn.textContent="抓取中…"; }
+  try{
+    const meta=await fetchProductMeta(url);
+    if(meta.name) document.getElementById("pd_name").value=meta.name;
+    if(meta.image) document.getElementById("pd_img").value=meta.image;
+    if(meta.sku) document.getElementById("pd_sku").value=meta.sku;
+    MODAL_DIRTY=true;
+    toast((meta.name||meta.image||meta.sku)?"已自動帶入，記得確認正不正確":"這個網址抓不到商品資料，請手動填", !(meta.name||meta.image||meta.sku));
+  }catch(e){ toast(e.message||"抓取失敗，請手動填",true); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent="🔍 自動抓取"; } }
 }
 function editProductModal(id){
   const p=id?(STATE.products||[]).find(x=>x.id===id):{};
   if(id && !p) return;
-  const users=(STATE.users||[]).map(u=>u.name);
   showModal(id?"編輯商品":"新增商品", `
+    <label>商品網址</label>
+    <div class="row" style="gap:8px;flex-wrap:nowrap">
+      <input id="pd_url" style="flex:1;min-width:120px" placeholder="https://…" value="${esc((p&&p.officialUrl)||"")}">
+      <button type="button" class="btn sm sec" id="pd_fetch" style="flex:none" onclick="autoFillProduct()">🔍 自動抓取</button>
+    </div>
     <label>商品名稱</label><input id="pd_name" value="${esc((p&&p.name)||"")}">
     <label>SKU</label><input id="pd_sku" value="${esc((p&&p.sku)||"")}">
     <label>商品圖片網址</label><input id="pd_img" value="${esc((p&&p.image)||"")}">
-    <label>官網商品網址（尚未建立可留空，官網頁面上線後再回來補上）</label><input id="pd_url" value="${esc((p&&p.officialUrl)||"")}">
-    <label>指派選品人員</label><select id="pd_assign"><option value="">— 尚未指派 —</option>${users.map(u=>`<option value="${esc(u)}" ${p&&p.assignedCurator===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
   `, async ()=>{
     const name=val("pd_name").trim();
     if(!name){ toast("請輸入商品名稱",true); return false; }
-    const product={name, sku:val("pd_sku").trim(), image:val("pd_img").trim(),
-      officialUrl:val("pd_url").trim(), assignedCurator:val("pd_assign")};
+    const product={name, sku:val("pd_sku").trim(), image:val("pd_img").trim(), officialUrl:val("pd_url").trim()};
     return id ? await write("PUT",`/api/products/${id}`,{product},"已更新商品")
               : await write("POST","/api/products",{product},"已新增商品");
   });
@@ -4640,13 +4695,15 @@ function setMatchVTab(t){ MATCH_VTAB=t; render(); }
 function matchVFilter(){ const el=document.getElementById("mv_list"); if(el) el.innerHTML=matchVideoListHTML(); }
 function matchVideoListHTML(){
   const q=MATCH_VQ.trim().toLowerCase();
-  const list=(STATE.videos||[]).filter(v=>{
+  // 候選片源＝影片庫大流＋影片庫A。大流是現成成品，優先推薦；沒有的話再用關鍵字往庫A裡搜（見 isDF 排序）
+  const pool=(STATE.videosDF||[]).concat(STATE.videos||[]);
+  const list=pool.filter(v=>{
     if(MATCH_VTAB==="done" && !matchVidDone(v)) return false;
     if(MATCH_VTAB==="script" && !matchVidScript(v)) return false;
     if(MATCH_VFILTER==="awaiting" && !videoAwaitingCuration(v)) return false;
     if(q && !`${v.name||""} ${v.videoCopy||""}`.toLowerCase().includes(q)) return false;
     return true;
-  });
+  }).sort((a,b)=>(isDF(b)?1:0)-(isDF(a)?1:0));
   if(!list.length) return `<p class="muted">沒有符合條件的影片</p>`;
   return list.map(v=>{
     const isP=v.id===MATCH_PRIMARY_ID, isB=v.id===MATCH_BACKUP_ID;
@@ -4656,6 +4713,7 @@ function matchVideoListHTML(){
         ${isP?`<span class="pill ok">主選影片</span>`:isB?`<span class="pill wa">備選影片</span>`:""}
       </div>
       <div class="row" style="margin-top:4px">
+        ${isDF(v)?`<span class="tag" style="border-color:var(--gold);color:var(--gold-dk)">大流</span>`:""}
         <span class="tag">${matchVidScript(v)?"僅腳本":"已完成"}</span>
         ${videoAwaitingCuration(v)?`<span class="pill wa">等待選品中</span>`:""}
       </div>
