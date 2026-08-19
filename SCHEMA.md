@@ -4,7 +4,7 @@
 > 任何程式寫入都必須符合這裡的定義；新增欄位要先更新這份文件並升版 `schemaVersion`。
 
 - 資料庫：Firebase Firestore（專案 `ec-dr-21416`）
-- 目前版本：**schemaVersion = 15**
+- 目前版本：**schemaVersion = 16**（v138：新增 `products`／`matches` 兩個集合，見下方 5.／6.）
 - 時間格式：日期 `YYYY-MM-DD`；時間戳 ISO 字串（台灣 UTC+8，例 `2026-06-10T09:30:00`）；時段 `HH:MM`
 
 ---
@@ -184,7 +184,7 @@
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `name` | string | 名字（= 文件 ID） |
-| `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面）／`cs`（員工：被交辦工作＋每日匯報，不剪片、沒有一創二創之分）／`hr`（人資：只看團隊看板，純檢視、不能操作） |
+| `role` | string | `boss`（管理員）／`manager`（經理人）／`editor`（剪輯）／`intl`（海外剪輯・全英文介面）／`mkt`（行銷）／`pick`（選品行銷，v138：從商品出發配一支影片、送審，額外多一頁「選品配對」，只有這個職位、經理人與管理員看得到——見下方 5.）／`svc`（客服）／`ship`（出貨）／`cs`（員工：被交辦工作＋每日匯報，不剪片、沒有一創二創之分）／`hr`（人資：只看團隊看板，純檢視、不能操作）。`mkt`／`pick`／`svc`／`ship`／`cs`／`hr` 都不剪片，畫面與權限比照 `cs`（`pick` 額外多「選品配對」） |
 | `workStart` / `workEnd` | string | 個人上下班時間（`HH:MM`）。**空＝用全公司那一組**（`settings.workStart/workEnd`） |
 | `pw` | string | **舊制的明文密碼**，只剩兩個用途：新成員的預設 `0000`，以及還沒轉換的舊帳號登入。設好新密碼之後一律被寫成 `""`。**任何新程式碼都不要再讀寫這個欄位** |
 | `pwHash` | string | **密碼雜湊**，格式 `pbkdf2$<次數>$<鹽 base64>$<雜湊 base64>`（PBKDF2-SHA256、每人一組 16 bytes 隨機鹽、21 萬輪）。算得出來、推不回去 —— 資料庫被讀走也拿不到任何人的真實密碼 |
@@ -441,6 +441,61 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | `adminPassword` | string | 管理員登入密碼（預設 1234，可於設定自改） |
 
 **已淘汰（保留不再使用，勿依賴）**：`dailyPublishTarget`、`typeTargets`、`fridayTargets`、`editorDailyQuota`、`kpiStartDate`、`languages`、`materialLowThreshold`、`platforms`、`subTags`、`reuseCap`、`offsiteBackupDir`。
+
+---
+
+## 5. `products/{id}` — 選品商品庫（v138）
+
+選品行銷的工作追蹤用商品庫：**「這個商品要配哪支影片賣」**。跟 `videos.products[]`（印在影片貼文裡的
+銷售商品資訊，最多 4 個）是兩件事，不要混為一談。文件 ID＝`PD`+`uid()`（見 `newProductId()`）。
+刻意不做軟刪除／回收桶——這個集合量小、是工作追蹤用，不像影片庫需要救援機制，直接 `DELETE` 硬刪。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 文件 ID |
+| `name` | string | 商品名稱（必填） |
+| `sku` | string | SKU（選填） |
+| `image` | string | 商品圖片網址（選填） |
+| `officialUrl` | string | 官網商品頁網址。空＝還沒建立官網頁，畫面上會提醒「請先新增商品才能往下配影片」 |
+| `shoplineLink` | string | 保留欄位，供未來接 Shopline 連結（目前畫面未使用） |
+| `assignedCurator` | string | 指派給哪位選品人員（＝`users.name`）。空＝尚未指派。用 `POST /api/products/:id/assign` 改，不需要密碼（工作指派，不是敏感資料，比照 `material.assign` 的權限） |
+| `activeVideoId` | string | **正式配對的影片 id**。空＝還沒定案；老闆核准配對時寫入（見下方 `matches.approve`）＝「1 商品 → 1 影片」正式建立 |
+| `createdBy` / `createdAt` | string | 建立者／建立時間 |
+| `updatedAt` | string(ISO) | 最後更新時間 |
+
+## 6. `matches/{id}` — 選品配對（v138）
+
+一次「幫某商品挑影片」的配對草案／送審／核准紀錄。選品行銷從影片庫挑 1 支**主選**＋（可選）1 支**備選**，
+填建議文案修改與建議上架日期，送老闆審核；老闆核准其中一支之後，寫回 `products.activeVideoId`。
+文件 ID＝`MT`+`uid()`。刻意不做軟刪除——只有 `draft`／`rejected` 狀態允許刪除，送審後的紀錄要留著。
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `id` | string | 文件 ID |
+| `productId` | string | 對應 `products.id`（必填） |
+| `primaryVideoId` | string\|null | 主選影片（送審必填） |
+| `backupVideoId` | string\|null | 備選影片（選填） |
+| `suggestedCopyEdit` | string | 建議文案修改（例：商品名稱要換掉、片尾 CTA 要換、原文案可直接使用…） |
+| `suggestedLaunchDate` | string | 建議上架日期 `YYYY-MM-DD` |
+| `status` | string | `draft`（草稿，還在編輯）／`submitted`（已送老闆審核）／`approved`（老闆核准，已寫回 `products.activeVideoId`）／`rejected`（老闆退回，`bossNote` 寫原因，可修改後重新送審） |
+| `createdBy` / `createdAt` | string | 建立者／建立時間 |
+| `submittedBy` / `submittedAt` | string | 送審人／送審時間 |
+| `reviewedBy` / `reviewedAt` | string | 審核人（核准或退回）／審核時間 |
+| `bossNote` | string | 核准或退回時的備註（退回原因最重要） |
+| `finalVideoId` | string | 核准時選定的那支影片 id（一定是 `primaryVideoId` 或 `backupVideoId` 其中之一） |
+
+> **「建立並送審」是一次寫入，不是兩趟**：`POST /api/matches` 帶 `{match, submit:true}` 會直接以
+> `status:"submitted"` 建立，不用先建立草稿、再回頭用新產生的文件 id 送審第二趟——這個架構下
+> `write()` 不會把新文件的 id 回傳給呼叫端，兩趟寫入根本湊不出同一筆該用的 id。已有草稿／被退回
+> 的配對要修改再送審，才是「`PUT` 改欄位 → `POST .../submit`」兩趟（這種情況 id 是既有的，不用湊）。
+>
+> **「等待選品中」是即時算出來的（`videoAwaitingCuration(v)`），不存在影片身上**：一支影片沒有任何
+> 商品把它訂為 `activeVideoId` 就算等待選品中。存成影片的旗標的話，配對核准／換片、商品刪除都要
+> 記得同步改那個旗標，兩邊很容易兜不起來；即時算就永遠不會錯。
+>
+> **「已完成影片」／「僅有腳本」沿用既有的 `isPublished()`／`vidNotShot()`**（`matchVidDone()`／
+> `matchVidScript()`），不是另開一套判斷標準——影片庫的「有文案・未拍片」（`script` 分段）本來就是
+> 同一件事，沒必要在選品配對這裡重新定義一次「拍了沒」。
 
 ---
 

@@ -5,23 +5,25 @@
 // ===================================================================
 // 職位。intl＝巴基斯坦團隊（全英文介面，做英/泰版二創）。
 // mkt／svc／ship 是後來加的不剪片職位，權限與畫面比照 cs。
-const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷",
+// pick＝選品行銷（v138）：從「商品」出發幫商品配一支影片、送老闆審核，畫面與權限比照 cs，
+// 額外多一頁「選品配對」——只有這個職位、經理人（Regina）與管理員看得到。
+const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷", pick:"選品行銷",
                     svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
-const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing",
+const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing", pick:"Curation Marketing",
                        svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 const roleEn=(r)=>ROLE_LABEL_EN[r]||ROLE_LABEL_EN.editor;
 // 篩選下拉是在挑「一群人」，用複數才讀得順（個人徽章仍用上面的單數）
-const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"Marketing",
+const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"Marketing", pick:"Curation Marketing",
                      svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 // 會打卡、進團隊看板與出勤的所有職位（不含管理員／經理人）。顯示順序見 ROLE_ORDER。
-const STAFF_ROLES=["editor","mkt","svc","ship","cs","hr","intl"];
+const STAFF_ROLES=["editor","mkt","pick","svc","ship","cs","hr","intl"];
 // 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
-const NO_EDIT_ROLES=["mkt","svc","ship","cs","hr"];
+const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["match","選品配對"],["log","操作紀錄"],["trash","回收桶"]],
+  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["match","選品配對"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程＋選品配對；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
@@ -30,6 +32,8 @@ const ROLE_TABS = {
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
+// 選品行銷：比照「員工」的交辦工作／團隊看板，額外加一頁「選品配對」
+ROLE_TABS.pick = ROLE_TABS.cs.concat([["match","選品配對"]]);
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 let VIEW_AS = null;   // 管理員「員工視角」：暫時以某員工身分檢視（唯讀預覽）
@@ -187,6 +191,37 @@ function newVideoRecord(over){
   return Object.assign(rec, over||{});
 }
 
+// ---------- 選品配對（v138）----------
+// `products/{id}` — 選品行銷的商品庫（跟 videos.products[] 的「銷售商品」是兩件事：
+// 那是印在影片貼文裡的商品資訊，這裡是「這個商品要配哪支影片賣」的工作追蹤）。
+// 刻意不做軟刪除／回收桶：這個集合量小、是工作追蹤用，不像影片庫需要救援機制。
+function newProductId(){ return uid("PD"); }
+function newProductRecord(over){
+  const rec={ id:newProductId(), name:"", sku:"", image:"", officialUrl:"", shoplineLink:"",
+    assignedCurator:"", activeVideoId:"",
+    createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(), updatedAt:"" };
+  return Object.assign(rec, over||{});
+}
+// `matches/{id}` — 一次「幫某商品挑影片」的配對草案／送審／核准紀錄。
+// status：draft（草稿，選品行銷還在編輯）／submitted（已送老闆審核）／
+//         approved（老闆核准，寫回 products.activeVideoId＝正式配對）／rejected（老闆退回，可修改後重新送審）。
+function newMatchId(){ return uid("MT"); }
+function newMatchRecord(over){
+  const rec={ id:newMatchId(), productId:"", primaryVideoId:null, backupVideoId:null,
+    suggestedCopyEdit:"", suggestedLaunchDate:"",
+    status:"draft", createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(),
+    submittedBy:"", submittedAt:"", reviewedBy:"", reviewedAt:"", bossNote:"", finalVideoId:"" };
+  return Object.assign(rec, over||{});
+}
+// 一支影片「已完成、可以拿去配對」：已完成或已上片（vidSegment 的 old 片仍算完成，只是要重播）
+function matchVidDone(v){ return isPublished(v) || vidIsOld(v); }
+// 一支影片「還沒拍、只有腳本」：沿用待認領池同一套判斷標準（vidNotShot）
+function matchVidScript(v){ return vidNotShot(v); }
+// 一支影片是否還「等待選品中」：沒有任何商品把它訂為正式配對影片（activeVideoId）。
+// 刻意不存成影片的欄位——訂了又退、換了商品，欄位很容易跟 products 對不上；
+// 用當下的 products 即時算，永遠不會兩邊兜不起來。
+function videoAwaitingCuration(v){ return !(STATE.products||[]).some(p=>p.activeVideoId===v.id); }
+
 // ---------- 衍生計算 ----------
 function parseDate(s){ s=String(s||"").slice(0,10); const d=new Date(s+"T00:00:00"); return isNaN(d)?null:d; }
 function usedInWindow(v, days){
@@ -329,6 +364,9 @@ function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean);
   if(seg[1]==="users" && seg[2]) return "成員 "+decodeURIComponent(seg[2]);
   if(seg[1]==="schedule" && seg[2]) return "排程 "+seg[2];
   if(seg[1]==="settings") return "系統設定";
+  if(seg[1]==="products" && seg[2]){ const p=(STATE.products||[]).find(x=>x.id===seg[2]); return p?("商品 "+p.name):seg[2]; }
+  if(seg[1]==="matches" && seg[2]){ const m=(STATE.matches||[]).find(x=>x.id===seg[2]);
+    const p=m&&(STATE.products||[]).find(x=>x.id===m.productId); return p?("配對 "+p.name):seg[2]; }
   return path||""; }
 function logA(action, target){
   try{ if(!window.DB) return; const id=uid("L");
@@ -450,6 +488,66 @@ async function route(method, path, body){
       await dbArrayDel("schedule", date, "slots", slot, ()=>{
         const rest=slots.slice(); rest.splice(idx,1); return window.DB.scheduleSet(date,{slots:rest}); });
       return;
+    }
+  }
+  if(head==="products"){
+    if(method==="POST" && seg.length===1){
+      const inc=Object.assign({}, body.product); delete inc.id;
+      if(!String(inc.name||"").trim()) throw new Error("請輸入商品名稱");
+      const p=newProductRecord(inc); await window.DB.set("products", p.id, p); return;
+    }
+    const id=seg[1], p=(STATE.products||[]).find(x=>x.id===id), action=seg[2];
+    if(!p) throw new Error("找不到商品");
+    if(action==="assign" && method==="POST"){
+      await window.DB.update("products", id, {assignedCurator:body.assignee||"", updatedAt:nowIso()}); return;
+    }
+    if(method==="PUT"){
+      const patch=Object.assign({}, body.product); delete patch.id; patch.updatedAt=nowIso();
+      await window.DB.update("products", id, patch); return;
+    }
+    if(method==="DELETE"){ await window.DB.del("products", id); return; }
+  }
+  if(head==="matches"){
+    if(method==="POST" && seg.length===1){
+      const inc=Object.assign({}, body.match); delete inc.id;
+      if(!inc.productId || !(STATE.products||[]).some(x=>x.id===inc.productId)) throw new Error("請先選擇商品");
+      const m=newMatchRecord(inc);
+      // 一次「建立並送審」：不用先建立再回頭查新 id 才能送審第二趟
+      if(body.submit){
+        if(!m.primaryVideoId) throw new Error("請先選擇主選影片");
+        m.status="submitted"; m.submittedBy=user; m.submittedAt=nowIso();
+      }
+      await window.DB.set("matches", m.id, m); return;
+    }
+    const id=seg[1], m=(STATE.matches||[]).find(x=>x.id===id), action=seg[2];
+    if(!m) throw new Error("找不到配對");
+    if(!action && method==="PUT"){
+      if(!["draft","rejected"].includes(m.status)) throw new Error("已送審或已核准的配對不可直接修改，請先建立新的配對");
+      const inc=body.match||{}, patch={status:"draft"};
+      ["productId","primaryVideoId","backupVideoId","suggestedCopyEdit","suggestedLaunchDate"].forEach(k=>{
+        if(inc[k]!==undefined) patch[k]=inc[k]; });
+      await window.DB.update("matches", id, patch); return;
+    }
+    if(action==="submit" && method==="POST"){
+      if(!m.productId || !m.primaryVideoId) throw new Error("請先選擇商品與主選影片");
+      await window.DB.update("matches", id, {status:"submitted", submittedBy:user, submittedAt:nowIso()}); return;
+    }
+    if(action==="approve" && method==="POST"){
+      const finalId=body.finalVideoId||m.primaryVideoId;
+      if(![m.primaryVideoId, m.backupVideoId].includes(finalId)) throw new Error("核准的影片必須是主選或備選影片");
+      await window.DB.update("matches", id, {status:"approved", finalVideoId:finalId,
+        reviewedBy:user, reviewedAt:nowIso(), bossNote:body.bossNote||""});
+      // 正式配對：寫回商品，1 商品＝1 影片
+      await window.DB.update("products", m.productId, {activeVideoId:finalId, updatedAt:nowIso()});
+      return;
+    }
+    if(action==="reject" && method==="POST"){
+      await window.DB.update("matches", id, {status:"rejected", reviewedBy:user, reviewedAt:nowIso(),
+        bossNote:body.bossNote||""}); return;
+    }
+    if(method==="DELETE"){
+      if(!["draft","rejected"].includes(m.status)) throw new Error("已送審或已核准的配對不可刪除");
+      await window.DB.del("matches", id); return;
     }
   }
   throw new Error("不支援的操作");
@@ -866,7 +964,7 @@ function render(){
       "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
   // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -1946,7 +2044,7 @@ function futureTasksBody(){
 // ===================================================================
 // 員工顯示順序（所有清單共用）：台灣（剪輯 → 行銷 → 客服 → 出貨 → 員工 → 人資）→ 海外一律排最後；同組內中文名在前、英文名在後
 // 職位在台灣區裡的先後：剪輯 → 行銷 →（其餘）客服 → 出貨 → 員工 → 人資
-const ROLE_ORDER={editor:0, mkt:1, svc:2, ship:3, cs:4, manager:5, hr:6};
+const ROLE_ORDER={editor:0, mkt:1, pick:1.5, svc:2, ship:3, cs:4, manager:5, hr:6};
 // 台灣（0）在前、巴基斯坦（1）在後
 const regionRank=(role)=> role==="intl" ? 1 : 0;
 function staffRank(u){
@@ -4395,6 +4493,249 @@ function viewPerf(){
     </div>
   </div>`;
 }
+
+// ===================================================================
+// 選品配對（v138）—— 選品行銷從「商品」出發，幫商品挑一支影片來賣，送老闆審核；
+// 老闆核准其中一支（主選或備選）之後，正式建立「1 商品 → 1 影片」配對。
+// 只有「選品行銷」「經理人（Regina）」「管理員」看得到這一頁（見 ROLE_TABS）。
+// ===================================================================
+function canViewMatch(){ return ["pick","boss","manager"].includes(currentRole()); }
+let MATCH_PRODUCT_ID=null, MATCH_PRIMARY_ID=null, MATCH_BACKUP_ID=null, MATCH_EDITING_ID=null;
+let MATCH_VTAB="done", MATCH_VQ="", MATCH_VFILTER="awaiting";
+
+function viewMatch(){
+  // 導覽已經照角色過濾，這裡是最後一道守門（真正的守門原則見 editVideo 上面的註解）
+  if(!canViewMatch()) return `<h2>選品配對</h2><p class="muted">你沒有這一頁的權限。</p>`;
+  const isBoss=["boss","manager"].includes(currentRole());
+  return `<h2>選品配對工作台</h2>`
+    + (isBoss?matchQueueCard():"")
+    + matchWorkbenchHTML()
+    + matchHistoryCard(isBoss);
+}
+
+// 老闆／經理人／管理員：待審核佇列，核准其中一支（主選或備選）或退回
+function matchQueueCard(){
+  const pending=(STATE.matches||[]).filter(m=>m.status==="submitted");
+  const rows=pending.map(m=>{
+    const p=(STATE.products||[]).find(x=>x.id===m.productId);
+    const pv=vid(m.primaryVideoId), bv=m.backupVideoId?vid(m.backupVideoId):null;
+    return `<div class="card" style="background:var(--panel2)">
+      <div class="row" style="justify-content:space-between">
+        <b>${esc(p?p.name:m.productId)}</b>
+        <span class="muted" style="font-size:12px">送審人：${esc(m.submittedBy||m.createdBy||"")}</span>
+      </div>
+      <p class="muted" style="margin:4px 0;font-size:13px">SKU：${esc((p&&p.sku)||"未填")}　建議上架：${esc(m.suggestedLaunchDate||"未填")}</p>
+      <div class="grid cols2">
+        <div class="card" style="margin:0"><div class="muted" style="font-size:12px">主選影片</div><b>${pv?esc(vidTitle(pv)):"-"}</b></div>
+        <div class="card" style="margin:0"><div class="muted" style="font-size:12px">備選影片</div><b>${bv?esc(vidTitle(bv)):"（無）"}</b></div>
+      </div>
+      ${m.suggestedCopyEdit?`<p style="margin-top:8px"><b>建議文案修改：</b>${esc(m.suggestedCopyEdit)}</p>`:""}
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" onclick="approveMatch('${esc(jsEsc(m.id))}','${esc(jsEsc(m.primaryVideoId))}')">✅ 核准主選</button>
+        ${bv?`<button class="btn sm sec" onclick="approveMatch('${esc(jsEsc(m.id))}','${esc(jsEsc(m.backupVideoId))}')">✅ 核准備選</button>`:""}
+        <button class="btn sm danger" onclick="rejectMatch('${esc(jsEsc(m.id))}')">↩ 退回</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="card"><b>📥 待你審核（${pending.length}）</b>
+    ${rows||`<p class="muted" style="margin-top:8px">目前沒有待審核的配對</p>`}</div>`;
+}
+async function approveMatch(id, finalVideoId){
+  if(!finalVideoId){ toast("尚未選擇影片",true); return; }
+  await write("POST",`/api/matches/${id}/approve`,{finalVideoId},"已核准，正式建立商品配對");
+}
+async function rejectMatch(id){
+  const note=prompt("退回原因（會顯示給選品人員）：");
+  if(note===null) return;
+  await write("POST",`/api/matches/${id}/reject`,{bossNote:note},"已退回");
+}
+
+// 三欄工作台：商品資訊 → 選擇影片 → 建立配對並送審
+function matchWorkbenchHTML(){
+  const products=(STATE.products||[]).slice().sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+  if(MATCH_PRODUCT_ID && !products.some(x=>x.id===MATCH_PRODUCT_ID)) MATCH_PRODUCT_ID=null;
+  const p=MATCH_PRODUCT_ID?products.find(x=>x.id===MATCH_PRODUCT_ID):null;
+  return `
+  <div class="grid cols3" style="align-items:start">
+    <div class="card">
+      <b>1️⃣ 商品資訊</b>
+      <label>選擇商品</label>
+      <select onchange="pickMatchProduct(this.value)">
+        <option value="">— 請選擇 —</option>
+        ${products.map(x=>`<option value="${esc(x.id)}" ${x.id===MATCH_PRODUCT_ID?"selected":""}>${esc(x.name)}</option>`).join("")}
+      </select>
+      ${p?matchProductInfoHTML(p):`<p class="muted" style="margin-top:10px">尚未選擇商品</p>`}
+      <button class="btn sm sec" style="margin-top:12px;width:100%" onclick="editProductModal()">＋ 新增商品</button>
+    </div>
+    <div class="card">
+      <b>2️⃣ 選擇影片</b>
+      ${matchVideoPickerHTML()}
+    </div>
+    <div class="card">
+      <b>3️⃣ 建立配對並送審</b>
+      ${matchSummaryHTML(p)}
+    </div>
+  </div>`;
+}
+function pickMatchProduct(id){
+  MATCH_PRODUCT_ID=id||null; MATCH_PRIMARY_ID=null; MATCH_BACKUP_ID=null; MATCH_EDITING_ID=null; render();
+}
+function matchProductInfoHTML(p){
+  const mine=p.assignedCurator===currentUser();
+  const av=p.activeVideoId?vid(p.activeVideoId):null;
+  return `<div class="card" style="background:var(--panel2);margin-top:10px">
+    <div class="row">
+      ${p.image?`<img src="${esc(p.image)}" style="width:56px;height:56px;object-fit:cover;border-radius:4px">`:""}
+      <div><b>${esc(p.name)}</b><div class="muted" style="font-size:12px">SKU：${esc(p.sku||"未填")}</div></div>
+    </div>
+    <p class="muted" style="margin:10px 0 4px;font-size:13px">官網商品網址</p>
+    ${p.officialUrl?`<a href="${esc(p.officialUrl)}" target="_blank">${esc(p.officialUrl)}</a>`
+      :`<span class="pill wa">尚未建立官網商品頁，請先新增商品才能往下配影片</span>`}
+    <p class="muted" style="margin-top:10px;font-size:13px">指派給：${esc(p.assignedCurator||"尚未指派")}</p>
+    <button class="btn sm sec" onclick="assignMatchProduct('${esc(jsEsc(p.id))}')">${mine?"取消指派給我":"指派給我"}</button>
+    ${av?`<p style="margin-top:10px"><span class="pill ok">✅ 已正式配對：${esc(vidTitle(av))}</span></p>`:""}
+  </div>`;
+}
+async function assignMatchProduct(pid){
+  const p=(STATE.products||[]).find(x=>x.id===pid); if(!p) return;
+  const assignee=(p.assignedCurator===currentUser())?"":currentUser();
+  await write("POST",`/api/products/${pid}/assign`,{assignee}, assignee?"已指派給你":"已取消指派");
+}
+function editProductModal(id){
+  const p=id?(STATE.products||[]).find(x=>x.id===id):{};
+  if(id && !p) return;
+  const users=(STATE.users||[]).map(u=>u.name);
+  showModal(id?"編輯商品":"新增商品", `
+    <label>商品名稱</label><input id="pd_name" value="${esc((p&&p.name)||"")}">
+    <label>SKU</label><input id="pd_sku" value="${esc((p&&p.sku)||"")}">
+    <label>商品圖片網址</label><input id="pd_img" value="${esc((p&&p.image)||"")}">
+    <label>官網商品網址（尚未建立可留空，官網頁面上線後再回來補上）</label><input id="pd_url" value="${esc((p&&p.officialUrl)||"")}">
+    <label>指派選品人員</label><select id="pd_assign"><option value="">— 尚未指派 —</option>${users.map(u=>`<option value="${esc(u)}" ${p&&p.assignedCurator===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
+  `, async ()=>{
+    const name=val("pd_name").trim();
+    if(!name){ toast("請輸入商品名稱",true); return false; }
+    const product={name, sku:val("pd_sku").trim(), image:val("pd_img").trim(),
+      officialUrl:val("pd_url").trim(), assignedCurator:val("pd_assign")};
+    return id ? await write("PUT",`/api/products/${id}`,{product},"已更新商品")
+              : await write("POST","/api/products",{product},"已新增商品");
+  });
+}
+
+// 選片：分「已完成影片」／「僅有腳本」兩個分頁，可篩選「等待選品中」與關鍵字
+function matchVideoPickerHTML(){
+  return `
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm ${MATCH_VTAB==='done'?'':'sec'}" onclick="setMatchVTab('done')">已完成影片</button>
+      <button class="btn sm ${MATCH_VTAB==='script'?'':'sec'}" onclick="setMatchVTab('script')">僅有腳本</button>
+    </div>
+    <input id="mv_q" placeholder="用關鍵字篩選文案／標題" value="${esc(MATCH_VQ)}" oninput="MATCH_VQ=this.value;matchVFilter()">
+    <select style="margin-top:6px" onchange="MATCH_VFILTER=this.value;matchVFilter()">
+      <option value="awaiting" ${MATCH_VFILTER==='awaiting'?'selected':''}>等待選品中</option>
+      <option value="all" ${MATCH_VFILTER==='all'?'selected':''}>全部影片</option>
+    </select>
+    <div id="mv_list" style="margin-top:10px;max-height:520px;overflow:auto">${matchVideoListHTML()}</div>
+    <p class="muted" style="margin-top:8px;font-size:12px">可選擇 2 支影片：1 支主選影片＋1 支備選影片。最後正式配對仍是 1 商品＝1 影片。</p>`;
+}
+function setMatchVTab(t){ MATCH_VTAB=t; render(); }
+function matchVFilter(){ const el=document.getElementById("mv_list"); if(el) el.innerHTML=matchVideoListHTML(); }
+function matchVideoListHTML(){
+  const q=MATCH_VQ.trim().toLowerCase();
+  const list=(STATE.videos||[]).filter(v=>{
+    if(MATCH_VTAB==="done" && !matchVidDone(v)) return false;
+    if(MATCH_VTAB==="script" && !matchVidScript(v)) return false;
+    if(MATCH_VFILTER==="awaiting" && !videoAwaitingCuration(v)) return false;
+    if(q && !`${v.name||""} ${v.videoCopy||""}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  if(!list.length) return `<p class="muted">沒有符合條件的影片</p>`;
+  return list.map(v=>{
+    const isP=v.id===MATCH_PRIMARY_ID, isB=v.id===MATCH_BACKUP_ID;
+    return `<div class="card" style="background:var(--panel2);margin-bottom:8px;${isP?'border-color:var(--accent)':(isB?'border-color:var(--gold)':'')}">
+      <div class="row" style="justify-content:space-between">
+        <div><b>${esc(vidTitle(v))}</b> <span class="muted" style="font-size:12px">${esc(v.code||v.id)}</span></div>
+        ${isP?`<span class="pill ok">主選影片</span>`:isB?`<span class="pill wa">備選影片</span>`:""}
+      </div>
+      <div class="row" style="margin-top:4px">
+        <span class="tag">${matchVidScript(v)?"僅腳本":"已完成"}</span>
+        ${videoAwaitingCuration(v)?`<span class="pill wa">等待選品中</span>`:""}
+      </div>
+      ${v.videoCopy?`<p class="muted" style="font-size:12px;margin:6px 0">影片文案：${esc(v.videoCopy).slice(0,80)}</p>`:""}
+      <div class="row" style="margin-top:6px">
+        <button class="btn sm ${isP?'sec':''}" onclick="setMatchVideo('primary','${esc(jsEsc(v.id))}')">${isP?"取消主選":"設為主選"}</button>
+        <button class="btn sm ${isB?'sec':''}" onclick="setMatchVideo('backup','${esc(jsEsc(v.id))}')">${isB?"取消備選":"設為備選"}</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+function setMatchVideo(slot,id){
+  if(slot==="primary"){ MATCH_PRIMARY_ID=(MATCH_PRIMARY_ID===id)?null:id; if(MATCH_BACKUP_ID===MATCH_PRIMARY_ID) MATCH_BACKUP_ID=null; }
+  else { MATCH_BACKUP_ID=(MATCH_BACKUP_ID===id)?null:id; if(MATCH_PRIMARY_ID===MATCH_BACKUP_ID) MATCH_PRIMARY_ID=null; }
+  render();
+}
+
+// 建立配對並送審：選好的商品＋主選／備選影片彙整成摘要，按鍵開彈窗填文案建議與上架日期
+function matchSummaryHTML(p){
+  if(!p) return `<p class="muted">請先選擇商品</p>`;
+  const pv=MATCH_PRIMARY_ID?vid(MATCH_PRIMARY_ID):null, bv=MATCH_BACKUP_ID?vid(MATCH_BACKUP_ID):null;
+  return `<div class="card" style="background:var(--panel2)">
+      <p><b>商品</b>：${esc(p.name)}</p>
+      <p><b>主選影片</b>：${pv?esc(vidTitle(pv)):'<span class="muted">尚未選擇</span>'}</p>
+      <p><b>備選影片</b>：${bv?esc(vidTitle(bv)):'<span class="muted">（可留空）</span>'}</p>
+    </div>
+    <button class="btn" style="width:100%;margin-top:12px" onclick="openMatchSubmit()" ${pv?"":"disabled"}>📤 填寫文案建議與上架日期，送老闆審核</button>`;
+}
+function openMatchSubmit(){
+  if(!MATCH_PRODUCT_ID || !MATCH_PRIMARY_ID){ toast("請先選擇商品與主選影片",true); return; }
+  // 同一位選品人員對同一個商品，若已有草稿或被退回的配對，直接接續編輯（不會愈開愈多筆）
+  const existing=(STATE.matches||[]).find(m=>m.productId===MATCH_PRODUCT_ID && m.createdBy===currentUser()
+    && ["draft","rejected"].includes(m.status));
+  MATCH_EDITING_ID=existing?existing.id:null;
+  showModal("建立配對並送審", `
+    ${existing&&existing.status==="rejected"?`<p class="pill em">此配對先前被退回：${esc(existing.bossNote||"（無說明）")}</p>`:""}
+    <label>建議文案修改（例如：商品名稱要換掉、片尾 CTA 要換、原文案可直接使用…）</label>
+    <textarea id="mm_copy" maxlength="200">${esc((existing&&existing.suggestedCopyEdit)||"")}</textarea>
+    <label>建議上架日期</label>
+    <input type="date" id="mm_date" value="${esc((existing&&existing.suggestedLaunchDate)||today)}">
+  `, submitMatch);
+}
+async function submitMatch(){
+  const match={ productId:MATCH_PRODUCT_ID, primaryVideoId:MATCH_PRIMARY_ID, backupVideoId:MATCH_BACKUP_ID,
+    suggestedCopyEdit:val("mm_copy").trim(), suggestedLaunchDate:val("mm_date") };
+  let ok;
+  if(MATCH_EDITING_ID){
+    ok=await write("PUT",`/api/matches/${MATCH_EDITING_ID}`,{match});
+    if(ok) ok=await write("POST",`/api/matches/${MATCH_EDITING_ID}/submit`,{},"已送老闆審核");
+  } else {
+    ok=await write("POST","/api/matches",{match, submit:true},"已送老闆審核");
+  }
+  if(!ok) return false;
+  MATCH_PRIMARY_ID=null; MATCH_BACKUP_ID=null; MATCH_EDITING_ID=null;
+  return true;
+}
+
+// 配對紀錄：選品行銷看自己送出的，老闆／經理人／管理員看全部
+function matchHistoryCard(isBoss){
+  const list=(STATE.matches||[]).filter(m=>isBoss||m.createdBy===currentUser())
+    .slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  const label={draft:"草稿",submitted:"審核中",approved:"已核准",rejected:"已退回"};
+  const cls={draft:"",submitted:"wa",approved:"ok",rejected:"em"};
+  const rows=list.map(m=>{
+    const p=(STATE.products||[]).find(x=>x.id===m.productId);
+    const fv=m.finalVideoId?vid(m.finalVideoId):null;
+    return `<tr>
+      <td data-label="商品">${esc(p?p.name:m.productId)}</td>
+      <td data-label="主選">${(()=>{ const v=vid(m.primaryVideoId); return v?esc(vidTitle(v)):"-"; })()}</td>
+      <td data-label="備選">${(()=>{ const v=m.backupVideoId?vid(m.backupVideoId):null; return v?esc(vidTitle(v)):"-"; })()}</td>
+      <td data-label="送審人">${esc(m.createdBy||"")}</td>
+      <td data-label="狀態">${cls[m.status]?`<span class="pill ${cls[m.status]}">${esc(label[m.status]||m.status)}</span>`:esc(label[m.status]||m.status)}</td>
+      <td data-label="最終影片">${fv?esc(vidTitle(fv)):"-"}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="card"><b>📋 ${isBoss?"全部":"我的"}配對紀錄</b>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>商品</th><th>主選</th><th>備選</th><th>送審人</th><th>狀態</th><th>最終影片</th></tr></thead>
+    <tbody>${rows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table></div>`;
+}
+
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
 // 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
 // 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
@@ -5518,7 +5859,7 @@ function setChannelCards(s){
 // 設定：成員名單（角色、改名、重設密碼、刪除）
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>人資</b>＝只看團隊看板，不能操作。</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工，額外多一頁「選品配對」（幫商品挑影片、送審），只有這個職位、經理人與管理員看得到；<b>人資</b>＝只看團隊看板，不能操作。</div>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
