@@ -16,7 +16,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 // 預設設定（首次啟動且 Firestore 尚無 settings 時寫入）— 對應 SCHEMA.md
 const DEFAULT_SETTINGS = {
-  schemaVersion: 15,
+  schemaVersion: 16,
   adminPassword: "1234",
   mainTypes: ["流量型", "帶貨型", "寵粉"],
   videoTags: ["新片","舊片","每日寵粉","招商","銷售"],
@@ -75,7 +75,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const storage = getStorage(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
-  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [] };
+  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [], products: [], matches: [] };
   // 打卡紀錄會一直長（22 人 × 每個工作天一筆），全部訂閱等於每年多幾千筆要同步。
   // 常駐只訂閱最近 62 天（＝本月＋上個月，薪資報表要用的範圍）；
   // 人資往前翻更早的月份時，再由 loadShiftMonth() 一次性補讀那個月。
@@ -174,7 +174,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
         patch.exchangeRates = up;
       }
       if (!cur.reviewSince) patch.reviewSince = DEFAULT_SETTINGS.reviewSince;
-      if (cur.schemaVersion == null || cur.schemaVersion < 15) patch.schemaVersion = 15;
+      // v138：新增 products／matches 兩個集合，兩者都是全新集合、無需回填既有資料，只更新版號
+      if (cur.schemaVersion == null || cur.schemaVersion < 16) patch.schemaVersion = 16;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
 
@@ -184,6 +185,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "videos"),   q => { raw.videos   = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
+    // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
+    onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push(); });
+    onSnapshot(collection(db, "matches"),  q => { raw.matches  = q.docs.map(d => d.data()); push(); });
     // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀
     onSnapshot(query(collection(db, "shifts"), where("date", ">=", SHIFTS_FROM)), q => {
       Object.keys(shiftsLive).forEach(k => delete shiftsLive[k]);
