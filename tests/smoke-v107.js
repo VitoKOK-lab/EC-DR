@@ -170,7 +170,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("可以發給整區", ["__twmake__","__twrest__","__pk__"].every(k=>sel.includes('value="'+k+'"')));
     ok("可以發給單一職位", ["__editor__","__mkt__","__svc__","__ship__","__cs__","__intl__"].every(k=>sel.includes('value="'+k+'"')));
     ok("個人名單依區塊分組", sel.includes('label="台灣・剪輯行銷"') && sel.includes('label="巴基斯坦"')); }
-  ok("整區代碼解得開", JSON.stringify(noticeTargetRoles("__twmake__"))===JSON.stringify(["editor","mkt"]));
+  ok("整區代碼解得開", JSON.stringify(noticeTargetRoles("__twmake__"))===JSON.stringify(["editor","mkt","pick"]));
   ok("單一職位代碼解得開", JSON.stringify(noticeTargetRoles("__ship__"))===JSON.stringify(["ship"]));
   ok("全體代碼＝所有職位", JSON.stringify(noticeTargetRoles("__all__"))===JSON.stringify(STAFF_ROLES));
   ok("選到某個人時回 null（當成單一收件人）", noticeTargetRoles("茂泉")===null);

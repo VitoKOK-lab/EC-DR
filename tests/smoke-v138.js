@@ -266,6 +266,26 @@ const dfVid=(id,o)=>Object.assign(doneVid(id,o), {lib:"大流"});
   ok("大流的片核准後一樣正式配對、不再等待選品中",
      STATE.products[0].activeVideoId==="D1" && !videoAwaitingCuration(vid("D1"))); }
 
+// ══════════ ⑬ 新職位不能在既有的「職位清單」畫面裡悄悄消失 ══════════
+// 教訓：新增 pick 職位那次只顧著加 ROLE_LABEL／ROLE_TABS，app.js 裡另外還有幾處
+// 手動列出「哪些職位」的陣列（登入頁分組、儀表板員工視角、指派交辦）沒有跟著補，
+// 結果選品行銷的人登入頁按鈕整個不見、管理員也選不到他們做員工視角預覽。
+// 這裡把「加一個新職位」的檢查釘死，以後再加職位漏了哪一處，這支測試會紅。
+{ reset([]); as("Amy","pick");
+  const g = staffOptGroups(STAFF_ROLES.concat("manager"));
+  ok("staffOptGroups 有選品行銷的分組標籤", g.includes('label="選品行銷"'));
+  ok("選品行銷的人出現在該分組底下", g.includes(">Amy<")); }
+{ reset([]); as("Amy","pick"); as("管理員","boss");
+  const h = dashViewAsCard();
+  ok("儀表板「員工視角」選得到選品行銷（這次回報的原始 bug）", h.includes('label="選品行銷"') && h.includes(">Amy<")); }
+{ reset([]); as("Amy","pick");
+  const h = dashAssignTaskCard();
+  ok("「指派交辦給員工」選得到選品行銷（選品行銷跟員工一樣走交辦流程）", h.includes('label="選品行銷"') && h.includes(">Amy<")); }
+{ ok("STAFF_GROUPS（登入頁分組）含 pick，選品行銷的登入按鈕才畫得出來",
+     STAFF_GROUPS.some(([,,,roles])=>roles.includes("pick"))); }
+{ ok("noticeTargetRoles(\"__twmake__\") 含 pick，HR 發整區通知才發得到選品行銷",
+     noticeTargetRoles("__twmake__").includes("pick")); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
 })();
