@@ -249,7 +249,7 @@ ok("昨天的不算今天已經有了", presetPending().includes("填寫今日�
   { const st=viewSettings();
     ok("設定頁有每日固定工作", st.includes('id="set_tpl"') && st.includes("每日固定工作"));
     ok("用「角色=內容」的格式帶出來", st.includes("剪輯=剪輯當日影片") && st.includes("全部=填寫今日工作日誌"));
-    ok("寫明可以填哪些角色", st.includes("全部／剪輯／行銷／客服／出貨／員工／巴基斯坦")); }
+    ok("寫明可以填哪些角色", st.includes("全部／剪輯／行銷／選品行銷／客服／出貨／員工／巴基斯坦")); }
   fields.set_tpl="剪輯=剪片\n員工=回訊息\n全部=打卡\n沒寫角色的一行";
   fields.set_wstart="09:00"; fields.set_wend="18:00"; fields.set_grace="10";
   fields.set_attstart=""; fields.set_olat=""; fields.set_olng="";

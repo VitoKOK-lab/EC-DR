@@ -1400,7 +1400,7 @@ function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改
 // 沒設定時沿用下面這兩組預設，行為跟以前一樣。
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
-const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
+const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["pick","選品行銷"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
 function dailyTemplates(){
   const s=(STATE&&STATE.settings&&STATE.settings.dailyTemplates);
   if(Array.isArray(s) && s.length) return s.filter(x=>x&&String(x.t||"").trim());
@@ -2066,6 +2066,7 @@ function staffOptGroups(roles){
   const groups=[
     ["剪輯",     isEd],
     ["行銷",     u=>u.role==="mkt"],
+    ["選品行銷", u=>u.role==="pick"],
     ["客服",     u=>u.role==="svc"],
     ["出貨",     u=>u.role==="ship"],
     ["員工",     u=>u.role==="cs"],
@@ -2083,7 +2084,7 @@ function staffOptGroups(roles){
 // 分區塊：台灣先分兩排（做內容的／其餘），巴基斯坦自成一區排最後。
 // 每一區列出屬於它的職位，之後要調哪個職位歸哪一排，改這裡就好。
 const STAFF_GROUPS=[
-  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt"]],
+  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt","pick"]],
   ["twrest", "台灣・其他",     "Taiwan · Others",              ["svc","ship","cs","hr"]],
   ["pk",     "巴基斯坦",       "Pakistan",                     ["intl"]],
 ];
@@ -3075,7 +3076,7 @@ function dashViewAsCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b></div>
       <div class="row" style="gap:8px">
-        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","manager","hr"])}</select>
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","manager","hr","mkt","pick","svc","ship"])}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
@@ -3089,7 +3090,7 @@ function dashAssignTaskCard(){
     </div>
     <div class="grid cols2" style="margin-top:12px">
       <div><label>選擇員工</label>
-        <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs"])}</select></div>
+        <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","mkt","pick","svc","ship"])}</select></div>
       <div><label>交辦內容</label>
         <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(enterKey(event))assignTaskSel()"></div>
     </div>
