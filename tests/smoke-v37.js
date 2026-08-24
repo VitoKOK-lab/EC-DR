@@ -57,7 +57,12 @@ for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","e
 
 // --- 上班計畫的建立二創版本卡（三個 zone 切換） ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
-WORK_ZONE="shopee"; let h=viewWork();
+WORK_ZONE="shopee";
+// v138：來源清單（所有舊片＝幾千個 DOM 節點）預設收起來，打開才畫 —— 先釘住這件事
+ok("來源清單預設是收起來的（不然剪輯每次同步都要重排幾千個節點）",
+   !/data-lazy="shopee"[^>]*\bopen\b/.test(viewWork()));
+FOLD_OPEN[foldKey("work.mkver")]=true;   // 以下都是「打開之後」該看到的內容
+let h=viewWork();
 ok("editor work has 建立其他版本 card (shopee list)", h.includes("建立其他版本") && h.includes("蝦皮店A"));
 WORK_ZONE="ms"; h=viewWork();
 ok("zone switch → 馬來 list", h.includes("tiktok-Malaysia"));

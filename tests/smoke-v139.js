@@ -1,0 +1,165 @@
+// v139：員工說「很卡」。實測出來是兩件事疊在一起，兩件都不是新功能造成的。
+//
+// ① fb.js 掛了六個 onSnapshot，每一個進來都各自 push 一次 → 開機時同一份資料被
+//    完整重畫六遍。剪輯（401 支片掛在他名下）一次重畫 0.59 秒，六次就是三秒多的
+//    全畫面凍結。而且之後全公司任何人改任何東西，每個人的畫面都要再重畫一次。
+// ② 「建立二創版本」那張卡把**所有舊片**當成挑片清單直接畫出來 —— 321 支＝3110 個
+//    DOM 節點，佔掉剪輯整頁的 77%。清單不能截斷（v121 的規矩），所以改成收起來，
+//    打開的那一刻才畫。
+//
+// 實測（正式資料 777 支影片，剪輯 泓儒）：一次同步 586ms → 158ms，節點 4692 → 949。
+const fs=require("fs"), path=require("path");
+const APP=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8");
+const FB=fs.readFileSync(path.join(__dirname,"..","fb.js"),"utf8");
+let src=APP.replace(/^let /gm,"").replace(/^const /gm,"");
+const el=()=>({value:"",innerHTML:"",textContent:"",className:"",style:{},checked:false,tagName:"DIV",dataset:{},
+  classList:{toggle(){},add(){},remove(){},contains(){return false;}},
+  addEventListener(){},appendChild(){},querySelector(){return null;},querySelectorAll(){return [];},
+  getAttribute(){return null;},setAttribute(){},closest(){return null;},focus(){},
+  insertAdjacentHTML(p,h){ this.innerHTML+=h; },
+  getBoundingClientRect(){return{top:0,left:0,bottom:0,right:0};}});
+const store={};
+global.localStorage={getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
+let modalHTML="", viewEl=el(), nodes={};
+const listeners={};
+global.document={getElementById:(id)=>{ if(id==="view") return viewEl;
+    if(!nodes[id]) nodes[id]=el(); return nodes[id]; },
+  addEventListener(t,fn){ (listeners[t]=listeners[t]||[]).push(fn); },
+  createElement:()=>el(), body:{classList:{toggle(){},add(){},remove(){}}},
+  querySelector:()=>null, querySelectorAll:()=>[]};
+global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,scrollTo(){},DB:null,location:{reload(){}}};
+global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
+global.confirm=()=>true; global.prompt=()=>null;
+eval(src);
+toast=()=>{};
+
+const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+const PAST=D(-40);
+const v_=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"毛片"+id,videoCopy:"文案",
+  rawLink:"http://raw",stage:"待處理",editor:"",claimedBy:"",assignedTo:"",scheduledDate:null,
+  publishedLink:"",driveFolder:"",productUrl:"",note:"",mainType:"",source:"老闆自拍",refLink:"",
+  reviewStatus:"",locale:"",channel:"",origLang:"",account:"",lib:"",remakes:[],
+  tags:[],products:[],usageHistory:[],metrics:[]},o||{});
+function reset(nOld){
+  nodes={}; modalHTML=""; viewEl.innerHTML="";
+  const videos=[];
+  for(let i=0;i<(nOld==null?60:nOld);i++) videos.push(v_("O"+i,{name:"舊片"+i,stage:"已上片",published:true,
+    publishedLink:"http://p",driveFolder:"http://d",scheduledDate:PAST,finishedAt:PAST+"T10:00:00",tags:["舊片"]}));
+  STATE={ users:[{name:"小葵",role:"editor"},{name:"Regina",role:"manager"},{name:"Anna",role:"intl"}],
+    settings:{dailyTarget:4,videoTags:["新片","舊片"],sources:["老闆自拍"],postPlatforms:[],
+      intlAccounts:[{locale:"en",name:"acctEN"},{locale:"th",name:"acctTH"}],
+      shopeeAccounts:["acctSHP"],msAccounts:["acctMS"],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"},
+    schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos };
+  FOLD_OPEN={}; WORK_ZONE="shopee"; VIEW_AS=null; CUR_TAB="work"; POOL_FILTER="all"; POOL_Q="";
+  CH_Q={shopee:"",ms:""}; INTL_Q="";
+  global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
+  localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
+}
+let pass=0, fail=0;
+function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
+const zoneCard=()=>{ const h=viewWork();
+  let i=h.indexOf("建立二創版本"); if(i<0) i=h.indexOf("Create a version");   // 海外看到的是英文
+  return i<0?"":h.slice(i, h.indexOf("</div>", h.indexOf("</details>", i))); };
+
+// ══════════ ① 來源清單預設收起來 ══════════
+reset(60);
+{ const c=zoneCard();
+  ok("建立二創版本那張卡還在", !!c);
+  ok("來源清單包在摺疊裡", c.includes('<details class="fold"'));
+  ok("摺疊標成 data-lazy（打開才畫）", /data-lazy="shopee"/.test(c));
+  ok("預設是收起來的", !/data-lazy="shopee"[^>]*\bopen\b/.test(c) && !/\bopen\b[^>]*data-lazy="shopee"/.test(c));
+  ok("摺疊上寫得出有幾支可以挑（收起來也知道有沒有東西）", /挑一支舊片來做<span class="n">60<\/span>/.test(c));
+  ok("收起來的時候清單是空的（這就是省下來的幾千個節點）",
+     /<div id="shp_list"[^>]*><\/div>/.test(c));
+  ok("搜尋框照樣在（打開就能用）", c.includes('id="shp_q"')); }
+
+// ══════════ ② 打開就要畫得出來，而且是完整的清單（不截斷）══════════
+{ reset(60); FOLD_OPEN[foldKey("work.mkver")]=true;
+  const c=zoneCard();
+  ok("打開之後清單就畫出來了", c.includes("ilib-card"));
+  ok("打開之後 60 支一支都不少（清單不准截斷）",
+     (c.match(/class="ilib-card"/g)||[]).length===chSourcePool().length);
+  ok("打開之後摺疊帶著 open", /\bopen\b[^>]*data-lazy="shopee"|data-lazy="shopee"[^>]*\bopen\b/.test(c)); }
+// 大量資料下收起來也不會變慢
+{ reset(400);
+  const closed=zoneCard();
+  ok("400 支舊片、收起來時畫面上還是 0 張卡", (closed.match(/class="ilib-card"/g)||[]).length===0);
+  FOLD_OPEN[foldKey("work.mkver")]=true;
+  ok("打開之後 400 支全都在", (zoneCard().match(/class="ilib-card"/g)||[]).length===400); }
+
+// ══════════ ③ 打開的那一刻真的會去把清單填上 ══════════
+{ reset(60);
+  const toggles=(listeners.toggle||[]);
+  ok("有掛 toggle 監聽（摺疊開合的入口）", toggles.length>0);
+  const fn=toggles[0];
+  // 監聽器收到的是「事件」，元素在 e.target —— 不是直接收元素
+  const mk=(open,lazy)=>({target:{tagName:"DETAILS", open,
+    getAttribute:(k)=>k==="data-fold"?"fk":(k==="data-lazy"?lazy:null)}});
+  // 打開有 data-lazy 的 → 清單要被填進去
+  nodes.shp_list=el(); nodes.shp_list.innerHTML="";
+  fn(mk(true,"shopee"));
+  ok("打開時把清單填進去", String(nodes.shp_list.innerHTML).includes("ilib-card"));
+  // 收起來不要多做事
+  nodes.shp_list.innerHTML="__keep__";
+  fn(mk(false,"shopee"));
+  ok("收起來的時候不重畫（沒必要）", nodes.shp_list.innerHTML==="__keep__");
+  // 沒有 data-lazy 的摺疊完全不受影響
+  let threw=false; try{ fn(mk(true,null)); }catch(e){ threw=true; }
+  ok("一般的摺疊照舊，不會被這段影響", !threw);
+  // 開合狀態照樣要記住（v129 的行為不能被弄壞）
+  FOLD_OPEN={}; fn(mk(true,"shopee"));
+  ok("開合狀態照樣記得住", FOLD_OPEN.fk===true); }
+{ reset(60);
+  ok("lazyFill 認得蝦皮", (()=>{ nodes.shp_list=el(); lazyFill("shopee");
+       return String(nodes.shp_list.innerHTML).includes("ilib-card"); })());
+  ok("lazyFill 認得馬來", (()=>{ WORK_ZONE="ms"; nodes.mys_list=el(); lazyFill("ms");
+       return typeof nodes.mys_list.innerHTML==="string"; })());
+  ok("lazyFill 收到看不懂的值不會炸", (()=>{ try{ lazyFill("亂七八糟"); return true; }catch(e){ return false; } })()); }
+
+// ══════════ ④ 海外那一側（英文／泰文）同一套 ══════════
+{ reset(60); localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
+  WORK_ZONE="en";
+  const c=zoneCard();
+  ok("海外的來源清單也是收起來的", !/data-lazy="en"[^>]*\bopen\b/.test(c));
+  ok("海外的清單收起來時也是空的", /<div id="intl_list"[^>]*><\/div>/.test(c));
+  FOLD_OPEN[foldKey("work.mkver")]=true;
+  ok("海外打開之後也畫得出來", zoneCard().includes("ilib-card")); }
+
+// ══════════ ⑤ fb.js：六個訂閱不能各自重畫一次 ══════════
+{ ok("push 有節流，不是直接呼叫 __onState", !/function push\(\)\s*\{\s*if \(window\.__onState\) window\.__onState\(raw\); \}/.test(FB));
+  ok("有節流的計時器", /pushTimer/.test(FB));
+  ok("同一個窗口內只排一次（後面的直接返回）", /if \(pushTimer\) return;/.test(FB));
+  ok("安靜一陣子之後要立刻畫（登入畫面不能多等）", /if \(since >= PUSH_GAP\) \{ pushNow\(\); return; \}/.test(FB));
+  ok("六個訂閱都還在（沒有為了效能少訂閱資料）",
+     (FB.match(/onSnapshot\(/g)||[]).length>=6); }
+// 節流本身的行為：把 fb.js 那段演算法原樣搬過來驗
+{ let now=0, calls=0, timer=null, timerAt=0;
+  const GAP=150; let last=0;
+  const pushNow=()=>{ last=now; timer=null; calls++; };
+  const push=()=>{ if(timer) return; const since=now-last;
+    if(since>=GAP){ pushNow(); return; } timer=1; timerAt=now+(GAP-since); };
+  const tick=(ms)=>{ now+=ms; if(timer && now>=timerAt) pushNow(); };
+  // 開機：六個快照幾乎同時到
+  now=1000; last=0; for(let i=0;i<6;i++) push();
+  ok("開機六個快照 → 只畫一次（第一個立刻畫，其餘併掉）", calls===1);
+  tick(200);
+  ok("窗口過了之後把後續的補畫一次，總共兩次", calls===2);
+  // 批次寫入：一次送 10 筆 → 十個快照連著回來
+  calls=0; last=now; for(let i=0;i<10;i++){ push(); tick(5); }
+  ok("批次寫入十個快照也收斂（不是十次重畫）", calls<=2);
+  // 安靜之後的單一動作要立刻反應，不能被延遲
+  calls=0; tick(500); push();
+  ok("安靜之後按一下 → 立刻畫，不用等", calls===1); }
+
+// ══════════ ⑥ 其他畫面沒有被連坐改壞 ══════════
+{ reset(60);
+  ["work","team","videos","videosDF","cal"].forEach(t=>{ CUR_TAB=t;
+    let okk=true; try{ render(); }catch(e){ okk=false; }
+    ok("剪輯的「"+t+"」畫得出來", okk); });
+  localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+  ["flow","team","videos","videosDF","cal"].forEach(t=>{ CUR_TAB=t;
+    let okk=true; try{ render(); }catch(e){ okk=false; }
+    ok("經理人的「"+t+"」畫得出來", okk); }); }
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail?1:0);

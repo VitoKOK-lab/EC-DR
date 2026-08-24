@@ -87,7 +87,23 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   function mergeShifts() { raw.shifts = Object.assign({}, shiftsOld, shiftsLive); }
   // 直接傳參照即可：app.js 的 decorate() 收到後會立刻深拷貝一份自用，
   // 這裡再拷一次等於每次同步都全量複製兩遍（影片多時手機會有感），故省略。
-  function push() { if (window.__onState) window.__onState(raw); }
+  // ── 同步節流（v138）────────────────────────────────────────────────
+  // 下面掛了六個 onSnapshot，每一個進來都各自 push 一次。開機時六個幾乎同時到，
+  // 等於同一份資料被完整重畫六遍 —— 實測剪輯（401 支片在他名下）一次重畫要 0.5 秒，
+  // 六次就是三秒多的全畫面凍結，那就是員工說的「很卡」。
+  // 批次寫入（bulkRun 一次送 10 筆）也會引發一連串快照，同樣被這裡收斂成一次。
+  //
+  // 頭一次立刻畫（不然登入畫面會多等），之後同一個窗口內的通通併成最後一次。
+  const PUSH_GAP = 150;
+  let pushTimer = null, lastPush = 0;
+  function pushNow() { lastPush = Date.now(); pushTimer = null;
+    if (window.__onState) window.__onState(raw); }
+  function push() {
+    if (pushTimer) return;                       // 這個窗口已經排好了，等它就好
+    const since = Date.now() - lastPush;
+    if (since >= PUSH_GAP) { pushNow(); return; } // 安靜了一陣子 → 立刻畫
+    pushTimer = setTimeout(pushNow, PUSH_GAP - since);
+  }
 
   // 暴露給 app.js 的寫入介面
   window.DB = {
