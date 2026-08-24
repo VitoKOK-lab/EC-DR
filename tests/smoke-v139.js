@@ -187,6 +187,17 @@ reset(60);
 // needVideos() 要跟上面的實測結果一致
 { ["mkt","svc","ship","cs","hr"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
   ["boss","manager","editor","intl"].forEach(r=>ok("needVideos('"+r+"')＝要下載", needVideos(r)===true)); }
+// ⚠️ 「選品行銷」是這條規則最容易踩到的例外：他**不剪片**（在 NO_EDIT_ROLES 裡），
+//    但選品配對要從影片庫大流挑片、也要顯示配對影片的片名（viewMatch 會呼叫 vid()）。
+//    所以「不剪片」不等於「不用影片資料」—— 這兩個清單必須分開。
+{ ok("選品行銷不剪片", NO_EDIT_ROLES.includes("pick"));
+  ok("但選品行銷需要影片資料（選品配對要挑片、要顯示片名）", needVideos("pick")===true);
+  ok("兩個清單是分開的，不是同一份", NO_EDIT_ROLES!==NO_VIDEO_ROLES && !NO_VIDEO_ROLES.includes("pick"));
+  const APPCODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
+  ok("needVideos 不是拿 NO_EDIT_ROLES 在判斷",
+     /NO_VIDEO_ROLES\.includes\(r\)/.test(APPCODE) && !/needVideos[\s\S]{0,120}NO_EDIT_ROLES/.test(APPCODE));
+  ok("選品配對真的會讀影片（所以上面那條不是多慮）",
+     /function viewMatch\(\)[\s\S]{0,3000}?vid\(/.test(APP)); }
 // 開機不再無條件訂閱影片，改成 app.js 依職位呼叫
 { ok("fb.js 開機的即時訂閱裡沒有 videos",
      !/onSnapshot\(collection\(db,\s*"videos"/.test(FB.split("即時訂閱")[1]||""));
