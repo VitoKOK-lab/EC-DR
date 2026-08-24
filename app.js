@@ -19,6 +19,18 @@ const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"M
 const STAFF_ROLES=["editor","mkt","pick","svc","ship","cs","hr","intl"];
 // 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
 const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
+// 這個職位的畫面用不用得到影片資料。
+// ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
+//    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
+//    團隊看板會顯示剪輯的產量，所以人資看起來像是要用，實測他那兩頁完全沒差；
+//    反過來「選品行銷」不剪片，但選品配對要從影片庫大流挑片，所以他一定要。
+//    以後新增職位或新增卡片，請照同一個方法驗一次（tests/smoke-v139.js 有現成的比對），
+//    不要用猜的。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","hr"];
+function needVideos(role){
+  const r=role||currentRole();
+  return !NO_VIDEO_ROLES.includes(r);
+}
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
@@ -966,8 +978,12 @@ function render(){
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">${T("目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。",
       "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
-  // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
+  // 操作紀錄只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
+  // 影片（777 筆）也是按需訂閱：行銷／客服／出貨／人資的每一個分頁，
+  // 有影片資料跟沒有影片資料畫出來的東西一模一樣（逐頁比對過），他們是純粹白下載。
+  // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
+  if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問

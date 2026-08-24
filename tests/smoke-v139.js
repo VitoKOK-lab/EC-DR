@@ -57,6 +57,13 @@ function reset(nOld){
 }
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
+// 把目前分頁的畫面內容拿出來（不走 render 的 DOM 副作用，比較穩定）
+function renderHTML(){
+  const fn={dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal,
+    work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings,
+    log:viewLog, trash:viewTrash, perf:viewPerf}[CUR_TAB];
+  return fn?fn():"";
+}
 const zoneCard=()=>{ const h=viewWork();
   let i=h.indexOf("建立二創版本"); if(i<0) i=h.indexOf("Create a version");   // 海外看到的是英文
   return i<0?"":h.slice(i, h.indexOf("</div>", h.indexOf("</details>", i))); };
@@ -151,7 +158,43 @@ reset(60);
   calls=0; tick(500); push();
   ok("安靜之後按一下 → 立刻畫，不用等", calls===1); }
 
-// ══════════ ⑥ 其他畫面沒有被連坐改壞 ══════════
+// ══════════ ⑥ 不剪片的職位不該下載影片資料 ══════════
+// 「掛 400 支還是 1000 支，那也只是文字」—— 對，所以問題不是資料大，
+// 而是**根本用不到的人也在下載**。行銷／客服／出貨／人資的每一個分頁，
+// 有影片資料跟沒有影片資料畫出來的東西完全一樣（下面逐頁比對）。
+{ const needsIt=(role)=>{
+    reset(60);
+    localStorage.setItem("ecdr_user","某人"); localStorage.setItem("ecdr_role",role);
+    STATE.users=STATE.users.concat([{name:"某人",role}]);
+    const full=JSON.parse(JSON.stringify(STATE.videos));
+    let diff=false;
+    for(const [tab] of myTabs()){
+      CUR_TAB=tab;
+      STATE.videos=full; const a=(()=>{ try{ return renderHTML(); }catch(e){ return "ERR"+e.message; } })();
+      STATE.videos=[];   const b=(()=>{ try{ return renderHTML(); }catch(e){ return "ERR"+e.message; } })();
+      STATE.videos=full;
+      if(a!==b) diff=true;
+    }
+    return diff; };
+  // 用 render 之外的入口比對：直接叫該分頁的 view 函式
+  ok("行銷的畫面用不到影片資料", needsIt("mkt")===false);
+  ok("客服的畫面用不到影片資料", needsIt("cs")===false);
+  ok("出貨的畫面用不到影片資料", needsIt("ship")===false);
+  ok("人資的畫面用不到影片資料", needsIt("hr")===false);
+  ok("剪輯的畫面需要影片資料", needsIt("editor")===true);
+  ok("經理人的畫面需要影片資料", needsIt("manager")===true);
+  ok("管理員的畫面需要影片資料", needsIt("boss")===true); }
+// needVideos() 要跟上面的實測結果一致
+{ ["mkt","svc","ship","cs","hr"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
+  ["boss","manager","editor","intl"].forEach(r=>ok("needVideos('"+r+"')＝要下載", needVideos(r)===true)); }
+// 開機不再無條件訂閱影片，改成 app.js 依職位呼叫
+{ ok("fb.js 開機的即時訂閱裡沒有 videos",
+     !/onSnapshot\(collection\(db,\s*"videos"/.test(FB.split("即時訂閱")[1]||""));
+  ok("fb.js 有 watchVideos 這個按需入口", /watchVideos\(\)\s*\{/.test(FB));
+  ok("watchVideos 有防重（呼叫幾次都只訂一條）", /if \(videosUnsub\) return false;/.test(FB));
+  ok("app.js 依職位決定要不要訂閱", /if\(needVideos\(\)\)\{[\s\S]{0,120}watchVideos\(\)/.test(APP)); }
+
+// ══════════ ⑦ 其他畫面沒有被連坐改壞 ══════════
 { reset(60);
   ["work","team","videos","videosDF","cal"].forEach(t=>{ CUR_TAB=t;
     let okk=true; try{ render(); }catch(e){ okk=false; }

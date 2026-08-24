@@ -61,7 +61,14 @@ ok("拿不到 IndexedDB 時退回記憶體快取，不會整個掛掉",
 ok("開場不再訂閱 logs", !/onSnapshot\(query\(collection\(db,\s*"logs"/.test(
      fbSrc.split("即時訂閱")[1]||""));
 ok("logs 改成 watchLogs() 裡才訂閱",
-   /watchLogs\(n\)\s*\{[\s\S]*onSnapshot\(query\(collection\(db,\s*"logs"/.test(fbSrc));
+   /watchLogs\(n\)\s*\{[\s\S]*?collection\(db,\s*"logs"[\s\S]*?onSnapshot\(/.test(fbSrc));
+// v138：預設改成「最近一個月」（紀錄已經 4600 筆而且一直在長）；要查更早的才傳筆數
+ok("操作紀錄只看最近一個月", /where\("at",\s*">=",\s*LOGS_FROM\)/.test(fbSrc));
+// ⚠️ 只用日期不設上限會反過來變慢：一天 138 筆，一個月＝3785 筆／519 KB，
+//    比原本的「最近 300 筆／39 KB」多 13 倍。兩個條件要同時在。
+ok("而且同時有筆數上限（不然一個月＝三千多筆，比以前更慢）",
+   /where\("at",\s*">=",\s*LOGS_FROM\),\s*orderBy\("at",\s*"desc"\),\s*limit\(want\)/.test(fbSrc));
+ok("一個月的起算日是算出來的、不是寫死的", /LOGS_FROM\s*=\s*new Date\(/.test(fbSrc));
 // v85：可以用更大的 n 再叫一次來查更早的；同樣的數量不重訂，換數量時舊的要先關掉
 ok("同樣的數量不會重複訂閱", /if\s*\(logsUnsub\s*&&\s*want\s*===\s*logsLimit\)\s*return false;/.test(fbSrc));
 ok("換數量時先關掉舊訂閱，不會變成兩條", /if\s*\(logsUnsub\)\s*\{\s*try\s*\{\s*logsUnsub\(\)/.test(fbSrc));
