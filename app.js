@@ -19,6 +19,18 @@ const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"M
 const STAFF_ROLES=["editor","mkt","pick","svc","ship","cs","hr","intl"];
 // 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
 const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
+// 這個職位的畫面用不用得到影片資料。
+// ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
+//    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
+//    團隊看板會顯示剪輯的產量，所以人資看起來像是要用，實測他那兩頁完全沒差；
+//    反過來「選品行銷」不剪片，但選品配對要從影片庫大流挑片，所以他一定要。
+//    以後新增職位或新增卡片，請照同一個方法驗一次（tests/smoke-v139.js 有現成的比對），
+//    不要用猜的。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","hr"];
+function needVideos(role){
+  const r=role||currentRole();
+  return !NO_VIDEO_ROLES.includes(r);
+}
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
@@ -614,7 +626,14 @@ document.addEventListener("click", (e)=>{ if(!e.target.closest(".hmenu")) closeH
 try{ document.addEventListener("toggle", (e)=>{
   const d=e&&e.target; if(!d||d.tagName!=="DETAILS") return;
   const k=d.getAttribute&&d.getAttribute("data-fold"); if(k) FOLD_OPEN[k]=!!d.open;
+  // 幾千個節點的清單收起來時不放進畫面，打開的那一刻才畫（清單本身照樣完整、不截斷）
+  const lz=d.getAttribute&&d.getAttribute("data-lazy");
+  if(lz && d.open) try{ lazyFill(lz); }catch(err){}
 }, true); }catch(e){}
+// data-lazy 的值就是要畫哪一條線的來源清單（shopee／ms／en／th）
+function lazyFill(zone){
+  if(zone==="en"||zone==="th") intlFilter(); else if(CHANNELS[zone]) chFilter(zone);
+}
 // 關分頁／重新整理／按上一頁時，如果彈窗裡還有沒存的修改就先問一聲。
 // （文案打了一大段還沒存，手滑重整就沒了 —— 這是唯一救得回來的時機）
 // 瀏覽器只認「有沒有取消事件」，自訂訊息現在都被忽略，所以文字寫什麼不重要。
@@ -959,8 +978,12 @@ function render(){
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">${T("目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。",
       "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
-  // 操作紀錄 300 筆只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
+  // 操作紀錄只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
+  // 影片（777 筆）也是按需訂閱：行銷／客服／出貨／人資的每一個分頁，
+  // 有影片資料跟沒有影片資料畫出來的東西一模一樣（逐頁比對過），他們是純粹白下載。
+  // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
+  if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
@@ -1765,10 +1788,12 @@ let FOLD_OPEN={};
 function foldKey(s){ let h=0; const t=String(s==null?"":s);
   for(let i=0;i<t.length;i++) h=(h*31 + t.charCodeAt(i))|0;
   return "f"+(h>>>0).toString(36); }
-function foldState(key, defOpen){
+function foldIsOpen(key, defOpen){
   const k=foldKey(key);
-  const on = Object.prototype.hasOwnProperty.call(FOLD_OPEN, k) ? FOLD_OPEN[k] : !!defOpen;
-  return `data-fold="${k}"${on?" open":""}`;
+  return Object.prototype.hasOwnProperty.call(FOLD_OPEN, k) ? !!FOLD_OPEN[k] : !!defOpen;
+}
+function foldState(key, defOpen){
+  return `data-fold="${foldKey(key)}"${foldIsOpen(key, defOpen)?" open":""}`;
 }
 function fold(title, count, body, open){
   if(!body) return "";
@@ -2333,15 +2358,23 @@ function createZoneCard(){
       ${zones.map(([k,l])=>`<option value="${k}" ${WORK_ZONE===k?'selected':''}>${esc(l)}</option>`).join("")}
     </select>
     </div>`;
-  let body="";
-  if(WORK_ZONE==="en"||WORK_ZONE==="th"){
-    body=`<input id="intl_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" oninput="INTL_Q=this.value;intlFilter()" value="${esc(INTL_Q)}" style="width:100%;max-width:360px;margin:10px 0">
-      <div id="intl_list" class="${intlSourcePool().length>8?'vidscroll':''}">${intlLibRows(WORK_ZONE)}</div>`;
-  } else {
-    const C=CHANNELS[WORK_ZONE];
-    body=`<input id="${C.pfx}_q" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" value="${esc(CH_Q[WORK_ZONE])}" oninput="CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')" style="width:100%;max-width:360px;margin:10px 0">
-      <div id="${C.pfx}_list" class="${chSourcePool().length>8?'vidscroll':''}">${chLibRows(WORK_ZONE)}</div>`;
-  }
+  // ⚠️ 這張卡的來源清單是「所有舊片」—— 實測 321 支就是 3110 個 DOM 節點，
+  // 佔掉剪輯整頁的 77%。而且每次有人改任何東西、全公司的畫面都要重畫一次，
+  // 每次都得把這幾千個節點重排一遍。清單不能截斷（v121：要動手處理的清單一律不截斷），
+  // 所以改成收起來 —— 打開的那一刻才畫（見 lazyFill）。要挑片的人才付這個成本。
+  const K="work.mkver", open=foldIsOpen(K, false);
+  const isIntl=(WORK_ZONE==="en"||WORK_ZONE==="th");
+  const pool=isIntl?intlSourcePool():chSourcePool();
+  const listId=isIntl?"intl_list":(CHANNELS[WORK_ZONE].pfx+"_list");
+  const qId=isIntl?"intl_q":(CHANNELS[WORK_ZONE].pfx+"_q");
+  const qVal=isIntl?INTL_Q:CH_Q[WORK_ZONE];
+  const onIn=isIntl?"INTL_Q=this.value;intlFilter()"
+                   :`CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')`;
+  const body=`<details class="fold" ${foldState(K,false)} data-lazy="${esc(WORK_ZONE)}" style="margin-top:10px">
+      <summary>${T("挑一支舊片來做","Pick an old video")}<span class="n">${pool.length}</span></summary>
+      <input id="${qId}" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" value="${esc(qVal||"")}" oninput="${onIn}" style="width:100%;max-width:360px;margin:10px 0">
+      <div id="${listId}" class="${pool.length>8?'vidscroll':''}">${open?(isIntl?intlLibRows(WORK_ZONE):chLibRows(WORK_ZONE)):""}</div>
+    </details>`;
   return `<div class="card" style="margin-top:16px">${sel}${body}</div>`;
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁

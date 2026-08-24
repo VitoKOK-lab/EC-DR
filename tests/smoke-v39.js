@@ -17,6 +17,10 @@ global.requestAnimationFrame=(f)=>f();
 global.navigator = { onLine:true };
 global.confirm = ()=>true; global.prompt = ()=>null;
 eval(src);
+// v138：「挑一支舊片來做」的來源清單預設收起來（幾千個 DOM 節點，剪輯每次同步都要重排）。
+// 這支測的是清單內容，先把它打開；「預設收起來」那件事由 smoke-v37 負責釘住。
+FOLD_OPEN[foldKey("work.mkver")]=true;
+
 
 STATE = {
   users:[ {name:"小葵",role:"editor",craft:"both"}, {name:"Anna",role:"intl",craft:"both"}, {name:"老闆",role:"boss"} ],

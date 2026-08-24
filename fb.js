@@ -81,13 +81,31 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   // 人資往前翻更早的月份時，再由 loadShiftMonth() 一次性補讀那個月。
   const SHIFT_WINDOW_DAYS = 62;
   const SHIFTS_FROM = new Date(Date.now() + 288e5 - SHIFT_WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+  // 操作紀錄只抓最近一個月：at 存的是 "YYYY-MM-DDTHH:MM:SS"，字串比大小就等於比時間
+  const LOGS_FROM = new Date(Date.now() + 288e5 - 31 * 864e5).toISOString().slice(0, 10);
   const shiftsLive = {};        // 訂閱窗內（會即時更新）
   const shiftsOld  = {};        // 另外補讀的舊月份（讀一次就好，不會再變）
   const loadedMonths = new Set();
   function mergeShifts() { raw.shifts = Object.assign({}, shiftsOld, shiftsLive); }
   // 直接傳參照即可：app.js 的 decorate() 收到後會立刻深拷貝一份自用，
   // 這裡再拷一次等於每次同步都全量複製兩遍（影片多時手機會有感），故省略。
-  function push() { if (window.__onState) window.__onState(raw); }
+  // ── 同步節流（v138）────────────────────────────────────────────────
+  // 下面掛了六個 onSnapshot，每一個進來都各自 push 一次。開機時六個幾乎同時到，
+  // 等於同一份資料被完整重畫六遍 —— 實測剪輯（401 支片在他名下）一次重畫要 0.5 秒，
+  // 六次就是三秒多的全畫面凍結，那就是員工說的「很卡」。
+  // 批次寫入（bulkRun 一次送 10 筆）也會引發一連串快照，同樣被這裡收斂成一次。
+  //
+  // 頭一次立刻畫（不然登入畫面會多等），之後同一個窗口內的通通併成最後一次。
+  const PUSH_GAP = 150;
+  let pushTimer = null, lastPush = 0;
+  function pushNow() { lastPush = Date.now(); pushTimer = null;
+    if (window.__onState) window.__onState(raw); }
+  function push() {
+    if (pushTimer) return;                       // 這個窗口已經排好了，等它就好
+    const since = Date.now() - lastPush;
+    if (since >= PUSH_GAP) { pushNow(); return; } // 安靜了一陣子 → 立刻畫
+    pushTimer = setTimeout(pushNow, PUSH_GAP - since);
+  }
 
   // 暴露給 app.js 的寫入介面
   window.DB = {
@@ -103,19 +121,36 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     arrayDel:    (c, id, field, val) => setDoc(doc(db, c, id), { [field]: arrayRemove(val) }, { merge: true }),
     bump:        (c, id, field, n)   => setDoc(doc(db, c, id), { [field]: increment(n) },     { merge: true }),
 
-    // ── 按需載入：這兩件只有少數人偶爾要看，不值得每個人每次開系統都下載 ──
-    // 操作紀錄只有管理員看得到，卻是 300 筆。改成他點進「操作紀錄」才訂閱。
-    // 要查更早的就用更大的 n 再呼叫一次（舊的訂閱會先關掉，不會變成兩條）。
+    // ── 按需載入：這幾件只有部分人要看，不值得每個人每次開系統都下載 ──
+    // 影片：777 筆。行銷／客服／出貨／人資的**每一個分頁**畫出來的東西，
+    // 有影片資料跟沒有影片資料完全一樣（實測逐頁比對過）—— 他們是純粹白下載。
+    // 所以改成「需要的人才訂閱」，由 app.js 依職位呼叫（見 needVideos）。
+    // 呼叫幾次都沒關係，已經訂閱了就直接返回。
+    watchVideos() {
+      if (videosUnsub) return false;
+      videosUnsub = onSnapshot(collection(db, "videos"),
+        q => { raw.videos = q.docs.map(d => d.data()); push(); });
+      return true;
+    },
+    videosWatched: () => !!videosUnsub,
+
+    // 操作紀錄只有管理員看得到，而且已經 4600 筆、一直在長。
+    // 兩個條件**同時**套用：只看最近一個月、而且最多 n 筆。
+    // ⚠️ 只用日期不設上限會反過來變慢 —— 這個系統平均一天產生 138 筆操作紀錄，
+    //    「最近一個月」＝ 3785 筆／519 KB，比原本的「最近 300 筆／39 KB」多 13 倍。
+    //    日期是「不要翻到太舊的」，筆數才是「一次別下載太多」，兩件事都要。
     watchLogs(n) {
-      const want = Math.max(1, Math.min(5000, +n || logsLimit));
+      const want = Math.max(1, Math.min(5000, +n || LOGS_DEFAULT));
       if (logsUnsub && want === logsLimit) return false;
       logsLimit = want;
       if (logsUnsub) { try { logsUnsub(); } catch (e) {} }
-      logsUnsub = onSnapshot(query(collection(db, "logs"), orderBy("at", "desc"), limit(want)),
+      logsUnsub = onSnapshot(
+        query(collection(db, "logs"), where("at", ">=", LOGS_FROM), orderBy("at", "desc"), limit(want)),
         q => { raw.logs = q.docs.map(d => d.data()); push(); });
       return true;
     },
     logsLimit: () => logsLimit,
+    logsFrom: () => LOGS_FROM,
 
     // ── 影片封面圖（Firebase Storage）──
     // 路徑固定 covers/<影片id>.jpg：一支片一張，重傳就直接蓋掉，不會愈積愈多。
@@ -146,7 +181,9 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       return true;
     },
   };
-  let logsUnsub = null, logsLimit = 300;
+  const LOGS_DEFAULT = 300;                   // 一次最多抓幾筆操作紀錄（見 watchLogs）
+  let logsUnsub = null, logsLimit = LOGS_DEFAULT;
+  let videosUnsub = null;                     // 影片按需訂閱（見 watchVideos）
 
   signInAnonymously(auth).catch(e => { if (window.__authError) window.__authError(e.message); });
 
@@ -182,7 +219,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     // 即時訂閱（任一變動即同步到所有人的畫面）
     onSnapshot(sref, d => { raw.settings = d.data() || {}; push(); });
     onSnapshot(collection(db, "users"),    q => { raw.users    = q.docs.map(d => d.data()); push(); });
-    onSnapshot(collection(db, "videos"),   q => { raw.videos   = q.docs.map(d => d.data()); push(); });
+    // 影片改成按需訂閱（window.DB.watchVideos）—— 不剪片的職位一筆都不用下載
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
     // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
