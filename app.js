@@ -31,6 +31,13 @@ function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
 }
+// 這個人需要影片資料、但一支都還沒到 ＝ 還在載入中（不是「沒有影片」）。
+// 用來把「找不到影片」跟「還沒載完」分開講，也用來在畫面上提示。
+function videosLoading(){
+  if(!needVideos()) return false;
+  if(!(window.DB && window.DB.videosWatched && window.DB.videosWatched())) return true;
+  return !((STATE&&STATE.videosAll)||[]).length;
+}
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
@@ -430,7 +437,11 @@ async function route(method, path, body){
       const v=newVideoRecord(inc); v.updatedAt=nowIso(); await window.DB.set("videos", v.id, v); return;
     }
     const id=seg[1], v=vidLocal(id), action=seg[2];
-    if(!v && method!=="DELETE") throw new Error(currentRole()==="intl"?"Video not found":"找不到影片");
+    // 「找不到影片」跟「影片還沒載完」是兩件事，訊息不能一樣 ——
+    // 後者講成前者，使用者會以為自己的資料不見了（v138 上線後海外同事就是這樣回報的）。
+    if(!v && method!=="DELETE") throw new Error(
+      videosLoading() ? T("影片資料還在載入中，請等幾秒再試一次","Videos are still loading — try again in a few seconds")
+                      : T("找不到影片","Video not found"));
     if(action==="claim"){
       // 同時在手上的支數不設上限（2026-07 取消 3 支上限）；「上班計畫」仍顯示進行中支數與天數警示
       await window.DB.update("videos",id,{claimedBy:user,claimedAt:nowIso(),editor:v.editor||user,stage:"剪輯中",workStep:0,updatedAt:nowIso()}); return; }

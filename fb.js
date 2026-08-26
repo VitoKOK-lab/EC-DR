@@ -81,6 +81,14 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   // 人資往前翻更早的月份時，再由 loadShiftMonth() 一次性補讀那個月。
   const SHIFT_WINDOW_DAYS = 62;
   const SHIFTS_FROM = new Date(Date.now() + 288e5 - SHIFT_WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+  // 這台裝置上次登入的職位要不要下載影片。
+  // 這份清單必須跟 app.js 的 NO_VIDEO_ROLES 一致 —— tests/smoke-v140.js 會比對兩邊。
+  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "hr"];
+  function needVideosByRole() {
+    let r = "";
+    try { r = localStorage.getItem("ecdr_role") || ""; } catch (e) { return true; }
+    return !NO_VIDEO_ROLES.includes(r);   // 沒登入過／看不懂的職位一律下載
+  }
   // 操作紀錄只抓最近一個月：at 存的是 "YYYY-MM-DDTHH:MM:SS"，字串比大小就等於比時間
   const LOGS_FROM = new Date(Date.now() + 288e5 - 31 * 864e5).toISOString().slice(0, 10);
   const shiftsLive = {};        // 訂閱窗內（會即時更新）
@@ -219,7 +227,13 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     // 即時訂閱（任一變動即同步到所有人的畫面）
     onSnapshot(sref, d => { raw.settings = d.data() || {}; push(); });
     onSnapshot(collection(db, "users"),    q => { raw.users    = q.docs.map(d => d.data()); push(); });
-    // 影片改成按需訂閱（window.DB.watchVideos）—— 不剪片的職位一筆都不用下載
+    // 影片：不剪片的職位一筆都不用下載，但**需要的人必須在這裡就開始下載**，
+    // 跟其他集合並行。
+    // ⚠️ 只靠 app.js 在 render() 裡呼叫 watchVideos() 是不夠的 —— 那要等畫面先畫完，
+    //    中間會多出一個「畫面全出來了、影片還在路上」的空窗期。海外同事就是在那幾秒裡
+    //    看到空清單、而且做什麼都會「找不到影片」（v138 上線後回報的災情）。
+    // 職位存在 localStorage，登入過就有；沒有或看不懂就當作要下載（寧可多下載，不能少）。
+    if (needVideosByRole()) window.DB.watchVideos();
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
     // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
