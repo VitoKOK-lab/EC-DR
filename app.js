@@ -263,7 +263,7 @@ function dayVideoList(date){
   // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
   // 出片面：影片庫A 與大流一起算。大流的片是成品，排進來就是當天要出的其中一支，
   // 「今天到底出幾支」不該分它從哪個庫來（生產面的數字才要分，見 decorate）。
-  allLibVideos().forEach(v=>{ if(isSourceVid(v) && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  allLibVideos().forEach(v=>{ if(isSourceVid(v) && schedLineOf(v)==="tw" && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -1337,18 +1337,58 @@ function scheduleGlance(){
 }
 // 日期欄位下方的一排小字：接下來 14 天各排了幾支、還缺幾支，點一下直接填進欄位。
 // （手機上的日期選擇器是作業系統畫的，沒辦法在它裡面加東西，所以資訊放在欄位下方）
-function nextDaysStrip(fieldId, days){
+// 14 天速覽：數字一定要跟「這支片實際會排進去的那個月曆」是同一本。
+// 以前寫死中文月曆 —— 海外排英文片的時候看到的是別人的數字（v147）。
+function nextDaysStrip(fieldId, days, line, acct){
+  const k=line||"tw";
+  const brk=(ds)=> k==="tw" ? dayBreakdown(ds) : lineDayBreak(k, ds, acct||"");
   const n=days||14, out=[];
   for(let off=0;off<n;off++){
     const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off);
     const ds=d.toISOString().slice(0,10);
-    const b=dayBreakdown(ds);
+    const b=brk(ds);
     out.push(`<button type="button" class="dchip${b.full?' full':''}" onclick="pickDate('${fieldId}','${ds}')"
       title="${T(ds+"：已排 "+b.total+" 支／目標 "+b.target+" 支", ds+": "+b.total+" of "+b.target+" scheduled")}">${fmtMD(ds)}
       <b>${b.total}</b><span>/${b.target}</span></button>`);
   }
   return `<div class="muted" style="font-size:12px;margin-top:6px">${T("接下來 14 天各排了幾支（點一下帶入）：","Next 14 days — scheduled / target (tap to fill):")}</div>
     <div class="dstrip">${out.join("")}</div>`;
+}
+// 編輯視窗裡「這支片會排進哪一本月曆」那一塊。
+//
+// 中文／馬來西亞拍的源片 → 中文月曆，跟以前一樣，什麼都不用選。
+// 英文／泰文拍的源片 → 英文／泰文月曆，而那些月曆是**依帳號**分的，
+// 所以要多選一個帳號，不然這支排了日期會兩邊都看不到。
+function schedLineLabel(k){
+  return k==="tw" ? T("中文月排程","Chinese schedule")
+       : k==="en" ? T("英文 TikTok 排程","English TikTok schedule")
+       : k==="th" ? T("泰文 TikTok 排程","Thai TikTok schedule")
+       : (CHANNELS[k] ? T(CHANNELS[k].label+"排程", CHANNELS[k].labelEn+" schedule") : k);
+}
+function schedBoxHTML(v, langOverride, acctOverride){
+  const lang = langOverride!=null ? langOverride : origLangOf(v);
+  const k = INTL_LOCALES.includes(lang) ? lang : (lineOf(v)||"tw");
+  const isLine = k!=="tw";
+  const accts = isLine ? lineAccounts(k) : [];
+  const cur = acctOverride!=null ? acctOverride : String((v&&v.account)||"");
+  const acctSel = (isLine && accts.length) ? `
+    <label style="margin-top:8px">${T("排到哪個帳號的月曆","Which account's schedule")}</label>
+    <select id="e_acct" onchange="renderSchedBox()">
+      <option value="">${T("— 請選擇 —","— pick one —")}</option>
+      ${accts.map(a=>`<option ${a===cur?'selected':''}>${esc(a)}</option>`).join("")}
+    </select>` : "";
+  const noAcct = (isLine && !accts.length) ? `<div class="muted" style="font-size:11px;margin-top:6px;color:var(--red)">${T(
+      "「"+schedLineLabel(k)+"」還沒有設定帳號，請管理員先到設定頁加。",
+      "No account set up for the "+schedLineLabel(k)+" yet — ask the admin to add one.")}</div>` : "";
+  const where = `<div class="muted" style="font-size:11px;margin-top:6px">${T(
+      "這支會排進「"+schedLineLabel(k)+"」。","This one goes on the "+schedLineLabel(k)+".")}</div>`;
+  return where + acctSel + noAcct + nextDaysStrip("e_date", 14, k, isLine?cur:"");
+}
+function renderSchedBox(){
+  const box=document.getElementById("e_schedbox"); if(!box) return;
+  const lang=(typeof val==="function" && document.getElementById("e_lang")) ? val("e_lang") : null;
+  const acct=document.getElementById("e_acct") ? val("e_acct") : null;
+  box.innerHTML=schedBoxHTML(vid(MODAL_VID)||{}, lang, acct);
 }
 function pickDate(fieldId, ds){
   const e=document.getElementById(fieldId); if(!e) return;
@@ -5167,7 +5207,7 @@ function openVideoModal(id, edit, fromWork){
       </div>
     </div>
     ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
-    <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
+    <select id="e_lang" onchange="renderSchedBox()">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <div class="muted" style="font-size:11px;margin:4px 0 0">${T(
       "這只是標「這支是用什麼語言拍的」。設成泰文或英文，它會歸到影片庫上面的「海外」分頁 —— 大家照樣看得到，只是分開放。",
       "This only records what language it was shot in. Thai or English files it under the “Overseas” tab in the library — everyone can still see it, it's just kept separately.")}</div>`:''}
@@ -5178,7 +5218,7 @@ function openVideoModal(id, edit, fromWork){
     ${familyDriveField(v,"e_drive") || ownerDriveField(v,"e_drive")}
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
-    ${nextDaysStrip("e_date")}
+    <div id="e_schedbox">${schedBoxHTML(v)}</div>
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     ${reviewCard}
     ${fold(T("商品與導購","Products & links"), prodList.length||null, `
@@ -5220,7 +5260,7 @@ function openVideoModal(id, edit, fromWork){
   const foot=`<div class="modalFoot">
       <button class="btn sec" type="button" onclick="cancelVideoEdit()">${T("取消編輯","Cancel")}</button>
       <button class="btn" id="vmSave" type="button">${fromWork?T('儲存並完成','Save & finish'):T('儲存修改','Save')}</button></div>`;
-  MODAL_DIRTY=false; MODAL_SAVE=()=>saveVideo(id);
+  MODAL_DIRTY=false; MODAL_SAVE=()=>saveVideo(id); MODAL_VID=id;
   document.getElementById("modalRoot").innerHTML=`<div class="modal" onclick="modalBackdrop(event)"><div class="box" onclick="event.stopPropagation()" oninput="MODAL_DIRTY=true" onchange="MODAL_DIRTY=true">${head}${body}${foot}</div></div>`;
   document.getElementById("vmSave").onclick=async()=>{ const ok=await saveVideo(id); if(!ok) return;
     if(fromWork){ await write("POST",`/api/videos/${id}/finish`,{scheduledDate:val("e_date")||null},"已完成（保留在工作列，下班後消失）"); }
@@ -5233,6 +5273,15 @@ async function saveVideo(id){
   const hasProd=products.some(p=>p&&p.name);
   if(hasProd && !productUrl){ toast(T("有填銷售商品就要一起填『商品頁網址』，否則無法導購","Products need the product page URL too"),true); return false; }
   if(productUrl && !hasProd){ toast(T("有填『商品頁網址』就要至少填一個銷售商品（品名）","A product page URL needs at least one product name"),true); return false; }
+  // 英／泰拍的源片排的是英／泰月曆，而那些月曆依帳號分。排了日期卻沒選帳號的話，
+  // 這支會兩本月曆都看不到 —— 排了等於沒排，所以擋下來。
+  if(document.getElementById("e_acct")){
+    const lang=val("e_lang")||"";
+    if(INTL_LOCALES.includes(lang) && String(val("e_date")||"").trim() && !String(val("e_acct")||"").trim()){
+      toast(T("這支是"+origLangLabel(lang)+"拍的，排程要一起選帳號 —— 不然它不會出現在任何一本月曆上",
+              "This one was shot in "+origLangLabel(lang)+" — pick the account too, or it won't show on any schedule"),true);
+      return false; }
+  }
   const tags=[...new Set(collectTags("e").map(renameTag))];
   if(hasProd && !tags.includes("寵粉")) tags.push("寵粉");   // 有銷售商品 → 自動帶「寵粉」標籤
   await persistNewTags(tags);
@@ -5246,7 +5295,9 @@ async function saveVideo(id){
     stage:["boss","manager"].includes(currentRole())?val("e_stage"):String(v0.stage||"待處理"),
     editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
+    driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""),
+    // 帳號：只有英／泰源片那一格會出現；沒出現就不要動舊值（二創殼的帳號是建立時定的）
+    account:document.getElementById("e_acct") ? val("e_acct").trim() : String(v0.account||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
     nameEn:val("e_nameEn").trim(), videoCopyEn:val("e_vcopyEn").trim()};
   if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
@@ -5278,13 +5329,28 @@ const LINES={
 };
 function lineOf(v){ return String((v&&(v.channel||v.locale))||""); }                 // 這支屬於哪條線（空＝台灣源片）
 function lineMatch(v,k){ const L=LINES[k]; return !!L && String((v||{})[L.field]||"")===k; }
+// 這支片的**排程**屬於哪一個月曆。
+//
+// 二創殼看它自己那條線（蝦皮／馬來／Boss Sunny／英文／泰文）。
+// 源片看它是用什麼語言拍的 —— 英文／泰文拍的源片排的是英文／泰文月曆，不是中文的。
+//
+// v147 之前源片一律算中文月曆。那時候海外根本建不了英文源片，所以踩不到；
+// v146 打開「海外可以自己拍」之後就會踩到：海外排了日期，中文月曆多算一支英文片，
+// 英文月曆卻看不到它 —— 兩邊的數字都是錯的。
+function schedLineOf(v){
+  const l=lineOf(v); if(l) return l;
+  const o=origLangOf(v);
+  return INTL_LOCALES.includes(o) ? o : "tw";
+}
 function lineAccounts(k){ const L=LINES[k]; if(!L) return [];
   if(L.acctKey){ const a=STATE.settings&&STATE.settings[L.acctKey]; return Array.isArray(a)?a.filter(x=>String(x||"").trim()):[]; }
   return intlAccountsFor(k).map(a=>a.name); }
 function lineTarget(k){ const L=LINES[k]; if(!L) return 2;
   const v=STATE.settings&&STATE.settings[L.targetKey]; return (v!=null&&v!=="")?(+v||0):2; }
 function lineVersionsOfSrc(k, sourceId){ return versionsOfSrc(sourceId).filter(v=>lineMatch(v,k)); }
-function lineDayList(k, date, acct){ return (STATE.videos||[]).filter(v=>lineMatch(v,k) && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
+// 用 schedLineOf 不是 lineMatch：英／泰月曆除了二創殼，還要收「用那個語言拍的源片」。
+// 蝦皮／馬來／Boss Sunny 的 schedLineOf 就等於它的 channel，行為完全沒變。
+function lineDayList(k, date, acct){ return (STATE.videos||[]).filter(v=>schedLineOf(v)===k && v.account===acct && String(v.scheduledDate||"").slice(0,10)===date); }
 function lineDayBreak(k, date, acct){ const total=lineDayList(k,date,acct).length, target=lineTarget(k);
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 // 來源片池：四條線共用「已完整上傳的中文舊片」，互相排除彼此的衍生版本
@@ -6565,6 +6631,7 @@ function modalBackdrop(e){ if(e.target&&e.target.classList&&e.target.classList.c
 // 目前開著的編輯視窗要怎麼存。視窗內的動作鍵（審片、移到今日工作…）在關掉視窗之前
 // 先用它把還沒存的欄位收起來 —— 不然使用者剛打的字會被靜默丟掉。
 let MODAL_SAVE=null;
+let MODAL_VID="";   // 目前這個編輯視窗在編哪一支（重畫「排到哪本月曆」那一塊要用）
 // 有沒存的東西就先存。存不起來（例如商品與網址沒配對）回 false，呼叫端要停手。
 async function modalFlushEdits(){
   if(!MODAL_DIRTY || typeof MODAL_SAVE!=="function") return true;
