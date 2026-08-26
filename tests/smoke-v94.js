@@ -62,7 +62,11 @@ const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecd
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 // 一段 HTML 裡還剩哪些中文字／全形標點
 // 只看「畫面上看得到的文字」：屬性裡的中文（value="寵粉"）是資料原值，本來就要保留
-const cjk=(h)=>[...new Set(String(h||"").replace(/<[^>]+>/g," ").match(/[　-〿一-鿿＀-￯]+/g)||[])];
+// 「文」是翻譯圖示 文A 的字形 —— 那是圖示不是介面文字（海外看到的也是同一顆），
+// 跟標籤／階段內部值一樣屬於設計例外，不算漏翻譯。
+const TR_ICON=/文(?=A|\s|$)|^文$/;
+const cjk=(h)=>[...new Set(String(h||"").replace(/<[^>]+>/g," ").match(/[　-〿一-鿿＀-￯]+/g)||[])]
+  .filter(w=>w!=="文");
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
@@ -115,7 +119,7 @@ ok("在設定填了翻譯之後就一個中文都不剩",
 reset(); as("管理員","boss"); ZONE_VIEW="tw";
 { const h=viewVideos();
   ok("台灣庫的標籤鈕用中文原名", h.includes(">寵粉")); }
-reset(); as("Anna","intl");
+reset(); as("Anna","intl"); ZONE_VIEW=null;   // v142：null＝依職位給預設（海外落在海外那一份）
 { const h=viewVideos();
   ok("海外的影片庫是來源清單（英文）", h.includes("Pick a published Taiwan video")); }
 reset(); as("Anna","intl");

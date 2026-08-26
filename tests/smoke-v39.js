@@ -47,10 +47,11 @@ WORK_ZONE="shopee";
 let h=viewWork();
 // v115 分區：台灣的池只有中文毛片＋蝦皮＋馬來，英文／泰文歸海外
 ok("台灣池＝中文＋蝦皮＋馬來", h.includes("黃金原本") && h.includes("蝦皮版標題") && h.includes("馬來版標題"));
-ok("台灣池看不到英文／泰文", !h.includes("EN version title") && !h.includes("TH version title"));
+// v142 拆掉分區：同一個池子
+ok("台灣池也看得到英文／泰文", h.includes("EN version title") && h.includes("TH version title"));
 ok("台灣的蝦/馬殼有退回鍵", h.includes(`chDiscard('shopee','P1')`) && h.includes(`chDiscard('ms','M1')`));
 ok("editor 原本毛片沒有退回鍵", !h.includes(`intlDiscard('S1')`) && !h.includes(`chDiscard('shopee','S1')`));
-ok("台灣的建立版本只有蝦皮／馬來", h.includes(">蝦皮<") && h.includes(">馬來西亞<") && !h.includes(">英文 TikTok<") && !h.includes(">泰文 TikTok<"));
+ok("台灣的建立版本四條線全在（二創雙向）", [">蝦皮<",">馬來西亞<",">英文 TikTok<",">泰文 TikTok<"].every(x=>h.includes(x)));
 ok("editor 池顯示建立者", h.includes("由 Regina 建立"));
 ok("editor 不顯示英文小字", !h.includes("vt-en"));
 // editor 手上已認領的海外殼仍看得到（安全網：不會消失）
@@ -64,9 +65,9 @@ localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl
 WORK_ZONE="shopee";
 h=viewWork();
 ok("海外池＝英文＋泰文", h.includes("EN version title") && h.includes("TH version title"));
-ok("海外池看不到中文毛片／蝦皮／馬來", !h.includes("黃金原本") && !h.includes("蝦皮版標題") && !h.includes("馬來版標題"));
-ok("海外的殼有退回鍵", h.includes(`intlDiscard('E1')`) && !h.includes(`chDiscard('shopee','P1')`));
-ok("海外的建立版本只有英文／泰文", h.includes("English (TikTok)") && h.includes("Thai (TikTok)") && !h.includes(">Shopee<") && !h.includes(">Malaysia<"));
+ok("海外池也看得到中文毛片／蝦皮／馬來", h.includes("黃金原本") && h.includes("蝦皮版標題") && h.includes("馬來版標題"));
+ok("海外的殼有退回鍵，蝦皮殼也退得了（同一個池）", h.includes(`intlDiscard('E1')`) && h.includes(`chDiscard('shopee','P1')`));
+ok("海外的建立版本四條線也全在", ["English (TikTok)","Thai (TikTok)",">Shopee<",">Malaysia<"].every(x=>h.includes(x)));
 ok("intl 池顯示建立者(英文)", h.includes("added by Regina"));
 // 英文區的帳號下拉只列英文帳號，且 value 是全清單索引
 WORK_ZONE="en"; h=viewWork(); let zc=h.split("Create a version").slice(-1)[0];
@@ -96,7 +97,9 @@ ok("editor 影片庫不顯示英文小字", !h.includes("vt-en"));
 
 // ── 月排程：泰/英本來就是分開的平台 ──
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-CAL_PLAT="th"; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT="";
+// CAL_PLAT_FOR 要一起設，代表「這個職位的預設已經套過」——
+// 不然 viewCal 會把海外的預設（英文）蓋上來（v142）
+CAL_PLAT="th"; CAL_PLAT_FOR="intl"; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT="";
 h=viewCal();
 ok("月排程泰文平台只列 TH 帳號", h.includes("tiktok-TH") && !h.includes("tiktok-EN"));
 CAL_PLAT="en"; INTL_ACCT="";

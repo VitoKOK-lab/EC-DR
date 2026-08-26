@@ -119,7 +119,7 @@ reset(); as("小葵","editor");
 let t=viewTeam();
 // v119 分區：看板卡片會寫出片名，所以只列同區的人 —— 台灣看不到 Anna（海外）
 ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>t.includes(n)));
-ok("台灣看不到海外同事", !t.includes("Anna"));
+ok("台灣現在看得到海外同事（v142 不分區）", t.includes("Anna"));
 { as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
   ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));

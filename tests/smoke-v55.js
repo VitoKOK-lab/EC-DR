@@ -82,7 +82,7 @@ localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","ed
 ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
 ok("主管看得到兩位剪輯", hAll.includes("小葵") && hAll.includes("Anna"));
-ok("台灣剪輯看不到海外同事", h.includes("小葵") && !h.includes("Anna"));
+ok("台灣剪輯現在看得到海外同事（v142 不分區）", h.includes("小葵") && h.includes("Anna"));
 ok("人資自己也在名單上（他也要被記錄、由管理員考核）", h.includes("HR小姐"));
 
 // ── 今日成效的數字 ──
@@ -92,7 +92,8 @@ ok("交辦完成 1/2", h.includes("1/2</div><div class=\"l\">交辦完成"));
 ok("有上班時間與工時", h.includes("09:00–18:00") && h.includes("工時 9h0m"));
 ok("沒上線的顯示今天還沒上線", h.includes("今天還沒上線"));
 ok("列出今天完成的片名", h.includes("今天完成A") && h.includes("今天完成B"));
-ok("海外的片名只有主管看得到", hAll.includes("海外完成片") && !h.includes("海外完成片"));
+// v142 拆掉分區：台灣剪輯也看得到海外做完的片
+ok("海外的片名大家都看得到了", hAll.includes("海外完成片") && h.includes("海外完成片"));
 ok("列出交辦回報內容", h.includes("回覆廠商") && h.includes("已聯絡完成"));
 ok("頂部有今日／本月摘要", h.includes("今日出勤") && h.includes("今日完成") && h.includes("本月完成"));
 

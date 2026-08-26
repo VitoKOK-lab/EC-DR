@@ -51,7 +51,7 @@ function reset(videos){
       workStart:"09:00",workEnd:"18:00"},
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:videos||[] };
   CUR_TAB=null; VIEW_AS=null; VID_LANG=""; VID_VIEW="raw"; VID_UNSCHED=false; VID_Q=""; VID_TAGS=new Set();
-  ZONE_VIEW="tw"; INTL_Q=""; INTL_LIB_LOC=""; MODAL_DIRTY=false; MODAL_SAVE=null;
+  ZONE_VIEW=null;   // v142：null＝還沒自己選過，依職位給預設（設成 "tw" 等於「使用者選了台灣」） INTL_Q=""; INTL_LIB_LOC=""; MODAL_DIRTY=false; MODAL_SAVE=null;
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
 }
 const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); };
@@ -204,9 +204,9 @@ setZoneView("intl");
 setZoneView("tw");
 reset(MERGED.map(v=>Object.assign({},v)));
 as("小葵","editor");
-ok("剪輯沒有區切換鈕", !viewVideos().includes("setZoneView("));
+ok("剪輯也有區切換鈕（v142：那是篩選器不是牆）", !(!viewVideos().includes("setZoneView(")));
 as("Anna","intl");
-ok("海外員工也沒有區切換鈕", !viewVideos().includes("setZoneView("));
+ok("海外員工也有區切換鈕（v142：兩邊互相看得到）", !(!viewVideos().includes("setZoneView(")));
 
 // ══════════ ⑩ render 不炸 ══════════
 reset(MERGED.map(v=>Object.assign({},v)));

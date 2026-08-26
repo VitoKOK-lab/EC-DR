@@ -138,9 +138,10 @@ reset(); as("小葵","editor");
 { const t=viewTeam();
   ok("看板有分組下拉", t.includes("teamSetGroup("));
   ok("看板有找人的搜尋框", t.includes("teamSetQ("));
-  ok("下拉寫出每一組幾個人", t.includes("全部（5）") && t.includes("剪輯（2）") && t.includes("員工（2）"));
+  // v142 不分區：台灣剪輯的名單也包含 Anna，所以是 6 人
+  ok("下拉寫出每一組幾個人", t.includes("全部（6）") && t.includes("剪輯（2）") && t.includes("員工（2）"));
   ok("同區的人預設都看得到", ["小葵","阿明","小美","阿凱","HR小姐"].every(n=>t.includes(n)));
-  ok("台灣看不到海外同事", !t.includes("Anna"));
+  ok("台灣現在看得到海外同事（v142 不分區）", t.includes("Anna"));
   ok("沒篩選時不顯示「顯示 N / M 人」", !t.includes("顯示 5 / 5 人")); }
 reset(); as("Regina","manager");
 { const t=viewTeam();
@@ -148,7 +149,7 @@ reset(); as("Regina","manager");
 reset(); as("小葵","editor"); teamSetGroup("cs");
 { const t=viewTeam();
   ok("只看員工那一組", t.includes("小美") && t.includes("阿凱") && !t.includes("阿明") && !t.includes("Anna"));
-  ok("有篩選時寫出剩幾人", t.includes("顯示 2 / 5 人")); }
+  ok("有篩選時寫出剩幾人", t.includes("顯示 2 / 6 人")); }
 reset(); as("小葵","editor"); teamSetGroup("hr");
 ok("只看人資", viewTeam().includes("HR小姐") && !viewTeam().includes("小美"));
 reset(); as("小葵","editor"); teamSetQ("阿");

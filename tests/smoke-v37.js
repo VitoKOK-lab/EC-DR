@@ -68,9 +68,10 @@ WORK_ZONE="ms"; h=viewWork();
 ok("zone switch → 馬來 list", h.includes("tiktok-Malaysia"));
 // v115 分區：台灣剪輯的建立版本卡只有蝦皮／馬來，英文／泰文歸海外
 WORK_ZONE="en"; h=viewWork();
-ok("台灣看不到英文線（自動落回蝦皮）", !h.includes("tiktok-EN"));
+// v142：二創雙向，台灣也建得了英文／泰文線
+ok("台灣現在也看得到英文線", h.includes("tiktok-EN"));
 WORK_ZONE="th"; h=viewWork();
-ok("台灣也看不到泰文線", !h.includes("tiktok-TH"));
+ok("台灣也看得到泰文線", h.includes("tiktok-TH"));
 // 海外那一側才有英文／泰文
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 WORK_ZONE="th"; h=viewWork();

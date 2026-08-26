@@ -75,9 +75,9 @@ localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl
 h=viewVideos();
 ok("intl 影片庫沒有馬來西亞（歸台灣）", !h.includes("Malaysia"));
 CAL_PLAT="tw"; h=viewCal();
-ok("intl 月排程沒有馬來西亞（歸台灣）", !h.includes(">Malaysia<"));
+ok("intl 月排程現在也有馬來西亞（v142 不分區）", h.includes(">Malaysia<"));
 WORK_ZONE="en"; h=viewWork();
-ok("intl 建立版本沒有馬來西亞", !h.includes(">Malaysia<"));
+ok("intl 建立版本現在也有馬來西亞（二創雙向）", h.includes(">Malaysia<"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

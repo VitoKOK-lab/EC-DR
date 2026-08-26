@@ -69,8 +69,9 @@ ok("已上片的版本＝封存", isArchived(vid("P9")) && isArchived(vid("E9"))
 // ── craft 已經不再被讀（欄位還在資料庫，但程式不看它了）──
 reset();
 ok("craft 欄位仍在使用者資料上", STATE.users.find(u=>u.name==="小葵").craft==="orig");
-ok("但分區只看職位：兩個剪輯都是台灣",
-   zoneOfUser("小葵")==="tw" && zoneOfUser("阿明")==="tw");
+// v142 拆掉分區：zoneOfUser 一律回傳 both（誰都看得到全部）
+ok("v142：分區拆掉，每個人都看得到兩邊",
+   zoneOfUser("小葵")==="both" && zoneOfUser("阿明")==="both");
 ok("craft 相關的函式都不存在了",
    typeof craftOf==="undefined" && typeof doesOrig==="undefined" && typeof doesDerived==="undefined");
 
@@ -78,20 +79,20 @@ ok("craft 相關的函式都不存在了",
 reset(); as("小葵","editor");
 let h=viewWork();
 ok("台灣：待認領有毛片與蝦皮／馬來", h.includes("待剪毛片") && h.includes("蝦皮待剪") && h.includes("馬來待剪"));
-ok("台灣：待認領沒有英文", !h.includes("英文待剪"));
+ok("台灣：待認領也看得到英文（同一個池）", h.includes("英文待剪"));
 ok("台灣：有「建立其他版本」卡", h.includes("建立其他版本"));
 CAL_PLAT="tw"; let c=viewCal();
-ok("台灣：月排程有中文／蝦皮，沒有英文", c.includes(">中文<") && c.includes(">蝦皮<") && !c.includes(">英文<"));
+ok("台灣：月排程中文／蝦皮／英文全在", c.includes(">中文<") && c.includes(">蝦皮<") && c.includes(">英文<"));
 openVideoModal("S1", false);
-ok("台灣：影片視窗有蝦皮版本卡、沒有各語言版本",
-   modalHTML.includes("蝦皮版本") && !modalHTML.includes("各語言版本"));
+ok("台灣：影片視窗蝦皮版本卡與各語言版本都在（二創雙向）",
+   modalHTML.includes("蝦皮版本") && modalHTML.includes("各語言版本"));
 
 // ── 海外：只看英文／泰文 ──
 reset(); as("Anna","intl");
 h=viewWork();
-ok("海外：待認領只有英文", h.includes("英文待剪") && !h.includes("待剪毛片") && !h.includes("蝦皮待剪"));
+ok("海外：待認領也看得到中文與蝦皮（同一個池）", h.includes("英文待剪") && h.includes("待剪毛片") && h.includes("蝦皮待剪"));
 CAL_PLAT="tw"; c=viewCal();
-ok("海外：月排程沒有中文、自動落到英文", !c.includes(">Chinese<") && c.includes(">English<") && CAL_PLAT==="en");
+ok("海外：月排程中文也在，預設仍落到英文", c.includes(">Chinese<") && c.includes(">English<") && CAL_PLAT==="en");
 
 // ── 已上片的版本封存：不再佔清單版面 ──
 reset(); as("小葵","editor"); WORK_ZONE="shopee";
@@ -107,7 +108,8 @@ reset(); as("管理員","boss");
 const st=viewSettings();
 ok("設定頁有「區域」欄", st.includes("<th>區域</th>"));
 ok("分工下拉已移除", !st.includes('id="mb_craft"') && !st.includes("一次創作") && !st.includes("兩種都做"));
-ok("區域顯示台灣／海外／全部", st.includes(">台灣<") && st.includes(">海外<"));
+// 成員清單那一欄改成寫「他是哪一邊的人」（v142：不再代表看得到什麼）
+ok("成員清單寫得出誰在哪一邊", st.includes("台灣") && st.includes("巴基斯坦"));
 ok("setMemberCraft 已移除", typeof setMemberCraft==="undefined");
 reset(); as("管理員","boss"); fields={mb_name:"新剪輯",mb_role:"editor"};
 addMember();
