@@ -84,8 +84,10 @@ WORK_ZONE="shopee"; h=viewWork();
 ok("intl work: English headings, no Chinese UI labels", h.includes("Today's Work") && h.includes("To claim (raw + versions)") && h.includes("Create a version") && !h.includes("上班計畫") && !h.includes("認領開始剪") && !h.includes("建立二創版本"));
 ok("intl work: task card English + translate icon", h.includes("Got it") && h.includes("文<span>A</span>"));
 h=viewVideos();
-// v115 分區：海外的影片庫改成單純的來源清單，沒有台灣那條拍片管線的語言下拉
-ok("intl library English (chrome)", h.includes("Library") && h.includes("Pick a published Taiwan video") && h.includes("All languages") && !h.includes("影片庫") && !h.includes("原本語言"));
+// v146：海外的影片庫跟台灣同一份（只是介面英文）—— 舊的「來源清單」那一份跟
+//      「上班計畫」的建立二創版本卡重複，已經拿掉。
+ok("intl library English (chrome)", h.includes("Library A") && h.includes("Original language")
+   && h.includes("Add one") && h.includes('id="vid_tabs"') && !h.includes("影片庫") && !h.includes("原本語言"));
 CAL_PLAT="tw"; CAL_YM=null; h=viewCal();
 ok("intl schedule English (hub + tw body)", h.includes("Schedule") && h.includes("Platform") && h.includes("Full") && h.includes("Sun") && !h.includes("月排程") && !h.includes("已排滿"));
 CAL_PLAT="shopee"; h=viewCal();

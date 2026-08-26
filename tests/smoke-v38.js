@@ -42,12 +42,13 @@ ok("intl 新增影片 modal English", modalHTML.includes("Add video") && modalHT
 batchNewFootage();
 ok("intl 批次新增 modal English", modalHTML.includes("Add raw footage") && modalHTML.includes("Clip 1") && modalHTML.includes("shared by all 5") && !modalHTML.includes("第 1 支") && !modalHTML.includes("原本語言"));
 ok("intl language options say Malaysia", modalHTML.includes(">Malaysia<"));
-// v115 分區：海外點源片只跳出唯讀的來源簡介，不再進台灣的編輯視窗
+// v146：海外進的是同一個編輯視窗（介面走英文）—— 舊的唯讀來源卡對「還沒拍的腳本」
+//      整段說明都是錯的，而且沒有編輯視窗＝海外不能自己拍自己傳。
 openVideoModal("S1", true);
-ok("intl 點源片＝唯讀來源卡（英文）", modalHTML.includes("Source · Taiwan") && modalHTML.includes("Video details"));
-ok("intl 看不到台灣的編輯欄位", !modalHTML.includes('id="e_stage"') && !modalHTML.includes('id="e_date"') && !modalHTML.includes('id="e_raw"'));
-ok("intl 看不到刪除鍵", !modalHTML.includes("delVideo("));
-ok("intl 來源卡沒有中文洩漏", !modalHTML.includes("影片內容") && !modalHTML.includes("來源・台灣"));
+ok("intl 點源片＝同一個編輯視窗", modalHTML.includes('id="e_raw"') && modalHTML.includes('id="e_stage"') && modalHTML.includes('id="e_date"'));
+ok("intl 也有存檔資料夾那一格（要自己拍自己傳）", modalHTML.includes('id="e_drive"'));
+ok("intl 也有刪除鍵（跟台灣一樣）", modalHTML.includes("delVideo("));
+ok("intl 這個視窗沒有中文洩漏", !modalHTML.includes("影片內容") && !modalHTML.includes("原本語言") && !modalHTML.includes("刪除這支影片"));
 // v121：日期視窗全員都進得去了，所以這裡改成真的驗它的語言（本來只是在驗被擋掉的 toast）
 INTL_ACCT="acctEN"; INTL_CAL_YM=null; modalHTML=""; openDayIntl(T0);
 ok("intl 點日視窗 English", modalHTML.includes("Scheduled") && !modalHTML.includes("已排"));
@@ -71,9 +72,9 @@ ok("月排程選單用 馬來西亞", h.includes(">馬來西亞<"));
 WORK_ZONE="shopee"; h=viewWork();
 ok("建立二創版本選單用 馬來西亞", h.includes(">馬來西亞<"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
-// v115 分區：馬來西亞歸台灣，海外的影片庫是來源清單，整頁都不該出現這個字
+// v146：海外的影片庫跟台灣同一份，預設也落在台灣那一頁 —— 馬來西亞照樣列得到
 h=viewVideos();
-ok("intl 影片庫沒有馬來西亞（歸台灣）", !h.includes("Malaysia"));
+ok("intl 影片庫的原本語言下拉有馬來西亞", h.includes(">Malaysia"));
 CAL_PLAT="tw"; h=viewCal();
 ok("intl 月排程現在也有馬來西亞（v142 不分區）", h.includes(">Malaysia<"));
 WORK_ZONE="en"; h=viewWork();

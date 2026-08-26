@@ -1125,7 +1125,7 @@ function openDay(ds){
     const lk=v&&assignLocked(v);
     const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="editVideo('${it.videoId}')">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -2215,7 +2215,9 @@ function zoneOfPlat(k){ return (k==="en"||k==="th") ? "intl" : "tw"; }   // sunn
 let ZONE_VIEW=null;
 function curZone(){
   if(ZONE_VIEW==="tw"||ZONE_VIEW==="intl") return ZONE_VIEW;
-  return currentRole()==="intl" ? "intl" : "tw";
+  // v146：不再依職位給不同的預設。海外要看自己語言的片，按上面那個分頁就有；
+  // 但「今天有什麼腳本可以拍」在台灣那一份裡，讓他們一進來只看到 14 支不合理。
+  return "tw";
 }
 function setZoneView(z){ ZONE_VIEW=(z==="intl")?"intl":"tw"; VID_TAGS.clear(); VID_Q=""; render(); }
 // 源片 vs 版本殼（跟「分區」是兩件事，不要混用）
@@ -3006,7 +3008,7 @@ const dashStatusPill=(s)=> !s||!s.clockIn ? `<span class="pill em">${T("未上�
 // 一支影片一行：片名太長就用「…」截掉，後面的狀態與工時一定看得到，不會被擠到下一行。
 // 想看完整片名點進去就有。
 const dashVLine=(v,extra)=>`<div style="margin:5px 0;display:flex;gap:6px;align-items:baseline">
-  <a href="javascript:void(0)" onclick="editVideo('${v.id}')"
+  <a href="javascript:void(0)" onclick="${vidOpenFn(v)}"
      style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
      title="${esc(vidTitle(v))}">• ${esc(vidTitle(v))}</a>
   ${extra?`<span style="flex:none;white-space:nowrap">${extra}</span>`:""}</div>`;
@@ -3967,6 +3969,11 @@ function poolDiscardBtn(v){ if(!v||v.stage!=="待處理") return "";
   if(v.locale) return `<button class="btn sec sm" onclick="intlDiscard('${v.id}')" title="${tip}">✕ ${T("退回","Remove")}</button>`;
   return ""; }
 // 一列 = 一支影片
+function vidOpenFn(v){
+  return (v.channel&&CHANNELS[v.channel]) ? `openChModal('${v.channel}','${v.id}')`
+       : v.locale ? `openIntlModal('${v.id}')`
+       : `editVideo('${v.id}')`;
+}
 function vidTableRow(v){
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
   const tags=videoTagsOf(v);
@@ -3975,8 +3982,8 @@ function vidTableRow(v){
   const prodCount=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]).length;
   const prodHTML=prod?`<a href="${esc(prod)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${T("商品頁","Product")}${prodCount?paren(prodCount):""}</a>`
     :(prodCount?`<span class="muted" style="font-size:12px">${T(prodCount+" 項",prodCount+" items")}</span>`:'<span class="muted" style="font-size:12px">—</span>');
-  const rev=v.reviewStatus==="通過"?'<span class="pill ok" style="font-size:10px">已審</span>'
-    :(v.reviewStatus==="退回"?'<span class="pill em" style="font-size:10px">× 退回</span>':'');
+  const rev=v.reviewStatus==="通過"?`<span class="pill ok" style="font-size:10px">${T("已審","Reviewed")}</span>`
+    :(v.reviewStatus==="退回"?`<span class="pill em" style="font-size:10px">× ${T("退回","Sent back")}</span>`:'');
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   // 標示：在地化版本標自身語言（EN）；源片的管理指標「翻了幾種語言 🌐N、重播 ↻M」
   // 只給管理員／經理人看 — 剪輯不需要這些資訊，隱藏讓畫面更乾淨
@@ -3984,7 +3991,7 @@ function vidTableRow(v){
   const langBadge = v.locale
     ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${localeShort(v.locale)}</span>`
     : (v.channel&&CHANNELS[v.channel])
-      ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${CHANNELS[v.channel].label}</span>`
+      ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff">${esc(T(CHANNELS[v.channel].label, CHANNELS[v.channel].labelEn))}</span>`
       : (!isAdminView ? "" : (function(){ const nLang=localizedVersionsOfSrc(v.id).length, nUse=+v.totalUsed||0; let o="";
           if(nLang) o+=`<span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--accent);color:var(--accent)" title="已翻譯 ${nLang} 種語言">🌐 ${nLang}</span>`;
           Object.keys(CHANNELS).forEach(ch=>{ const n=chVersionsOfSrc(ch,v.id).length;
@@ -3994,24 +4001,33 @@ function vidTableRow(v){
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
   // 指派給別人的照樣列出來（數字才對得上），但整列變灰、點不開
   const lk=assignLocked(v);
-  return `<tr ${lk?`class="vlock" title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" style="cursor:pointer"`}>
-    <td data-label="影片" class="cv-name"><span class="vt-line">
+  // 二創殼開它自己的視窗（蝦皮／馬來走 openChModal、英／泰走 openIntlModal），
+  // 源片才走主編輯視窗 —— 其他清單本來就是這個三元式，影片庫以前漏掉了。
+  return `<tr ${lk?`class="vlock" title="${esc(assignLockTip(v))}"`:`onclick="${vidOpenFn(v)}" style="cursor:pointer"`}>
+    <td data-label="${T("影片","Video")}" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
       <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
-    <td data-label="標籤"${tags.length?'':' class="na"'}>${tagHTML}</td>
-    <td data-label="${VID_VIEW==="old"?"上片日期":"預排上片"}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
-    <td data-label="商品"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
-    <td data-label="剪輯師"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-    <td data-label="狀態"><span class="ststack">
+    <td data-label="${T("標籤","Tags")}"${tags.length?'':' class="na"'}>${tagHTML}</td>
+    <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
+    <td data-label="${T("商品","Products")}"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
+    <td data-label="${T("剪輯","Editor")}"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+    <td data-label="${T("狀態","Status")}"><span class="ststack">
       <span class="pill" style="font-size:11px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
       ${rev}</span></td>
   </tr>`;
 }
 // 版本殼的「原本語言」跟著它的源片走（殼自己沒有 origLang）
-function effOrigLang(v){ return origLangOf(anchorOf(v)); }
+// 影片庫上面那個語言下拉要看哪一個語言。
+//
+// 二創殼自己有 locale（英文版／泰文版），要用它自己的 —— 不能跟著源片走。
+// 一支從中文源片做出來的英文版，源片的原本語言是「中文」，跟著源片走的話它在
+// 海外那一頁會被語言下拉直接濾掉，整頁變空（v146 兩頁共用同一份清單之後才會踩到）。
+// 台灣那一頁的蝦皮／馬來殼沒有 locale，照舊跟著源片＝中文，行為沒變。
+function effOrigLang(v){ return String((v&&v.locale)||"") || origLangOf(anchorOf(v)); }
 // 台灣影片庫的母體：中文源片 ＋ 蝦皮版 ＋ 馬來版（同一區的都列在一起）
 function vidAllOfLang(){
-  return (STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw" && effOrigLang(v)===VID_LANG);
+  const zone=curZone();   // 台灣／海外分頁＝篩選器（v146 兩邊同一套畫面）
+  return (STATE.videos||[]).filter(v=>zoneOfVideo(v)===zone && effOrigLang(v)===VID_LANG);
 }
 // 搜尋範圍含版本自己的欄位，也含源片的片名與編號 ——
 // 這樣打源片的中文片名，找得到它底下的蝦皮版。
@@ -4042,7 +4058,7 @@ function vidCardHTML(v){
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
   const lk=assignLocked(v);
-  return `<div class="vcard${lk?' vlock':''}" ${lk?`title="${esc(assignLockTip(v))}"`:`onclick="editVideo('${v.id}')" title="${esc(vidTitle(v))}"`}>
+  return `<div class="vcard${lk?' vlock':''}" ${lk?`title="${esc(assignLockTip(v))}"`:`onclick="${vidOpenFn(v)}" title="${esc(vidTitle(v))}"`}>
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
       <div class="vcard-t">${esc(vidNameZoned(v))}${assignLockPill(v)}${missingPill(v, vidImplied())}</div>
@@ -4119,7 +4135,7 @@ function vidSetUnsched(on){ VID_UNSCHED=!!on; vidFilter(); }
 function vidSetLang(lang){ VID_LANG=ORIG_LANG_KEYS.includes(lang)?lang:""; VID_TAGS.clear(); render(); }
 // 影片庫分兩套：台灣的是完整管線（七段／四分頁），海外的是單純的來源清單。
 // 同時看得到兩區的人（管理員／經理人／人資）上面多一排區切換。
-function viewVideos(){ return curZone()==="intl" ? viewVideosIntl() : viewVideosTW(); }
+function viewVideos(){ return viewVideosLib(); }
 
 // ===================================================================
 // 影片庫大流（v137）
@@ -4365,14 +4381,22 @@ async function saveOrigLangFixes(){
        r.ok.map(c=>vidTitle(c.v)).join("、").slice(0,120));
   await delay(300); bulkToast(r, T("已調整 "+r.done+" 支","Updated "+r.done), T("支","clips"));
 }
-function viewVideosTW(){
-  const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)==="tw");   // 台灣庫：源片＋蝦皮／馬來版
+// 影片庫：上面那兩個分頁（台灣／海外）現在**只是篩選器**，兩邊功能一模一樣 ——
+// 未拍／待剪／剪完／舊片、清單／圖片、標籤、新增一支、批次新增全都有。
+//
+// v146 之前海外那一頁是另一個東西：一份「挑台灣已上片的片來做二創」的清單。
+// 那份清單在「上班計畫」的建立二創版本卡裡本來就有一模一樣的一份，所以這裡不是
+// 少了功能，是重複的那份被拿掉了。真正少的是：海外沒辦法自己開腳本、自己拍、
+// 自己傳 —— 因為他們永遠進不到編輯視窗。
+function viewVideosLib(){
+  const zone=curZone();
+  const allSrc=(STATE.videos||[]).filter(v=>zoneOfVideo(v)===zone);
   const langCount={}; allSrc.forEach(v=>{ const l=effOrigLang(v); langCount[l]=(langCount[l]||0)+1; });
-  // 只列屬於台灣區的原本語言（中文／馬來西亞）—— 泰文與英文拍的原創屬於海外，不在這個庫裡
-  const langs=ORIG_LANGS.map((x,i)=>[x[0],x[1],["Chinese","Thai","English","Malaysia"][i]]).filter(([k])=>zoneOfOrigLang(k)==="tw");
-  if(!langs.some(([k])=>k===VID_LANG)) VID_LANG="";
+  const langs=ORIG_LANGS.map((x,i)=>[x[0],x[1],["Chinese","Thai","English","Malaysia"][i]]).filter(([k])=>zoneOfOrigLang(k)===zone);
+  // 換分頁的時候原本語言要跟著換到這一區有的（海外沒有「中文」這個選項）
+  if(!langs.some(([k])=>k===VID_LANG)) VID_LANG=(zone==="intl")?"en":"";
   const langSel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">
-    <label style="margin:0">${T("原本語言","Original language")}</label>
+    <label style="margin:0">${zone==="intl"?T("語言","Language"):T("原本語言","Original language")}</label>
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
@@ -4407,32 +4431,6 @@ function viewVideosTW(){
     </details>
     <div id="vid_list" style="margin-top:6px">${vidRowsHTML()}</div>
   </div>`;
-}
-// 海外的影片庫：台灣已上片的舊片（可以拿來做版本的來源）＋自己已經做過的版本。
-// 台灣的四個管線分頁（未拍／待剪／剪完／舊片）對他們沒有意義，拿掉。
-function viewVideosIntl(){
-  const locs=["", "en", "th"];
-  if(!locs.includes(INTL_LIB_LOC)) INTL_LIB_LOC="";
-  const sel=`<select onchange="intlLibSetLoc(this.value)" style="width:auto;min-width:150px">
-    ${locs.map(l=>`<option value="${l}" ${INTL_LIB_LOC===l?'selected':''}>${l?esc(localeName(l)):T("全部語言","All languages")}</option>`).join("")}
-  </select>`;
-  return `<h2>${T("影片庫","Library")}</h2>
-  <div class="card">
-    ${zoneSwitchHTML()}
-    <div class="muted" style="font-size:13px;margin-bottom:10px">${T("挑一支台灣已上片的影片，做成你的語言版本。","Pick a published Taiwan video and make your language version.")}</div>
-    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-      ${sel}
-      <input id="intl_q" placeholder="${T("搜尋片名／編號","Search title / code")}" value="${esc(INTL_Q)}"
-        oninput="INTL_Q=this.value;intlLibFilter()" style="flex:1;min-width:150px">
-    </div>
-    <div id="intl_lib">${intlLibRows(INTL_LIB_LOC)}</div>
-  </div>`;
-}
-function intlLibSetLoc(l){ INTL_LIB_LOC=(l==="en"||l==="th")?l:""; intlLibFilter(); }
-// 邊打邊篩：只換清單那一塊（找不到就退回整頁重繪）
-function intlLibFilter(){
-  const box=document.getElementById("intl_lib"); if(!box){ render(); return; }
-  box.innerHTML=intlLibRows(INTL_LIB_LOC);
 }
 // 刪除影片：二次確認，無法復原
 function delVideo(id){
@@ -4555,7 +4553,7 @@ function viewPerf(){
   <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
-    <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="editVideo('${r.v.id}')">
+    <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
       <td data-label="#">${i+1}</td>
       <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
       <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
@@ -5113,14 +5111,14 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
 }
 function openVideoModal(id, edit, fromWork){
   const v = vid(id)||{};
-  // 海外守門：這是台灣版的編輯視窗，裡面有月排程、未來 14 天速覽、標籤、商品、
-  // 階段與刪除鍵，而且**整個介面是中文的**。海外點進來會全看到，所以在入口攔掉。
-  // ⚠️ 判斷用「職位」不是「分區」—— v142 拆掉分區之後海外也看得到台灣的片，
-  //    但那不代表要把中文的編輯視窗丟給他們。這兩件事本來就不一樣。
-  if(currentRole()==="intl"){
-    if(isSourceVid(v)){ openSourceForIntl(id); return; }      // 源片 → 只給看四樣
-    if(v.channel){ toast(T("這支不在你的區","Not in your area"),true); return; }
-  }
+  // v146：海外進來的守門拿掉了。
+  //
+  // 舊的守門把海外導到一張唯讀卡，那張卡假設「一定有台灣拍好的毛片跟成片可以看」——
+  // 對還沒拍的腳本整段都是錯的，而且沒有編輯視窗就沒有存檔資料夾、沒有階段、
+  // 不能認領，等於海外根本不能自己拍自己傳。
+  //
+  // 新流程是一份腳本發給兩組人各拍各的語言，所以海外要的就是**同一個視窗**，
+  // 只是介面走 T() 出英文。這個視窗本來就整份 T() 過了。
   const s=STATE.settings||{};
   const sources=brandSetting("sources")||["老闆自拍","外部公司"];
   const users=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
@@ -5171,7 +5169,8 @@ function openVideoModal(id, edit, fromWork){
     ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
     <select id="e_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${origLangOf(v)===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <div class="muted" style="font-size:11px;margin:4px 0 0">${T(
-      "設成泰文或英文，這支就會移到海外區、台灣剪輯不再看到","Thai or English moves this video to the overseas area")}</div>`:''}
+      "這只是標「這支是用什麼語言拍的」。設成泰文或英文，它會歸到影片庫上面的「海外」分頁 —— 大家照樣看得到，只是分開放。",
+      "This only records what language it was shot in. Thai or English files it under the “Overseas” tab in the library — everyone can still see it, it's just kept separately.")}</div>`:''}
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
@@ -5200,7 +5199,7 @@ function openVideoModal(id, edit, fromWork){
         <div><label>${T("階段","Stage")}</label>
           ${["boss","manager"].includes(currentRole())
             ? `<select id="e_stage">${stages.map(c=>`<option value="${esc(c)}" ${v.stage===c?"selected":""}>${esc(stageLabel(c)||c)}</option>`).join("")}</select>`
-            : `<input id="e_stage" value="${esc(v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
+            : `<input id="e_stage" value="${esc(stageLabel(v.stage||"待處理")||v.stage||"待處理")}" readonly disabled style="background:var(--panel2)">
                <div class="muted" style="font-size:11px;margin:4px 0 0">${T("剪好了請用工作頁的「完成 ✔」，階段會自動走","Use “Done ✔” on your work page — the stage moves itself")}</div>`}</div>
       </div>
       <label>${T("剪輯人員","Editor")}</label><select id="e_editor"><option value="">—</option>${(v.editor&&!users.includes(v.editor)?[v.editor]:[]).concat(users).map(u=>`<option ${v.editor===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
@@ -5241,7 +5240,11 @@ async function saveVideo(id){
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
   const video={code:val("e_code").trim(), rawName:zhTW(val("e_raw")), name:zhTW(val("e_name").trim()||val("e_raw").trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
     products, productUrl,
-    source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
+    source:val("e_src"),
+    // 階段：只有管理員／經理人那一格是真的下拉；其他人看到的是 disabled 的唯讀格
+    // （而且顯示的是介面語言的字），讀它會把畫面上的字寫進資料庫。
+    stage:["boss","manager"].includes(currentRole())?val("e_stage"):String(v0.stage||"待處理"),
+    editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
     driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
@@ -5474,7 +5477,7 @@ function lineVersionsCard(cfg){
       <td data-label="${T("預排上片","Scheduled")}">${sched}</td>
       <td data-label="${T("上傳連結","Upload")}">${link}</td>
       ${cols.views?`<td data-label="${T("觀看","Views")}">${mv?num(mv):'<span class="muted">—</span>'}</td>`:''}
-      <td data-label=""><a href="javascript:void(0)" onclick="editVideo('${k.id}')">${T("開啟","Open")}</a></td></tr>`;
+      <td data-label=""><a href="javascript:void(0)" onclick="${vidOpenFn(k)}">${T("開啟","Open")}</a></td></tr>`;
   }).join("");
   return `<div class="card" style="background:var(--panel2)"><b>${title}（${kids.length}）</b> <span class="muted" style="font-size:12px">${hint}</span>
     <table class="responsive" style="margin-top:8px"><thead><tr>${cols.lang?`<th>${T("語言","Language")}</th>`:''}<th>${T("帳號","Account")}</th><th>${T("剪輯","Editor")}</th><th>${T("狀態","Status")}</th><th>${T("完成日","Finished")}</th><th>${T("預排上片","Scheduled")}</th><th>${T("上傳連結","Upload")}</th>${cols.views?"<th>"+T("觀看","Views")+"</th>":''}<th></th></tr></thead>

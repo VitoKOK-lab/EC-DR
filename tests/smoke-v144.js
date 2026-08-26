@@ -82,9 +82,20 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   ok("英文（二創視窗）：一創二創都放同一個", modalHTML.includes("first cuts and remakes"));
   ok("英文（二創視窗）：封面也放同一個", modalHTML.includes("the cover"));
   ok("英文介面沒有漏中文說明出來", !/第一個拍好毛片的人|通通放進同一個資料夾/.test(modalHTML)); }
+// v146：海外點源片進的是同一個編輯視窗 —— 所以源片那一格的英文說明這次真的看得到
 { reset([v_("SRC",{driveFolder:FAM,stage:"已上片",published:true,publishedLink:"http://x",
                    rawLink:"http://raw"})], "Anna","intl");
-  openVideoModal("SRC", true);   // 海外點源片 → 唯讀來源卡
+  openVideoModal("SRC", true);
+  ok("英文（源片的編輯視窗）：說了誰要去開資料夾",
+     modalHTML.includes("Whoever shoots the raw footage first"));
+  ok("英文（源片的編輯視窗）：同一條規矩也寫在這裡",
+     modalHTML.includes("Chinese and English versions") && modalHTML.includes("first cuts and remakes"));
+  ok("英文（源片的編輯視窗）：那一格填得動（海外要自己拍自己傳）",
+     !/id="e_drive"[^>]*\breadonly\b/.test(modalHTML)); }
+// 海外看源片的唯讀卡（做二創時從版本視窗裡看到的那張）也還是有這條規矩
+{ reset([v_("SRC",{driveFolder:FAM,stage:"已上片",published:true,publishedLink:"http://x",
+                   rawLink:"http://raw"})], "Anna","intl");
+  openSourceForIntl("SRC");
   ok("英文（看源片的卡片）：同一條規矩也寫在這裡",
      modalHTML.includes("Chinese and English versions") && modalHTML.includes("first cuts and remakes"));
   ok("英文（看源片的卡片）：資料夾點得進去", modalHTML.includes("This video's folder")); }

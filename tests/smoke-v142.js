@@ -95,15 +95,16 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 { reset(); as("Anna","intl"); CUR_TAB="cal"; viewCal();
   calSetPlat("shopee"); viewCal();
   ok("海外自己選了蝦皮之後就不會被彈回英文", CAL_PLAT==="shopee"); }
+// v146：影片庫的預設不再依職位分 —— 大家一進來都落在同一份
 { reset(); as("Anna","intl");
-  ok("海外的影片庫預設落在海外那一份", curZone()==="intl");
-  setZoneView("tw");
-  ok("但切得過去台灣那一份", curZone()==="tw"); }
-// 中文的編輯視窗還是不丟給海外（那是介面語言的問題，不是分區）
+  ok("海外的影片庫預設也落在同一份", curZone()==="tw");
+  setZoneView("intl");
+  ok("要看自己語言的片就切上面那個分頁", curZone()==="intl"); }
+// v146：編輯視窗也是同一個，只是介面走英文
 { reset([v_("S1")]); as("Anna","intl"); modalHTML="";
   openVideoModal("S1", true);
-  ok("海外點源片仍然走他自己的簡化視窗（介面語言≠分區）",
-     !modalHTML.includes('id="e_vcopy"')); }
+  ok("海外點源片進的是同一個編輯視窗", modalHTML.includes('id="e_vcopy"'));
+  ok("而且是英文介面", !modalHTML.includes("影片文案（影片中 IP 的口播台詞）")); }
 
 // ══════════ ③ 拿分區當「別的東西」的代名詞：這次咬到的那個 bug ══════════
 // p2pTargets 以前用 `zoneOfUser(u)==="both"` 來排除管理層 —— 分區拆掉之後

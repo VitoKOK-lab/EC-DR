@@ -80,10 +80,11 @@ reset(LIB); as("小葵","editor");
      .every(x=>w.includes("<span>"+x+"</span>")));
   // v142 拆掉分區：快選六類全在
   ok("台灣也看得到英文／泰文快選", w.includes("<span>英文</span>") && w.includes("<span>泰文</span>")); }
-// v115 分區：海外的影片庫沒有四個管線分頁
+// v146：海外的影片庫跟台灣同一份（只是介面英文）—— 舊的「來源清單」那一份跟
+//      「上班計畫」的建立二創版本卡重複，已經拿掉。
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外沒有台灣的管線分頁", !h.includes("<span>Not shot</span>") && !h.includes('id="vid_tabs"'));
+  ok("海外也有那四個管線分頁（英文）", h.includes("<span>Not shot</span>") && h.includes('id="vid_tabs"'));
   ok("海外沒有中文分頁名洩漏", !h.includes("<span>未拍</span>")); }
 
 // ══ 點分頁還是有作用 ══

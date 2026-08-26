@@ -196,10 +196,10 @@ VID_Q="關鍵字";
 // ══ ⑨ 海外看到英文、沒有中文洩漏 ══
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  // v115 分區：四個分頁是台灣的拍片管線，海外改看單純的來源清單
-  ok("海外沒有台灣的四個分頁",
-     !["Not shot","To edit","Done","Old"].some(x=>h.includes("<span>"+x+"</span>")));
-  ok("海外的來源清單也是英文", h.includes("Pick a published Taiwan video") && h.includes("All languages"));
+// v146：海外的影片庫跟台灣同一份（只是介面英文）
+  ok("海外也有那四個分頁（英文）",
+     ["Not shot","To edit","Done","Old"].every(x=>h.includes("<span>"+x+"</span>")));
+  ok("海外的影片庫也是英文", h.includes("Library A") && h.includes("Original language"));
   ok("海外沒有中文分頁名洩漏", !h.includes("未拍") && !h.includes("待剪") && !h.includes("剪完")); }
 
 // ══ ⑩ render 不炸 ══

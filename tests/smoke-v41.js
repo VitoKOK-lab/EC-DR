@@ -67,11 +67,11 @@ openIntlModal("E1");
 ok("intl 英文版視窗英文", modalHTML.includes(">Save<") && modalHTML.includes("Watch Chinese") && !modalHTML.includes("儲存"));
 openChModal("shopee","P1");
 ok("intl 蝦皮視窗價格標籤英文", modalHTML.includes("Fan price") && !modalHTML.includes("寵粉價"));
-// v115 分區：海外點源片＝唯讀來源卡，沒有版本清單也沒有「原本語言」那一列
+// v146：海外進的是同一個編輯視窗（介面走英文）—— 舊的唯讀來源卡對「還沒拍的腳本」
+//      整段說明都是錯的，而且沒有編輯視窗＝海外不能自己拍自己傳。
 openVideoModal("S2", false);
-ok("intl 點源片＝唯讀來源卡", modalHTML.includes("Source · Taiwan") && modalHTML.includes("Video details"));
-ok("intl 看不到版本清單", !modalHTML.includes("Language versions") && !modalHTML.includes("各語言版本"));
-ok("intl 來源卡全英文", !modalHTML.includes("影片內容") && !modalHTML.includes("原本語言"));
+ok("intl 點源片＝同一個檢視視窗（英文）", modalHTML.includes("Video details"));
+ok("intl 這個視窗全英文", !modalHTML.includes("影片內容") && !modalHTML.includes("原本語言"));
 // v115 分區：海外的池沒有蝦皮，徽章改在英文版上驗（EN）
 WORK_ZONE="en"; h=viewWork();
 ok("intl 徽章用英文（EN）", h.includes(">EN</span>") && !h.includes(">蝦</span>"));
