@@ -209,7 +209,9 @@ stockFixture(5, 100); as("小葵","editor");
 stockFixture(25, 100); as("小葵","editor");
 ok("存量夠的時候這張卡不出現（不佔畫面）", !viewWork().includes("毛片快沒了"));
 stockFixture(5, 0); as("Anna","intl");
-ok("海外不剪台灣毛片，不給他們看這張", lowStockCard()==="");
+  // v142：同一個毛片池，海外也在剪 —— 沒片可剪他們一樣會被卡住，所以要看得到
+  // 海外的介面是英文的，所以查英文那句
+  ok("海外現在也看得到毛片存量警示（同一個池）", viewWork().includes("Raw footage running out"));
 
 // 送出提醒：同一天只送一次
 stockFixture(5, 0); as("小葵","editor");

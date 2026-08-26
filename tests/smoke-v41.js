@@ -58,7 +58,8 @@ ok("editor 蝦/馬徽章維持中文字", h.includes(">蝦</span>"));
 openVideoModal("S2", false);
 // v115 分區：台灣看不到「各語言版本」（那是海外的），改驗蝦皮版本卡
 ok("editor 看得到蝦皮版本卡（中文）", modalHTML.includes("蝦皮版本") && modalHTML.includes("上傳連結"));
-ok("editor 看不到各語言版本", !modalHTML.includes("各語言版本"));
+// v142：二創雙向，台灣剪輯也看得到各語言版本卡
+ok("editor 現在也看得到各語言版本", modalHTML.includes("各語言版本"));
 
 // ── 海外剪輯 → 全英文 ──
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");

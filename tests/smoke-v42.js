@@ -42,13 +42,14 @@ POOL_FILTER="all"; WORK_ZONE="shopee";
 let h=viewWork();
 // v115 分區：台灣的快選只有 全部／中文毛片／蝦皮／馬來西亞
 ok("台灣快選四類", h.includes("setPoolFilter('all')") && h.includes("setPoolFilter('tw')") && h.includes("setPoolFilter('shopee')") && h.includes("setPoolFilter('ms')"));
-ok("台灣快選沒有英文／泰文", !h.includes("setPoolFilter('en')") && !h.includes("setPoolFilter('th')"));
-ok("台灣全部計數=4（扣掉英文／泰文）", h.includes(`<span>${T("全部","All")}</span> <span class="vtab-n">4</span>`));
+// v142 拆掉分區：快選六類全在、池子也是同一個
+ok("台灣快選也有英文／泰文", h.includes("setPoolFilter('en')") && h.includes("setPoolFilter('th')"));
+ok("台灣全部計數=6（英文／泰文也算進來）", h.includes(`<span>${T("全部","All")}</span> <span class="vtab-n">6</span>`));
 ok("台灣列出中文＋蝦皮＋馬來", h.includes("中文毛片一") && h.includes("SHP shell") && h.includes("MS shell"));
-ok("台灣不列英文／泰文", !h.includes("EN shell") && !h.includes("TH shell"));
+ok("台灣也列得出英文／泰文", h.includes("EN shell") && h.includes("TH shell"));
 POOL_FILTER="tw"; h=viewWork();
 ok("篩中文毛片：只剩原本", h.includes("中文毛片一") && h.includes("中文毛片二") && !h.includes("EN shell") && !h.includes("SHP shell") && !h.includes("MS shell"));
-ok("篩選時 pill 顯示 2/4", h.includes(">2/4<"));
+ok("篩選時 pill 顯示 2/6", h.includes(">2/6<"));
 // 英文歸海外，用 Anna 驗
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 POOL_FILTER="en"; h=viewWork();
@@ -64,7 +65,7 @@ ok("空類別顯示引導文字", h.includes("這一類目前沒有可認領的�
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 POOL_FILTER="all"; h=viewWork();
 ok("intl 快選英文標籤", h.includes("<span>All</span> <span") && h.includes("<span>English</span> <span") && h.includes("<span>Thai</span> <span"));
-ok("intl 快選沒有中文毛片／蝦皮", !h.includes("<span>Chinese raw</span>") && !h.includes("<span>Shopee</span>"));
+ok("intl 快選也有中文毛片／蝦皮", h.includes("<span>Chinese raw</span>") && h.includes("<span>Shopee</span>"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

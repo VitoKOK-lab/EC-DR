@@ -60,7 +60,7 @@ function reset(videos){
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:videos||fixture() };
   CUR_TAB=null; VIEW_AS=null; CAL_PLAT="tw"; CAL_YM=null; POOL_FILTER="all"; POOL_Q="";
   WORK_ZONE="shopee"; VID_LANG=""; VID_VIEW="raw"; VID_UNSCHED=false; VID_Q=""; VID_TAGS=new Set();
-  ZONE_VIEW="tw"; MODAL_DIRTY=false; MODAL_SAVE=null;
+  ZONE_VIEW=null;   // v142：null＝還沒自己選過，依職位給預設（設成 "tw" 等於「使用者選了台灣」） MODAL_DIRTY=false; MODAL_SAVE=null;
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
 }
 const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecdr_role",r); };
@@ -82,30 +82,26 @@ ok("版本殼判定：蝦皮／馬來／英文／泰文都是",
    ["P1","M1","E1","T1"].every(x=>isVersion(vid(x))) && !isVersion(vid("R1")));
 ok("「版本殼」跟「海外」是兩件事", isVersion(vid("P1")) && zoneOfVideo(vid("P1"))==="tw");
 
-// 人的分區
-ok("剪輯＝台灣", zoneOfUser("小葵")==="tw");
-ok("巴基斯坦＝海外", zoneOfUser("Anna")==="intl");
-ok("經理人＝兩區", zoneOfUser("Regina")==="both");
-ok("管理員＝兩區", zoneOfUser("管理員")==="both");
-ok("人資＝兩區", zoneOfUser("HR小姐")==="both");
-ok("不剪片的職位歸台灣", zoneOfUser("小美")==="tw");
-as("Regina","manager");
-ok("兩區的人 seesZone 兩邊都真", seesTW() && seesIntl());
-as("小葵","editor");
-ok("台灣人看不到海外", seesTW() && !seesIntl());
-as("Anna","intl");
-ok("海外人看不到台灣", !seesTW() && seesIntl());
+// ══ 人的分區：v142 起這道牆拆掉了 ══
+// 新做法是一份腳本發給兩組人、毛片放同一個池子、誰都挑得到誰的。
+// 語言變成「成品的屬性」，不是「流程的牆」。
+["小葵","Anna","Regina","管理員","HR小姐","小美"].forEach(n=>
+  ok(n+" 兩區都看得到（v142 拆掉分區）", zoneOfUser(n)==="both"));
+as("Regina","manager"); ok("經理人兩邊都真", seesTW() && seesIntl());
+as("小葵","editor");    ok("台灣剪輯現在看得到海外", seesTW() && seesIntl());
+as("Anna","intl");      ok("海外剪輯現在看得到台灣", seesTW() && seesIntl());
 
 // 平台代碼分區
 reset();
 ok("平台分區", zoneOfPlat("tw")==="tw" && zoneOfPlat("shopee")==="tw" && zoneOfPlat("ms")==="tw"
    && zoneOfPlat("en")==="intl" && zoneOfPlat("th")==="intl");
 
-// ══════════ ② 待認領池（R6：用 seesZone 不是 ===myZone）══════════
+// ══════════ ② 待認領池：一個共用的池子 ══════════
+// 這是這次改動最有感的一段 —— 海外同仁終於看得到全部毛片。
 reset(); as("小葵","editor");
-ok("台灣池＝中文＋蝦皮＋馬來", JSON.stringify(ids(poolAll()))===JSON.stringify(["M1","P1","R1"]));
+ok("台灣剪輯看得到全部五支（含海外的）", poolAll().length===5);
 reset(); as("Anna","intl");
-ok("海外池＝英文＋泰文", JSON.stringify(ids(poolAll()))===JSON.stringify(["E1","T1"]));
+ok("海外剪輯也看得到全部五支（含中文毛片）", poolAll().length===5);
 reset(); as("Regina","manager");
 ok("經理人看得到全部五支", poolAll().length===5);
 reset(); as("管理員","boss");
@@ -113,41 +109,34 @@ ok("管理員也是全部（both 不能寫成 ===myZone）", poolAll().length===
 reset(); as("HR小姐","hr");
 ok("人資也是全部", poolAll().length===5);
 
-// 快選分類依區
-reset(); as("小葵","editor");
-{ const ks=poolCatList().map(x=>x[0]);
-  ok("台灣快選：全部／中文毛片／蝦皮／馬來", JSON.stringify(ks)===JSON.stringify(["all","tw","shopee","ms"])); }
-reset(); as("Anna","intl");
-{ const ks=poolCatList().map(x=>x[0]);
-  ok("海外快選：全部／英文／泰文", JSON.stringify(ks)===JSON.stringify(["all","en","th"])); }
-reset(); as("Regina","manager");
-ok("兩區的人六類全有", poolCatList().length===6);
+// 快選分類：人人都是六類（全部／中文／蝦皮／馬來／英文／泰文）
+["小葵","Anna","Regina"].forEach(n=>{ reset(); as(n, n==="小葵"?"editor":(n==="Anna"?"intl":"manager"));
+  ok(n+" 的快選是完整六類", poolCatList().length===6); });
 
 // ══════════ ③ 月排程（R7）══════════
 reset(); as("小葵","editor"); CUR_TAB="cal";
 { const h=viewCal();
-  ok("台灣月排程有中文／蝦皮／馬來西亞",
-     h.includes(">中文<") && h.includes(">蝦皮<") && h.includes(">馬來西亞<"));
-  ok("台灣月排程沒有泰文／英文", !h.includes(">泰文<") && !h.includes(">英文<"));
-  ok("台灣的 CAL_PLAT 落在 tw", CAL_PLAT==="tw"); }
+  ok("台灣月排程五個平台全在（含英文／泰文）",
+     [">中文<",">蝦皮<",">馬來西亞<",">泰文<",">英文<"].every(x=>h.includes(x)));
+  ok("台灣的預設落在中文", CAL_PLAT==="tw"); }
 reset(); as("Anna","intl"); CAL_PLAT="tw"; CUR_TAB="cal";
 { const h=viewCal();
-  ok("海外月排程只有英文／泰文", h.includes(">English<") && h.includes(">Thai<"));
-  ok("海外看不到中文／蝦皮／馬來西亞",
-     !h.includes(">Chinese<") && !h.includes(">Shopee<") && !h.includes(">Malaysia<"));
-  ok("海外的 CAL_PLAT 自動落到 en 不是 tw", CAL_PLAT==="en"); }
+  ok("海外月排程五個平台也全在",
+     [">Chinese<",">Shopee<",">Malaysia<",">English<",">Thai<"].every(x=>h.includes(x)));
+  ok("海外的預設仍然落在英文（預設不是牆）", CAL_PLAT==="en"); }
 reset(); as("Regina","manager"); CUR_TAB="cal";
 ok("經理人五個平台全在", ["中文","泰文","蝦皮","英文","馬來西亞"].every(x=>viewCal().includes(">"+x+"<")));
 
 // ══════════ ④ 建立版本卡 ══════════
 reset(); as("小葵","editor");
+// 二創現在是雙向的：中文可以做成英文，英文也可以做成中文／其他平台
 { const z=createZoneCard();
-  ok("台灣只建得了蝦皮／馬來", z.includes(">蝦皮<") && z.includes(">馬來西亞<"));
-  ok("台灣建不了英文／泰文", !z.includes(">英文 TikTok<") && !z.includes(">泰文 TikTok<")); }
+  ok("台灣四條線全建得了（含英文／泰文）",
+     [">蝦皮<",">馬來西亞<",">英文 TikTok<",">泰文 TikTok<"].every(x=>z.includes(x))); }
 reset(); as("Anna","intl"); WORK_ZONE="en";
 { const z=createZoneCard();
-  ok("海外只建得了英文／泰文", z.includes("English (TikTok)") && z.includes("Thai (TikTok)"));
-  ok("海外建不了蝦皮／馬來", !z.includes(">Shopee<") && !z.includes(">Malaysia<")); }
+  ok("海外四條線也全建得了（含蝦皮／馬來）",
+     ["English (TikTok)","Thai (TikTok)",">Shopee<",">Malaysia<"].every(x=>z.includes(x))); }
 reset(); as("Regina","manager");
 ok("兩區的人四條線全在", ["蝦皮","馬來西亞","英文 TikTok","泰文 TikTok"].every(x=>createZoneCard().includes(">"+x+"<")));
 
@@ -157,7 +146,7 @@ openVideoModal("S1", false);
 { const m=modalHTML;
   ok("台灣看得到蝦皮版本卡", m.includes("蝦皮版本"));
   ok("台灣看得到馬來版本卡", m.includes("馬來版本"));
-  ok("台灣看不到各語言版本（英／泰）", !m.includes("各語言版本")); }
+  ok("台灣現在也看得到各語言版本（二創雙向）", m.includes("各語言版本")); }
 reset(); as("Regina","manager");
 openVideoModal("S1", false);
 ok("經理人三張版本卡都看得到",

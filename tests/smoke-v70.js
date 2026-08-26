@@ -84,7 +84,8 @@ ok("看板小標順序一致", ascending(order(t,[h4("台灣・剪輯行銷",2),
 ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===3);
 { // 台灣剪輯只看得到台灣那兩組
   as("小葵","editor"); const tw=viewTeam();
-  ok("台灣剪輯只有台灣兩組", tw.includes(h4("台灣・剪輯行銷",2)) && tw.includes(h4("台灣・其他",3)) && !tw.includes("巴基斯坦（"));
+  // v142 拆掉分區：團隊看板三組都看得到
+  ok("台灣剪輯看得到三組（含巴基斯坦）", tw.includes(h4("台灣・剪輯行銷",2)) && tw.includes(h4("台灣・其他",3)) && tw.includes("巴基斯坦（"));
   as("Regina","manager"); }
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 

@@ -61,12 +61,12 @@ reset(); as("小葵","editor");
 { const t=p2pTargets().map(u=>u.name);
   ok("台灣員工看得到台灣同事", t.includes("郁莚") && t.includes("小美"));
   ok("看不到自己", !t.includes("小葵"));
-  ok("看不到海外同事", !t.includes("Anna") && !t.includes("Asmeer"));
+  ok("現在也傳得到海外同事（v142 不分區）", t.includes("Anna") && t.includes("Asmeer"));
   ok("看不到管理層（他們走「找主管／人資說一件事」）",
      !t.includes("Regina") && !t.includes("管理員") && !t.includes("HR小姐")); }
 reset(); as("Anna","intl");
 { const t=p2pTargets().map(u=>u.name);
-  ok("海外員工只看得到海外同事", t.includes("Asmeer") && !t.includes("小葵") && !t.includes("小美")); }
+  ok("海外員工也傳得到台灣同事", t.includes("Asmeer") && t.includes("小葵") && t.includes("小美")); }
 reset(); as("Regina","manager");
 ok("主管兩區的人都傳得到", (()=>{ const t=p2pTargets().map(u=>u.name);
   return t.includes("小葵") && t.includes("Anna"); })());
@@ -277,7 +277,8 @@ vid("TH1").origLang="th";
 ok("設成泰文之後歸海外", zoneOfVideo(vid("TH1"))==="intl");
 ok("設好的那支就不再是待搬的", !origAutoList().map(v=>v.id).includes("TH1"));
 as("小葵","editor");
-ok("台灣剪輯的池裡也沒有它了", !poolAll().map(v=>v.id).includes("TH1"));
+// v142：不再分區，泰文原創照樣留在同一個池子裡（歸區只影響影片庫的篩選分頁）
+ok("台灣剪輯的池裡照樣看得到它（同一個池）", poolAll().map(v=>v.id).includes("TH1"));
 
 // ══════════ ⑩ 月排程的日期視窗全員都進得去、也改得動（v121）══════════
 // 原本 canSchedule() 只放行經理人與管理員，連日期格子的 onclick 都不給剪輯 ——

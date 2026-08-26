@@ -1075,14 +1075,24 @@ function calTWBody(){
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
 // ---- 月排程合一：一個分頁、下面選平台（社群媒體／海外 TikTok／蝦皮／馬來）----
-let CAL_PLAT="tw";
-function calSetPlat(p){ CAL_PLAT=p; render(); }
+// CAL_PLAT_FOR＝這個預設是為哪個職位套的。職位沒變就不再套，使用者選了什麼就是什麼。
+let CAL_PLAT="tw", CAL_PLAT_FOR=null;
+// 使用者自己選了就記下「這個職位的預設已經套過了」，之後不再蓋掉他的選擇
+function calSetPlat(p){ CAL_PLAT=p; CAL_PLAT_FOR=currentRole(); render(); }
 function viewCal(){
   // 依分區：台灣看 中文／蝦皮／馬來西亞，海外看 英文／泰文。
   // 順序按區分組，這樣自動落點（plats[0]）對兩邊都是最常用的那一個。
   const allPlats=[["tw",T("中文","Chinese")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],
+                  ["sunny","Boss Sunny"],
                   ["en",T("英文","English")],["th",T("泰文","Thai")]];
   const plats=allPlats.filter(([k])=> seesZone(zoneOfPlat(k)));
+  // 預設落在哪個平台依「職位」給，海外落在英文。
+  // ⚠️ 每個職位只套一次：寫成「每次重繪都套」的話，使用者切到別的平台會被彈回來；
+  //    寫成「全域只套一次」的話，換人登入就套不到了（同一個分頁換帳號）。
+  // ⚠️ 以前是靠「這個人看得到哪些平台」推出來的 —— v142 之後人人都看得到全部，
+  //    那個推法就失效了（海外會落在中文）。預設跟權限是兩件事。
+  { const r=currentRole();
+    if(CAL_PLAT_FOR!==r){ CAL_PLAT_FOR=r; CAL_PLAT=(r==="intl")?"en":"tw"; } }
   if(!plats.some(([k])=>k===CAL_PLAT)) CAL_PLAT=(plats[0]||allPlats[0])[0];
   const sel=`<div class="row" style="gap:8px;align-items:center;margin-bottom:14px">
     <label style="margin:0">${T("平台","Platform")}</label>
@@ -1932,14 +1942,17 @@ function p2pInbox(){ return allP2P()
 function p2pSent(){ return allP2P()
   .filter(m=>m.from===currentUser() && !m.fromSeen).sort(msgSort); }
 // 可以傳給誰：同區的同事。管理層走「找主管／人資說一件事」那條，不重複開一條路
+// 可以傳給誰：除了自己與管理層之外的同仁。
+// ⚠️ v142 之前這裡是寫 `zoneOfUser(u)==="both"` 來排除管理層 —— 那是拿「分區」
+//    當「是不是管理層」的代名詞。分區拆掉之後人人都是 both，那一行會把**所有人**
+//    都排掉、名單整個變空。要問什麼就直接問什麼：管理層就是看職位。
+const MGMT_ROLES=["boss","manager","hr"];
 function p2pTargets(){
-  const mz=myZone();
   return staffSorted((STATE.users||[]).filter(u=>{
     if(!STAFF_ROLES.includes(u.role||"editor")) return false;
     if(u.name===currentUser()) return false;
-    const z=zoneOfUser(u.name);
-    if(z==="both") return false;
-    return mz==="both" || z===mz;
+    if(MGMT_ROLES.includes(u.role)) return false;   // 管理層走「找主管／人資說一件事」那條
+    return true;                                     // 其餘同仁都傳得到（不再分區）
   }));
 }
 async function sendP2P(){ refreshToday();
@@ -2169,13 +2182,21 @@ function zoneOfVideo(v){
 }
 // 「原本語言」對應到哪一區（源片與待認領池的分類共用這一份）
 function zoneOfOrigLang(l){ return (l==="en"||l==="th") ? "intl" : "tw"; }
-// 這個人看得到哪幾區。職位是唯一真相來源 —— 要換區就改職位，不另外開設定
+// 這個人看得到哪幾區。
+//
+// ⚠️ v142 起一律回傳 "both" —— 台灣與海外**不再互相看不到**。
+//    新的做法是：一份腳本同時發給兩組人、兩邊各拍各的語言、毛片放進同一個池子，
+//    任何人都挑得到任何一支去剪。語言變成「成品的屬性」，不再是「流程的牆」。
+//
+//    所以「區」現在只剩兩個用途，都不是權限：
+//      ① 影片庫上方的中文／海外分頁 —— 那是**篩選器**，不是牆（curZone/ZONE_VIEW）
+//      ② zoneOfVideo() 把一支片歸類到哪一邊 —— 給那個篩選器用的
+//    函式留著沒有拿掉，是因為那兩個用途還在，而且哪天要恢復分區也只要改這裡。
 function zoneOfUser(name){
-  const u=(STATE.users||[]).find(x=>x.name===name);
-  const r=(u&&u.role) || (name===currentUser() ? currentRole() : "editor");
-  if(["boss","manager","hr"].includes(r)) return "both";
-  return r==="intl" ? "intl" : "tw";
+  return "both";
 }
+// 舊版的判斷留在這裡當註解，方便對照：
+//   boss/manager/hr → both；intl → intl；其餘 → tw
 function myZone(){ return zoneOfUser(currentUser()); }
 // 看不看得到「這個人」：管理層（zone 是 both）永遠看得到，其餘只看同區
 function seesPerson(name){ const z=zoneOfUser(name); return z==="both" || seesZone(z); }
@@ -2183,11 +2204,17 @@ function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
 // 平台代碼屬於哪一區（月排程的平台選單、建立版本卡的線別都用它推）
-function zoneOfPlat(k){ return (k==="en"||k==="th") ? "intl" : "tw"; }
+function zoneOfPlat(k){ return (k==="en"||k==="th") ? "intl" : "tw"; }   // sunny 跟蝦皮／馬來同一側
 // 「現在看的是哪一區」只有影片庫需要 —— 月排程與建立版本卡選了平台就等於選了區。
 // 只有同時看得到兩區的人（管理員／經理人／人資）才會用到這個開關。
-let ZONE_VIEW="tw";
-function curZone(){ const m=myZone(); return m==="both" ? ZONE_VIEW : m; }
+// null＝還沒自己選過，依職位給一個合理的預設。
+// ⚠️ 這是**預設值**不是牆：海外預設落在海外那一份（他們的畫面是英文的），
+//    但按一下就切得到台灣那一份 —— v142 之後兩邊互相看得到。
+let ZONE_VIEW=null;
+function curZone(){
+  if(ZONE_VIEW==="tw"||ZONE_VIEW==="intl") return ZONE_VIEW;
+  return currentRole()==="intl" ? "intl" : "tw";
+}
 function setZoneView(z){ ZONE_VIEW=(z==="intl")?"intl":"tw"; VID_TAGS.clear(); VID_Q=""; render(); }
 // 源片 vs 版本殼（跟「分區」是兩件事，不要混用）
 function isVersion(v){ return !!(v && (v.locale||v.channel)); }
@@ -2359,7 +2386,7 @@ function poolCat(v){
 }
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
-  const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]]
+  const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["sunny","Boss Sunny"],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]]
     .filter(([k])=>seesZone(zoneOfPlat(k)));
   if(!zones.length) return "";   // 這個人沒有任何一條線可以建（fold 收到空字串就整塊不出現）
   if(!zones.some(z=>z[0]===WORK_ZONE)) WORK_ZONE=zones[0][0];
@@ -3803,9 +3830,10 @@ function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.sta
 // 已經算好數量的呼叫端可以直接傳進來，不必再掃一次 STATE.videos。
 function rawStockLow(n){ return (n==null?rawStock().length:n) < LOW_STOCK; }
 // 剪輯也要看得到存量：沒片可剪是他們先發現的，要讓他們叫得動老闆。
-// 只在真的不足時才出現 —— 平常不佔畫面。海外不剪台灣毛片，不給他們看。
+// 只在真的不足時才出現 —— 平常不佔畫面。
+// ⚠️ v142 之前這裡擋掉海外，理由是「海外不剪台灣毛片」。那個理由已經不成立 ——
+//    現在是同一個毛片池，海外也在剪，沒片可剪他們一樣會被卡住，所以要看得到。
 function lowStockCard(){
-  if(myZone()==="intl") return "";
   const n=rawStock().length; if(!rawStockLow(n)) return "";
   const sentToday=allMsgs().some(m=>m.topic==="shoot" && String(m.createdAt||"").slice(0,10)===today);
   return `<div class="card" style="border-color:var(--red)">
@@ -5076,8 +5104,10 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
 function openVideoModal(id, edit, fromWork){
   const v = vid(id)||{};
   // 海外守門：這是台灣版的編輯視窗，裡面有月排程、未來 14 天速覽、標籤、商品、
-  // 階段與刪除鍵。海外只要從版本卡的「回到源片」點進來就會全看到，所以在入口攔掉。
-  if(myZone()==="intl"){
+  // 階段與刪除鍵，而且**整個介面是中文的**。海外點進來會全看到，所以在入口攔掉。
+  // ⚠️ 判斷用「職位」不是「分區」—— v142 拆掉分區之後海外也看得到台灣的片，
+  //    但那不代表要把中文的編輯視窗丟給他們。這兩件事本來就不一樣。
+  if(currentRole()==="intl"){
     if(isSourceVid(v)){ openSourceForIntl(id); return; }      // 源片 → 只給看四樣
     if(v.channel){ toast(T("這支不在你的區","Not in your area"),true); return; }
   }
@@ -5227,6 +5257,9 @@ let INTL_LOC="en";        // 海外月曆現在看的語言（en/th）
 const LINES={
   shopee:{ key:"shopee", field:"channel", priceKey:"shopee", acctKey:"shopeeAccounts", targetKey:"shopeeDailyTarget" },
   ms:    { key:"ms",     field:"channel", priceKey:"ms",     acctKey:"msAccounts",     targetKey:"msDailyTarget" },
+  // Boss Sunny（v142）：本來是一家獨立公司，但它只需要自己的一份上片行事曆，
+  // 不需要獨立的影片庫／編號／標籤。降級成一條「線」剛好 —— 跟蝦皮、馬來同一套機制。
+  sunny: { key:"sunny",  field:"channel", priceKey:"shopee", acctKey:"sunnyAccounts",  targetKey:"sunnyDailyTarget" },
   en:    { key:"en",     field:"locale",  priceKey:"en",     acctKey:"",               targetKey:"intlDailyTarget" },
   th:    { key:"th",     field:"locale",  priceKey:"th",     acctKey:"",               targetKey:"intlDailyTarget" },
 };
@@ -5355,6 +5388,33 @@ function ownDrive(v){
   const d=String((v&&v.driveFolder)||"").trim(); if(!d) return false;
   if(isSourceVid(v)) return true;
   const s=srcOf(v); return !s || d!==String(s.driveFolder||"").trim();
+}
+// ── 存檔資料夾：一支片的家族只有一個（v142）──────────────────────
+// 第一個拍好毛片的人建的那個資料夾就是唯一的位置，之後這支片衍生出來的
+// 中文版、英文版、一創、二創**全部存在裡面**。
+//
+// 以前每個版本殼都有自己的「存檔連結」欄位，結果大家在每一格填一模一樣的東西
+// （實際資料：501 支片配 486 個資料夾，平均一個資料夾放 1.0 支）—— 那些欄位
+// 只是在製造重複輸入的機會，順便製造「填不一樣」的機會。
+//
+// 舊資料不回頭補：既有的片各自的資料夾就留著，新的走新規矩。
+function familyDrive(v){
+  if(!v) return "";
+  const own=String(v.driveFolder||"").trim();
+  if(own) return own;                         // 自己有就用自己的（含所有舊資料）
+  const s=srcOf(v); return s?String(s.driveFolder||"").trim():"";   // 沒有就沿用源片的
+}
+// 版本殼的存檔欄位改成「唯讀＋說明」：位置由源片決定，不再讓人各填各的
+function familyDriveField(v, idAttr){
+  const d=familyDrive(v);
+  const src=isSourceVid(v);
+  if(src) return "";   // 源片自己那一格照舊（那就是「第一個人建的」那一格）
+  return `<label>${T("存檔位置","File location")}</label>
+    <input id="${esc(idAttr)}" value="${esc(d)}" readonly
+      style="background:var(--panel2)" placeholder="${T("由源片決定","Set by the source video")}">
+    <div class="muted" style="font-size:11px;margin-top:4px">${T(
+      "跟源片同一個資料夾 —— 這支片的所有版本（中文／英文／一創／二創）都存在這裡，不用各填各的。",
+      "Same folder as the source — every version of this video lives here. Nothing to fill in.")}</div>`;
 }
 // 存檔欄位下的小字：值還是源片帶進來的時候才出現
 function inheritedDriveHint(v){
@@ -5605,8 +5665,9 @@ function intlFinish(id){ const v=vid(id)||{}; const t=v.name||v.rawName||T("這�
     T("已完成（進入待審核）","Done — in review"));
 }
 async function intlSaveVideo(id){
+  const v=vid(id)||{};   // 存檔位置由家族決定，要先把這一筆撈出來
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
-    driveFolder:val("i_drive").trim(), publishedLink:val("i_pub").trim(), scheduledDate:val("i_date")||null };
+    driveFolder:familyDrive(v), publishedLink:val("i_pub").trim(), scheduledDate:val("i_date")||null };
   if(document.getElementById("i_acct")) video.account=val("i_acct");
   return await write("PUT",`/api/videos/${id}`,{video},T("已儲存","Saved"));
 }
@@ -5671,7 +5732,7 @@ function openIntlModal(id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案（口播台詞）","Script / copy")}</label><textarea id="i_vcopy" style="min-height:80px" placeholder="${T("翻譯／改編的文案","Translated / adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>${T("成片檔案連結（你重剪的）","Video file URL (your re-cut)")}</label><input id="i_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("你剪好的"+esc(localeShort(v.locale))+"版雲端連結","Cloud link to your "+esc(localeShort(v.locale))+" cut")}">
+      <div>${familyDriveField(v,"i_drive")}
         ${inheritedDriveHint(v)}</div>
       <div><label>${T("上傳連結（TikTok 貼文）","Upload URL (the TikTok post)")}</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
     </div>
@@ -5694,6 +5755,9 @@ const CHANNELS={
   shopee:{ label:"蝦皮", labelEn:"Shopee", short:"蝦", shortEn:"SP", pfx:"shp", zoneName:"影片蝦皮二創區", calName:"蝦皮排程", verName:"蝦皮版本", verNameEn:"Shopee version",
     setName:"蝦皮設定", acctKey:"shopeeAccounts", targetKey:"shopeeDailyTarget", priceKey:"shopee",
     upLabel:"上傳連結（蝦皮貼文）", upPh:"https://shopee.tw/...", srcBadge:"🛍️", gt:"" },
+  sunny:{ label:"Boss Sunny", labelEn:"Boss Sunny", short:"BS", shortEn:"BS", pfx:"bsy", zoneName:"Boss Sunny 區", calName:"Boss Sunny 排程", verName:"Boss Sunny 版本", verNameEn:"Boss Sunny version",
+    setName:"Boss Sunny 設定", acctKey:"sunnyAccounts", targetKey:"sunnyDailyTarget", priceKey:"shopee",
+    upLabel:"上傳連結（Boss Sunny 貼文）", upPh:"https://...", srcBadge:"☀️", gt:"" },
   ms:{ label:"馬來", labelEn:"Malay", short:"馬", shortEn:"MY", pfx:"mys", zoneName:"影片馬來二創區", calName:"馬來排程", verName:"馬來版本", verNameEn:"Malay version",
     setName:"馬來設定", acctKey:"msAccounts", targetKey:"msDailyTarget", priceKey:"ms",
     upLabel:"上傳連結（TikTok 貼文）", upPh:"https://www.tiktok.com/@.../video/...", srcBadge:"🇲🇾", gt:"ms" },   // 馬來版要翻成馬來文 → 文A
@@ -5732,8 +5796,9 @@ function chDiscard(ch,id){ const C=CHANNELS[ch];
     ok:(v)=>T(`已退回資料庫：「${title(v)}」（沒有刪除任何影片）`,`Returned to the library: "${title(v)}" (nothing deleted)`) });
 }
 async function chSaveVideo(ch,id){ const p=CHANNELS[ch].pfx;
+  const v=vid(id)||{};   // 存檔位置由家族決定，要先把這一筆撈出來
   const video={ name:val(p+"_name").trim(), videoCopy:val(p+"_vcopy").trim(),
-    driveFolder:val(p+"_drive").trim(), publishedLink:val(p+"_pub").trim(), scheduledDate:val(p+"_date")||null };
+    driveFolder:familyDrive(v), publishedLink:val(p+"_pub").trim(), scheduledDate:val(p+"_date")||null };
   return await write("PUT",`/api/videos/${id}`,{video},T("已儲存","Saved"));
 }
 function openChModal(ch,id){
@@ -5773,7 +5838,7 @@ function openChModal(ch,id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案","Script / copy")}</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${T(C.verName+"文案（可跟中文版不同）","Adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div><label>${T("影片檔存檔網址（你剪好的檔案）","Video file URL (your re-cut)")}</label><input id="${p}_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("雲端連結","Cloud link")}">
+      <div>${familyDriveField(v,p+"_drive")}
         ${inheritedDriveHint(v)}</div>
       <div><label>${T(C.upLabel,"Upload URL")}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
@@ -5966,6 +6031,8 @@ function setChannelCards(s){
   const shopeeTargetVal=(s.shopeeDailyTarget!=null&&s.shopeeDailyTarget!=="")?s.shopeeDailyTarget:2;
   const msAccountStr=(Array.isArray(s.msAccounts)?s.msAccounts:[]).join("\n");
   const msTargetVal=(s.msDailyTarget!=null&&s.msDailyTarget!=="")?s.msDailyTarget:2;
+  const sunnyAccountStr=(Array.isArray(s.sunnyAccounts)?s.sunnyAccounts:[]).join("\n");
+  const sunnyTargetVal=(s.sunnyDailyTarget!=null&&s.sunnyDailyTarget!=="")?s.sunnyDailyTarget:2;
   return `<div class="card"><b>蝦皮設定</b>
     <div class="muted" style="font-size:12px;margin-top:4px">國內二創：挑已上傳的中文舊片，換個平台重新剪一次上傳蝦皮（同語言、不用翻譯），掛在「剪輯」角色下，任何國內剪輯登入都看得到。</div>
     <label style="margin-top:8px">蝦皮帳號（一行一個）</label>
@@ -5982,6 +6049,15 @@ function setChannelCards(s){
     <label style="margin-top:12px">馬來每日目標（每個帳號每天幾支）</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_mstarget" value="${msTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／帳號／天 —— 馬來排程以此判斷「已排滿／缺幾支」。</span></div>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>Boss Sunny 設定</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">Boss Sunny 本來是一家獨立公司，但它需要的只是自己的一份上片行事曆 —— 所以改成跟蝦皮、馬來同一套：挑片重剪、上傳到自己的帳號、有自己的月排程。影片庫與編號跟主帳號共用。</div>
+    <label style="margin-top:8px">Boss Sunny 帳號（一行一個）</label>
+    <textarea id="set_bsyacct" style="min-height:88px" placeholder="Boss Sunny（@bosssunny）">${esc(sunnyAccountStr)}</textarea>
+    <label style="margin-top:12px">Boss Sunny 每日目標（每個帳號每天幾支）</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_bsytarget" value="${sunnyTargetVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／帳號／天 —— Boss Sunny 排程以此判斷「已排滿／缺幾支」。</span></div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>`;
 }
@@ -6091,8 +6167,9 @@ function viewSettings(){
   // 要換區就改職位，只有一個真相來源
   const zoneCell=(u)=>{
     if(NO_EDIT_ROLES.includes(u.role)) return '<span class="muted" style="font-size:12px">不剪片</span>';
-    const z=zoneOfUser(u.name);
-    return `<span class="muted" style="font-size:12px">${z==="both"?"全部":(z==="intl"?"海外":"台灣")}</span>`;
+    // v142 拆掉分區之後每個人都看得到全部，這一欄改成寫「他是哪一邊的人」——
+    // 那還是有意義的（誰在巴基斯坦），只是不再代表看得到什麼。
+    return `<span class="muted" style="font-size:12px">${u.role==="intl"?"巴基斯坦":"台灣"}</span>`;
   };
   const whSel=(u)=>{ const w=workHoursOf(u.name);
     const flexBox=`<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
@@ -6269,6 +6346,11 @@ async function saveSettings(){
   if(document.getElementById("set_msacct")){
     settings.msAccounts=(val("set_msacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
     settings.msDailyTarget=parseInt(val("set_mstarget"))||0;
+  }
+  // Boss Sunny 設定（v142：從一家公司降級成一條上片線）
+  if(document.getElementById("set_bsyacct")){
+    settings.sunnyAccounts=(val("set_bsyacct")||"").split("\n").map(s=>s.trim()).filter(Boolean);
+    settings.sunnyDailyTarget=parseInt(val("set_bsytarget"))||0;
   }
   // 匯率有格子讀不出來的話，成功訊息要換成紅字警告 —— toast 只有一格，
   // 讓 writeAdmin 先跳「已更新設定」再被蓋掉的話，人只會看到後面那一則，

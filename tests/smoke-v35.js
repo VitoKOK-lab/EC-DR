@@ -82,8 +82,9 @@ ok("intl Schedule stays English standalone", viewEl.innerHTML.includes("Schedule
 // --- 上班計畫：台灣剪輯只看得到台灣的線（v115 分區）---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let h=viewWork();
-ok("待認領不再出現英文版（台灣看不到海外）", !h.includes(`claimVid('V101')`));
-ok("待認領也不出現在快選分類裡", !h.includes(`setPoolFilter('en')`));
+// v142 拆掉分區：同一個池子，台灣也認領得到英文版
+ok("待認領也出現英文版（v142 同一個池）", h.includes(`claimVid('V101')`));
+ok("快選分類也有英文那一類", h.includes(`setPoolFilter('en')`));
 ok("myWork shows TH in-progress with TH badge", h.includes(">TH</span>") && h.includes("TH cut"));
 ok("myWork TH item uses intlFinish/intlUnclaim", h.includes(`intlFinish('V102')`) && h.includes(`intlUnclaim('V102')`));
 ok("myWork still shows 蝦 badge + ms todo 馬 badge", h.includes(">蝦</span>") && h.includes(">馬</span>"));
@@ -105,7 +106,7 @@ global.window.DB={ set:async(c,id,o)=>{calls.push([c,id,o]);}, update:async(c,id
   localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
   WORK_ZONE="en"; const z=createZoneCard();
   ok("海外的建立版本只有英文／泰文", z.includes(">English (TikTok)<") && z.includes(">Thai (TikTok)<"));
-  ok("海外看不到蝦皮／馬來西亞", !z.includes(">Shopee<") && !z.includes(">Malaysia<"));
+  ok("海外現在也建得了蝦皮／馬來（二創雙向）", z.includes(">Shopee<") && z.includes(">Malaysia<"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);

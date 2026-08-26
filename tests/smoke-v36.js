@@ -72,11 +72,14 @@ ok("台灣庫完全看不到泰文原創", !h.includes("Thai original clip"));
   localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
   const pool=poolAll().map(v=>v.id);
   ok("海外的待認領池有泰文／英文原創", pool.includes("S2") && pool.includes("S3"));
-  ok("海外的待認領池沒有中文毛片與蝦皮版", !pool.includes("OLD1") && !pool.includes("V201"));
+  ok("海外的待認領池也有中文毛片（v142 同一個池）", pool.includes("OLD1"));
+  // ⚠️ V201 不在池裡是因為它 assignedTo=「小葵」（v124 指派鎖），不是因為分區 ——
+  //    這兩個原因不要混在一起看，不然拆掉分區之後會誤判。
+  ok("被指派給別人的那支照樣不在池裡（指派鎖跟分區是兩回事）", !pool.includes("V201"));
   ok("泰文原創在池裡歸「泰文」那一類", poolCat(vid("S2"))==="th" && poolCat(vid("S3"))==="en");
   localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
   const twPool=poolAll().map(v=>v.id);
-  ok("台灣的待認領池看不到泰文／英文原創", !twPool.includes("S2") && !twPool.includes("S3"));
+  ok("台灣的待認領池也看得到泰文／英文原創", twPool.includes("S2") && twPool.includes("S3"));
   localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss"); }
 VID_LANG="my"; VID_VIEW="old"; h=viewVideos();
 ok("馬來庫舊片分頁列出馬來原本", h.includes("Malay original"));

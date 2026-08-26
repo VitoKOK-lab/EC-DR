@@ -78,7 +78,8 @@ reset(LIB); as("小葵","editor");
   ok("待認領的快選也包了 span", w.includes("<span>全部</span> <span class=\"vtab-n\">"));
   ok("待認領四個快選都在（台灣區）", ["全部","中文毛片","蝦皮","馬來西亞"]
      .every(x=>w.includes("<span>"+x+"</span>")));
-  ok("台灣看不到英文／泰文快選", !w.includes("<span>英文</span>") && !w.includes("<span>泰文</span>")); }
+  // v142 拆掉分區：快選六類全在
+  ok("台灣也看得到英文／泰文快選", w.includes("<span>英文</span>") && w.includes("<span>泰文</span>")); }
 // v115 分區：海外的影片庫沒有四個管線分頁
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();

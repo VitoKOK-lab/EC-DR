@@ -83,15 +83,16 @@ ok("英文版本殼 → 海外", zoneOfVideo(vid("VEN"))==="intl");
 ok("空值不炸", zoneOfVideo(null)==="tw" && zoneOfVideo(undefined)==="tw");
 ok("認不得的 origLang 當成中文（台灣）", zoneOfVideo({id:"X",origLang:"zz"})==="tw");
 
-// ══════════ ② 待認領池：兩邊各看各的 ══════════
+// ══════════ ② 待認領池：v142 起是同一個池子 ══════════
+// 以前這裡是「兩邊各看各的」—— 那道牆拆掉了，一份腳本兩組人拍，毛片放一起。
+const ALLPOOL="EN,MS,MY,OLD,SHP,TH,VEN,ZH";
 reset(); as("小葵","editor");
 { const p=poolAll().map(v=>v.id).sort().join(",");
-  ok("台灣的池＝中文＋舊資料＋馬來原創＋蝦皮版＋馬來版", p==="MS,MY,OLD,SHP,ZH");
-  ok("台灣的池沒有泰文／英文原創", !p.includes("TH") && !p.includes("EN")); }
+  ok("台灣剪輯看得到整個池（含泰文／英文原創）", p===ALLPOOL); }
 reset(); as("Anna","intl");
 { const p=poolAll().map(v=>v.id).sort().join(",");
-  ok("海外的池＝泰文原創＋英文原創＋英文版本殼", p==="EN,TH,VEN");
-  ok("海外的池沒有中文毛片、蝦皮、馬來", ["ZH","OLD","MY","SHP","MS"].every(x=>!p.split(",").includes(x))); }
+  ok("海外剪輯也看得到整個池（含中文毛片）", p===ALLPOOL);
+  ok("海外的池也包含中文毛片、蝦皮、馬來", ["ZH","OLD","MY","SHP","MS"].every(x=>p.split(",").includes(x))); }
 reset(); as("Regina","manager");
 ok("主管的池兩區都在（8 支）", poolAll().length===8);
 
@@ -105,13 +106,13 @@ ok("英文版本殼的分類是 en", poolCat(vid("VEN"))==="en");
 reset(); as("小葵","editor");
 { const w=viewWork();
   const seg=(w.split("待認領（毛片＋二創版本）")[1]||"").split("</table>")[0];
-  ok("台灣的待認領清單裡沒有泰文片", !seg.includes("หินธรรมชาติ"));
-  ok("台灣的待認領清單裡沒有那支英文片", !seg.includes("Growing Up Taiwanese"));
+  ok("台灣的待認領清單裡也看得到泰文片（同一個池）", seg.includes("หินธรรมชาติ"));
+  ok("台灣的待認領清單裡也看得到那支英文片", seg.includes("Growing Up Taiwanese"));
   ok("台灣的待認領清單有中文毛片", seg.includes("'ZH'")); }
 reset(); as("Anna","intl");
 { const w=viewWork();
   ok("海外的待認領清單有泰文片", w.includes("'TH'"));
-  ok("海外的待認領清單沒有中文毛片", !w.includes("'ZH'") && !w.includes("'SHP'")); }
+  ok("海外的待認領清單也看得到中文毛片（這就是這次改動的重點）", w.includes("'ZH'") && w.includes("'SHP'")); }
 
 // ══════════ ④ 影片庫 ══════════
 reset(); as("小葵","editor");
@@ -129,12 +130,12 @@ reset(); as("小葵","editor");
 reset(); as("小葵","editor");
 { const t=viewTeam();
   ok("台灣剪輯看得到台灣同事", t.includes("小葵") && t.includes("小美"));
-  ok("台灣剪輯看不到海外同事", !t.includes("Anna"));
+  ok("台灣剪輯現在看得到海外同事（團隊看板不再分區）", t.includes("Anna"));
   ok("人資（管理層）對所有人可見", t.includes("HR小姐")); }
 reset(); as("Anna","intl");
 { const t=viewTeam();
   ok("海外看得到自己", t.includes("Anna"));
-  ok("海外看不到台灣同事", !t.includes("小葵") && !t.includes("小美")); }
+  ok("海外現在看得到台灣同事（團隊看板不再分區）", t.includes("小葵") && t.includes("小美")); }
 for(const [u,r] of [["Regina","manager"],["管理員","boss"],["HR小姐","hr"]]){
   reset(); as(u,r);
   const t=viewTeam();
@@ -142,18 +143,18 @@ for(const [u,r] of [["Regina","manager"],["管理員","boss"],["HR小姐","hr"]]
 }
 reset();
 ok("seesPerson：管理層永遠看得到", (as("小葵","editor"), seesPerson("Regina") && seesPerson("HR小姐")));
-ok("seesPerson：台灣看不到海外的人", (as("小葵","editor"), !seesPerson("Anna")));
-ok("seesPerson：海外看不到台灣的人", (as("Anna","intl"), !seesPerson("小葵")));
+ok("seesPerson：台灣現在看得到海外的人", (as("小葵","editor"), seesPerson("Anna")));
+ok("seesPerson：海外現在看得到台灣的人", (as("Anna","intl"), seesPerson("小葵")));
 
 // ══════════ ⑥ 月排程與建立版本不受影響（還是靠平台代碼推）══════════
 reset(); as("小葵","editor"); CAL_PLAT="tw"; CAL_YM=null;
 { const c=viewCal();
-  ok("台灣月排程只有中文／蝦皮／馬來西亞", c.includes(">中文<") && c.includes(">蝦皮<") && c.includes(">馬來西亞<")
-     && !c.includes(">英文<") && !c.includes(">泰文<")); }
+  ok("台灣月排程五個平台全在（v142 不分區）",
+     [">中文<",">蝦皮<",">馬來西亞<",">英文<",">泰文<"].every(x=>c.includes(x))); }
 reset(); as("Anna","intl"); CAL_PLAT="en"; CAL_YM=null;
 { const c=viewCal();
-  ok("海外月排程只有英文／泰文", c.includes(">English<") && c.includes(">Thai<")
-     && !c.includes(">Chinese<") && !c.includes(">Shopee<")); }
+  ok("海外月排程五個平台也全在（v142 不分區）",
+     [">English<",">Thai<",">Chinese<",">Shopee<",">Malaysia<"].every(x=>c.includes(x))); }
 
 // ══════════ ⑦ render 不炸 ══════════
 reset();
