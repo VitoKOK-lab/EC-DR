@@ -5124,6 +5124,7 @@ function openVideoModal(id, edit, fromWork){
           <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}">
           <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1;min-width:0" placeholder="${T("原始片名","Raw title")}">
         </div>
+        ${enFieldHTML("e_nameEn", T("英文片名","English title"), v.nameEn||"", "e_raw")}
       </div>
     </div>
     ${isSourceVid(v)?`<label>${T("原本語言（這支影片是什麼語言拍的）","Original language")}</label>
@@ -5133,6 +5134,7 @@ function openVideoModal(id, edit, fromWork){
     <label>${T("影片文案（影片中 IP 的口播台詞）","Script (spoken lines)")}</label>
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
+    ${enFieldHTML("e_vcopyEn", T("英文腳本","English script"), v.videoCopyEn||"", "e_vcopy", true)}
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
@@ -5201,7 +5203,9 @@ async function saveVideo(id){
     products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim())};
+    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
+    // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
+    nameEn:val("e_nameEn").trim(), videoCopyEn:val("e_vcopyEn").trim()};
   if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
   return await write("PUT",`/api/videos/${id}`,{video},T("已更新影片","Video updated"));
 }
@@ -5293,6 +5297,28 @@ const LOCALE_GT={en:"en",th:"th",ms:"ms"};   // Google 翻譯目標語言
 function localeName(l){ return LOCALE_NAME[l]||String(l||"").toUpperCase(); }
 function localeShort(l){ return LOCALE_SHORT[l]||String(l||"").toUpperCase(); }
 function gtranslate(text, tl){ return "https://translate.google.com/?sl=zh-TW&tl="+(tl||"en")+"&op=translate&text="+encodeURIComponent(String(text||"").slice(0,1800)); }
+// ── 中文欄位底下配一個英文欄位（v141）────────────────────────────────
+// 第一格中文、第二格英文，旁邊一顆翻譯圖示：點下去開 Google 翻譯，
+// **中文內容已經帶在網址裡**，人只要複製結果貼回第二格，之後想改就自己改。
+// 刻意做成半自動：不串翻譯 API，翻出來的東西一定有人看過才會存進去。
+// srcId＝旁邊那個中文欄位的 id，按下去的當下才去讀它（使用者可能剛改過還沒存）。
+function enFieldHTML(id, label, val0, srcId, big){
+  return `<label style="margin-top:10px">${esc(label)}
+      <a class="tricon" href="javascript:void(0)" onclick="trOpen('${esc(jsEsc(srcId))}')"
+         title="${T("用 Google 翻譯這一格的中文，翻好自己貼回來","Translate the Chinese above with Google Translate, then paste it back")}">文<span>A</span></a>
+    </label>
+    ${big ? `<textarea id="${esc(id)}" class="grow" rows="1" autocomplete="off" onfocus="this.rows=6"
+              placeholder="${T("英文腳本（按上面的翻譯，貼回來後可以自己改）","English script — translate above, paste back, edit freely")}">${esc(val0)}</textarea>`
+          : `<input id="${esc(id)}" value="${esc(val0)}"
+              placeholder="${T("英文片名（按上面的翻譯，貼回來後可以自己改）","English title — translate above, paste back, edit freely")}">`}`;
+}
+// 開 Google 翻譯，把那一格當下的中文帶過去
+function trOpen(srcId){
+  const t=String(val(srcId)||"").trim();
+  if(!t){ toast(T("上面那一格還沒有中文可以翻","Nothing to translate yet"),true); return; }
+  try{ window.open(gtranslate(t,"en"), "_blank", "noopener"); }
+  catch(e){ toast(T("開不了翻譯視窗，請檢查瀏覽器有沒有擋彈出視窗","Couldn't open the translator — check your popup blocker"),true); }
+}
 // 商品原價／售價（寵粉價）換算：海外二創依「源片」商品價格即時換算成對應幣別顯示（唯讀，只有源片能編輯）
 // 每個平台（含蝦皮）另有「加乘」倍數：顯示價 = 源片價 × 匯率 × 加乘（蝦皮同幣別，匯率固定 1、只吃加乘）
 const DEFAULT_CURRENCY={en:"USD",th:"THB",ms:"MYR",shopee:"TWD"};
