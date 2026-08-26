@@ -1652,11 +1652,13 @@ function workReviewCard(me){
   // 已審過（不論 Regina 按的還是剪輯自己按的）都要「亮出來」，不能沈下去：
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
-  // 存檔連結要是「自己剪的那一支」；只是繼承源片的資料夾不算補齊，提醒不能提早消失
-  // 同一個病灶的第二個受害者：源片填不了上片連結，linksDone 就永遠是 false，
-  // 「已審過」的片會一直掛在這張卡上叫，剪輯按了「知道了」才走得掉。
   // 源片只看存檔連結（那一格填得到），二創殼才連上片連結一起看。
-  const linksDone=(v)=>!!(ownDrive(v) && (!needPostLink(v) || String(v.publishedLink||"").trim()));
+  // ⚠️ 二創殼的存檔位置一律跟源片同一個資料夾、而且是唯讀的，它永遠不會有「自己的」
+  //    資料夾 —— 所以這裡要看整個家族有沒有（familyDrive），不能看它自己有沒有
+  //    （ownDrive）。看錯的話「已審過」會永遠掛在這張卡上叫，跟之前那顆熄不掉的
+  //    「缺上片連結」是同一個病。
+  const linksDone=(v)=>!!((isVersion(v)?familyDrive(v):ownDrive(v))
+    && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
@@ -3590,7 +3592,7 @@ function batchNewFootage(){ if(dbBlocked()) return;
       <label>${T("影片文案（口播台詞）· 填了片名就必填","Script (spoken lines) · required once a title is filled")}</label>
       <input id="bv${i}" autocomplete="off" placeholder="${T("這支要講什麼","What this clip should say")}">
       <label>${T("毛片雲端連結","Raw footage cloud link")}</label>
-      <input id="bl${i}" placeholder="${T("毛片原始檔雲端連結（選填）","Cloud link (optional)")}">
+      <input id="bl${i}" placeholder="${T("存檔資料夾網址（選填，拍完再補也可以）","Drive folder URL (optional, can be added later)")}">
       ${productRows("b"+i, [])}
     </fieldset>`;
   }
@@ -3607,7 +3609,7 @@ function batchNewFootage(){ if(dbBlocked()) return;
       const vcopy=zhTW((val("bv"+i)||"").trim());
       if(!vcopy){ toast(T("第 "+(i+1)+" 支有片名但沒填文案，請補上（或把片名清空跳過這支）",
                           "Clip "+(i+1)+" has a title but no script — fill it in, or clear the title to skip"),true); return false; }
-      items.push({name, videoCopy:vcopy, rawLink:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
+      items.push({name, videoCopy:vcopy, driveFolder:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
     // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
     // 編號要先全部算完再寫：nextVideoCode(made) 得看著已產生的那幾支才不會撞號，
@@ -3616,7 +3618,7 @@ function batchNewFootage(){ if(dbBlocked()) return;
     for(let i=0;i<items.length;i++){
       made.push(newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
         videoCopy:items[i].videoCopy,
-        rawLink:items[i].rawLink, products:items[i].products, origLang:bLang,
+        driveFolder:items[i].driveFolder, products:items[i].products, origLang:bLang,
         tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}));   // 有銷售商品 → 自動帶「寵粉」
     }
     BULK_BUSY=true; let r={done:0,failed:0};
@@ -3675,7 +3677,8 @@ function newSimpleVideo(){
     <label>${T("原本語言（這支影片是什麼語言拍的）","Original language (what language was it shot in)")}</label>
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <label>${T("原始片名","Raw title")}</label><input id="sv_name" placeholder="${T("毛片名稱","Raw footage name")}">
-    <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="sv_link" placeholder="${T("毛片原始檔雲端連結（選填）","Cloud link (optional)")}">
+    <label>${T("存檔資料夾（毛片跟之後所有版本都放這裡）","Drive folder (the raw footage and every later version live here)")}</label>
+    <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址（拍完再補也可以）","Google Drive folder URL (can be added after shooting)")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
     ${productRows("sv", [])}
@@ -3686,7 +3689,7 @@ function newSimpleVideo(){
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
     const svProducts=collectProducts("sv");
-    const video={name, rawName:name, rawLink:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
+    const video={name, rawName:name, driveFolder:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
       origLang:val("sv_lang")||"",
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
@@ -3811,7 +3814,12 @@ function vidIsOld(v){
 // 有寫文案、但毛片還沒拍（沒有毛片雲端連結）——「待剪」的前一站
 // 為什麼用「有沒有毛片雲端連結」判斷：原始片名每一支都有（新增時必填），
 // 毛片連結才是「這支真的拍出來了」的訊號；實際資料裡待剪的 58 支有 57 支都填了。
-const vidHasRaw=(v)=>!!String(v&&v.rawLink||"").trim();
+// 毛片放在哪：就是這支的資料夾。
+// 「毛片雲端連結」跟「存檔位置」本來就是同一個地方 —— 第一個拍好毛片的人開的那個
+// 資料夾，毛片、成片、二創、封面全在裡面。以前拆成兩格只是在讓人把同一條網址貼兩次。
+// 舊資料各自填過的 rawLink 照樣認（不回頭改資料），沒有的就看資料夾。
+const vidRawLink=(v)=>String(v&&v.rawLink||"").trim() || familyDrive(v);
+const vidHasRaw=(v)=>!!vidRawLink(v);
 // 還沒拍＝沒有毛片雲端連結。判斷只看這一個欄位：
 // 原始片名每一支都有（新增時必填），文案則常常晚一點才補，
 // 所以「有沒有文案」不能拿來判斷拍了沒 —— 只填片名就排日期的那些，
@@ -5037,7 +5045,9 @@ function vidMissing(v){
     // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
     if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
-    if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    // 存檔位置跟源片同一個資料夾（唯讀），版本殼不會有自己的 —— 所以問「這一家有沒有」，
+    // 不是問「它自己有沒有」。問錯就是又一顆永遠熄不掉的燈號。
+    if(isPublished(v) && !familyDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     return out;
   }
   if(isDF(v)){
@@ -5090,8 +5100,8 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("商品","Products"), prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（NT$${esc(p.price)}${p.salePrice?T(`／寵粉價 NT$${esc(p.salePrice)}`,` / Fan price NT$${esc(p.salePrice)}`):''}）`:"")).join("、"):'')}
       ${row(T("商品頁網址","Product page"), v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row(T("預排上片日","Scheduled"), esc(v.scheduledDate||""))}
-      ${row(T("毛片雲端連結","Raw footage"), v.rawLink?`<a href="${esc(v.rawLink)}" target="_blank">${T("開啟","Open")}</a>`:'')}
-      ${row(T("完成影片存檔連結","Finished file"), v.driveFolder?`<a href="${esc(v.driveFolder)}" target="_blank">${T("開啟","Open")}</a>`:'')}
+      ${row(T("存檔資料夾（毛片・成片・二創・封面都在這）","Drive folder (footage, cuts, remakes, cover)"),
+            vidRawLink(v)?`<a href="${esc(vidRawLink(v))}" target="_blank">${T("開啟","Open")}</a>`:'')}
       ${editLinksHTML(v.productUrl)}
       ${localizedCard}
       ${metricsCard}
@@ -5138,8 +5148,9 @@ function openVideoModal(id, edit, fromWork){
   // 折疊分組（v111）：四個人輪流做全部的事，所以不能依角色隱藏 —— 依「資料類型」折。
   // 每次都要看的留在上面；其餘收起來，但只要裡面已經有資料就自動展開（不然會以為是空的）。
   const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
-  const hasPost = !!String(v.driveFolder||"").trim() || usageList(v).length>0
-                  || (Array.isArray(v.metrics)&&v.metrics.length>0);
+  // 存檔資料夾從這一折搬到上面（拍毛片的人一進來就要看到，不是上片後才填），
+  // 所以這裡不再拿 driveFolder 當「有沒有料」的依據。
+  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0);
   // 「進階」一律收起來（都是選填、少碰的欄位）。裡面有東西時在標題上標個數字
   // 提示，這樣不用打開也知道有料 —— 比自動展開安靜，又不會讓人漏看。
   // 注意 name 不能拿來判斷：存檔時它預設會跟原始片名一樣，等於永遠有值。
@@ -5165,7 +5176,7 @@ function openVideoModal(id, edit, fromWork){
     <textarea id="e_vcopy" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen()"
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
     ${enFieldHTML("e_vcopyEn", T("英文腳本","English script"), v.videoCopyEn||"", "e_vcopy", true)}
-    <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
+    ${familyDriveField(v,"e_drive") || ownerDriveField(v,"e_drive")}
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
     ${nextDaysStrip("e_date")}
@@ -5176,8 +5187,6 @@ function openVideoModal(id, edit, fromWork){
       <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
       <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd)}
     ${fold(T("上片後","After publishing"), null, `
-      <label>${T("完成影片存檔連結","Finished file link")}</label>
-      <input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
@@ -5219,6 +5228,7 @@ function openVideoModal(id, edit, fromWork){
     closeModal(); };
 }
 async function saveVideo(id){
+  const v0=vid(id)||{};   // 毛片連結那一格已經併進資料夾，舊值原封不動留著
   // 銷售商品 與 商品頁網址 須一起填或一起空白（只填一邊 → 擋下不存）
   const products=collectProducts("e"); const productUrl=val("e_url").trim();
   const hasProd=products.some(p=>p&&p.name);
@@ -5233,7 +5243,7 @@ async function saveVideo(id){
     products, productUrl,
     source:val("e_src"),stage:val("e_stage"),editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
-    driveFolder:val("e_drive"), rawLink:val("e_rawlink").trim(), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
+    driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
     nameEn:val("e_nameEn").trim(), videoCopyEn:val("e_vcopyEn").trim()};
   if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
@@ -5404,6 +5414,12 @@ function familyDrive(v){
   if(own) return own;                         // 自己有就用自己的（含所有舊資料）
   const s=srcOf(v); return s?String(s.driveFolder||"").trim():"";   // 沒有就沿用源片的
 }
+// 資料夾這條規矩三個地方都要講（源片那一格、二創那一格、海外看源片的卡片），
+// 所以只寫一次 —— 三個地方各寫一份遲早會走鐘。中英文都在，因為海外看的是英文介面。
+function driveRuleLine(){
+  return T("這支延伸出去的全部影片（中文版／英文版、一創／二創）跟封面，通通放進同一個資料夾。",
+           "Everything that comes from this video — Chinese and English versions, first cuts and remakes, and the cover — all go in that same folder.");
+}
 // 版本殼的存檔欄位改成「唯讀＋說明」：位置由源片決定，不再讓人各填各的
 function familyDriveField(v, idAttr){
   const d=familyDrive(v);
@@ -5412,16 +5428,26 @@ function familyDriveField(v, idAttr){
   return `<label>${T("存檔位置","File location")}</label>
     <input id="${esc(idAttr)}" value="${esc(d)}" readonly
       style="background:var(--panel2)" placeholder="${T("由源片決定","Set by the source video")}">
-    <div class="muted" style="font-size:11px;margin-top:4px">${T(
-      "跟源片同一個資料夾 —— 這支片的所有版本（中文／英文／一創／二創）都存在這裡，不用各填各的。",
-      "Same folder as the source — every version of this video lives here. Nothing to fill in.")}</div>`;
+    <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">${T(
+      "這個資料夾是第一個拍好毛片的人開的，名字就是源片的檔名。",
+      "This folder was created by whoever shot the raw footage first, and is named after the source video's file name.")}<br>
+      ${driveRuleLine()}${T("你不用自己填。"," Nothing to fill in here.")}</div>`;
 }
-// 存檔欄位下的小字：值還是源片帶進來的時候才出現
-function inheritedDriveHint(v){
-  if(!v || isSourceVid(v) || ownDrive(v) || !String(v.driveFolder||"").trim()) return "";
-  return `<div class="muted" style="font-size:11px;margin-top:4px">${T(
-    "自動帶入源片的存檔位置 — 剪好後請換成你自己的檔案連結（存在同一個資料夾）",
-    "Pre-filled with the source's folder — replace it with the link to your own cut (keep it in the same folder)")}</div>`;
+// 源片那一格：這是「第一個拍好毛片的人」要去 Google 雲端硬碟開資料夾的地方。
+// 規矩寫在欄位旁邊，中英文都寫 —— 不然新人只會看到一個空白欄位，不知道要填什麼、
+// 更不知道資料夾要取什麼名字。名字一律用這支的檔名，這樣資料夾跟片子對得起來。
+function ownerDriveField(v, idAttr){
+  if(!isSourceVid(v)) return "";
+  const nm=String((v&&(v.rawName||v.name))||"").trim();
+  return `<label>${T("存檔資料夾（這支片的所有東西都放這裡）","Drive folder (everything for this video lives here)")}</label>
+    <input id="${esc(idAttr)}" value="${esc((v&&v.driveFolder)||"")}"
+      placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">
+    <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">
+      ${T("第一個拍好毛片的人：先到 Google 雲端硬碟開一個新資料夾，名字就用這支的檔名",
+          "Whoever shoots the raw footage first: create a new folder in Google Drive, named after this video's file name")}${
+      nm?` —— <b>${esc(nm)}</b> <a href="javascript:void(0)" onclick="copyStr('${esc(jsEsc(encodeURIComponent(nm)))}')">${T("複製檔名","copy")}</a>`:""}${T("。","." )}<br>
+      ${driveRuleLine()}
+    </div>`;
 }
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
@@ -5683,7 +5709,7 @@ function srcBriefCard(s, loc){
   // nameEn/videoCopyEn 只是「英文」；非英文語系一律提供翻譯到自己語言的按鈕
   const needTitleTr=(loc!=="en")||!s.nameEn;
   const needScriptTr=!!s.videoCopy && ((loc!=="en")||!s.videoCopyEn);
-  const warn=[!s.rawLink?T('毛片','raw footage'):'', !(s.driveFolder||s.publishedLink)?T('中文成片','finished Chinese version'):''].filter(Boolean).join(T(' 和 ',' & '));
+  const warn=[!vidHasRaw(s)?T('毛片','raw footage'):'', !(s.driveFolder||s.publishedLink)?T('中文成片','finished Chinese version'):''].filter(Boolean).join(T(' 和 ',' & '));
   const trIcon=(text)=>`<a class="tricon" href="${gtranslate(text,tl)}" target="_blank" title="${T("翻譯成"+esc(lnameT),"Translate to "+esc(lname))}">文<span>A</span></a>`;
   return `<div class="card" style="background:var(--panel2)">
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">${T("來源・台灣","Source · Taiwan")}</div>
@@ -5698,8 +5724,11 @@ function srcBriefCard(s, loc){
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
         ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ ${T("看中文成片","Watch Chinese")}</button>`:''}
         ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ ${T("下載成片","Download original file")}</a>`:''}
-        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
+        ${vidHasRaw(s)?`<a class="btn sm" href="${esc(vidRawLink(s))}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
       </div>
+      <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.6">🗂 ${
+        s.driveFolder?`<a href="${esc(s.driveFolder)}" target="_blank">${T("這一支的資料夾","This video's folder")}</a> · `:''
+      }${driveRuleLine()}</div>
       ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ ${T("缺少"+warn+"連結 — 請管理員補上。","No "+warn+" linked — ask the admin to add it.")}</div>`:''}
     </div>
   </div>`;
@@ -5732,8 +5761,7 @@ function openIntlModal(id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案（口播台詞）","Script / copy")}</label><textarea id="i_vcopy" style="min-height:80px" placeholder="${T("翻譯／改編的文案","Translated / adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div>${familyDriveField(v,"i_drive")}
-        ${inheritedDriveHint(v)}</div>
+      <div>${familyDriveField(v,"i_drive")}</div>
       <div><label>${T("上傳連結（TikTok 貼文）","Upload URL (the TikTok post)")}</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date (when it will go live)")}</label>
@@ -5811,7 +5839,7 @@ function openChModal(ch,id){
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">${T(C.verName,C.verNameEn)} <span class="muted" style="font-size:12px;font-weight:400">${esc(vidCode(s)||"")}</span></h3>
       <button class="btn sec sm" type="button" onclick="closeModal()" title="${T("關閉","Close")}">×</button></div>`;
-  const warn=[!s.rawLink?T('毛片','raw footage'):'', !(s.driveFolder||s.publishedLink)?T('中文完成片','finished cut'):''].filter(Boolean).join(T('、',' & '));
+  const warn=[!vidHasRaw(s)?T('毛片','raw footage'):'', !(s.driveFolder||s.publishedLink)?T('中文完成片','finished cut'):''].filter(Boolean).join(T('、',' & '));
   const sourceCard=`<div class="card" style="background:var(--panel2)">
     <div class="muted" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">${T("來源 · 中文版","Source · Original")}</div>
     <div style="font-weight:700;font-size:15px;margin-top:4px">${esc(stripHash(s.name||s.rawName||"")||T("(未命名)","(untitled)"))}${trIcon(s.name||s.rawName)}</div>
@@ -5825,7 +5853,7 @@ function openChModal(ch,id){
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
         ${(s.publishedLink||s.driveFolder)?`<button class="btn sec sm" type="button" onclick="openVidPreview('${encodeURIComponent(s.publishedLink||s.driveFolder)}')">▶ ${T("看中文成片","Watch original")}</button>`:''}
         ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ ${T("下載完成片存檔","Download finished cut")}</a>`:''}
-        ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
+        ${vidHasRaw(s)?`<a class="btn sm" href="${esc(vidRawLink(s))}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
       </div>
       ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ ${T("缺"+warn+"連結，請請管理員補上。","No "+warn+" linked — ask the admin to add it.")}</div>`:''}
     </div>
@@ -5838,8 +5866,7 @@ function openChModal(ch,id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案","Script / copy")}</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${T(C.verName+"文案（可跟中文版不同）","Adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div>${familyDriveField(v,p+"_drive")}
-        ${inheritedDriveHint(v)}</div>
+      <div>${familyDriveField(v,p+"_drive")}</div>
       <div><label>${T(C.upLabel,"Upload URL")}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date")}</label>

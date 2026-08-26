@@ -127,7 +127,9 @@ openVideoModal("V1", true);
   const top=m.split("<summary>商品與導購")[0];   // 第一個折疊區塊之前＝一進來就看得到的
   ok("片名在上面", top.includes('id="e_raw"'));
   ok("文案在上面", top.includes('id="e_vcopy"'));
-  ok("毛片連結在上面", top.includes('id="e_rawlink"'));
+  // v145：「毛片雲端連結」跟「存檔位置」併成同一格了（本來就是同一個地方）
+  ok("存檔資料夾在上面（毛片就放這裡）", top.includes('id="e_drive"'));
+  ok("不再有另一格毛片連結", !top.includes('id="e_rawlink"'));
   ok("上片日期在上面", top.includes('id="e_date"'));
   ok("標籤在上面", top.includes('id="e_box"'));
   ok("商品沒有攤在上面", !top.includes('id="e_pn0"'));
@@ -167,9 +169,13 @@ ok("有商品 → 自動展開", isOpen(modalHTML,"商品與導購"));
 reset([v_("V1",{productUrl:"http://shop/x"})]); as("Regina","manager");
 openVideoModal("V1", true);
 ok("只有商品網址也自動展開", isOpen(modalHTML,"商品與導購"));
+// v144：存檔資料夾搬出「上片後」了 —— 那一格是拍毛片的人一開始就要填的，
+// 不是上片之後才填。所以它不再是「上片後有沒有料」的依據，而是一定看得到。
 reset([v_("V1",{driveFolder:"http://drive/done"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有完成存檔連結 → 上片後自動展開", isOpen(modalHTML,"上片後"));
+ok("存檔資料夾不用展開就看得到（在主畫面，不在折疊裡）",
+   modalHTML.includes('id="e_drive"') && modalHTML.indexOf('id="e_drive"')<modalHTML.indexOf("上片後"));
+ok("只有存檔資料夾不會讓「上片後」自動展開", !isOpen(modalHTML,"上片後"));
 reset([v_("V1",{metrics:[{platform:"IG",views:100}]})]); as("Regina","manager");
 openVideoModal("V1", true);
 ok("有成效資料 → 上片後自動展開", isOpen(modalHTML,"上片後"));

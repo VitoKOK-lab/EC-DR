@@ -218,9 +218,13 @@ ok("有剪輯人員不算有料（是認領時自動填的）", !/<summary>進�
 reset([v_("V1",{products:[{name:"茶晶手鍊"}]})]); as("Regina","manager");
 openVideoModal("V1", true);
 ok("有商品時「商品與導購」照樣自動展開", isOpen(modalHTML,"商品與導購"));
+// v144：存檔資料夾搬到主畫面了（拍毛片的人一進來就要填），不再影響這一折
 reset([v_("V1",{driveFolder:"http://d"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("有完成存檔連結時「上片後」照樣自動展開", isOpen(modalHTML,"上片後"));
+ok("存檔資料夾在主畫面，不用展開", modalHTML.indexOf('id="e_drive"')<modalHTML.indexOf("上片後"));
+reset([v_("V1",{metrics:[{platform:"IG",views:9}]})]); as("Regina","manager");
+openVideoModal("V1", true);
+ok("有成效資料時「上片後」照樣自動展開", isOpen(modalHTML,"上片後"));
 
 // ══════════ ⑥ 存檔照樣讀得到 ══════════
 reset([v_("V1")]);
