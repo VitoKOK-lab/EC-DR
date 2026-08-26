@@ -127,7 +127,9 @@ openVideoModal("V1", true);
   const top=m.split("<summary>商品與導購")[0];   // 第一個折疊區塊之前＝一進來就看得到的
   ok("片名在上面", top.includes('id="e_raw"'));
   ok("文案在上面", top.includes('id="e_vcopy"'));
-  ok("毛片連結在上面", top.includes('id="e_rawlink"'));
+  // v145：「毛片雲端連結」跟「存檔位置」併成同一格了（本來就是同一個地方）
+  ok("存檔資料夾在上面（毛片就放這裡）", top.includes('id="e_drive"'));
+  ok("不再有另一格毛片連結", !top.includes('id="e_rawlink"'));
   ok("上片日期在上面", top.includes('id="e_date"'));
   ok("標籤在上面", top.includes('id="e_box"'));
   ok("商品沒有攤在上面", !top.includes('id="e_pn0"'));

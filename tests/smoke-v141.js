@@ -99,7 +99,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   fields.e_code="C1"; fields.e_raw="中文原始片名"; fields.e_vcopy="這是中文口播稿";
   fields.e_nameEn="What Empress Dowager Cixi loved"; fields.e_vcopyEn="Line one.\nLine two.";
   fields.e_src="自製"; fields.e_stage="待處理"; fields.e_editor=""; fields.e_date="";
-  fields.e_drive=""; fields.e_rawlink="http://raw"; fields.e_ref=""; fields.e_note=""; fields.e_url="";
+  fields.e_drive=""; fields.e_ref=""; fields.e_note=""; fields.e_url="";
   await saveVideo("V1");
   const w=writes.find(x=>x[1]==="videos"); const p=w&&w[3];
   ok("英文片名存進去了", !!p && p.nameEn==="What Empress Dowager Cixi loved");
@@ -109,7 +109,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   fields.e_code="C1"; fields.e_raw="片名"; fields.e_vcopy="文案";
   fields.e_nameEn="  Trimmed  "; fields.e_vcopyEn="";
   fields.e_src="自製"; fields.e_stage="待處理"; fields.e_editor=""; fields.e_date="";
-  fields.e_drive=""; fields.e_rawlink="http://raw"; fields.e_ref=""; fields.e_note=""; fields.e_url="";
+  fields.e_drive=""; fields.e_ref=""; fields.e_note=""; fields.e_url="";
   await saveVideo("V1");
   const p=(writes.find(x=>x[1]==="videos")||[])[3];
   ok("前後空白會清掉", !!p && p.nameEn==="Trimmed");
@@ -129,7 +129,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 
 // ══════════ ⑤ 沒有把既有的東西弄壞 ══════════
 { reset(); openVideoModal("V1", true);
-  ["e_code","e_raw","e_vcopy","e_rawlink","e_date","e_drive","e_ref","e_name"].forEach(f=>
+  ["e_code","e_raw","e_vcopy","e_date","e_drive","e_ref","e_name"].forEach(f=>
     ok("原本的「"+f+"」欄位還在", modalHTML.includes('id="'+f+'"'))); }
 { reset([v_("SHP",{channel:"shopee",sourceVideoId:"V1"}), v_("V1")]);
   let threw=""; try{ openVideoModal("SHP", true); }catch(e){ threw=e.message; }
