@@ -139,7 +139,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   const f=familyDriveField(vid("V1"),"x_drive");
   ok("版本殼的存檔欄位是唯讀的", f.includes("readonly"));
   ok("而且帶著家族的資料夾", f.includes("http://drive/family"));
-  ok("有說明為什麼不能填", f.includes("不用各填各的")||f.includes("Nothing to fill"));
+  // v144 改了說明的寫法：除了「不用你填」，還一併說清楚資料夾是誰開的、什麼東西要放進去
+  ok("有說明為什麼不能填", f.includes("你不用自己填")||f.includes("Nothing to fill in here"));
+  ok("有說明資料夾是誰開的", f.includes("第一個拍好毛片的人開的")||f.includes("created by whoever shot the raw footage first"));
   ok("源片那一格照舊（那就是第一個人建的那格）", familyDriveField(vid("S1"),"x")===""); }
 // 存檔時真的寫回家族資料夾（不是讀那個唯讀欄位的值）
 { reset([v_("S1",{driveFolder:"http://drive/family"}),

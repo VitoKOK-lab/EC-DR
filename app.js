@@ -5142,8 +5142,9 @@ function openVideoModal(id, edit, fromWork){
   // 折疊分組（v111）：四個人輪流做全部的事，所以不能依角色隱藏 —— 依「資料類型」折。
   // 每次都要看的留在上面；其餘收起來，但只要裡面已經有資料就自動展開（不然會以為是空的）。
   const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
-  const hasPost = !!String(v.driveFolder||"").trim() || usageList(v).length>0
-                  || (Array.isArray(v.metrics)&&v.metrics.length>0);
+  // 存檔資料夾從這一折搬到上面（拍毛片的人一進來就要看到，不是上片後才填），
+  // 所以這裡不再拿 driveFolder 當「有沒有料」的依據。
+  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0);
   // 「進階」一律收起來（都是選填、少碰的欄位）。裡面有東西時在標題上標個數字
   // 提示，這樣不用打開也知道有料 —— 比自動展開安靜，又不會讓人漏看。
   // 注意 name 不能拿來判斷：存檔時它預設會跟原始片名一樣，等於永遠有值。
@@ -5170,6 +5171,7 @@ function openVideoModal(id, edit, fromWork){
       title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.videoCopy||"")}</textarea>
     ${enFieldHTML("e_vcopyEn", T("英文腳本","English script"), v.videoCopyEn||"", "e_vcopy", true)}
     <label>${T("毛片雲端連結","Raw footage cloud link")}</label><input id="e_rawlink" value="${esc(v.rawLink||"")}" placeholder="${T("毛片原始檔雲端連結","Cloud link")}">
+    ${familyDriveField(v,"e_drive") || ownerDriveField(v,"e_drive")}
     <label>${T("預排上片日期","Scheduled upload date")}</label>
     <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
     ${nextDaysStrip("e_date")}
@@ -5180,8 +5182,6 @@ function openVideoModal(id, edit, fromWork){
       <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
       <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd)}
     ${fold(T("上片後","After publishing"), null, `
-      ${familyDriveField(v,"e_drive") || `<label>${T("完成影片存檔連結","Finished file link")}</label>
-      <input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">`}
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
@@ -5408,6 +5408,12 @@ function familyDrive(v){
   if(own) return own;                         // 自己有就用自己的（含所有舊資料）
   const s=srcOf(v); return s?String(s.driveFolder||"").trim():"";   // 沒有就沿用源片的
 }
+// 資料夾這條規矩三個地方都要講（源片那一格、二創那一格、海外看源片的卡片），
+// 所以只寫一次 —— 三個地方各寫一份遲早會走鐘。中英文都在，因為海外看的是英文介面。
+function driveRuleLine(){
+  return T("這支延伸出去的全部影片（中文版／英文版、一創／二創）跟封面，通通放進同一個資料夾。",
+           "Everything that comes from this video — Chinese and English versions, first cuts and remakes, and the cover — all go in that same folder.");
+}
 // 版本殼的存檔欄位改成「唯讀＋說明」：位置由源片決定，不再讓人各填各的
 function familyDriveField(v, idAttr){
   const d=familyDrive(v);
@@ -5416,11 +5422,27 @@ function familyDriveField(v, idAttr){
   return `<label>${T("存檔位置","File location")}</label>
     <input id="${esc(idAttr)}" value="${esc(d)}" readonly
       style="background:var(--panel2)" placeholder="${T("由源片決定","Set by the source video")}">
-    <div class="muted" style="font-size:11px;margin-top:4px">${T(
-      "跟源片同一個資料夾 —— 這支片的所有版本（中文／英文／一創／二創）都存在這裡，不用各填各的。",
-      "Same folder as the source — every version of this video lives here. Nothing to fill in.")}</div>`;
+    <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">${T(
+      "這個資料夾是第一個拍好毛片的人開的，名字就是源片的檔名。",
+      "This folder was created by whoever shot the raw footage first, and is named after the source video's file name.")}<br>
+      ${driveRuleLine()}${T("你不用自己填。"," Nothing to fill in here.")}</div>`;
 }
-// 存檔欄位下的小字：值還是源片帶進來的時候才出現
+// 源片那一格：這是「第一個拍好毛片的人」要去 Google 雲端硬碟開資料夾的地方。
+// 規矩寫在欄位旁邊，中英文都寫 —— 不然新人只會看到一個空白欄位，不知道要填什麼、
+// 更不知道資料夾要取什麼名字。名字一律用這支的檔名，這樣資料夾跟片子對得起來。
+function ownerDriveField(v, idAttr){
+  if(!isSourceVid(v)) return "";
+  const nm=String((v&&(v.rawName||v.name))||"").trim();
+  return `<label>${T("存檔資料夾（這支片的所有東西都放這裡）","Drive folder (everything for this video lives here)")}</label>
+    <input id="${esc(idAttr)}" value="${esc((v&&v.driveFolder)||"")}"
+      placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">
+    <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">
+      ${T("第一個拍好毛片的人：先到 Google 雲端硬碟開一個新資料夾，名字就用這支的檔名",
+          "Whoever shoots the raw footage first: create a new folder in Google Drive, named after this video's file name")}${
+      nm?` —— <b>${esc(nm)}</b> <a href="javascript:void(0)" onclick="copyStr('${esc(jsEsc(encodeURIComponent(nm)))}')">${T("複製檔名","copy")}</a>`:""}${T("。","." )}<br>
+      ${driveRuleLine()}
+    </div>`;
+}
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
@@ -5698,6 +5720,9 @@ function srcBriefCard(s, loc){
         ${s.driveFolder?`<a class="btn sec sm" href="${esc(s.driveFolder)}" target="_blank">⬇ ${T("下載成片","Download original file")}</a>`:''}
         ${s.rawLink?`<a class="btn sm" href="${esc(s.rawLink)}" target="_blank">⬇ ${T("下載毛片","Download raw footage")}</a>`:''}
       </div>
+      <div class="muted" style="font-size:11px;margin-top:10px;line-height:1.6">🗂 ${
+        s.driveFolder?`<a href="${esc(s.driveFolder)}" target="_blank">${T("這一支的資料夾","This video's folder")}</a> · `:''
+      }${driveRuleLine()}</div>
       ${warn?`<div style="color:var(--red);font-size:11px;margin-top:10px">⚠ ${T("缺少"+warn+"連結 — 請管理員補上。","No "+warn+" linked — ask the admin to add it.")}</div>`:''}
     </div>
   </div>`;

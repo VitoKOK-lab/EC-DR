@@ -73,7 +73,7 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   ok("英文殼：主編輯視窗有存檔位置欄", modalHTML.includes('id="e_drive"'));
   ok("英文殼：那一格是唯讀的", /id="e_drive"[^>]*\breadonly\b/.test(modalHTML), modalHTML.match(/<input id="e_drive"[^>]*>/));
   ok("英文殼：帶的是源片的資料夾", modalHTML.includes(FAM));
-  ok("英文殼：有寫清楚為什麼不能填", /跟源片同一個資料夾|Same folder as the source/.test(modalHTML)); }
+  ok("英文殼：有寫清楚為什麼不能填", /第一個拍好毛片的人開的|created by whoever shot the raw footage first/.test(modalHTML)); }
 { reset([SRC(), SHPV()]);
   openVideoModal("SHPV", true);
   ok("蝦皮殼：那一格也是唯讀的", /id="e_drive"[^>]*\breadonly\b/.test(modalHTML));
@@ -85,7 +85,7 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   ok("源片：存檔欄還在", modalHTML.includes('id="e_drive"'));
   ok("源片：可以自己填（不是唯讀）", !/id="e_drive"[^>]*\breadonly\b/.test(modalHTML),
      modalHTML.match(/<input id="e_drive"[^>]*>/));
-  ok("源片：標籤還是原本那句", modalHTML.includes("完成影片存檔連結")); }
+  ok("源片：標籤講清楚是「所有東西都放這裡」", modalHTML.includes("存檔資料夾")); }
 { reset([v_("NOFOLDER",{stage:"待處理"})]);
   openVideoModal("NOFOLDER", true);
   ok("源片沒填資料夾也照樣能填", !/id="e_drive"[^>]*\breadonly\b/.test(modalHTML)); }
