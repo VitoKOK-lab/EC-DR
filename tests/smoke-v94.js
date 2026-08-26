@@ -119,9 +119,9 @@ ok("在設定填了翻譯之後就一個中文都不剩",
 reset(); as("管理員","boss"); ZONE_VIEW="tw";
 { const h=viewVideos();
   ok("台灣庫的標籤鈕用中文原名", h.includes(">寵粉")); }
-reset(); as("Anna","intl"); ZONE_VIEW=null;   // v142：null＝依職位給預設（海外落在海外那一份）
+reset(); as("Anna","intl"); ZONE_VIEW=null;   // v146：null＝預設落在同一份（不再依職位分）
 { const h=viewVideos();
-  ok("海外的影片庫是來源清單（英文）", h.includes("Pick a published Taiwan video")); }
+  ok("海外的影片庫是同一份（英文）", h.includes("Library A") && h.includes("Add one")); }
 reset(); as("Anna","intl");
 modalHTML=""; openVideoModal("S1", false);
 { const m=modalHTML;

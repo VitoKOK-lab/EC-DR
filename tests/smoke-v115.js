@@ -152,21 +152,25 @@ openVideoModal("S1", false);
 ok("經理人三張版本卡都看得到",
    modalHTML.includes("蝦皮版本") && modalHTML.includes("馬來版本") && modalHTML.includes("各語言版本"));
 
-// ══════════ ⑥ 海外守門（R3：最大的漏口）══════════
+// ══════════ ⑥ 海外進的是同一個視窗（v146 把守門拿掉了）══════════
+// 舊規則：海外被導到一張唯讀的來源卡。那張卡假設「一定有台灣拍好的毛片跟成片」，
+// 對「還沒拍的腳本」整段都是錯的；而且沒有編輯視窗就沒有存檔資料夾、沒有階段、
+// 不能認領 —— 海外根本不能自己拍自己傳。新流程是一份腳本兩組人各拍各的語言。
 reset(); as("Anna","intl");
 editVideo("S1");                       // ← 版本卡的「回到源片」走的就是這條
 { const m=modalHTML;
-  ok("海外點源片不會進台灣編輯視窗", !m.includes('id="e_date"') && !m.includes('id="e_stage"'));
-  ok("海外看不到未來 14 天速覽", !m.includes("dstrip"));
-  ok("海外看不到標籤與商品", !m.includes('id="e_box"') && !m.includes('id="e_pn0"'));
-  ok("海外看不到刪除鍵", !m.includes("delVideo("));
-  ok("海外拿得到做版本要的四樣：標題", m.includes("Source EN"));
+  ok("海外點源片進的是同一個編輯視窗", m.includes('id="e_date"') && m.includes('id="e_stage"'));
+  ok("海外也有存檔資料夾（自己拍要填）", m.includes('id="e_drive"'));
+  ok("海外也有未來 14 天速覽", m.includes("dstrip"));
+  ok("海外也有標籤", m.includes('id="e_box"'));
+  ok("海外也有刪除鍵（跟台灣一樣）", m.includes("delVideo("));
+  ok("內容照樣拿得到：標題", m.includes("Source EN"));
   ok("…文案", m.includes("口播S1"));
-  ok("…毛片連結", m.includes("http://raw/S1"));
-  ok("…完成影片連結", m.includes("http://drive/S1")); }
+  ok("…毛片／存檔連結", m.includes("http://drive/S1"));
+  ok("而且整個視窗是英文的", !m.includes("原本語言") && !m.includes("刪除這支影片")); }
 reset(); as("Anna","intl"); toasts=[];
-openVideoModal("P1", true);            // 蝦皮殼不歸海外管
-ok("海外點蝦皮殼被擋下", modalHTML==="" && toasts.some(t=>/Not in your area|不在你的區/.test(t)));
+openVideoModal("P1", true);            // 蝦皮殼：v142 拆掉分區之後也不再擋
+ok("海外點蝦皮殼不再被擋下", modalHTML!=="" && !toasts.some(t=>/Not in your area|不在你的區/.test(t)));
 reset(); as("小葵","editor");
 openVideoModal("S1", true);
 ok("台灣點源片照樣進編輯視窗", modalHTML.includes('id="e_date"') && modalHTML.includes('id="e_raw"'));

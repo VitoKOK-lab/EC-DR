@@ -115,11 +115,12 @@ as("Regina","manager"); VID_VIEW="script";
   ok("新分頁的標籤鈕只列這一頁有的", btns.includes("寵粉") && !btns.includes("珠寶介紹")); }
 
 // ══ 海外剪輯看到英文 ══
-// v115 分區：海外的影片庫換成來源清單（全英文）
+// v146：海外的影片庫跟台灣同一份（只是介面英文）—— 舊的「來源清單」那一份跟
+//      「上班計畫」的建立二創版本卡重複，已經拿掉。
 reset(LIB); as("Anna","intl");
 { const h=viewVideos();
-  ok("海外的影片庫是來源清單且全英文",
-     h.includes("Pick a published Taiwan video") && !h.includes("未拍")); }
+  ok("海外的影片庫是同一份、而且全英文",
+     h.includes("Not shot") && h.includes("Add one") && !h.includes("未拍")); }
 
 // ══ 其他畫面不受影響 ══
 // 儀表板數「剪完・未排程」的那個數字：新分段不該把它算走

@@ -150,30 +150,33 @@ ok("資料本身沒有被改", vid("P1").name==="蝦皮殼");
 vid("P1").name="蝦皮殼（蝦皮版）";
 ok("已經有後綴的不會補第二次", (vidNameZoned(vid("P1")).match(/蝦皮版/g)||[]).length===1);
 
-// ══════════ ⑧ 海外庫：來源清單＋自己的版本 ══════════
+// ══════════ ⑧ 海外庫：v146 起跟台灣同一份（只是介面英文）══════════
+// 舊的「挑一支台灣已上片的片來做二創」那份清單拿掉了 —— 它跟「上班計畫」的
+// 建立二創版本卡是一模一樣的一份。海外真正缺的是自己開腳本、自己拍、自己傳。
 reset(MERGED.map(v=>Object.assign({},v)));
-as("Anna","intl");
+as("Anna","intl"); ZONE_VIEW=null; VID_LANG=""; VID_Q=""; VID_TAGS=new Set();
+VID_VIEW="old";   // 黃金源片是已上片的 → 在「舊片」那一頁
 { const h=viewVideos();
-  ok("海外走來源清單", h.includes("Pick a published Taiwan video"));
-  ok("列出台灣已上片的源片", h.includes("黃金源片"));
-  ok("源片的英文小字在", h.includes("Golden source"));
-  ok("自己的英文／泰文版本掛在下面", h.includes("openIntlModal('E1')") && h.includes("openIntlModal('T1')"));
-  ok("有「看內容」可以看四欄", h.includes("openSourceForIntl('S1')"));
-  ok("沒有台灣的蝦皮／馬來版", !h.includes("openChModal") && !h.includes("蝦皮") && !h.includes("Shopee"));
-  ok("沒有台灣的四個管線分頁", !h.includes("<span>Not shot</span>") && !h.includes('id="vid_tabs"')); }
-// 語言篩選：只看英文
-INTL_LIB_LOC="en";
+  ok("海外看到的是同一份影片庫（英文）", h.includes("Library A") && h.includes("Add one"));
+  ok("海外也有那四個管線分頁", h.includes("<span>Not shot</span>") && h.includes('id="vid_tabs"'));
+  ok("預設落在台灣那一頁，列得出台灣的源片", h.includes("黃金源片"));
+  ok("源片的英文小字在", h.includes("vt-en") && h.includes("Golden source")); }
+// 切到海外那一頁：自己的英文／泰文版本在這裡，而且點得進自己的視窗
+setZoneView("intl"); VID_VIEW="raw"; VID_Q="";
 { const h=viewVideos();
+  ok("海外那一頁列得到自己的版本", h.includes("openIntlModal('E1')") || h.includes("openIntlModal('T1')")); }
+// 原本語言下拉：海外那一頁只有英文／泰文（沒有「中文」這個選項）
+{ VID_LANG="en"; const h=viewVideos();
   ok("只看英文時泰文版不列", h.includes("openIntlModal('E1')") && !h.includes("openIntlModal('T1')")); }
-INTL_LIB_LOC="th";
-{ const h=viewVideos();
+{ VID_LANG="th"; const h=viewVideos();
   ok("只看泰文時英文版不列", !h.includes("openIntlModal('E1')") && h.includes("openIntlModal('T1')")); }
-INTL_LIB_LOC="";
+setZoneView("tw"); VID_LANG=""; VID_VIEW="old";
 // 搜尋
-INTL_Q="黃金";
+VID_Q="黃金";
 ok("海外搜得到源片", viewVideos().includes("黃金源片"));
-INTL_Q="完全沒有這種片";
+VID_Q="完全沒有這種片";
 ok("搜不到就是空的", !viewVideos().includes("黃金源片"));
+VID_Q="";
 INTL_Q="";
 
 // 「看內容」只給四樣：標題、文案、毛片連結、完成影片連結
@@ -199,8 +202,8 @@ as("管理員","boss");
      h.includes('<span>海外</span> <span class="vtab-n">2<')); }
 setZoneView("intl");
 { const h=viewVideos();
-  ok("boss 切到海外看得到來源清單", h.includes("挑一支台灣已上片的影片"));
-  ok("boss 在海外區看的是中文（他不是海外員工）", !h.includes("Pick a published Taiwan video")); }
+  ok("boss 切到海外看得到同一份影片庫", h.includes("影片庫A") && h.includes("新增一支"));
+  ok("boss 在海外區看的是中文（他不是海外員工）", !h.includes("Library A")); }
 setZoneView("tw");
 reset(MERGED.map(v=>Object.assign({},v)));
 as("小葵","editor");

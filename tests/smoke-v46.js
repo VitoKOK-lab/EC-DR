@@ -67,10 +67,13 @@ ok("等審列有「已審過」鍵", h.includes("editorMarkReviewed('W1')") && h
     openVideoModal("W1", false);
     ok("檢視視窗階段=待審核", modalHTML.includes("待審核"));
     // intl 顯示 In review
-    // v115 分區：海外點源片只有唯讀來源卡，階段名不出現在那裡 —— 改驗它確實被攔下來
+    // v146：海外進同一個視窗，所以階段名這次真的看得到 —— 而且要是英文
     localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
     openVideoModal("W1", false);
-    ok("intl 點源片＝唯讀來源卡（英文）", modalHTML.includes("Source · Taiwan"));
+    // ⚠️ 不能寫 !includes("待審核") —— 這支測試影片的片名本來就叫「待審核的片」。
+    //    要驗的是「階段那一列」的字，所以連 Stage 標籤一起比。
+    ok("intl 檢視視窗階段=In review（英文）",
+       /Stage<\/div>[\s\S]{0,200}?In review/.test(modalHTML) && !/Stage<\/div>[\s\S]{0,200}?待審核/.test(modalHTML));
 
     // Regina 待審清單含蝦皮殼
     localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
