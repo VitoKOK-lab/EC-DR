@@ -109,7 +109,10 @@ ok("空的當然不算", !ownDrive(vid("P3")));
   STATE.videos.push(orphan);
   ok("孤兒殼有連結就算自己的", ownDrive(vid("X1"))); }
 
-// ══════════ ③ 「已審過還缺連結」不能因為繼承的資料夾提早消失 ══════════
+// ══════════ ③ 「已審過還缺連結」看的是「這一家有沒有資料夾」 ══════════
+// ⚠️ v143 改規則：資料夾由第一個拍好毛片的人建，那一個就是唯一的位置，二創不再各填各的
+//    （欄位改成唯讀繼承）。所以二創殼永遠不會有「自己的」資料夾 ——
+//    這裡再拿 ownDrive 問，「已審過還缺連結」就會永遠掛著熄不掉。改成問整家人。
 function reviewFixture(drive){
   reset(); as("小葵","editor");
   STATE.videos.push({id:"P1",name:"蝦皮版",channel:"shopee",sourceVideoId:"S1",driveFolder:drive,
@@ -118,31 +121,34 @@ function reviewFixture(drive){
     reviewAck:false,products:[],usageHistory:[],tags:[],metrics:[]});
   return viewWork();
 }
-ok("只有繼承來的資料夾 → 仍然提醒「還缺連結」", reviewFixture(DRIVE).includes("1 支還缺連結"));
-ok("換成自己的檔案 → 提醒才消失", !reviewFixture("http://drive/mine").includes("支還缺連結"));
-ok("完全沒填 → 一樣提醒", reviewFixture("").includes("1 支還缺連結"));
+ok("繼承源片的資料夾就算補齊了（v143：本來就只有一個位置）",
+   !reviewFixture(DRIVE).includes("支還缺連結"));
+ok("自己另外填一個也算補齊", !reviewFixture("http://drive/mine").includes("支還缺連結"));
+// 防線沒被拆：整家人都沒有資料夾的時候還是要叫
+// （reviewFixture 內部會 reset()，所以源片要在它跑完之後才清掉、再重畫一次）
+ok("源片也沒有資料夾 → 一樣提醒", (()=>{
+  reviewFixture(""); vid("S1").driveFolder=""; return viewWork().includes("1 支還缺連結");
+})());
 
-// ══════════ ④ 編輯視窗的小字：值還是源片帶進來的時候才出現 ══════════
+// ══════════ ④ 編輯視窗：二創的存檔位置是唯讀的，不再叫人「換成自己的」 ══════════
+// v143 起欄位鎖住了，那句「剪好後請換成你自己的檔案連結」就變成叫人做做不到的事，拿掉。
 reset(); as("Anna","intl");
 STATE.videos.push({id:"E1",name:"EN",locale:"en",sourceVideoId:"S1",account:"acctEN",driveFolder:DRIVE,
   stage:"剪輯中",claimedBy:"Anna",editor:"Anna",publishedLink:"",products:[],usageHistory:[],tags:[],metrics:[]});
 openIntlModal("E1");
-ok("海外版本：有「自動帶入源片」的提示", modalHTML.includes("Pre-filled with the source"));
-vid("E1").driveFolder="http://drive/mine"; modalHTML=""; openIntlModal("E1");
-ok("換成自己的之後提示消失", !modalHTML.includes("Pre-filled with the source"));
-vid("E1").driveFolder=""; modalHTML=""; openIntlModal("E1");
-ok("空的時候也不提示（沒東西可換）", !modalHTML.includes("Pre-filled with the source"));
+ok("海外版本：存檔位置唯讀", /id="i_drive"[^>]*\breadonly\b/.test(modalHTML));
+ok("海外版本：不再叫人換成自己的連結", !modalHTML.includes("replace it with the link"));
+ok("海外版本：帶的就是源片那一個", modalHTML.includes(DRIVE));
 
 reset(); as("小葵","editor");
 STATE.videos.push({id:"P1",name:"蝦皮版",channel:"shopee",sourceVideoId:"S1",account:"蝦皮A",driveFolder:DRIVE,
   stage:"剪輯中",claimedBy:"小葵",editor:"小葵",publishedLink:"",products:[],usageHistory:[],tags:[],metrics:[]});
 openChModal("shopee","P1");
-ok("蝦皮版本：有「自動帶入源片」的提示", modalHTML.includes("自動帶入源片的存檔位置"));
-vid("P1").driveFolder="http://drive/mine"; modalHTML=""; openChModal("shopee","P1");
-ok("蝦皮換成自己的之後提示消失", !modalHTML.includes("自動帶入源片的存檔位置"));
-// 源片自己的編輯視窗不該出現這行（它就是源頭）
+ok("蝦皮版本：存檔位置唯讀", /_drive"[^>]*\breadonly\b/.test(modalHTML));
+ok("蝦皮版本：不再叫人換成自己的連結", !modalHTML.includes("自動帶入源片的存檔位置"));
+// 源片就是源頭，那一格照樣自己填
 modalHTML=""; openVideoModal("S1", true);
-ok("源片的編輯視窗沒有這行提示", !modalHTML.includes("自動帶入源片的存檔位置"));
+ok("源片的存檔欄可以自己填", !/id="e_drive"[^>]*\breadonly\b/.test(modalHTML));
 
 // ══════════ ⑤ 收尾兩件（決策 8 ＋ 海外月曆的跨語言灌數）══════════
 // 不新增「組長」職位，改把「退回待認領」補給主管 —— 主管本來只有「移到剪輯的今日工作」

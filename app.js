@@ -1652,11 +1652,13 @@ function workReviewCard(me){
   // 已審過（不論 Regina 按的還是剪輯自己按的）都要「亮出來」，不能沈下去：
   // 還缺連結 → 一直提醒到補齊；連結補齊 → 顯示「已審過 ✓」，剪輯按「知道了」才收起（審過 7 天後自動不顯示）
   const d7=new Date(Date.now()+288e5-7*864e5).toISOString().slice(0,10);
-  // 存檔連結要是「自己剪的那一支」；只是繼承源片的資料夾不算補齊，提醒不能提早消失
-  // 同一個病灶的第二個受害者：源片填不了上片連結，linksDone 就永遠是 false，
-  // 「已審過」的片會一直掛在這張卡上叫，剪輯按了「知道了」才走得掉。
   // 源片只看存檔連結（那一格填得到），二創殼才連上片連結一起看。
-  const linksDone=(v)=>!!(ownDrive(v) && (!needPostLink(v) || String(v.publishedLink||"").trim()));
+  // ⚠️ 二創殼的存檔位置一律跟源片同一個資料夾、而且是唯讀的，它永遠不會有「自己的」
+  //    資料夾 —— 所以這裡要看整個家族有沒有（familyDrive），不能看它自己有沒有
+  //    （ownDrive）。看錯的話「已審過」會永遠掛在這張卡上叫，跟之前那顆熄不掉的
+  //    「缺上片連結」是同一個病。
+  const linksDone=(v)=>!!((isVersion(v)?familyDrive(v):ownDrive(v))
+    && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
   const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
@@ -5037,7 +5039,9 @@ function vidMissing(v){
     // ① 該上片了卻還沒貼連結 —— 排程日到了或過了，這是唯一會轉紅的
     if(sch && sch<=today && !pub) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!sch) out.push({k:"date", zh:"沒排日期", en:"no date"});
-    if(isPublished(v) && !ownDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
+    // 存檔位置跟源片同一個資料夾（唯讀），版本殼不會有自己的 —— 所以問「這一家有沒有」，
+    // 不是問「它自己有沒有」。問錯就是又一顆永遠熄不掉的燈號。
+    if(isPublished(v) && !familyDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     return out;
   }
   if(isDF(v)){
@@ -5176,8 +5180,8 @@ function openVideoModal(id, edit, fromWork){
       <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
       <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd)}
     ${fold(T("上片後","After publishing"), null, `
-      <label>${T("完成影片存檔連結","Finished file link")}</label>
-      <input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">
+      ${familyDriveField(v,"e_drive") || `<label>${T("完成影片存檔連結","Finished file link")}</label>
+      <input id="e_drive" value="${esc(v.driveFolder||"")}" placeholder="${T("剪輯完成後的成品存檔連結","Cloud link to the finished cut")}">`}
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
@@ -5417,12 +5421,6 @@ function familyDriveField(v, idAttr){
       "Same folder as the source — every version of this video lives here. Nothing to fill in.")}</div>`;
 }
 // 存檔欄位下的小字：值還是源片帶進來的時候才出現
-function inheritedDriveHint(v){
-  if(!v || isSourceVid(v) || ownDrive(v) || !String(v.driveFolder||"").trim()) return "";
-  return `<div class="muted" style="font-size:11px;margin-top:4px">${T(
-    "自動帶入源片的存檔位置 — 剪好後請換成你自己的檔案連結（存在同一個資料夾）",
-    "Pre-filled with the source's folder — replace it with the link to your own cut (keep it in the same folder)")}</div>`;
-}
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }
 function intlAccountsFor(loc){ return intlAccounts().filter(a=>a.locale===loc); }
@@ -5732,8 +5730,7 @@ function openIntlModal(id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}: ${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案（口播台詞）","Script / copy")}</label><textarea id="i_vcopy" style="min-height:80px" placeholder="${T("翻譯／改編的文案","Translated / adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div>${familyDriveField(v,"i_drive")}
-        ${inheritedDriveHint(v)}</div>
+      <div>${familyDriveField(v,"i_drive")}</div>
       <div><label>${T("上傳連結（TikTok 貼文）","Upload URL (the TikTok post)")}</label><input id="i_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.tiktok.com/@.../video/..."></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date (when it will go live)")}</label>
@@ -5838,8 +5835,7 @@ function openChModal(ch,id){
     <div class="muted" style="font-size:12px;margin:8px 0 0">${T("商品","Products")}：${prod}${s.productUrl?` · <a href="${esc(s.productUrl)}" target="_blank">🛍 ${T("商品頁","page")}</a>`:''}</div>
     <label>${T("文案","Script / copy")}</label><textarea id="${p}_vcopy" style="min-height:80px" placeholder="${T(C.verName+"文案（可跟中文版不同）","Adapted script")}">${esc(v.videoCopy||"")}</textarea>
     <div class="grid cols2">
-      <div>${familyDriveField(v,p+"_drive")}
-        ${inheritedDriveHint(v)}</div>
+      <div>${familyDriveField(v,p+"_drive")}</div>
       <div><label>${T(C.upLabel,"Upload URL")}</label><input id="${p}_pub" value="${esc(v.publishedLink||"")}" placeholder="${C.upPh}"></div>
     </div>
     <label>${T("預排上片日期","Scheduled upload date")}</label>
