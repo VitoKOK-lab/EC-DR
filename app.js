@@ -2652,7 +2652,8 @@ function attendOf(sh){
   const work=(inMin!=null&&outMin!=null)? Math.max(0,outMin-inMin) : null;
   return {in:sh.clockIn, out:sh.clockOut||"", work, late, early, none:false,
           counted:attendCounted(sh), flex:wh.flex,
-          auto:!!sh.autoOut, dev:sh.inDev||"", devUA:sh.inDevUA||"", mobile:!!sh.inMobile,
+          auto:!!sh.autoOut, manual:!!sh.manualBy, manualBy:sh.manualBy||"", manualNote:sh.manualNote||"",
+          dev:sh.inDev||"", devUA:sh.inDevUA||"", mobile:!!sh.inMobile,
           newDev:!!sh.inNewDev, geo:sh.inGeo||null};
 }
 // 打卡地點離公司多遠（沒設公司座標就不算）
@@ -2673,6 +2674,105 @@ async function autoCloseOpenShifts(){
   const r=await bulkRun(open, s=>window.DB.update("shifts", s.id,
     {clockOut:String(s.date)+"T"+wh.end+":00", autoOut:true}));
   if(r.failed) logA("自動補下班失敗 "+r.failed+" 筆", me);
+}
+// ── 手動補登出勤（v149）──────────────────────────────────────
+//
+// 為什麼要有這個：打卡是靠員工自己的瀏覽器寫的。網路不通的時候那筆會卡在他那台
+// （他自己看得到、伺服器上沒有），真的掉了就沒有人救得回來 —— 在這之前整個系統
+// 寫得到出勤的只有三個地方：自己打上班、自己打下班、系統自動補下班。
+// 出勤是算薪水的依據，不能有「壞了只能認了」的東西。
+//
+// 兩個原則：
+//   ① 一定要留痕跡。補登過的紀錄永遠標著「人工補登」，寫明是誰補的、為什麼補。
+//      出勤資料被人改過而看不出來，比不能改更糟。
+//   ② 原因必填。事後要查得出這一筆為什麼長這樣。
+function canFixAttend(){ return ["boss","hr"].includes(currentRole()); }
+// 時間格式檢查。hhmmToMin 只負責解析、不管範圍（"25:99" 它也算得出數字），
+// 而補登的時間是人手動打進去的 —— 要真的擋。
+function validHm(t){ const m=String(t||"").match(/^(\d{1,2}):(\d{2})$/);
+  return !!m && +m[1]>=0 && +m[1]<=23 && +m[2]>=0 && +m[2]<=59; }
+function attManualPill(sh){
+  const by=String((sh&&sh.manualBy)||"").trim(); if(!by) return "";
+  const note=String((sh&&sh.manualNote)||"").trim();
+  const at=String((sh&&sh.manualAt)||"").slice(0,16).replace("T"," ");
+  return ` <span class="pill em" style="font-size:10px" title="${esc(by+" 補登"+(at?("／"+at):"")+(note?("："+note):""))}">人工補登</span>`;
+}
+function attFixBtn(name, date){
+  if(!canFixAttend()) return "";
+  const has=!!((STATE&&STATE.shifts)||{})[shiftId(name,date)];
+  return `<button class="btn sec sm" style="padding:3px 9px;font-size:12px"
+    onclick="attFix('${esc(jsEsc(name))}','${esc(date)}')">${has?"修改":"補登"}</button>`;
+}
+// 補登任一天：個人明細只列得出「已經有紀錄」的日子 —— 整天完全沒紀錄的過去日期
+// （正是打卡掉了的那種）在那張表上根本不會出現，所以要有一個指定人＋指定日期的入口。
+function attFixAnyCard(){
+  if(!canFixAttend()) return "";
+  const staff=attStaff();
+  return `<div class="card">
+    <b style="font-size:15px">補登出勤</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">
+      打卡沒送出去、忘記打卡、系統當機都用這裡補。補過的會標「人工補登」，並記下是誰補的、為什麼。
+    </div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
+      <div style="flex:1;min-width:150px"><label style="margin:0">同仁</label>
+        <select id="afx_who">${staff.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select></div>
+      <div style="flex:1;min-width:150px"><label style="margin:0">日期</label>
+        <div class="dateField"><span class="dateIco">🗓</span><input id="afx_date" type="date" value="${esc(today)}" max="${esc(today)}"></div></div>
+      <button class="btn sm" onclick="attFixAny()">補登這一天</button>
+    </div>
+  </div>`;
+}
+function attFixAny(){
+  const who=String(val("afx_who")||"").trim();
+  const date=String(val("afx_date")||"").trim();
+  if(!who){ toast("請先選同仁",true); return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ toast("請選日期",true); return; }
+  attFix(who, date);
+}
+function attFix(name, date){
+  if(!canFixAttend()){ toast("只有管理員與人資可以補登出勤",true); return; }
+  if(dbBlocked()) return;
+  refreshToday();
+  if(String(date)>today){ toast("不能補未來的日期",true); return; }
+  const sh=((STATE&&STATE.shifts)||{})[shiftId(name,date)]||null;
+  const hm=(x)=>String(x||"").slice(11,16);
+  showModal(`補登出勤 — ${name}`, `
+    <div class="muted" style="font-size:13px">${esc(date)}（${weekdayZh(date)}）</div>
+    <div class="grid cols2" style="margin-top:10px">
+      <div><label>上班時間 · 必填</label>
+        <input id="af_in" type="time" value="${esc(hm(sh&&sh.clockIn))}"></div>
+      <div><label>下班時間（還沒下班就留空）</label>
+        <input id="af_out" type="time" value="${esc(hm(sh&&sh.clockOut))}"></div>
+    </div>
+    <label style="margin-top:10px">為什麼要補 · 必填</label>
+    <input id="af_note" value="${esc((sh&&sh.manualNote)||"")}" placeholder="例：網路不通打卡沒送出、忘記打卡、系統當機">
+    <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.6">
+      補登過的紀錄會永遠標著「人工補登」，並記下是誰補的、什麼時候補的、原因。<br>
+      出勤是算薪水的依據 —— 留得住紀錄，之後才查得清楚。
+    </div>`, async ()=>{
+    const tin=String(val("af_in")||"").trim();
+    const tout=String(val("af_out")||"").trim();
+    const note=String(val("af_note")||"").trim();
+    if(!tin){ toast("請填上班時間",true); return false; }
+    if(!validHm(tin)){ toast("上班時間格式不對（要像 09:30）",true); return false; }
+    if(tout && !validHm(tout)){ toast("下班時間格式不對（要像 18:00）",true); return false; }
+    if(tout && hhmmToMin(tout) < hhmmToMin(tin)){ toast("下班時間不能早於上班時間",true); return false; }
+    if(!note){ toast("請填補登原因 —— 出勤是算薪水的依據，一定要查得出為什麼",true); return false; }
+    const id=shiftId(name,date);
+    const patch={ id, user:name, date,
+      clockIn:date+"T"+tin+":00", clockOut: tout?(date+"T"+tout+":00"):"",
+      manualBy:currentUser(), manualAt:nowIso(), manualNote:note,
+      autoOut:false };
+    // 補登是覆蓋既有那一筆的上下班時間，但不要洗掉打卡當下記的裝置／位置等稽核資料
+    const keep=sh?{inDev:sh.inDev||"", inDevUA:sh.inDevUA||"", inMobile:!!sh.inMobile,
+      inNewDev:!!sh.inNewDev, inGeo:sh.inGeo||null, outGeo:sh.outGeo||null,
+      issueNote:sh.issueNote||"", issueAt:sh.issueAt||""}:{};
+    const okSent=await writeWithin(window.DB.set("shifts", id, Object.assign({}, keep, patch)));
+    if(!okSent){ toast("補登還沒送到伺服器（網路可能不通）。確認網路之後再看一次，沒進去請再補一次。",true); return false; }
+    logA("補登出勤", name+" "+date+" "+tin+"–"+(tout||"…")+"（"+note+"）");
+    toast("已補登 "+name+" "+date);
+    return true;
+  }, "確認補登");
 }
 // 出勤異常＝遲到或早退（系統補下班也算，因為當天沒打下班）
 function attIssues(sh){
@@ -2782,8 +2882,9 @@ function myAttendCard(){
 // 一個人某個月的每日出勤明細表（個人明細與「我的出勤」共用）
 function attDetailTable(name, ym){
   const list=attRows(name, ym);
+  const fix=canFixAttend();
   return `<table class="responsive" style="margin-top:8px">
-    <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th></tr></thead>
+    <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th>${fix?"<th>補登</th>":""}</tr></thead>
     <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
       const f=!a.counted ? "未列入計算"
         : [a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
@@ -2793,7 +2894,8 @@ function attDetailTable(name, ym){
         <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
         <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
         <td data-label="工時">${minToHm(a.work)}</td>
-        <td data-label="狀況" class="${normal?'':'muted'}">${normal?'正常':esc(f)}</td></tr>`; }).join("")}</tbody></table>`;
+        <td data-label="狀況" class="${normal?'':'muted'}">${normal?'正常':esc(f)}${attManualPill(sh)}</td>
+        ${fix?`<td data-label="補登">${attFixBtn(name, sh.date)}</td>`:""}</tr>`; }).join("")}</tbody></table>`;
 }
 function viewAttend(){
   const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
@@ -2820,13 +2922,14 @@ function viewAttend(){
     ${(()=>{ const ns=staff.filter(u=>!attendStartOf(u.name));
       return ns.length?`<div class="muted" style="font-size:12px;margin-top:6px">尚未起算 ${ns.length} 人（${ns.map(u=>esc(u.name)).join("、")}）—— 他們設好自己的密碼之後才開始計算遲到早退。</div>`:""; })()}
     <table class="responsive" style="margin-top:10px">
-      <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th></tr></thead>
+      <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th>${canFixAttend()?"<th>補登</th>":""}</tr></thead>
       <tbody>${todayRows.map(({u,sh})=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
         const note=String((sh&&sh.issueNote)||"").trim();
         const hasIssue=attIssues(sh).length>0;
         const flags=[a.late>0?`<span class="pill em" style="font-size:10px">遲到 ${a.late} 分</span>`:'',
                      a.early>0?`<span class="pill wa" style="font-size:10px">早退 ${a.early} 分</span>`:'',
                      a.auto?'<span class="pill" style="font-size:10px">系統補下班</span>':'',
+                     a.manual?attManualPill(sh).trim():'',
                      a.newDev?'<span class="pill wa" style="font-size:10px">換了新裝置</span>':'',
                      a.mobile?(mobileAllowed(u.name)
                         ? '<span class="pill" style="font-size:10px">手機（已開放）</span>'
@@ -2844,6 +2947,7 @@ function viewAttend(){
           <td data-label="工時">${minToHm(a.work)}</td>
           <td data-label="狀況">${flags||state}</td>
           <td data-label="裝置">${a.in?`<span class="muted" style="font-size:11px">${esc(a.dev||"—")}${a.devUA?"・"+esc(a.devUA):""}</span>`:'<span class="muted">—</span>'}</td>
+          ${canFixAttend()?`<td data-label="補登">${attFixBtn(u.name, today)}</td>`:""}
         </tr>`; }).join("")}</tbody></table>
   </div>`;
   // ── 同一台裝置幫多人打卡 ──
@@ -2910,7 +3014,7 @@ function viewAttend(){
     return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>${shiftTag(u.name)}
       ${attDetailTable(u.name, ym)}
     </div>`; }).join("");
-  return `<h2>出勤</h2>${myAttendCard()}${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
+  return `<h2>出勤</h2>${myAttendCard()}${attFixAnyCard()}${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
     <h3 style="margin:20px 0 10px">個人明細</h3>${detail||'<div class="card muted">這個月還沒有打卡紀錄</div>'}`;
 }
 // ===================================================================
