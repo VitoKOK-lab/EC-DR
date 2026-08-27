@@ -115,8 +115,43 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     pushTimer = setTimeout(pushNow, PUSH_GAP - since);
   }
 
+  // ── 連線狀態與「還沒送出去的寫入」 ─────────────────────────────
+  //
+  // 這一段是補一個很嚴重的洞：Firestore 開了本機快取之後，寫不出去的東西會排隊在
+  // 瀏覽器裡，而且**立刻反映在自己的畫面上**。所以會出現「員工看到自己打了卡、
+  // 主管看到他沒打卡」——兩邊看的是同一段程式，差別在一邊的資料只存在本機。
+  //
+  // 更麻煩的是：離線時 setDoc **不會拋錯，而是永遠不 resolve**。所以光靠 try/catch
+  // 抓不到任何東西（clockIn 以前就是這樣，錯誤處理形同虛設）。
+  //
+  // 判斷方式：
+  //   fromCache        = 這份快照不是從伺服器來的 → 現在連不上
+  //   hasPendingWrites = 本機還有沒送出去的寫入 → 畫面上的東西別人看不到
+  // 開機頭幾秒本來就會先給快取，所以「連上過一次之前」不報離線，避免一進來就跳紅字。
+  const BOOT_AT = Date.now();
+  const BOOT_GRACE = 8000;
+  let sawServer = false;
+  const net = { online: true, pending: false };
+  function netUpdate(meta) {
+    if (meta && meta.fromCache === false) sawServer = true;
+    const offline = !!(meta && meta.fromCache) && (sawServer || Date.now() - BOOT_AT > BOOT_GRACE);
+    const online = !offline;
+    const pending = !!(meta && meta.hasPendingWrites);
+    if (online === net.online && pending === net.pending) return;
+    net.online = online; net.pending = pending;
+    if (window.__onNet) { try { window.__onNet({ online, pending }); } catch (e) {} }
+  }
+  // 瀏覽器自己的離線事件只是輔助：它只知道「有沒有網路」，不知道「連不連得到
+  // Firestore」。真正的判斷還是靠上面的 fromCache。
+  try {
+    window.addEventListener("offline", () => netUpdate({ fromCache: true, hasPendingWrites: net.pending }));
+    window.addEventListener("online",  () => { sawServer = false; });
+  } catch (e) {}
+
   // 暴露給 app.js 的寫入介面
   window.DB = {
+    // 目前連得上嗎／有沒有東西還沒送出去（app.js 用來顯示警示）
+    netState:    () => ({ online: net.online, pending: net.pending }),
     set:         (c, id, o) => setDoc(doc(db, c, id), o),
     update:      (c, id, p) => updateDoc(doc(db, c, id), p),
     del:         (c, id)    => deleteDoc(doc(db, c, id)),
@@ -240,9 +275,13 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push(); });
     onSnapshot(collection(db, "matches"),  q => { raw.matches  = q.docs.map(d => d.data()); push(); });
     // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀
-    onSnapshot(query(collection(db, "shifts"), where("date", ">=", SHIFTS_FROM)), q => {
+    // includeMetadataChanges：要拿到 fromCache／hasPendingWrites 才知道「有沒有連上」
+    // 與「打卡送出去了沒」。打卡是全公司每天都會寫的東西，拿它當連線狀態的探針最準。
+    onSnapshot(query(collection(db, "shifts"), where("date", ">=", SHIFTS_FROM)),
+      { includeMetadataChanges: true }, q => {
       Object.keys(shiftsLive).forEach(k => delete shiftsLive[k]);
       q.docs.forEach(d => shiftsLive[d.id] = d.data());
+      netUpdate(q.metadata);
       mergeShifts(); push();
     });
     // 操作紀錄（稽核用）：只有管理員看，改成點進去才訂閱（見 window.DB.watchLogs）

@@ -55,6 +55,18 @@ ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
 ROLE_TABS.pick = ROLE_TABS.cs.concat([["match","選品配對"]]);
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
+// 本機還有沒送出去的寫入（打卡、交辦…）。這種東西自己看得到、別人看不到，
+// 一定要標出來 —— 出過事：員工看到自己打了卡，主管看到他沒打卡。
+let PENDING = false;
+// fb.js 偵測到「連不連得上 Firestore」與「有沒有東西還沒送出去」時回呼這裡。
+// ⚠️ ONLINE 以前宣告成 true 之後**整份程式碼再也沒有人更新它**，
+//    所以那條「目前離線」的紅色橫幅永遠不會出現 —— 等於完全沒有離線偵測。
+window.__onNet = function(st){
+  const on=!!(st&&st.online), pd=!!(st&&st.pending);
+  if(on===ONLINE && pd===PENDING) return;
+  ONLINE=on; PENDING=pd;
+  if(STATE) try{ render(); }catch(e){}
+};
 let VIEW_AS = null;   // 管理員「員工視角」：暫時以某員工身分檢視（唯讀預覽）
 // 台灣時間（UTC+8）的今天／昨天。
 // 這兩個值以前是 const，載入時算一次就固定 —— 分頁掛著跨過午夜之後，
@@ -776,16 +788,35 @@ async function changeMyPw(){
   await write("PUT","/api/users/"+me,body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
+// 寫入逾時：離線的時候 Firestore 的 setDoc **不會拋錯，而是永遠不 resolve**。
+// 所以光包 try/catch 什麼都抓不到 —— 一定要自己設一個時限。
+// ⚠️ 逾時不代表要放棄：那筆寫入還排在本機佇列裡，網路回來會自己送出去。
+//    逾時只是「該告訴使用者現在還沒送到」。
+const PUNCH_WAIT=8000;
+function writeWithin(p, ms){
+  return Promise.race([ Promise.resolve(p).then(()=>true),
+    new Promise(r=>setTimeout(()=>r(false), ms||PUNCH_WAIT)) ]);
+}
 async function clockIn(name){ refreshToday();
-  try{ const id=shiftId(name,today); const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
-    if(ex&&ex.clockIn) return;   // 已打過上班卡
+  const id=shiftId(name,today);
+  try{ const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
+    if(ex&&ex.clockIn) return true;   // 已打過上班卡
     const env=punchEnv(); const isNew=!isKnownDevice(name, env.dev);
-    await window.DB.set("shifts", id, {id, user:name, date:today, clockIn:nowIso(), clockOut:"",
-      inDev:env.dev, inDevUA:env.ua, inMobile:env.mobile, inNewDev:isNew, inGeo:null, autoOut:false});
+    const okSent=await writeWithin(window.DB.set("shifts", id, {id, user:name, date:today, clockIn:nowIso(), clockOut:"",
+      inDev:env.dev, inDevUA:env.ua, inMobile:env.mobile, inNewDev:isNew, inGeo:null, autoOut:false}));
     rememberDevice(name, env);
     // GPS 是選配：拿到再補寫，拿不到或使用者不給權限都不影響打卡
     grabGeo().then(g=>{ if(g) window.DB.update("shifts", id, {inGeo:g}).catch(()=>{}); });
-  }catch(e){}
+    if(!okSent) punchStuckWarn();
+    return okSent;
+  }catch(e){ punchStuckWarn(); return false; }
+}
+// 上班卡沒送出去時要講的話。
+// 不能寫成「請再按一次」—— 那筆寫入已經排在本機佇列，畫面上也已經顯示成打過卡了，
+// 再登入一次會因為「已打過上班卡」直接跳過，什麼都不會發生。
+function punchStuckWarn(){
+  toast(T("上班卡還沒送到伺服器（網路可能不通）。先不要關掉這個分頁，連上網路會自動補送 —— 在那之前主管看不到你已經上班。",
+          "Your clock-in hasn't reached the server yet (network may be down). Don't close this tab — it will send itself once you're back online. Until then your manager can't see that you're on shift."), true);
 }
 function myShift(){ return (STATE&&STATE.shifts&&STATE.shifts[shiftId(currentUser(),today)])||null; }
 // 管理員密碼也只存雜湊（v89）。第一次用舊密碼登入成功時當場轉換，你不會察覺。
@@ -986,9 +1017,20 @@ function render(){
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
-  const banner = ONLINE ? "" :
-    `<div class="card" style="border-color:var(--red)">${T("目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。",
-      "You're offline — this is the last synced data (read-only). It updates automatically once you're back online.")}</div>`;
+  // 兩種狀況要講，而且要一直掛在畫面上（toast 會消失，這種事不能只講一次）：
+  //   ① 連不上 —— 你現在做的任何事別人都看不到
+  //   ② 連上了但還有東西沒送出去 —— 你看得到、別人看不到
+  const banner = !ONLINE
+    ? `<div class="card" style="border-color:var(--red)"><b style="color:var(--red)">⚠ ${T("連不上伺服器","Can't reach the server")}</b>
+        <div style="font-size:13px;margin-top:4px">${T(
+          "你現在做的事（打卡、交辦、回報）只存在這台電腦上，主管跟同事都看不到。先不要關掉這個分頁 —— 網路恢復就會自動補送。一直不行請跟主管說一聲。",
+          "Anything you do now (clock-in, tasks, updates) only exists on this computer — nobody else can see it. Don't close this tab; it will send itself once you're back online. Tell your manager if it doesn't clear.")}</div></div>`
+    : (PENDING
+    ? `<div class="card" style="border-color:var(--gold)"><b style="color:var(--gold-dk)">⏳ ${T("有資料還沒送出去","Some changes haven't been sent yet")}</b>
+        <div style="font-size:13px;margin-top:4px">${T(
+          "還在送，先不要關掉這個分頁。送完這行字會自己消失。",
+          "Still sending — don't close this tab. This message disappears once it's through.")}</div></div>`
+    : "");
   // 操作紀錄只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
   // 影片（777 筆）也是按需訂閱：行銷／客服／出貨／人資的每一個分頁，
@@ -3043,8 +3085,17 @@ function viewFlow(){
 const dashHM=iso=>String(iso||"").slice(11,16);                       // ISO → HH:MM
 const dashDur=(a,b)=>{ const m=durationMin(a,b); if(m==null) return "—"; const h=Math.floor(m/60), mm=m%60; return (h?h+"h":"")+mm+"m"; };
 const dashMin=(m)=> (typeof m==="number")?((Math.floor(m/60)?Math.floor(m/60)+"h":"")+(m%60)+"m"):"—";
+// 出勤小藥丸。
+// ⚠️ 自己那張卡如果還有沒送出去的打卡，一定要標出來 —— 不標的話它跟「已經送到、
+//    全公司都看得到」長得一模一樣，員工就會以為打好了（這正是出過事的那一次）。
+//    只標自己的：別人的卡片上那筆一定是從伺服器來的，我這台不可能有他的待送寫入。
+function dashPendingMark(s){
+  if(!PENDING || !s || String(s.user||"")!==currentUser()) return "";
+  return ` <span class="pill em" style="font-size:10px" title="${T("這筆還在你這台電腦上，主管還看不到","Still on your computer — your manager can't see it yet")}">${T("還沒同步","not synced")}</span>`;
+}
 const dashStatusPill=(s)=> !s||!s.clockIn ? `<span class="pill em">${T("未上班","Off")}</span>`
-    : (s.clockOut?`<span class="pill ok">${T("已下班","Clocked out")}</span>`:`<span class="pill wa">${T("上班中","On shift")}</span>`);
+    : (s.clockOut?`<span class="pill ok">${T("已下班","Clocked out")}</span>${dashPendingMark(s)}`
+                 :`<span class="pill wa">${T("上班中","On shift")}</span>${dashPendingMark(s)}`);
 // 一支影片一行：片名太長就用「…」截掉，後面的狀態與工時一定看得到，不會被擠到下一行。
 // 想看完整片名點進去就有。
 const dashVLine=(v,extra)=>`<div style="margin:5px 0;display:flex;gap:6px;align-items:baseline">
