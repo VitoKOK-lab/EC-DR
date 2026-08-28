@@ -5259,6 +5259,7 @@ function matchVideoPickerHTML(){
 }
 function setMatchVTab(t){ MATCH_VTAB=t; render(); }
 function matchVFilter(){ const el=document.getElementById("mv_list"); if(el) el.innerHTML=matchVideoListHTML(); }
+const MATCH_VSHOW=40;   // 候選影片一次最多畫幾張（見下面的說明）
 function matchVideoListHTML(){
   const q=MATCH_VQ.trim().toLowerCase();
   // 候選片源＝影片庫大流＋影片庫A。大流是現成成品，優先推薦；沒有的話再用關鍵字往庫A裡搜（見 isDF 排序）
@@ -5271,7 +5272,20 @@ function matchVideoListHTML(){
     return true;
   }).sort((a,b)=>(isDF(b)?1:0)-(isDF(a)?1:0));
   if(!list.length) return `<p class="muted">沒有符合條件的影片</p>`;
-  return list.map(v=>{
+  // ⚠️ 這裡以前把**每一支**候選片都畫成一張卡（一張兩顆按鈕）。實測正式資料：
+  //    6278 個 DOM 節點、403KB HTML —— 整個選品配對頁 100% 的份量都在這一塊，
+  //    手機上光是把它塞進畫面就要 2.4 秒。而外框是 max-height:520px 的捲動區，
+  //    同一時間看得到的只有 5 張左右，其餘 750 張是純粹白做的。
+  //    照操作紀錄那一頁的慣例改成「只畫前 N 張」＋講清楚還有幾支。
+  //    選到的主選／備選一定要在裡面 —— 不然捲不到會以為自己沒選到。
+  const picked=list.filter(v=>v.id===MATCH_PRIMARY_ID||v.id===MATCH_BACKUP_ID);
+  const rest  =list.filter(v=>v.id!==MATCH_PRIMARY_ID&&v.id!==MATCH_BACKUP_ID);
+  const shown =picked.concat(rest.slice(0, Math.max(0, MATCH_VSHOW-picked.length)));
+  const more  =list.length-shown.length;
+  const moreLine = more
+    ? `<p class="muted" style="font-size:12px;margin:8px 0 0">符合的共 <b>${list.length}</b> 支，這裡只列前 ${shown.length} 支 —— 用上面的搜尋或分頁縮小範圍。（已選的一定會列出來）</p>`
+    : "";
+  return shown.map(v=>{
     const isP=v.id===MATCH_PRIMARY_ID, isB=v.id===MATCH_BACKUP_ID;
     return `<div class="card" style="background:var(--panel2);margin-bottom:8px;${isP?'border-color:var(--accent)':(isB?'border-color:var(--gold)':'')}">
       <div class="row" style="justify-content:space-between">
@@ -5289,7 +5303,7 @@ function matchVideoListHTML(){
         <button class="btn sm ${isB?'sec':''}" onclick="setMatchVideo('backup','${esc(jsEsc(v.id))}')">${isB?"取消備選":"設為備選"}</button>
       </div>
     </div>`;
-  }).join("");
+  }).join("")+moreLine;
 }
 function setMatchVideo(slot,id){
   if(slot==="primary"){ MATCH_PRIMARY_ID=(MATCH_PRIMARY_ID===id)?null:id; if(MATCH_BACKUP_ID===MATCH_PRIMARY_ID) MATCH_BACKUP_ID=null; }
