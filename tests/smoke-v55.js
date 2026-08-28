@@ -109,8 +109,10 @@ ok("沒有按鈕", !h.includes("<button"));
 ok("沒有 onclick", !h.includes("onclick"));
 ok("沒有連結", !h.includes("<a "));
 // v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項，沒有別的輸入
-ok("只有篩選用的下拉與搜尋框", (h.match(/<select|<input/g)||[]).length===2
-   && h.includes("teamSetGroup(") && h.includes("teamSetQ("));
+// v150：多了一個「看哪一個月」的下拉。它跟現有的篩選同一類 —— 換的是「看什麼」，
+// 不是動資料，所以照樣走下拉、不是按鍵（這一頁全公司都看得到，規矩是純檢視）。
+ok("只有篩選用的下拉與搜尋框，外加月份下拉", (h.match(/<select|<input/g)||[]).length===3
+   && h.includes("teamSetGroup(") && h.includes("teamSetQ(") && h.includes("teamSetYM("));
 ok("沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
    "assignTaskSel(","hrNotify(","ackTask(","editVideo(","noticeReply(","msgReply("].every(f=>!h.includes(f)));
 ok("沒有審核／交辦／檢查的動作", !h.includes("reviewVid(") && !h.includes("flowAssign(") && !h.includes("hrCheckVideo"));

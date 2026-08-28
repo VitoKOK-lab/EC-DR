@@ -3563,20 +3563,22 @@ function teamHeatCard(staff, ym){
         ${T("多","more")}${max?`　<span class="muted">${T("單日最多 "+max+" 支","peak "+max)}</span>`:""}</span>
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">${T(
-      "顏色越深＝那天完成越多，淺灰格＝那天沒有完成上片；今天之後的日子不畫格子。",
-      "Darker = more finished that day; a pale cell means none. Days after today are left undrawn.")}</div>
+      "顏色越深＝那天完成越多，淺灰格＝那天沒有完成上片。","Darker = more finished that day; a pale cell means none.")
+      + (today.slice(0,7)===ym ? T("今天之後的日子不畫格子。"," Days after today are left undrawn.") : "")}</div>
     <div class="hm-wrap"><table class="hm">
       <thead><tr><th class="hm-n"></th>${head}<th class="hm-t">${T("合計","Total")}</th></tr></thead>
       <tbody>${body}${foot}</tbody></table></div>
   </div>`;
 }
 // 本月完成上片排行：單一數量的比較，橫條最好讀（名字長度不影響、直接標數字）
-function teamBarCard(months){
+function teamBarCard(months, ym){
   const list=months.filter(x=>!noEdit(x.u)).slice().sort((a,b)=>b.m.count-a.m.count || String(a.u.name).localeCompare(String(b.u.name)));
   if(!list.length) return "";
   const max=Math.max(1, ...list.map(x=>x.m.count));
   return `<div class="card">
-    <b style="font-size:15px">${T("本月完成上片","Published this month")}</b>
+    <b style="font-size:15px">${(!ym||ym===today.slice(0,7))
+      ? T("本月完成上片","Published this month")
+      : T((+ym.slice(0,4))+" 年 "+(+ym.slice(5,7))+" 月完成上片", ym+" published")}</b>
     <div class="muted" style="font-size:12px;margin-top:4px">${T(
       "括號是其中有帶商品的支數。","In brackets: how many carried a product.")}</div>
     <div class="barlist">${list.map(({u,m})=>`
@@ -3688,11 +3690,61 @@ function teamFilterBar(all, shown){
     ${(TEAM_GROUP!=="all"||TEAM_Q)?`<span class="muted" style="font-size:12px">${T("顯示 "+shown.length+" / "+all.length+" 人","Showing "+shown.length+" of "+all.length)}</span>`:""}
   </div>`;
 }
+// 團隊看板的「月成效」看哪一個月。
+// 本來寫死當月 —— 但月底檢討、算獎金、跟上個月比，都需要往前翻。
+// 底下的 teamMonthStat／teamHeatCard 本來就吃 ym 參數，所以只要把月份變成可選的。
+let TEAM_YM=null;
+function teamYM(){
+  if(!TEAM_YM) TEAM_YM=today.slice(0,7);
+  return TEAM_YM;
+}
+function teamSetYM(ym){
+  if(!/^\d{4}-\d{2}$/.test(String(ym||"")) || ym>today.slice(0,7)) return;
+  TEAM_YM=ym;
+  // 出勤天數要看打卡紀錄，而打卡常駐只訂閱最近兩個月 —— 往前翻要補讀那一個月
+  attEnsureMonth(ym);
+  render();
+}
+// 有資料的月份：從最早那一筆到這個月。
+// 不寫死「最近 12 個月」——資料只有三個月的時候不該給九個空月份可選。
+//
+// ⚠️ 只看交辦與打卡，**不能看 STATE.videos** —— 行銷／客服／出貨／人資根本不下載
+//    影片資料（v138 的效能修正），拿影片來算的話他們的月份清單會跟別人不一樣，
+//    而且會把那個「不下載也長一樣」的保證打破（smoke-v139 就是在釘這件事）。
+//    實務上也不缺：有人上了片，那天一定有打卡與交辦。
+function teamMonths(){
+  const cur=today.slice(0,7);
+  let min=cur;
+  const take=(d)=>{ const m=String(d||"").slice(0,7); if(/^\d{4}-\d{2}$/.test(m) && m<min) min=m; };
+  Object.values((STATE&&STATE.tasks)||{}).forEach(t=>take(t.date));
+  Object.values((STATE&&STATE.shifts)||{}).forEach(x=>take(x.date));
+  const out=[]; let [y,m]=min.split("-").map(Number);
+  // 給個上限，資料再久也不要生出幾百個選項
+  for(let i=0;i<60;i++){
+    const ym=`${y}-${String(m).padStart(2,"0")}`;
+    out.push(ym);
+    if(ym>=cur) break;
+    m++; if(m>12){ m=1; y++; }
+  }
+  return out.reverse();   // 新的在上面（最常看的是最近幾個月）
+}
+// ⚠️ 這裡刻意用下拉、不用按鍵：團隊看板全公司都看得到，規矩是「除了篩選之外
+//    不能操作任何東西」（smoke-v55／v66／v67／v70／v83 都在釘這件事）。
+//    換月份是看的方式、不是動資料，所以走跟現有篩選一樣的形式。
+function teamMonthPicker(ym){
+  const opts=teamMonths();
+  if(!opts.includes(ym)) opts.unshift(ym);
+  return `<select onchange="teamSetYM(this.value)" style="width:auto;min-width:130px;margin-left:10px;font-size:13px;padding:4px 8px">
+    ${opts.map(x=>{ const [y,m]=x.split("-").map(Number);
+      return `<option value="${x}" ${x===ym?"selected":""}>${T(y+" 年 "+m+" 月", x)}${x===today.slice(0,7)?T("（本月）"," (current)"):""}</option>`;
+    }).join("")}</select>`;
+}
 function viewTeam(){
   const everyone=teamStaff();
   const staff=teamFilter(everyone);
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
-  const ym=today.slice(0,7), minLabel=dashMin;
+  const ym=teamYM(), minLabel=dashMin;
+  const curYM=today.slice(0,7);
   if(!everyone.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
   if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2>${teamFilterBar(everyone, staff)}
     <div class="card muted">${T("沒有符合的人","Nobody matches")}</div>`;
@@ -3702,7 +3754,10 @@ function viewTeam(){
   const dayOn=dayStats.filter(d=>d.s&&d.s.clockIn).length;
   const dayTaskAll=dayStats.reduce((a,d)=>a+d.tasks.length,0);
   const dayTaskDone=dayStats.reduce((a,d)=>a+d.tasks.filter(t=>t.done).length,0);
-  const monDone=months.reduce((a,x)=>a+x.m.count,0);
+  // 上面那條速覽是「現在的狀況」，不能跟著往前翻的月份跑 —— 永遠算當月
+  const monDone=(ym===curYM)
+    ? months.reduce((a,x)=>a+x.m.count,0)
+    : staff.reduce((a,u)=>a+teamMonthStat(u.name, allTasks, curYM).count, 0);
   const rows=months.map(({u,m})=>`<tr>
     <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", roleEn(u.role||"editor"))}</span></td>
     <td data-label="${T("完成上架","Published")}">${noEdit(u)?"—":m.count}</td>
@@ -3726,9 +3781,9 @@ function viewTeam(){
   <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
   ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
     <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
-  <h3 style="margin:24px 0 10px">${T("本月成效","This month")} <span class="muted" style="font-size:13px;font-weight:400">${T(+ym.slice(0,4)+" 年 "+(+ym.slice(5,7))+" 月", ym)}</span></h3>
+  <h3 style="margin:24px 0 10px;display:flex;align-items:center;flex-wrap:wrap">${ym===curYM?T("本月成效","This month"):T("月成效","Monthly")}${teamMonthPicker(ym)}</h3>
   ${teamHeatCard(staff, ym)}
-  ${teamBarCard(months)}
+  ${teamBarCard(months, ym)}
   ${staff.some(noEdit)?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
     "上面兩張圖只列會剪片的同仁 —— 行銷／客服／出貨不剪片，畫進去整列都是空的，看起來會像沒做事。他們的交辦完成與出勤在下面的表裡。",
     "The two charts above only list people who cut videos. Everyone else's tasks and attendance are in the table below.")}</div>`:''}
