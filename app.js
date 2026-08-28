@@ -1900,8 +1900,15 @@ function foldIsOpen(key, defOpen){
 function foldState(key, defOpen){
   return `data-fold="${foldKey(key)}"${foldIsOpen(key, defOpen)?" open":""}`;
 }
+// ⚠️ 空的一折絕對不能畫出來 —— 按下去沒東西比沒有這一折還糟：
+//    人會以為是壞掉了、或以為自己權限不夠，然後回頭問主管。
+//    這裡本來只擋 `!body`（呼叫端回 "" 的那種），可是幾乎所有呼叫端都是
+//    多行的樣板字串，湊出來是 "\n      \n      " —— 那是**有值**的，
+//    於是照樣畫出一個空盒子。所以要 trim 過再判斷。
+//    （v144 把「存檔資料夾」從「上片後」搬到主畫面之後，剪輯與海外看到的
+//      「上片後」就一直是這種空盒子 —— 成效表只有老闆／主管看得到。）
 function fold(title, count, body, open){
-  if(!body) return "";
+  if(!String(body==null?"":body).trim()) return "";
   return `<details class="fold" ${foldState(title, open)}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
     <div class="foldbody">${body}</div></details>`;
 }

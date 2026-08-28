@@ -119,11 +119,21 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
 // ══════════ ③ 位置：拍毛片的人一進來就看得到，不用展開 ══════════
 { reset([v_("V1")]);
   openVideoModal("V1", true);
-  ok("存檔資料夾在「上片後」那一折之前（不用展開）",
-     modalHTML.indexOf('id="e_drive"') > 0 && modalHTML.indexOf('id="e_drive"') < modalHTML.indexOf("上片後"));
-  ok("就排在毛片雲端連結旁邊（同一件事，同一個人做）",
-     modalHTML.indexOf('id="e_rawlink"') < modalHTML.indexOf('id="e_drive"')
-     && modalHTML.indexOf('id="e_drive"') < modalHTML.indexOf('id="e_date"')); }
+  // v151：原本是拿「在『上片後』那一折之前」來判位置，但那一折現在對剪輯根本
+  //       不出現了（裡面沒東西就整折不畫），indexOf 會是 -1，這條就永遠測不到。
+  //       改成直接問真正要保證的事：**不在任何一折裡面** —— 也就是排在第一個
+  //       <details> 之前。這比原本那條更嚴，之後再多幾折也擋得住。
+  const iDrive=modalHTML.indexOf('id="e_drive"');
+  const iFold=modalHTML.indexOf('<details class="fold"');
+  ok("存檔資料夾在主畫面，不在任何折疊區裡（不用展開就看得到）",
+     iDrive>0 && iFold>0 && iDrive<iFold, {iDrive, iFold});
+  // v145 把「毛片雲端連結」跟「存檔位置」併成同一格了（e_rawlink 已經不存在），
+  // 所以這裡改盯它跟前後鄰居的順序：口播稿之後、預排上片日之前。
+  ok("排在影片文案之後、預排上片日之前（拍完就順手填）",
+     modalHTML.indexOf('id="e_vcopy"') > 0
+     && modalHTML.indexOf('id="e_vcopy"') < iDrive
+     && iDrive < modalHTML.indexOf('id="e_date"'));
+  ok("e_rawlink 確實已經不存在（v145 併欄位）", modalHTML.indexOf('id="e_rawlink"')<0); }
 
 // ══════════ ④ 二創殼不該看到這段（他們沒有要開資料夾） ══════════
 { reset([v_("SRC",{driveFolder:FAM,stage:"已上片",published:true,publishedLink:"http://x"}),
