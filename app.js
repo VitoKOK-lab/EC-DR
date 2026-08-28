@@ -898,7 +898,48 @@ function decorate(raw){
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
   return st;
 }
-function applyState(raw){
+// ── 只在「這一頁真的吃到的資料」變了才重繪（v153 ②）────────────────
+//
+// 量出來的事實：一次同步，全公司每個人都把整頁重畫一遍 —— 但七成畫出來跟原本一模一樣。
+//   管理員 88 組「分頁×集合」裡 64 組無關（73%）　剪輯 40 組裡 28 組（70%）
+//   人資   24 組裡 16 組（67%）　　　　　　　　　客服 16 組裡 12 組（75%）
+// 具體一點：人資整天待在「出勤」（手機上重繪一次 2628 毫秒），有人存了一支影片
+// 就凍結 2.6 秒，然後畫出一模一樣的東西。剪輯在影片庫，同事每打一次卡也重畫一次。
+//
+// ⚠️⚠️ 這張表**寧可多寫不可少寫**。
+//    少寫 ＝ 資料該更新卻沒更新，使用者盯著舊畫面而且不會發現 —— 最糟的那種 bug。
+//    多寫 ＝ 多重繪一次，只是浪費，看不出來。
+//    所以：① 沒登記在表裡的分頁一律照畫（不是「一律不畫」）。
+//         ② users／settings 影響職位、語言、分頁本身，一律照畫，不進這張表。
+//         ③ 只登記「人多、或重繪特別貴」而且我逐一量過的那幾頁；
+//            冷門的管理頁（設定、操作紀錄、回收桶、選品配對、平台成效）
+//            故意不登記 —— 省下來的沒幾毫秒，不值得冒表寫錯的風險。
+//
+// 這張表的來源是三份東西的**聯集**：正式資料實測、合成資料實測、逐頁讀 code。
+// 只用其中一份會漏 —— 正式快照裡根本沒有 products／matches，光看它會以為
+// 選品配對不吃那兩個集合；合成資料的影片沒有 metrics，光看它會以為平台成效
+// 什麼都不吃。tests/smoke-v154.js 會逐一實測把關，漏寫就變紅。
+const GLOBAL_COLLS=["users","settings"];
+const TAB_DEPS={
+  attend:   ["shifts"],
+  team:     ["videos","tasks","shifts"],
+  work:     ["videos","tasks"],
+  videos:   ["videos"],
+  videosDF: ["videos"],
+  output:   ["videos"],
+  cal:      ["videos","schedule"],
+  dashboard:["videos","tasks","schedule"],
+  flow:     ["videos","tasks","shifts","schedule"],
+};
+function tabNeedsRender(tab, changed){
+  if(!Array.isArray(changed) || !changed.length) return true;   // 不知道改了什麼 → 照畫
+  if(LAST_RENDER_TAB==null) return true;                        // 還沒畫過第一次 → 一定要畫
+  if(changed.some(c=>GLOBAL_COLLS.indexOf(c)>=0)) return true;
+  const deps=TAB_DEPS[tab];
+  if(!deps) return true;                                        // 沒登記的分頁 → 照畫
+  return changed.some(c=>deps.indexOf(c)>=0);
+}
+function applyState(raw, changed){
   if(!raw) return;
   if(BULK_BUSY){ LAST_RAW=raw; return; }
   LAST_RAW=raw; decorate(raw);
@@ -920,7 +961,10 @@ function applyState(raw){
     { const lb=document.getElementById("logoutBtn"); if(lb) lb.textContent=isIntl?"Log out":"登出"; }
     { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
-    buildNav(); render();
+    // STATE 一定是最新的（上面 decorate 過了），只是「畫不畫」看這一頁吃不吃得到。
+    // 跳過重繪不會讓資料變舊 —— 切到別的分頁時 setTab() 會重畫，拿到的是新的 STATE。
+    buildNav();
+    if(tabNeedsRender(CUR_TAB, changed)) render();
     autoMoveOrigLang();   // 每次載入跑一次；沒東西可搬就立刻結束（見 origAutoMovable）
   } else {
     document.getElementById("app").classList.add("hidden");

@@ -105,11 +105,19 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   // 批次寫入（bulkRun 一次送 10 筆）也會引發一連串快照，同樣被這裡收斂成一次。
   //
   // 頭一次立刻畫（不然登入畫面會多等），之後同一個窗口內的通通併成最後一次。
+  // v153：push 要講清楚「是哪個集合變了」。app.js 拿這個去判斷目前這一頁
+  // 吃不吃得到 —— 吃不到就不重繪（實測七成的重繪畫出來一模一樣）。
+  // 窗口內併起來的多次變動要**累加**，不能只留最後一個，不然會漏掉。
   const PUSH_GAP = 150;
   let pushTimer = null, lastPush = 0;
-  function pushNow() { lastPush = Date.now(); pushTimer = null;
-    if (window.__onState) window.__onState(raw); }
-  function push() {
+  let dirty = Object.create(null);
+  function pushNow() {
+    lastPush = Date.now(); pushTimer = null;
+    const changed = Object.keys(dirty); dirty = Object.create(null);
+    if (window.__onState) window.__onState(raw, changed);
+  }
+  function push(coll) {
+    if (coll) dirty[coll] = 1;
     if (pushTimer) return;                       // 這個窗口已經排好了，等它就好
     const since = Date.now() - lastPush;
     if (since >= PUSH_GAP) { pushNow(); return; } // 安靜了一陣子 → 立刻畫
@@ -173,7 +181,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     watchVideos() {
       if (videosUnsub) return false;
       videosUnsub = onSnapshot(collection(db, "videos"),
-        q => { raw.videos = q.docs.map(d => d.data()); push(); });
+        q => { raw.videos = q.docs.map(d => d.data()); push("videos"); });
       return true;
     },
     videosWatched: () => !!videosUnsub,
@@ -190,7 +198,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       if (logsUnsub) { try { logsUnsub(); } catch (e) {} }
       logsUnsub = onSnapshot(
         query(collection(db, "logs"), where("at", ">=", LOGS_FROM), orderBy("at", "desc"), limit(want)),
-        q => { raw.logs = q.docs.map(d => d.data()); push(); });
+        q => { raw.logs = q.docs.map(d => d.data()); push("logs"); });
       return true;
     },
     logsLimit: () => logsLimit,
@@ -221,7 +229,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       const s = await getDocs(query(collection(db, "shifts"),
         where("date", ">=", ym + "-01"), where("date", "<=", ym + "-31")));
       s.docs.forEach(d => { shiftsOld[d.id] = d.data(); });
-      mergeShifts(); push();
+      mergeShifts(); push("shifts");
       return true;
     },
   };
@@ -261,8 +269,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     }
 
     // 即時訂閱（任一變動即同步到所有人的畫面）
-    onSnapshot(sref, d => { raw.settings = d.data() || {}; push(); });
-    onSnapshot(collection(db, "users"),    q => { raw.users    = q.docs.map(d => d.data()); push(); });
+    onSnapshot(sref, d => { raw.settings = d.data() || {}; push("settings"); });
+    onSnapshot(collection(db, "users"),    q => { raw.users    = q.docs.map(d => d.data()); push("users"); });
     // 影片：不剪片的職位一筆都不用下載，但**需要的人必須在這裡就開始下載**，
     // 跟其他集合並行。
     // ⚠️ 只靠 app.js 在 render() 裡呼叫 watchVideos() 是不夠的 —— 那要等畫面先畫完，
@@ -270,11 +278,11 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     //    看到空清單、而且做什麼都會「找不到影片」（v138 上線後回報的災情）。
     // 職位存在 localStorage，登入過就有；沒有或看不懂就當作要下載（寧可多下載，不能少）。
     if (needVideosByRole()) window.DB.watchVideos();
-    onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push(); });
-    onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push(); });
+    onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push("schedule"); });
+    onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push("tasks"); });
     // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
-    onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push(); });
-    onSnapshot(collection(db, "matches"),  q => { raw.matches  = q.docs.map(d => d.data()); push(); });
+    onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push("products"); });
+    onSnapshot(collection(db, "matches"),  q => { raw.matches  = q.docs.map(d => d.data()); push("matches"); });
     // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀
     // includeMetadataChanges：要拿到 fromCache／hasPendingWrites 才知道「有沒有連上」
     // 與「打卡送出去了沒」。打卡是全公司每天都會寫的東西，拿它當連線狀態的探針最準。
@@ -283,7 +291,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       Object.keys(shiftsLive).forEach(k => delete shiftsLive[k]);
       q.docs.forEach(d => shiftsLive[d.id] = d.data());
       netUpdate(q.metadata);
-      mergeShifts(); push();
+      mergeShifts(); push("shifts");
     });
     // 操作紀錄（稽核用）：只有管理員看，改成點進去才訂閱（見 window.DB.watchLogs）
   });
