@@ -1847,7 +1847,7 @@ function workReviewCard(me){
     && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
-  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
   const nRev=rejected.length+approvedTodo.length+waitingReview.length;
   const rejCard = nRev?`<div class="card" style="border-color:${rejected.length?'var(--red)':(approvedTodo.length?'var(--gold)':'var(--line)')}">
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -1922,7 +1922,7 @@ function workRecent7Card(me){
     .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
   if(!list.length) return "";
   const nWait=list.filter(needsReview).length;
-  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
   const rows=list.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
       <span style="min-width:0;flex:1 1 220px">
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
@@ -1961,7 +1961,7 @@ function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
   return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -2063,7 +2063,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
-      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
+      `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
@@ -3200,7 +3200,7 @@ function flowReviewQueueCard(){
   // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-  const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openRev=vidOpenFn;   // v153：同上，不要再抄一份
   const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
     ${/* 全部列出來：折疊上的數字說有幾支，就要有幾支點得到，不然審不到的那些等於被忘記 */''}
     ${pendingReview.length?pendingReview.map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
