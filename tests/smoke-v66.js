@@ -147,7 +147,9 @@ ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.incl
 
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
-ok("人資分頁＝團隊看板＋出勤", myTabs().length===2 && myTabs()[0][0]==="team" && myTabs()[1][0]==="attend");
+// v152：多了「剪輯成效」（管理員與人資限定）
+ok("人資分頁＝團隊看板＋剪輯成效＋出勤", myTabs().length===3
+   && myTabs()[0][0]==="team" && myTabs()[1][0]==="output" && myTabs()[2][0]==="attend");
 let th=viewTeam();
 ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 

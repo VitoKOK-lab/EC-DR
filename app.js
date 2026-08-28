@@ -22,11 +22,21 @@ const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 // 這個職位的畫面用不用得到影片資料。
 // ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
 //    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
-//    團隊看板會顯示剪輯的產量，所以人資看起來像是要用，實測他那兩頁完全沒差；
-//    反過來「選品行銷」不剪片，但選品配對要從影片庫大流挑片，所以他一定要。
+//    「選品行銷」不剪片，但選品配對要從影片庫大流挑片，所以他一定要。
 //    以後新增職位或新增卡片，請照同一個方法驗一次（tests/smoke-v139.js 有現成的比對），
 //    不要用猜的。
-const NO_VIDEO_ROLES=["mkt","svc","ship","cs","hr"];
+//
+// ⚠️⚠️ v152 更正：這裡原本寫「人資看起來像是要用，實測他那兩頁完全沒差」——
+//    那句話是錯的，而且 smoke-v139 的比對當時是**空轉**的（樣本影片沒有 editor、
+//    完成日也不在當月，有沒有影片資料兩邊都是 0，所以比得出「一樣」）。
+//    拿正式資料在真瀏覽器實測：團隊看板的「本月完成」管理員看到 168、
+//    人資／行銷／客服／出貨看到 **0**。那不是空白，是**假數字** ——
+//    十三個人每天在看一份說「這個月沒人做事」的表。
+//    現在分兩邊處理：
+//      ① 人資要查剪輯的完成狀況（v152 的新分頁），所以他真的需要影片資料 → 移出這份清單。
+//      ② 其他不剪片的職位照舊不下載，但團隊看板上那幾個算不出來的欄位與圖表
+//         直接**不顯示**（見 viewTeam 的 needVideos() 判斷），不再假裝是 0。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs"];
 function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
@@ -41,13 +51,14 @@ function videosLoading(){
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["match","選品配對"],["log","操作紀錄"],["trash","回收桶"]],
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["match","選品配對"],["log","操作紀錄"],["trash","回收桶"]],
   manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["match","選品配對"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程＋選品配對；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
-  hr:      [["team","團隊看板"],["attend","出勤"]],   // 人資：團隊看板（交辦狀況＋成效）＋出勤（打卡、遲到早退、月報表）
+  // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
+  hr:      [["team","團隊看板"],["output","剪輯成效"],["attend","出勤"]],
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
@@ -1033,11 +1044,12 @@ function render(){
     : "");
   // 操作紀錄只有管理員看得到，點進來才去訂閱（其他 21 個人不用白白下載）
   if(CUR_TAB==="log"){ try{ if(window.DB&&window.DB.watchLogs) window.DB.watchLogs(); }catch(e){} }
-  // 影片（777 筆）也是按需訂閱：行銷／客服／出貨／人資的每一個分頁，
+  // 影片（874 筆）也是按需訂閱：行銷／客服／出貨的每一個分頁，
   // 有影片資料跟沒有影片資料畫出來的東西一模一樣（逐頁比對過），他們是純粹白下載。
+  // （人資 v152 移出去了 —— 他有「剪輯成效」要查，真的用得到。）
   // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
+  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -3613,7 +3625,10 @@ function teamTaskRow(t){
 }
 // 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
 function teamDayCard(u, allTasks){
-  const name=u.name, minLabel=dashMin, hm=dashHM, isCS=noEdit(u);
+  // isCS＝**被看的人**不剪片（那幾格對他沒意義）；needVideos()＝**看的人**手上有沒有影片資料。
+  // 兩個都要問：行銷／客服／出貨沒下載影片，那幾格會全部算成 0 —— 那不是「他今天沒做」，
+  // 是「我算不出來」。算不出來就不要畫（v152）。
+  const name=u.name, minLabel=dashMin, hm=dashHM, isCS=noEdit(u)||!needVideos();
   const {s, done, wip, tasks, notices, workMin}=teamDayStat(name, allTasks);
   const att=(s&&s.clockIn)?`${hm(s.clockIn)}–${s.clockOut?hm(s.clockOut):"…"}・${T("工時","Hours")} ${minLabel(workMin)}`:T("今天還沒上線","Not clocked in yet");
   const list=(arr,label,cls)=>arr.length?arr.map(v=>`<div style="font-size:13px;padding:3px 0;display:flex;gap:6px;align-items:flex-start;min-width:0">
@@ -3755,6 +3770,11 @@ function viewTeam(){
   if(!everyone.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
   if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2>${teamFilterBar(everyone, staff)}
     <div class="card muted">${T("沒有符合的人","Nobody matches")}</div>`;
+  // v152：不下載影片資料的職位（行銷／客服／出貨）算不出剪輯的產量 ——
+  // 以前那幾欄跟兩張圖照畫，全部是 0。那不是「還沒有資料」，是**假數字**：
+  // 正式資料實測，同一天管理員看到 168、客服看到 0。看到 0 的人只會以為大家沒做事。
+  // 算不出來就不要畫。他們真正要看的（出勤、交辦）本來就在同一張表裡。
+  const vidOK=needVideos();
   const months=staff.map(u=>({u, m:teamMonthStat(u.name, allTasks, ym)}));
   const dayStats=staff.map(u=>teamDayStat(u.name, allTasks));
   const dayDone=dayStats.reduce((a,d)=>a+d.done.length,0);
@@ -3767,10 +3787,10 @@ function viewTeam(){
     : staff.reduce((a,u)=>a+teamMonthStat(u.name, allTasks, curYM).count, 0);
   const rows=months.map(({u,m})=>`<tr>
     <td data-label="${T("成員","Member")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", roleEn(u.role||"editor"))}</span></td>
-    <td data-label="${T("完成上架","Published")}">${noEdit(u)?"—":m.count}</td>
+    ${vidOK?`<td data-label="${T("完成上架","Published")}">${noEdit(u)?"—":m.count}</td>
     <td data-label="${T("剪片速度","Days/clip")}">${noEdit(u)?"—":(m.avgDays!=null?m.avgDays.toFixed(1)+T(" 天"," d"):"—")}</td>
     <td data-label="${T("平均工時","Avg time")}">${noEdit(u)?"—":minLabel(m.avgMin)}</td>
-    <td data-label="${T("帶商品","With product")}">${noEdit(u)?"—":m.sales}</td>
+    <td data-label="${T("帶商品","With product")}">${noEdit(u)?"—":m.sales}</td>`:''}
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `<h2>${T("團隊看板","Team Board")}</h2>
@@ -3781,23 +3801,142 @@ function viewTeam(){
   ${teamFilterBar(everyone, staff)}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
-    <div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>
+    ${vidOK?`<div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>`:''}
     <div><span class="fn ${dayTaskAll&&dayTaskDone<dayTaskAll?'warn':''}">${dayTaskDone}<i>/${dayTaskAll}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
-    <div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>
+    ${vidOK?`<div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>`:''}
   </div>
   <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
   ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
     <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
   <h3 style="margin:24px 0 10px;display:flex;align-items:center;flex-wrap:wrap">${ym===curYM?T("本月成效","This month"):T("月成效","Monthly")}${teamMonthPicker(ym)}</h3>
-  ${teamHeatCard(staff, ym)}
-  ${teamBarCard(months, ym)}
-  ${staff.some(noEdit)?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
+  ${vidOK?teamHeatCard(staff, ym):''}
+  ${vidOK?teamBarCard(months, ym):''}
+  ${(vidOK&&staff.some(noEdit))?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
     "上面兩張圖只列會剪片的同仁 —— 行銷／客服／出貨不剪片，畫進去整列都是空的，看起來會像沒做事。他們的交辦完成與出勤在下面的表裡。",
     "The two charts above only list people who cut videos. Everyone else's tasks and attendance are in the table below.")}</div>`:''}
   <div class="card">
-    <table class="responsive"><thead><tr><th>${T("成員","Member")}</th><th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th><th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
+    <table class="responsive"><thead><tr><th>${T("成員","Member")}</th>${vidOK?`<th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th>`:''}<th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
   </div>`;
+}
+// ===================================================================
+// 剪輯成效（v152）—— 只有管理員與人資看得到
+//
+// 要回答的就三件事：這個月每個剪輯做完幾支、審過了沒、**檔案在哪個資料夾**。
+// 最後那一項是重點 —— 審過之後要能直接點進去看成片，不用再去問人。
+//
+// 為什麼不塞進團隊看板：那一頁全公司都看得到，而且是刻意「除了篩選之外不能
+// 操作任何東西」（smoke-v55／v66／v67／v70／v83 五支在釘「沒有 <button>、
+// 沒有 onclick」）。這一頁的重點正好相反 —— 就是要能點 —— 而且是管理用的，
+// 所以獨立一頁、限定管理員與人資。
+//
+// 這一頁完全不寫資料，純查詢。
+// ===================================================================
+let OUT_FILTER="all";                 // all｜ok 審過｜wait 還沒審｜back 退回｜nodrive 缺資料夾
+function canSeeOutput(){ return ["boss","hr"].includes(currentRole()); }
+function setOutFilter(k){ OUT_FILTER=OUT_FILTER===k?"all":k; render(); }
+// 一支片的審核狀態（沒有 reviewStatus ＝ 還沒審）
+function outState(v){ return v.reviewStatus==="通過" ? "ok" : (v.reviewStatus==="退回" ? "back" : "wait"); }
+// 某人某月「做完的片」。用 editor 而不是 claimedBy —— 完成的功勞記在剪輯身上。
+// 二創版本也算（那也是他剪的），所以不篩 isSourceVid。
+function outVideosOf(name, ym){
+  return (STATE.videos||[]).filter(v=>v.editor===name && isPublished(v)
+      && String(v.finishedAt||"").slice(0,7)===ym)
+    .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
+}
+function outCounts(list){
+  const c={all:(list||[]).length, ok:0, wait:0, back:0, nodrive:0};
+  (list||[]).forEach(v=>{ c[outState(v)]++; if(!familyDrive(v)) c.nodrive++; });
+  return c;
+}
+function outApply(list){
+  if(OUT_FILTER==="all") return list;
+  if(OUT_FILTER==="nodrive") return list.filter(v=>!familyDrive(v));
+  return list.filter(v=>outState(v)===OUT_FILTER);
+}
+const OUT_CATS=[["all","全部","All"],["ok","審過","Approved"],["wait","還沒審","Not reviewed"],
+                ["back","退回","Sent back"],["nodrive","缺資料夾","No folder"]];
+function outFilterBar(total){
+  return `<div class="vtabs" style="margin:10px 0">${OUT_CATS.map(([k,zh,en])=>
+    `<button class="vtab ${OUT_FILTER===k?'on':''}" onclick="setOutFilter('${k}')"><span>${T(zh,en)}</span> <span class="vtab-n">${total[k]||0}</span></button>`).join("")}</div>`;
+}
+// 一支片一列：片名 → 完成日 → 審核狀態 → 資料夾
+function outRow(v){
+  const st=outState(v);
+  const pill = st==="ok"   ? `<span class="pill ok" style="font-size:10px">${T("審過","Approved")}</span>`
+             : st==="back" ? `<span class="pill em" style="font-size:10px">${T("退回","Sent back")}</span>`
+             :               `<span class="pill wa" style="font-size:10px">${T("還沒審","Not reviewed")}</span>`;
+  const d=familyDrive(v);
+  // 資料夾連結一律開新分頁，而且 rel 要帶 noopener —— 這是外部網址。
+  const drive = d
+    ? `<a class="btn sec sm" href="${esc(d)}" target="_blank" rel="noopener noreferrer">📁 ${T("開資料夾","Open folder")}</a>`
+    : `<span class="muted" style="font-size:12px">${T("沒有存檔資料夾","No folder yet")}</span>`;
+  // 人資不能編輯影片（NO_EDIT_ROLES），所以片名對他就是純文字；管理員點得開。
+  const title = currentRole()==="boss"
+    ? `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>`
+    : `${shpBadge(v)}${esc(vidTitle(v))}`;
+  return `<tr>
+    <td data-label="${T("影片","Video")}">${title}</td>
+    <td data-label="${T("完成","Finished")}"><span class="muted" style="font-size:12px">${esc(String(v.finishedAt||"").slice(5,10))}</span></td>
+    <td data-label="${T("審核","Review")}">${pill}</td>
+    <td data-label="${T("檔案","Files")}">${drive}</td></tr>`;
+}
+function outPersonCard(u, ym){
+  const all=outVideosOf(u.name, ym);
+  const c=outCounts(all);
+  const shown=outApply(all);
+  const head=`<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">${esc(u.name)}</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        <span class="pill">${T("完成 "+c.all+" 支","done "+c.all)}</span>
+        ${c.ok?`<span class="pill ok">${T("審過 "+c.ok,"approved "+c.ok)}</span>`:''}
+        ${c.wait?`<span class="pill wa">${T("還沒審 "+c.wait,"waiting "+c.wait)}</span>`:''}
+        ${c.back?`<span class="pill em">${T("退回 "+c.back,"sent back "+c.back)}</span>`:''}
+        ${c.nodrive?`<span class="pill em">${T("缺資料夾 "+c.nodrive,"no folder "+c.nodrive)}</span>`:''}
+      </span></div>`;
+  const body = !c.all
+    ? `<div class="muted" style="font-size:13px;margin-top:8px">${T("這個月還沒有完成的影片。","Nothing finished this month.")}</div>`
+    : !shown.length
+    ? `<div class="muted" style="font-size:13px;margin-top:8px">${T("這個月他沒有符合目前篩選的影片。","Nothing matches the current filter.")}</div>`
+    // 產量高的人一個月七十幾支 —— 全部攤平的話整頁要捲很久，而且看不出還有誰在下面。
+    // 超過 8 列就裝進自己的捲動框，一個人一格，卡片高度就穩定了。
+    // ⚠️ keepscroll 只有**帶 id** 才接得回捲動位置（見 render 的 keepScroll）。
+    //    沒有 id 的話，背景每同步一次就把人彈回最上面 —— 正在翻七十幾列的時候
+    //    這比沒有捲動框還煩。id 用名字的雜湊，重繪前後才會是同一個。
+    : `<div${shown.length>8?` id="out_${foldKey(u.name)}" class="keepscroll" style="max-height:340px;overflow-y:auto;margin-top:8px"`:''}>
+       <table class="responsive"${shown.length>8?'':' style="margin-top:8px"'}><thead><tr>
+        <th>${T("影片","Video")}</th><th>${T("完成","Finished")}</th><th>${T("審核","Review")}</th><th>${T("檔案","Files")}</th>
+      </tr></thead><tbody>${shown.map(outRow).join("")}</tbody></table></div>`;
+  return `<div class="card">${head}${body}</div>`;
+}
+function viewOutput(){
+  if(!canSeeOutput()) return `<h2>${T("剪輯成效","Editor output")}</h2>
+    <div class="card muted">${T("這一頁只有管理員與人資看得到。","This page is for admins and HR only.")}</div>`;
+  const ym=teamYM(), curYM=today.slice(0,7);
+  // 會剪片的人才列 —— 行銷／客服／出貨不剪片，列進來整張卡都是空的，看起來像沒做事。
+  const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")));
+  if(!staff.length) return `<h2>${T("剪輯成效","Editor output")}</h2>
+    <div class="card muted">${T("還沒有剪輯成員","No editors yet")}</div>`;
+  if(videosLoading()) return `<h2>${T("剪輯成效","Editor output")}</h2>
+    <div class="card muted">${T("影片資料還在載入…","Loading videos…")}</div>`;
+  // 篩選鈕上的數字是「全部人加起來」，不是單一個人
+  const total={all:0,ok:0,wait:0,back:0,nodrive:0};
+  const cards=staff.map(u=>{
+    const c=outCounts(outVideosOf(u.name, ym));
+    Object.keys(total).forEach(k=>{ total[k]+=c[k]; });
+    return u;
+  });
+  return `<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
+      ym===curYM?T("本月剪輯成效","Editor output — this month"):T("剪輯成效","Editor output")
+    }${teamMonthPicker(ym)}</h2>
+  <div class="muted" style="font-size:12px;margin:0 0 4px">${T(
+    "每個人這個月做完幾支、審過了沒。審過的直接按「開資料夾」就看得到成片。",
+    "What each person finished this month and whether it passed review. Approved ones open straight into the Drive folder.")}</div>
+  ${total.nodrive?`<div class="muted" style="font-size:12px;margin:0 0 4px">${T(
+    "「缺資料夾」＝那支片還沒有人填存檔位置，所以點不進去 —— 要回頭請剪輯補。",
+    "“No folder” means nobody filled in the storage location yet, so there is nothing to open.")}</div>`:''}
+  ${outFilterBar(total)}
+  ${cards.map(u=>outPersonCard(u, ym)).join("")}`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){

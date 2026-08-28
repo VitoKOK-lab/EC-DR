@@ -68,8 +68,9 @@ reset();
     global.window.DB=_w; return ok2; })());
   localStorage.setItem("ecdr_user","HR小姐"); localStorage.setItem("ecdr_role","hr"); }
 
-// ── 分頁：人資只有「員工成效」一頁 ──
-ok("HR 分頁＝團隊看板＋出勤", JSON.stringify(myTabs())===JSON.stringify([["team","團隊看板"],["attend","出勤"]]));
+// ── 分頁：人資（v152 多了「剪輯成效」—— 他要查誰做完幾支、審過沒、檔案在哪）──
+ok("HR 分頁＝團隊看板＋剪輯成效＋出勤",
+   JSON.stringify(myTabs())===JSON.stringify([["team","團隊看板"],["output","剪輯成效"],["attend","出勤"]]));
 
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡，另外測）
