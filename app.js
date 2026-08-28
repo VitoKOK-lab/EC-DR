@@ -809,6 +809,12 @@ function writeWithin(p, ms){
     new Promise(r=>setTimeout(()=>r(false), ms||PUNCH_WAIT)) ]);
 }
 async function clockIn(name){ refreshToday();
+  // 員工視角是唯讀預覽。write()／writeAdmin()／dbWrite() 三個入口都擋了，
+  // 只有這裡直接呼叫 window.DB.set，繞過了全部三個 —— 實測管理員在預覽底下
+  // 叫這個函式會**真的幫員工打一張上班卡**。
+  // 目前畫面上不會畫出打卡鈕，所以滑鼠點不到（不是現在的災情），但這是唯一
+  // 一條沒有守門的寫入路徑，補起來，不要留給下一個人踩。
+  if(dbBlocked()) return false;
   const id=shiftId(name,today);
   try{ const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
     if(ex&&ex.clockIn) return true;   // 已打過上班卡
@@ -3967,8 +3973,10 @@ function outRow(v){
     <td data-label="${T("審核","Review")}">${pill}</td>
     <td data-label="${T("檔案","Files")}">${drive}</td></tr>`;
 }
-function outPersonCard(u, ym){
-  const all=outVideosOf(u.name, ym);
+// list 由呼叫端算好傳進來 —— viewOutput 上面統計總數時已經掃過一次，
+// 這裡再掃一次等於每個人掃兩遍（10 個剪輯就是 20 次全表掃描）。這是我 v152 的疏失。
+function outPersonCard(u, ym, list){
+  const all=list||outVideosOf(u.name, ym);
   const c=outCounts(all);
   const shown=outApply(all);
   const head=`<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
@@ -4005,13 +4013,10 @@ function viewOutput(){
     <div class="card muted">${T("還沒有剪輯成員","No editors yet")}</div>`;
   if(videosLoading()) return `<h2>${T("剪輯成效","Editor output")}</h2>
     <div class="card muted">${T("影片資料還在載入…","Loading videos…")}</div>`;
-  // 篩選鈕上的數字是「全部人加起來」，不是單一個人
+  // 一個人只掃一次，統計跟卡片共用同一份清單
   const total={all:0,ok:0,wait:0,back:0,nodrive:0};
-  const cards=staff.map(u=>{
-    const c=outCounts(outVideosOf(u.name, ym));
-    Object.keys(total).forEach(k=>{ total[k]+=c[k]; });
-    return u;
-  });
+  const per=staff.map(u=>({u, list:outVideosOf(u.name, ym)}));
+  per.forEach(({list})=>{ const c=outCounts(list); Object.keys(total).forEach(k=>{ total[k]+=c[k]; }); });
   return `<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
       ym===curYM?T("本月剪輯成效","Editor output — this month"):T("剪輯成效","Editor output")
     }${teamMonthPicker(ym)}</h2>
@@ -4022,7 +4027,7 @@ function viewOutput(){
     "「缺資料夾」＝那支片還沒有人填存檔位置，所以點不進去 —— 要回頭請剪輯補。",
     "“No folder” means nobody filled in the storage location yet, so there is nothing to open.")}</div>`:''}
   ${outFilterBar(total)}
-  ${cards.map(u=>outPersonCard(u, ym)).join("")}`;
+  ${per.map(x=>outPersonCard(x.u, ym, x.list)).join("")}`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
