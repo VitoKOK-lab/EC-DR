@@ -809,6 +809,12 @@ function writeWithin(p, ms){
     new Promise(r=>setTimeout(()=>r(false), ms||PUNCH_WAIT)) ]);
 }
 async function clockIn(name){ refreshToday();
+  // 員工視角是唯讀預覽。write()／writeAdmin()／dbWrite() 三個入口都擋了，
+  // 只有這裡直接呼叫 window.DB.set，繞過了全部三個 —— 實測管理員在預覽底下
+  // 叫這個函式會**真的幫員工打一張上班卡**。
+  // 目前畫面上不會畫出打卡鈕，所以滑鼠點不到（不是現在的災情），但這是唯一
+  // 一條沒有守門的寫入路徑，補起來，不要留給下一個人踩。
+  if(dbBlocked()) return false;
   const id=shiftId(name,today);
   try{ const ex=(STATE&&STATE.shifts&&STATE.shifts[id])||null;
     if(ex&&ex.clockIn) return true;   // 已打過上班卡
@@ -898,7 +904,48 @@ function decorate(raw){
   (st.videos||[]).forEach(v=>{ v.last30dUsed=usedInWindow(v,win); });
   return st;
 }
-function applyState(raw){
+// ── 只在「這一頁真的吃到的資料」變了才重繪（v153 ②）────────────────
+//
+// 量出來的事實：一次同步，全公司每個人都把整頁重畫一遍 —— 但七成畫出來跟原本一模一樣。
+//   管理員 88 組「分頁×集合」裡 64 組無關（73%）　剪輯 40 組裡 28 組（70%）
+//   人資   24 組裡 16 組（67%）　　　　　　　　　客服 16 組裡 12 組（75%）
+// 具體一點：人資整天待在「出勤」（手機上重繪一次 2628 毫秒），有人存了一支影片
+// 就凍結 2.6 秒，然後畫出一模一樣的東西。剪輯在影片庫，同事每打一次卡也重畫一次。
+//
+// ⚠️⚠️ 這張表**寧可多寫不可少寫**。
+//    少寫 ＝ 資料該更新卻沒更新，使用者盯著舊畫面而且不會發現 —— 最糟的那種 bug。
+//    多寫 ＝ 多重繪一次，只是浪費，看不出來。
+//    所以：① 沒登記在表裡的分頁一律照畫（不是「一律不畫」）。
+//         ② users／settings 影響職位、語言、分頁本身，一律照畫，不進這張表。
+//         ③ 只登記「人多、或重繪特別貴」而且我逐一量過的那幾頁；
+//            冷門的管理頁（設定、操作紀錄、回收桶、選品配對、平台成效）
+//            故意不登記 —— 省下來的沒幾毫秒，不值得冒表寫錯的風險。
+//
+// 這張表的來源是三份東西的**聯集**：正式資料實測、合成資料實測、逐頁讀 code。
+// 只用其中一份會漏 —— 正式快照裡根本沒有 products／matches，光看它會以為
+// 選品配對不吃那兩個集合；合成資料的影片沒有 metrics，光看它會以為平台成效
+// 什麼都不吃。tests/smoke-v154.js 會逐一實測把關，漏寫就變紅。
+const GLOBAL_COLLS=["users","settings"];
+const TAB_DEPS={
+  attend:   ["shifts"],
+  team:     ["videos","tasks","shifts"],
+  work:     ["videos","tasks"],
+  videos:   ["videos"],
+  videosDF: ["videos"],
+  output:   ["videos"],
+  cal:      ["videos","schedule"],
+  dashboard:["videos","tasks","schedule"],
+  flow:     ["videos","tasks","shifts","schedule"],
+};
+function tabNeedsRender(tab, changed){
+  if(!Array.isArray(changed) || !changed.length) return true;   // 不知道改了什麼 → 照畫
+  if(LAST_RENDER_TAB==null) return true;                        // 還沒畫過第一次 → 一定要畫
+  if(changed.some(c=>GLOBAL_COLLS.indexOf(c)>=0)) return true;
+  const deps=TAB_DEPS[tab];
+  if(!deps) return true;                                        // 沒登記的分頁 → 照畫
+  return changed.some(c=>deps.indexOf(c)>=0);
+}
+function applyState(raw, changed){
   if(!raw) return;
   if(BULK_BUSY){ LAST_RAW=raw; return; }
   LAST_RAW=raw; decorate(raw);
@@ -920,7 +967,10 @@ function applyState(raw){
     { const lb=document.getElementById("logoutBtn"); if(lb) lb.textContent=isIntl?"Log out":"登出"; }
     { const gb=document.getElementById("hgearBtn"); if(gb) gb.title=isIntl?"More settings":"更多設定"; }
     if(!CUR_TAB || !myTabs().some(t=>t[0]===CUR_TAB)) CUR_TAB=myTabs()[0][0];
-    buildNav(); render();
+    // STATE 一定是最新的（上面 decorate 過了），只是「畫不畫」看這一頁吃不吃得到。
+    // 跳過重繪不會讓資料變舊 —— 切到別的分頁時 setTab() 會重畫，拿到的是新的 STATE。
+    buildNav();
+    if(tabNeedsRender(CUR_TAB, changed)) render();
     autoMoveOrigLang();   // 每次載入跑一次；沒東西可搬就立刻結束（見 origAutoMovable）
   } else {
     document.getElementById("app").classList.add("hidden");
@@ -1025,6 +1075,8 @@ function render(){
   // 自己會捲動的區塊（待認領清單…）也要記位置。認領一支之後清單重畫，
   // 沒有這段就會跳回那一塊的最上面，下一支要重新捲下去找。
   const keep=same?keepScrollSnapshot(v):{};
+  // 正在打字的那一格（同一頁重繪才接回去；換分頁本來就該重來）
+  const foc=same?focusSnapshot(v):null;
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
@@ -1059,6 +1111,7 @@ function render(){
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   keepScrollRestore(v, keep);
+  focusRestore(v, foc);
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
 }
 // 帶 class="keepscroll" 且有 id 的區塊，重繪前後把捲動位置接回去
@@ -1070,6 +1123,45 @@ function keepScrollSnapshot(v){
 function keepScrollRestore(v, m){
   if(!m) return;
   try{ Object.keys(m).forEach(id=>{ const el=v.querySelector('[id="'+id+'"]'); if(el) el.scrollTop=m[id]; }); }catch(e){}
+}
+// ── 正在打字的那一格，重繪前後要接回去（v153）──────────────────────
+// render() 是把整個 #view 的 innerHTML 重寫一遍，所以正在編輯的那個 <input>
+// 會被連根換掉 —— 打到一半的字、游標位置、焦點，全部沒了。
+//
+// 26 個人共用同一份 Firestore，任何人打卡／完成交辦／存影片都會推一次快照，
+// 全公司跟著重繪。實測正式資料的 5502 筆操作紀錄：一般時段每 6.7 分鐘一次，
+// **最忙的時段每 29 秒一次**；而打一則工作回報要 20–40 秒。
+// 所以「打到一半整段不見」是天天在發生 —— 只是這種事員工只會覺得「怪怪的」，
+// 回報不出來，所以一直沒被抓到。（真瀏覽器實測：管理員交辦、剪輯工作回報、
+// 客服新增工作，三個都是同事一動作就整段清空。）
+//
+// 程式裡本來就有這道防護，但只裝在跨午夜的 midnightWatch 上（「正在打字就先不翻」），
+// 同步觸發的那條路沒裝。這裡照 keepScroll 那組的做法補上。
+// 彈窗不受影響 —— render() 不碰 #modalRoot。
+function focusSnapshot(v){
+  try{
+    const ae=document.activeElement;
+    if(!ae || !ae.id || !v.contains || !v.contains(ae)) return null;
+    if(!/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||"")) return null;
+    const o={id:ae.id, value:ae.value, checked:!!ae.checked};
+    // 游標位置只有文字類欄位讀得到（date、checkbox 讀 selectionStart 會丟例外）
+    try{ o.s=ae.selectionStart; o.e=ae.selectionEnd; }catch(err){}
+    return o;
+  }catch(e){ return null; }
+}
+function focusRestore(v, f){
+  if(!f) return;
+  try{
+    const el=v.querySelector('[id="'+f.id+'"]');   // 跟 keepScrollRestore 同一種找法
+    if(!el) return;
+    // ⚠️ 手上正在編輯的內容永遠贏過重繪出來的值 —— 那是他還沒送出的東西，
+    //    重繪只是「別人做了別的事」，沒有理由蓋掉他打到一半的字。
+    if(typeof f.value==="string" && el.value!==f.value) el.value=f.value;
+    if(el.type==="checkbox"||el.type==="radio") el.checked=f.checked;
+    // preventScroll：focus() 預設會把畫面捲到該元素，那會跟下面接捲動位置的那段打架
+    try{ el.focus({preventScroll:true}); }catch(err){ try{ el.focus(); }catch(e2){} }
+    if(f.s!=null && el.setSelectionRange){ try{ el.setSelectionRange(f.s, f.e); }catch(err){} }
+  }catch(e){}
 }
 
 // ===================================================================
@@ -1755,7 +1847,7 @@ function workReviewCard(me){
     && (!needPostLink(v) || String(v.publishedLink||"").trim()));
   const approvedTodo=myVids.filter(v=>v.stage==="已完成" && v.reviewStatus==="通過" && !v.reviewAck
     && (!linksDone(v) || String(v.reviewedAt||"").slice(0,10)>=d7));
-  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
   const nRev=rejected.length+approvedTodo.length+waitingReview.length;
   const rejCard = nRev?`<div class="card" style="border-color:${rejected.length?'var(--red)':(approvedTodo.length?'var(--gold)':'var(--line)')}">
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -1830,7 +1922,7 @@ function workRecent7Card(me){
     .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
   if(!list.length) return "";
   const nWait=list.filter(needsReview).length;
-  const openFn=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
   const rows=list.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
       <span style="min-width:0;flex:1 1 220px">
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
@@ -1869,7 +1961,7 @@ function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
   return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -1971,7 +2063,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
-      `<a href="javascript:void(0)" onclick="${(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
+      `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
@@ -3108,7 +3200,7 @@ function flowReviewQueueCard(){
   // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-  const openRev=(v)=>(v.channel&&CHANNELS[v.channel])?`openChModal('${v.channel}','${v.id}')`:v.locale?`openIntlModal('${v.id}')`:`editVideo('${v.id}')`;
+  const openRev=vidOpenFn;   // v153：同上，不要再抄一份
   const reviewQueueCard=fold("🎞 待你審片", pendingReview.length, `<div>
     ${/* 全部列出來：折疊上的數字說有幾支，就要有幾支點得到，不然審不到的那些等於被忘記 */''}
     ${pendingReview.length?pendingReview.map(v=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;align-items:center">
@@ -3881,8 +3973,10 @@ function outRow(v){
     <td data-label="${T("審核","Review")}">${pill}</td>
     <td data-label="${T("檔案","Files")}">${drive}</td></tr>`;
 }
-function outPersonCard(u, ym){
-  const all=outVideosOf(u.name, ym);
+// list 由呼叫端算好傳進來 —— viewOutput 上面統計總數時已經掃過一次，
+// 這裡再掃一次等於每個人掃兩遍（10 個剪輯就是 20 次全表掃描）。這是我 v152 的疏失。
+function outPersonCard(u, ym, list){
+  const all=list||outVideosOf(u.name, ym);
   const c=outCounts(all);
   const shown=outApply(all);
   const head=`<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
@@ -3919,13 +4013,10 @@ function viewOutput(){
     <div class="card muted">${T("還沒有剪輯成員","No editors yet")}</div>`;
   if(videosLoading()) return `<h2>${T("剪輯成效","Editor output")}</h2>
     <div class="card muted">${T("影片資料還在載入…","Loading videos…")}</div>`;
-  // 篩選鈕上的數字是「全部人加起來」，不是單一個人
+  // 一個人只掃一次，統計跟卡片共用同一份清單
   const total={all:0,ok:0,wait:0,back:0,nodrive:0};
-  const cards=staff.map(u=>{
-    const c=outCounts(outVideosOf(u.name, ym));
-    Object.keys(total).forEach(k=>{ total[k]+=c[k]; });
-    return u;
-  });
+  const per=staff.map(u=>({u, list:outVideosOf(u.name, ym)}));
+  per.forEach(({list})=>{ const c=outCounts(list); Object.keys(total).forEach(k=>{ total[k]+=c[k]; }); });
   return `<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
       ym===curYM?T("本月剪輯成效","Editor output — this month"):T("剪輯成效","Editor output")
     }${teamMonthPicker(ym)}</h2>
@@ -3936,7 +4027,7 @@ function viewOutput(){
     "「缺資料夾」＝那支片還沒有人填存檔位置，所以點不進去 —— 要回頭請剪輯補。",
     "“No folder” means nobody filled in the storage location yet, so there is nothing to open.")}</div>`:''}
   ${outFilterBar(total)}
-  ${cards.map(u=>outPersonCard(u, ym)).join("")}`;
+  ${per.map(x=>outPersonCard(x.u, ym, x.list)).join("")}`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
@@ -5168,6 +5259,7 @@ function matchVideoPickerHTML(){
 }
 function setMatchVTab(t){ MATCH_VTAB=t; render(); }
 function matchVFilter(){ const el=document.getElementById("mv_list"); if(el) el.innerHTML=matchVideoListHTML(); }
+const MATCH_VSHOW=40;   // 候選影片一次最多畫幾張（見下面的說明）
 function matchVideoListHTML(){
   const q=MATCH_VQ.trim().toLowerCase();
   // 候選片源＝影片庫大流＋影片庫A。大流是現成成品，優先推薦；沒有的話再用關鍵字往庫A裡搜（見 isDF 排序）
@@ -5180,7 +5272,20 @@ function matchVideoListHTML(){
     return true;
   }).sort((a,b)=>(isDF(b)?1:0)-(isDF(a)?1:0));
   if(!list.length) return `<p class="muted">沒有符合條件的影片</p>`;
-  return list.map(v=>{
+  // ⚠️ 這裡以前把**每一支**候選片都畫成一張卡（一張兩顆按鈕）。實測正式資料：
+  //    6278 個 DOM 節點、403KB HTML —— 整個選品配對頁 100% 的份量都在這一塊，
+  //    手機上光是把它塞進畫面就要 2.4 秒。而外框是 max-height:520px 的捲動區，
+  //    同一時間看得到的只有 5 張左右，其餘 750 張是純粹白做的。
+  //    照操作紀錄那一頁的慣例改成「只畫前 N 張」＋講清楚還有幾支。
+  //    選到的主選／備選一定要在裡面 —— 不然捲不到會以為自己沒選到。
+  const picked=list.filter(v=>v.id===MATCH_PRIMARY_ID||v.id===MATCH_BACKUP_ID);
+  const rest  =list.filter(v=>v.id!==MATCH_PRIMARY_ID&&v.id!==MATCH_BACKUP_ID);
+  const shown =picked.concat(rest.slice(0, Math.max(0, MATCH_VSHOW-picked.length)));
+  const more  =list.length-shown.length;
+  const moreLine = more
+    ? `<p class="muted" style="font-size:12px;margin:8px 0 0">符合的共 <b>${list.length}</b> 支，這裡只列前 ${shown.length} 支 —— 用上面的搜尋或分頁縮小範圍。（已選的一定會列出來）</p>`
+    : "";
+  return shown.map(v=>{
     const isP=v.id===MATCH_PRIMARY_ID, isB=v.id===MATCH_BACKUP_ID;
     return `<div class="card" style="background:var(--panel2);margin-bottom:8px;${isP?'border-color:var(--accent)':(isB?'border-color:var(--gold)':'')}">
       <div class="row" style="justify-content:space-between">
@@ -5198,7 +5303,7 @@ function matchVideoListHTML(){
         <button class="btn sm ${isB?'sec':''}" onclick="setMatchVideo('backup','${esc(jsEsc(v.id))}')">${isB?"取消備選":"設為備選"}</button>
       </div>
     </div>`;
-  }).join("");
+  }).join("")+moreLine;
 }
 function setMatchVideo(slot,id){
   if(slot==="primary"){ MATCH_PRIMARY_ID=(MATCH_PRIMARY_ID===id)?null:id; if(MATCH_BACKUP_ID===MATCH_PRIMARY_ID) MATCH_BACKUP_ID=null; }
