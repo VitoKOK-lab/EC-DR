@@ -1025,6 +1025,8 @@ function render(){
   // 自己會捲動的區塊（待認領清單…）也要記位置。認領一支之後清單重畫，
   // 沒有這段就會跳回那一塊的最上面，下一支要重新捲下去找。
   const keep=same?keepScrollSnapshot(v):{};
+  // 正在打字的那一格（同一頁重繪才接回去；換分頁本來就該重來）
+  const foc=same?focusSnapshot(v):null;
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
     <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
@@ -1059,6 +1061,7 @@ function render(){
   LAST_RENDER_TAB=CUR_TAB;
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   keepScrollRestore(v, keep);
+  focusRestore(v, foc);
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
 }
 // 帶 class="keepscroll" 且有 id 的區塊，重繪前後把捲動位置接回去
@@ -1070,6 +1073,45 @@ function keepScrollSnapshot(v){
 function keepScrollRestore(v, m){
   if(!m) return;
   try{ Object.keys(m).forEach(id=>{ const el=v.querySelector('[id="'+id+'"]'); if(el) el.scrollTop=m[id]; }); }catch(e){}
+}
+// ── 正在打字的那一格，重繪前後要接回去（v153）──────────────────────
+// render() 是把整個 #view 的 innerHTML 重寫一遍，所以正在編輯的那個 <input>
+// 會被連根換掉 —— 打到一半的字、游標位置、焦點，全部沒了。
+//
+// 26 個人共用同一份 Firestore，任何人打卡／完成交辦／存影片都會推一次快照，
+// 全公司跟著重繪。實測正式資料的 5502 筆操作紀錄：一般時段每 6.7 分鐘一次，
+// **最忙的時段每 29 秒一次**；而打一則工作回報要 20–40 秒。
+// 所以「打到一半整段不見」是天天在發生 —— 只是這種事員工只會覺得「怪怪的」，
+// 回報不出來，所以一直沒被抓到。（真瀏覽器實測：管理員交辦、剪輯工作回報、
+// 客服新增工作，三個都是同事一動作就整段清空。）
+//
+// 程式裡本來就有這道防護，但只裝在跨午夜的 midnightWatch 上（「正在打字就先不翻」），
+// 同步觸發的那條路沒裝。這裡照 keepScroll 那組的做法補上。
+// 彈窗不受影響 —— render() 不碰 #modalRoot。
+function focusSnapshot(v){
+  try{
+    const ae=document.activeElement;
+    if(!ae || !ae.id || !v.contains || !v.contains(ae)) return null;
+    if(!/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||"")) return null;
+    const o={id:ae.id, value:ae.value, checked:!!ae.checked};
+    // 游標位置只有文字類欄位讀得到（date、checkbox 讀 selectionStart 會丟例外）
+    try{ o.s=ae.selectionStart; o.e=ae.selectionEnd; }catch(err){}
+    return o;
+  }catch(e){ return null; }
+}
+function focusRestore(v, f){
+  if(!f) return;
+  try{
+    const el=v.querySelector('[id="'+f.id+'"]');   // 跟 keepScrollRestore 同一種找法
+    if(!el) return;
+    // ⚠️ 手上正在編輯的內容永遠贏過重繪出來的值 —— 那是他還沒送出的東西，
+    //    重繪只是「別人做了別的事」，沒有理由蓋掉他打到一半的字。
+    if(typeof f.value==="string" && el.value!==f.value) el.value=f.value;
+    if(el.type==="checkbox"||el.type==="radio") el.checked=f.checked;
+    // preventScroll：focus() 預設會把畫面捲到該元素，那會跟下面接捲動位置的那段打架
+    try{ el.focus({preventScroll:true}); }catch(err){ try{ el.focus(); }catch(e2){} }
+    if(f.s!=null && el.setSelectionRange){ try{ el.setSelectionRange(f.s, f.e); }catch(err){} }
+  }catch(e){}
 }
 
 // ===================================================================
