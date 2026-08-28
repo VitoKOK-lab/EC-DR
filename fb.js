@@ -83,7 +83,8 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const SHIFTS_FROM = new Date(Date.now() + 288e5 - SHIFT_WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
   // 這台裝置上次登入的職位要不要下載影片。
   // 這份清單必須跟 app.js 的 NO_VIDEO_ROLES 一致 —— tests/smoke-v140.js 會比對兩邊。
-  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "hr"];
+  // v152：人資移出去了 —— 他要查剪輯的完成狀況（「剪輯成效」分頁），真的用得到影片資料。
+  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs"];
   function needVideosByRole() {
     let r = "";
     try { r = localStorage.getItem("ecdr_role") || ""; } catch (e) { return true; }

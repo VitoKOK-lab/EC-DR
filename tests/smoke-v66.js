@@ -132,8 +132,9 @@ ok("頂部摘要有交辦完成", t.includes("交辦完成"));
 ok("純檢視：沒有按鈕", !t.includes("<button"));
 ok("純檢視：沒有 onclick", !t.includes("onclick"));
 // v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項
-ok("純檢視：只有篩選用的下拉與搜尋框", (t.match(/<select|<input/g)||[]).length===2
-   && t.includes("teamSetGroup(") && t.includes("teamSetQ("));
+// v150：多了一個「看哪一個月」的下拉（跟篩選同一類，不動資料）
+ok("純檢視：只有篩選用的下拉與搜尋框，外加月份下拉", (t.match(/<select|<input/g)||[]).length===3
+   && t.includes("teamSetGroup(") && t.includes("teamSetQ(") && t.includes("teamSetYM("));
 ok("純檢視：沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
    "assignTaskSel(","hrNotify(","ackTask(","editVideo("].every(f=>!t.includes(f)));
 
@@ -146,7 +147,9 @@ ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.incl
 
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
-ok("人資分頁＝團隊看板＋出勤", myTabs().length===2 && myTabs()[0][0]==="team" && myTabs()[1][0]==="attend");
+// v152：多了「剪輯成效」（管理員與人資限定）
+ok("人資分頁＝團隊看板＋剪輯成效＋出勤", myTabs().length===3
+   && myTabs()[0][0]==="team" && myTabs()[1][0]==="output" && myTabs()[2][0]==="attend");
 let th=viewTeam();
 ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 

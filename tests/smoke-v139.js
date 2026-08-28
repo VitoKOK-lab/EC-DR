@@ -162,10 +162,19 @@ reset(60);
 // 「掛 400 支還是 1000 支，那也只是文字」—— 對，所以問題不是資料大，
 // 而是**根本用不到的人也在下載**。行銷／客服／出貨／人資的每一個分頁，
 // 有影片資料跟沒有影片資料畫出來的東西完全一樣（下面逐頁比對）。
+// ⚠️ v152：這段比對本來是**空轉**的。樣本影片的 editor 是空字串、完成日是 40 天前，
+//    所以團隊看板不管有沒有影片資料都算出 0，比出來當然「一樣」。
+//    拿正式資料在真瀏覽器實測才抓到：同一天管理員看到「本月完成 168」、
+//    人資／行銷／客服／出貨看到 **0** —— 是假數字，不是空白。
+//    所以這裡要先把樣本改成**真的會讓兩邊不一樣**的資料：有剪輯、完成日在當月。
+//    改完之後這段才真的在測東西（把 viewTeam 的 needVideos() 判斷拿掉就會變紅）。
 { const needsIt=(role)=>{
     reset(60);
     localStorage.setItem("ecdr_user","某人"); localStorage.setItem("ecdr_role",role);
     STATE.users=STATE.users.concat([{name:"某人",role}]);
+    // 讓小葵這個月完成 10 支 —— 團隊看板的「完成上架／熱圖／橫條圖」才有東西可以差
+    STATE.videos.slice(0,10).forEach((v,i)=>{ v.editor="小葵"; v.claimedAt=D(-1)+"T09:00:00";
+      v.finishedAt=D(0)+"T18:00:00"; v.durationMin=90; });
     const full=JSON.parse(JSON.stringify(STATE.videos));
     let diff=false;
     for(const [tab] of myTabs()){
@@ -180,13 +189,31 @@ reset(60);
   ok("行銷的畫面用不到影片資料", needsIt("mkt")===false);
   ok("客服的畫面用不到影片資料", needsIt("cs")===false);
   ok("出貨的畫面用不到影片資料", needsIt("ship")===false);
-  ok("人資的畫面用不到影片資料", needsIt("hr")===false);
+  // v152：人資要查「剪輯成效」，所以他真的需要影片資料 —— 這條從 false 翻成 true
+  ok("人資的畫面需要影片資料（v152：多了「剪輯成效」）", needsIt("hr")===true);
   ok("剪輯的畫面需要影片資料", needsIt("editor")===true);
   ok("經理人的畫面需要影片資料", needsIt("manager")===true);
   ok("管理員的畫面需要影片資料", needsIt("boss")===true); }
 // needVideos() 要跟上面的實測結果一致
-{ ["mkt","svc","ship","cs","hr"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
-  ["boss","manager","editor","intl"].forEach(r=>ok("needVideos('"+r+"')＝要下載", needVideos(r)===true)); }
+{ ["mkt","svc","ship","cs"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
+  ["boss","manager","editor","intl","hr"].forEach(r=>ok("needVideos('"+r+"')＝要下載", needVideos(r)===true)); }
+// v152：不下載影片的職位，團隊看板上那幾個算不出來的欄位不准畫出來（不能拿 0 充數）
+{ reset(60);
+  STATE.videos.slice(0,10).forEach(v=>{ v.editor="小葵"; v.claimedAt=D(-1)+"T09:00:00";
+    v.finishedAt=D(0)+"T18:00:00"; v.durationMin=90; });
+  const teamAs=(role)=>{ localStorage.setItem("ecdr_user","某人"); localStorage.setItem("ecdr_role",role);
+    STATE.users=STATE.users.filter(u=>u.name!=="某人").concat([{name:"某人",role}]);
+    CUR_TAB="team"; return viewTeam(); };
+  const cs=teamAs("cs"), hr=teamAs("hr"), boss=teamAs("boss");
+  ok("客服的團隊看板：沒有「完成上架」這一欄", !/完成上架/.test(cs));
+  ok("客服的團隊看板：沒有「本月完成」這個數字", !/本月完成/.test(cs));
+  ok("客服的團隊看板：沒有熱圖", !/每天完成上片/.test(cs));
+  ok("客服的團隊看板：沒有橫條圖", !/本月完成上片/.test(cs));
+  ok("客服的團隊看板：出勤天數與交辦完成還在（他真正要看的）",
+     /出勤天數/.test(cs) && /交辦完成/.test(cs));
+  ok("人資的團隊看板：看得到「完成上架」", /完成上架/.test(hr));
+  ok("人資的團隊看板：看得到熱圖", /每天完成上片/.test(hr));
+  ok("管理員的團隊看板：一樣看得到", /完成上架/.test(boss) && /每天完成上片/.test(boss)); }
 // ⚠️ 「選品行銷」是這條規則最容易踩到的例外：他**不剪片**（在 NO_EDIT_ROLES 裡），
 //    但選品配對要從影片庫大流挑片、也要顯示配對影片的片名（viewMatch 會呼叫 vid()）。
 //    所以「不剪片」不等於「不用影片資料」—— 這兩個清單必須分開。
