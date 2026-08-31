@@ -92,7 +92,7 @@ const nRows =(h)=>(h.match(/data-label="審核"/g)||[]).length;
   ok("還沒審的那支沒被列進來", !h.includes("片K4"));
   ok("不會混到阿哲的片", !h.includes("片Z1") && !h.includes("片Z2"));
   ok("篩選鈕的數字是「他的」不是全部人加起來",
-     /全部<\/span> <span class="vtab-n">4</.test(h) && /審過<\/span> <span class="vtab-n">3</.test(h),
+     /完成<\/span> <span class="vtab-n">4</.test(h) && /審過<\/span> <span class="vtab-n">3</.test(h),
      h.match(/vtab-n">\d+</g)); }
 
 // ══════════ ③ 重點：每一支都點得進雲端資料夾 ══════════
@@ -114,7 +114,7 @@ const nRows =(h)=>(h.match(/data-label="審核"/g)||[]).length;
   ok("切到「還沒審」：只剩那一支", nRows(viewOutput())===1);
   ok("切到「還沒審」：就是 K4", viewOutput().includes("片K4"));
   setOutFilter("all");
-  ok("切到「全部」：四支都在", nRows(viewOutput())===4, nRows(viewOutput()));
+  ok("切到「完成」：四支都在", nRows(viewOutput())===4, nRows(viewOutput()));
   setOutFilter("nodrive");
   ok("切到「缺資料夾」：只剩沒資料夾的那支", nRows(viewOutput())===1);
   ok("切到「缺資料夾」：一個連結都沒有", nDrive(viewOutput())===0); }

@@ -168,7 +168,11 @@ const SET=()=>[
   ok("點進去之後才有篩選鈕", /vtab-n/.test(viewOutput()));
   const h0=viewOutput();
   // v158：篩選鈕的數字改成「這個人的」，不是全部人加起來 —— 點進來就是在看他
-  ok("篩選鈕：小葵全部 4", /全部<\/span> <span class="vtab-n">4</.test(h0), h0.match(/vtab-n">\d+</g));
+  // v159：第一格改叫「完成」不叫「全部」—— 最後多了一格「還在剪」，
+  //       那是**另一批**片（這個月認領但沒做完），不含在前面那個數字裡。
+  ok("篩選鈕：小葵完成 4", /完成<\/span> <span class="vtab-n">4</.test(h0), h0.match(/vtab-n">\d+</g));
+  ok("篩選鈕：小葵還在剪 2（跟完成的 4 支是兩批）",
+     /還在剪<\/span> <span class="vtab-n">2</.test(h0), h0.match(/vtab-n">\d+</g));
   ok("篩選鈕：小葵審過 3", /審過<\/span> <span class="vtab-n">3</.test(h0), h0.match(/vtab-n">\d+</g));
   ok("篩選鈕：小葵缺資料夾 1", /缺資料夾<\/span> <span class="vtab-n">1</.test(h0));
   setOutFilter("ok");
