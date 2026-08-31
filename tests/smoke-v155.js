@@ -43,7 +43,7 @@ const v_=(id,o)=>Object.assign({id,code:"C"+id,name:"",rawName:"片"+id,videoCop
 let WRITES=[];
 function reset(videos, who, role){
   WRITES=[]; TOASTS=[]; modalHTML=""; viewEl.innerHTML="";
-  OUT_FILTER="all"; TEAM_YM=null; VIEW_AS=null; BRAND="";
+  OUT_FILTER="all"; OUT_WHO=""; TEAM_YM=null; VIEW_AS=null; BRAND="";
   const rec=(op)=>(...a)=>{ WRITES.push(op+" "+a[0]+" "+a[1]); return Promise.resolve(); };
   global.window.DB={ set:rec("set"), update:rec("update"), del:rec("del"), scheduleSet:rec("scheduleSet"),
     setSettings:rec("setSettings"), videosWatched:()=>true, netState:()=>({online:true,pending:false}),
@@ -68,11 +68,17 @@ function reset(videos, who, role){
   outVideosOf=real;
   ok("三個剪輯 → 只掃三次（不是六次）", calls===3, calls);
   // 而且畫出來的東西不能少
-  ok("每個人的卡片都還在", ["小葵","阿哲","阿美"].every(n=>h.includes(n)));
-  ok("每個人都是 5 支", (h.match(/完成 5 支/g)||[]).length===3, h.match(/完成 \d+ 支/g));
-  ok("篩選鈕的總數還是 15", /全部<\/span> <span class="vtab-n">15</.test(h), h.match(/vtab-n">\d+</g));
-  ok("列數還是 15 列", (h.match(/data-label="審核"/g)||[]).length===15);
-  ok("資料夾連結還是 15 個", (h.match(/rel="noopener noreferrer"/g)||[]).length===15); }
+  // v158：第一層是名單，每個人一列
+  ok("每個人都在名單上", ["小葵","阿哲","阿美"].every(n=>h.includes(n)));
+  ok("三個人都點得進去", (h.match(/onclick="outPick\(/g)||[]).length===3, (h.match(/onclick="outPick\(/g)||[]).length);
+  ok("總計 15 支", /完成 15 支/.test(h), h.match(/完成 \d+ 支/g));
+  ok("每個人的審過都是 5", (h.match(/審過 5</g)||[]).length===3, h.match(/審過 \d+</g));
+  // 點進去之後才有影片列與資料夾連結
+  outPick("小葵"); OUT_FILTER="all";
+  const d=viewOutput();
+  ok("點進小葵：5 列", (d.match(/data-label="審核"/g)||[]).length===5, (d.match(/data-label="審核"/g)||[]).length);
+  ok("點進小葵：5 個資料夾連結", (d.match(/rel="noopener noreferrer"/g)||[]).length===5);
+  ok("點進小葵：不會混到別人的片", !d.includes("片阿哲0")); }
 
 // 傳進來的清單真的被用到（不是傳了還自己重算）
 { reset([v_("A",{editor:"小葵"})], "管理員","boss");
