@@ -104,7 +104,7 @@ function setup(raw, who, role){
     loadShiftMonth:async()=>{}, watchVideos:()=>{}, watchLogs:()=>{} };
   LAST_RAW=raw; STATE=decorate(JSON.parse(JSON.stringify(raw)));
   localStorage.setItem("ecdr_user",who); localStorage.setItem("ecdr_role",role);
-  VIEW_AS=null; BRAND=""; TEAM_YM=null; OUT_FILTER="all"; FOLD_OPEN={}; PERF_PLAT="";
+  VIEW_AS=null; BRAND=""; TEAM_YM=null; OUT_FILTER="all"; OUT_WHO=""; FOLD_OPEN={}; PERF_PLAT="";
 }
 const ROLES=[["管理員","boss"],["小葵","editor"],["HR小姐","hr"],["麗君","cs"],
              ["Regina","manager"],["怡萍","pick"],["Anna","intl"]];
@@ -185,9 +185,13 @@ const ROLES=[["管理員","boss"],["小葵","editor"],["HR小姐","hr"],["麗君
   // ⚠️ 一定要在這裡驗，不能等到下面套用 raw3 之後 —— raw3 是全新的 fixture()，
   //    會把改過的片名蓋回去，那時候再驗就驗不到東西（第一版就是這樣紅的）。
   { const save=CUR_TAB; CUR_TAB="output";
+    // v158：剪輯成效分兩層了，影片名字要點進那個人才看得到。
+    // ⚠️ 這裡直接設 OUT_WHO，不能叫 outPick() —— 這一段的 render 被換成計數器了，
+    //    outPick 裡面會呼叫 render，下面那條「有人打卡才重繪」就會多算。
+    const saveWho=OUT_WHO, saveF=OUT_FILTER; OUT_WHO="小葵"; OUT_FILTER="all";
     ok("跳過重繪之後切到別的分頁，看到的是新資料不是舊的",
-       viewOutput().includes("被別人改掉的片名"));
-    CUR_TAB=save; }
+       viewOutput().includes("被別人改掉的片名"), viewOutput().slice(0,200));
+    OUT_WHO=saveWho; OUT_FILTER=saveF; CUR_TAB=save; }
   const raw3=fixture(); raw3.shifts["新人__"+TODAY]={id:"新人__"+TODAY,user:"新人",date:TODAY,clockIn:TODAY+"T09:00:00",clockOut:""};
   applyState(raw3, ["shifts"]);
   ok("有人打卡 → 出勤頁要重繪", renders===before+1, renders);

@@ -3925,8 +3925,17 @@ function viewTeam(){
 // 這一頁完全不寫資料，純查詢。
 // ===================================================================
 let OUT_FILTER="all";                 // all｜ok 審過｜wait 還沒審｜back 退回｜nodrive 缺資料夾
+// 現在在看誰。空字串＝先給一張「每個人一列」的名單，點下去才進那個人的清單（v158）。
+// 為什麼要分兩層：十個剪輯的片一次全攤開就是一張總表（實測 168 列），
+// 要「檢查某個人這個月做了什麼」得先在裡面找到他。主管與人資每個月的動作是
+// 「一個人一個人看」，所以介面就照那個動作分兩層。
+let OUT_WHO="";
 function canSeeOutput(){ return ["boss","hr"].includes(currentRole()); }
 function setOutFilter(k){ OUT_FILTER=OUT_FILTER===k?"all":k; render(); }
+// 點某個人 → 進他的清單。預設就停在「審過」那一格 —— 主管與人資要檢查的
+// 是「這個月審過的成品」，不是全部。其他幾格還在，一按就切。
+function outPick(name){ OUT_WHO=String(name||""); OUT_FILTER="ok"; render(); }
+function outBackAll(){ OUT_WHO=""; OUT_FILTER="all"; render(); }
 // 一支片的審核狀態（沒有 reviewStatus ＝ 還沒審）
 function outState(v){ return v.reviewStatus==="通過" ? "ok" : (v.reviewStatus==="退回" ? "back" : "wait"); }
 // 某人某月「做完的片」。用 editor 而不是 claimedBy —— 完成的功勞記在剪輯身上。
@@ -3975,11 +3984,26 @@ function outRow(v){
 }
 // list 由呼叫端算好傳進來 —— viewOutput 上面統計總數時已經掃過一次，
 // 這裡再掃一次等於每個人掃兩遍（10 個剪輯就是 20 次全表掃描）。這是我 v152 的疏失。
-function outPersonCard(u, ym, list){
+// 名單那一層：一個人一列，點下去進他的清單
+function outPersonRow(u, c){
+  const n=(k,cls,zh,en)=>c[k]
+    ? `<span class="pill ${cls}">${T(zh+" "+c[k], en+" "+c[k])}</span>`
+    : `<span class="muted">—</span>`;
+  return `<tr onclick="outPick('${jsEsc(u.name)}')" style="cursor:pointer" title="${T("點一下看他這個月的清單","Open this person's list")}">
+    <td data-label="${T("剪輯","Editor")}"><b>${esc(u.name)}</b> <span class="muted" style="font-size:11px">${T(ROLE_LABEL[u.role||"editor"]||"", roleEn(u.role||"editor"))}</span></td>
+    <td data-label="${T("完成","Done")}">${c.all||`<span class="muted">—</span>`}</td>
+    <td data-label="${T("審過","Approved")}">${n("ok","ok","審過","approved")}</td>
+    <td data-label="${T("還沒審","Not reviewed")}">${n("wait","wa","還沒審","waiting")}</td>
+    <td data-label="${T("退回","Sent back")}">${n("back","em","退回","back")}</td>
+    <td data-label="${T("缺資料夾","No folder")}">${n("nodrive","em","缺資料夾","no folder")}</td>
+    <td data-label=""><span class="muted">${T("看清單 →","Open →")}</span></td></tr>`;
+}
+// bare＝上面那張卡已經印過名字與統計了，這裡就不要再印一次（v158 的第二層）
+function outPersonCard(u, ym, list, bare){
   const all=list||outVideosOf(u.name, ym);
   const c=outCounts(all);
   const shown=outApply(all);
-  const head=`<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+  const head=bare?"":`<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">${esc(u.name)}</b>
       <span class="row" style="gap:6px;flex-wrap:wrap">
         <span class="pill">${T("完成 "+c.all+" 支","done "+c.all)}</span>
@@ -4013,21 +4037,58 @@ function viewOutput(){
     <div class="card muted">${T("還沒有剪輯成員","No editors yet")}</div>`;
   if(videosLoading()) return `<h2>${T("剪輯成效","Editor output")}</h2>
     <div class="card muted">${T("影片資料還在載入…","Loading videos…")}</div>`;
-  // 一個人只掃一次，統計跟卡片共用同一份清單
-  const total={all:0,ok:0,wait:0,back:0,nodrive:0};
+  // 一個人只掃一次，名單與清單共用同一份
   const per=staff.map(u=>({u, list:outVideosOf(u.name, ym)}));
-  per.forEach(({list})=>{ const c=outCounts(list); Object.keys(total).forEach(k=>{ total[k]+=c[k]; }); });
-  return `<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
+  const ymLabel=(+ym.slice(0,4))+T(" 年 "," / ")+(+ym.slice(5,7))+T(" 月","");
+  const head=(extra)=>`<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
       ym===curYM?T("本月剪輯成效","Editor output — this month"):T("剪輯成效","Editor output")
-    }${teamMonthPicker(ym)}</h2>
-  <div class="muted" style="font-size:12px;margin:0 0 4px">${T(
-    "每個人這個月做完幾支、審過了沒。審過的直接按「開資料夾」就看得到成片。",
-    "What each person finished this month and whether it passed review. Approved ones open straight into the Drive folder.")}</div>
-  ${total.nodrive?`<div class="muted" style="font-size:12px;margin:0 0 4px">${T(
-    "「缺資料夾」＝那支片還沒有人填存檔位置，所以點不進去 —— 要回頭請剪輯補。",
-    "“No folder” means nobody filled in the storage location yet, so there is nothing to open.")}</div>`:''}
-  ${outFilterBar(total)}
-  ${per.map(x=>outPersonCard(x.u, ym, x.list)).join("")}`;
+    }${teamMonthPicker(ym)}${extra||""}</h2>`;
+
+  // ── 第二層：某一個人這個月的清單 ──
+  const picked=OUT_WHO ? per.find(x=>x.u.name===OUT_WHO) : null;
+  if(OUT_WHO && picked){
+    const c=outCounts(picked.list);
+    return `${head()}
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="row" style="gap:10px;align-items:baseline;flex-wrap:wrap">
+          <button class="btn sec sm" type="button" onclick="outBackAll()">← ${T("回到全部","All editors")}</button>
+          <b style="font-size:17px">${esc(picked.u.name)}</b>
+          <span class="muted" style="font-size:13px">${esc(ymLabel)}</span>
+        </span>
+        <span class="pill">${T("完成 "+c.all+" 支","done "+c.all)}</span>
+      </div>
+      ${c.nodrive?`<div class="muted" style="font-size:12px;margin-top:6px">${T(
+        "「缺資料夾」的那 "+c.nodrive+" 支還沒有人填存檔位置，所以點不進去 —— 要回頭請他補。",
+        c.nodrive+" of these have no storage location filled in yet, so there is nothing to open.")}</div>`:''}
+      ${outFilterBar(c)}
+    </div>
+    ${outPersonCard(picked.u, ym, picked.list, true)}`;
+  }
+
+  // ── 第一層：一個人一列的名單，點下去進他的清單 ──
+  const total={all:0,ok:0,wait:0,back:0,nodrive:0};
+  per.forEach(({list})=>{ const c=outCounts(list); Object.keys(total).forEach(k=>{ total[k]+=c[k]; }); });
+  const rows=per.map(x=>outPersonRow(x.u, outCounts(x.list))).join("");
+  return `${head()}
+  <div class="muted" style="font-size:12px;margin:0 0 8px">${T(
+    "點一個人，看他這個月審過的影片清單 —— 每一支都能直接點進雲端資料夾檢查檔案。",
+    "Pick someone to see the videos they got approved this month — each one opens straight into its Drive folder.")}</div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">${esc(ymLabel)}</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        <span class="pill">${T("完成 "+total.all+" 支","done "+total.all)}</span>
+        ${total.ok?`<span class="pill ok">${T("審過 "+total.ok,"approved "+total.ok)}</span>`:''}
+        ${total.wait?`<span class="pill wa">${T("還沒審 "+total.wait,"waiting "+total.wait)}</span>`:''}
+        ${total.nodrive?`<span class="pill em">${T("缺資料夾 "+total.nodrive,"no folder "+total.nodrive)}</span>`:''}
+      </span></div>
+    <table class="responsive" style="margin-top:10px"><thead><tr>
+      <th>${T("剪輯","Editor")}</th><th>${T("完成","Done")}</th><th>${T("審過","Approved")}</th>
+      <th>${T("還沒審","Not reviewed")}</th><th>${T("退回","Sent back")}</th>
+      <th>${T("缺資料夾","No folder")}</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>
+  </div>`;
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
