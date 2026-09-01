@@ -25,9 +25,18 @@ Object.defineProperty(global,"navigator",{configurable:true,writable:true,
 global.confirm=()=>true; global.prompt=()=>null;
 let calls=[], toasts=[];
 eval(src);
+const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
+// ⚠️ 把「今天」凍在月中（v160）。
+//    這支測試的樣本用相對日期（D(-8) 之類），而程式是**按月**分組的 ——
+//    真的在月初跑的時候，「8 天前」會掉到上個月，測試就整批變紅。
+//    實際發生過：2026-09-01 那天 main 上這幾支全紅，但程式沒有任何問題。
+//    所以把 today 凍在 15 號：相對日期不會跨月，測試哪一天跑結果都一樣。
+todayTW=()=>FROZEN; ydayTW=()=>FROZEN.slice(0,8)+String(+FROZEN.slice(8,10)-1).padStart(2,"0");
+refreshToday();
+
 toast=(m)=>{ toasts.push(String(m)); };
 
-const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+const D=(n)=>new Date(new Date(FROZEN+"T12:00:00Z").getTime()+n*864e5).toISOString().slice(0,10);
 const H='pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==';
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 // 昨天遲到 35 分、又忘了打下班（系統補）→ 標準的「出勤異常」

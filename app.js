@@ -2022,6 +2022,31 @@ function myFutureTasks(){ return Object.values((STATE&&STATE.tasks)||{})
   .sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
 function taskSetDate(id, d){ if(!d) return; const t=taskById(id);
   dbUpdate("tasks", id, {date:String(d).slice(0,10)}, {action:"改工作日期", target:(t&&t.title)||id}); }
+// 「今天要做的事」裡影片那幾列的日期小字（v160）。
+//
+// 剪輯中的那幾支寫「接手日」—— 這一列什麼時候出現在他頁面上（claimedAt，
+// 認領或被指派的那一刻）。那也是清單的排序依據，看得到才知道為什麼這樣排。
+// 今天完成的寫完成時刻（那已經是結果了）。
+//
+// ⚠️ 這裡只寫日期，不寫「第幾天」。天數是管理用的資訊，canSeeEditDays() 已經
+//    幫主管／人資在同一列的右邊掛了 dayBadge；剪輯自己的頁面刻意不顯示天數
+//    （見 canSeeEditDays 的說明：盯著自己的天數只會有壓力）。這裡不能繞過那條。
+function workSchedTag(v){
+  if(v && v.stage!=="剪輯中"){
+    const t=String(v.finishedAt||"").slice(11,16);
+    return t? T("完成 "+t, "done "+t) : "";
+  }
+  const iso=String((v&&v.claimedAt)||"");
+  const d=iso.slice(0,10);
+  if(!d) return "";                                  // 沒有接手日就不要瞎編一個
+  const md=(+d.slice(5,7))+"/"+(+d.slice(8,10));
+  const t=iso.slice(11,16);
+  const full=t?(md+" "+t):md;
+  const lab= d===today ? T("今天接手","today")
+           : d===ydayTW() ? T("昨天接手","yesterday")
+           : T(md+" 接手", md);
+  return `<span title="${T("這一支是 "+full+" 進到你的清單的","Added to your list "+full)}">${lab}</span>`;
+}
 // 今日待辦的一列
 function todoRow(kind, title, sub, actions, doneCls){
   return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
@@ -2064,7 +2089,8 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
       `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
-      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"), esc(dataLabel(v.source||""))].filter(Boolean).join("・"),
+      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"),
+       esc(dataLabel(v.source||"")), workSchedTag(v)].filter(Boolean).join("・"),
       `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
@@ -2448,8 +2474,19 @@ function viewWork(){
   if(NO_EDIT_ROLES.includes(currentRole())) return viewWorkCS(me);   // 行銷／客服／出貨／員工：只有交辦工作那一版
   const inProg = myInProgressCount(); const atLimit = false;   // 已取消同時支數上限（2026-07）；只顯示支數
   // 全員畫面一致（只分中/英介面）：台灣毛片＋蝦皮/馬來/EN/TH 版本全部合併同一份清單，小圖（蝦/馬/EN/TH）分辨
+  // v160：依「這一列什麼時候出現在他頁面上」排，新的在上面。
+  // 那個時間點就是 claimedAt —— 認領（/claim）跟主管指派都是從那一刻起這支
+  // 才進他的清單。原本是由舊到新（先領的在上面），現在反過來。
+  // 沒有 claimedAt 的排最後（資料不全，不知道什麼時候進來的）。
+  // ⚠️ 已知的小洞：主管把已完成的片「退回重剪」時（reworkVideo）沒有重設
+  //    claimedAt，所以那種片顯示的會是它**第一次**被認領的日子。
+  //    正式資料現在一筆這種都沒有（查過），先不動寫入行為 —— 動了會連帶影響
+  //    editDays（剪片速度 KPI）的定義。
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
-    .sort((a,b)=>String(a.claimedAt||"").localeCompare(String(b.claimedAt||"")));
+    .sort((a,b)=>{ const ac=String(a.claimedAt||""), bc=String(b.claimedAt||"");
+      if(!ac && !bc) return String(a.id).localeCompare(String(b.id));
+      if(!ac) return 1; if(!bc) return -1;
+      return bc.localeCompare(ac) || String(a.id).localeCompare(String(b.id)); });
   // 待剪池：指派給我的 ＋ 還沒指派的公用毛片/版本（別人被指派的不顯示）；指派給我的排前面
   // 待剪順序：依預排上片日期 過去→未來（沒填日期的排最後、再依編號）
   // 依分工過濾：一創只看毛片/原創、二創只看各平台語言版本（兩種都做的看全部）
