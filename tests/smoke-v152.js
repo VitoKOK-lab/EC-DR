@@ -35,8 +35,17 @@ global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,sc
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
+// ⚠️ 把「今天」凍在月中（v160）。
+//    這支測試的樣本用相對日期（D(-8) 之類），而程式是**按月**分組的 ——
+//    真的在月初跑的時候，「8 天前」會掉到上個月，測試就整批變紅。
+//    實際發生過：2026-09-01 那天 main 上這幾支全紅，但程式沒有任何問題。
+//    所以把 today 凍在 15 號：相對日期不會跨月，測試哪一天跑結果都一樣。
+todayTW=()=>FROZEN; ydayTW=()=>FROZEN.slice(0,8)+String(+FROZEN.slice(8,10)-1).padStart(2,"0");
+refreshToday();
 
-const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+
+const D=(n)=>new Date(new Date(FROZEN+"T12:00:00Z").getTime()+n*864e5).toISOString().slice(0,10);
 const THIS=D(0).slice(0,7);
 const FAM="https://drive.google.com/drive/folders/FAM-1";
 const v_=(id,o)=>Object.assign({id,code:"C"+id,name:"",rawName:"片"+id,videoCopy:"文案",

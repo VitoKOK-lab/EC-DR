@@ -30,10 +30,19 @@ global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,sc
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
+// ⚠️ 把「今天」凍在月中（v160）。
+//    這支測試的樣本用相對日期（D(-8) 之類），而程式是**按月**分組的 ——
+//    真的在月初跑的時候，「8 天前」會掉到上個月，測試就整批變紅。
+//    實際發生過：2026-09-01 那天 main 上這幾支全紅，但程式沒有任何問題。
+//    所以把 today 凍在 15 號：相對日期不會跨月，測試哪一天跑結果都一樣。
+todayTW=()=>FROZEN; ydayTW=()=>FROZEN.slice(0,8)+String(+FROZEN.slice(8,10)-1).padStart(2,"0");
+refreshToday();
+
 
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n, x===undefined?"":JSON.stringify(x).slice(0,240));} }
-const D=(n)=>new Date(Date.now()+288e5+n*864e5).toISOString().slice(0,10);
+const D=(n)=>new Date(new Date(FROZEN+"T12:00:00Z").getTime()+n*864e5).toISOString().slice(0,10);
 const TODAY=D(0);
 const FAM="https://drive.google.com/drive/folders/FAM";
 const v_=(id,o)=>Object.assign({id,code:"C"+id,name:"",rawName:"片"+id,videoCopy:"文案",
@@ -41,13 +50,16 @@ const v_=(id,o)=>Object.assign({id,code:"C"+id,name:"",rawName:"片"+id,videoCop
   claimedAt:D(-2)+"T09:00:00",finishedAt:TODAY+"T15:30:00",durationMin:90,publishedLink:"",
   driveFolder:FAM+"-"+id,reviewStatus:"通過",locale:"",channel:"",origLang:"",account:"",
   sourceVideoId:"",cover:"",remakes:[],tags:[],products:[],usageHistory:[],metrics:[],deleted:false},o||{});
-// 小葵：2 支做完（一支白天、一支半夜）、3 支還在剪（1 天／9 天／20 天）
+// 小葵：2 支做完（一支白天、一支半夜）、3 支還在剪（1 天／9 天／15 天）
+// ⚠️ 認領日最多只能往回 14 天 —— today 凍在 15 號，再往回就跨到上個月，
+//    而「還在剪」是按認領日分月的，跨月那支就不算這個月了（第一版用 -19 就是這樣紅的）。
+//    15 天仍然大於「超過兩週標紅」的門檻，該驗的還是驗得到。
 const SET=()=>[
   v_("D1",{editor:"小葵", finishedAt:TODAY+"T15:30:00"}),
   v_("D2",{editor:"小葵", finishedAt:TODAY+"T22:47:00"}),
   v_("W1",{editor:"小葵", stage:"剪輯中", finishedAt:"", claimedAt:TODAY+"T10:00:00"}),
   v_("W2",{editor:"小葵", stage:"剪輯中", finishedAt:"", claimedAt:D(-8)+"T11:20:00"}),
-  v_("W3",{editor:"小葵", stage:"剪輯中", finishedAt:"", claimedAt:D(-19)+"T08:05:00", driveFolder:""}),
+  v_("W3",{editor:"小葵", stage:"剪輯中", finishedAt:"", claimedAt:D(-14)+"T08:05:00", driveFolder:""}),
   v_("Z1",{editor:"阿哲", finishedAt:TODAY+"T09:15:00"}),
 ];
 function reset(videos, who, role){
@@ -117,7 +129,7 @@ const nWip =(h)=>(h.match(/data-label="已經"/g)||[]).length;
   ok("切到「還在剪」：欄位換成認領／已經幾天", /data-label="認領"/.test(h) && /data-label="已經"/.test(h));
   ok("切到「還在剪」：沒有「審核」那一欄（還沒審過怎麼會有狀態）", nRows(h)===0);
   ok("認領時刻看得到", h.includes("10:00") && h.includes("11:20") && h.includes("08:05"));
-  ok("已經幾天算得出來", /1 天/.test(h) && /9 天/.test(h) && /20 天/.test(h), h.match(/\d+ 天/g));
+  ok("已經幾天算得出來", /1 天/.test(h) && /9 天/.test(h) && /15 天/.test(h), h.match(/\d+ 天/g));
   ok("拖最久的排前面", h.indexOf("片W3")<h.indexOf("片W2") && h.indexOf("片W2")<h.indexOf("片W1"));
   ok("拖超過兩週的標紅", /var\(--red\)/.test(h));
   ok("拖一週以上的標金色", /gold-dk/.test(h));
