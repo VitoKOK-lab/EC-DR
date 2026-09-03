@@ -5,3 +5,14 @@ Thumbs.db
 # 編輯器
 .vscode/
 .idea/
+
+# Google Drive 憑證與盤點產出（絕對不進版控）
+.ecdr-drive/
+credentials.json
+client_secret*.json
+token.json
+drive-audit*.json
+
+# Python
+__pycache__/
+*.pyc
