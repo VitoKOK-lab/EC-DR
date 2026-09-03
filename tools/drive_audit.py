@@ -41,24 +41,37 @@ SETUP_HELP = """
 ────────────────────────────────────────────────────────────────
 第一次使用要先拿一組 Google API 憑證（一次性，約 10 分鐘）
 ────────────────────────────────────────────────────────────────
-1. 開 https://console.cloud.google.com/ ，右上角建立一個新專案
-   （名字隨便取，例如 ecdr-backup）
+1. 開 https://console.cloud.google.com/
+   最上面那排的專案選單 →「新增專案」→ 名稱打 ecdr-backup → 建立
+   建好之後記得把上面的專案切換成它
 
-2. 左側選單「API 和服務」→「已啟用的 API 和服務」→ 上方「+ 啟用 API 和服務」
-   → 搜尋 "Google Drive API" → 點進去按「啟用」
+2. 左側選單「API 和服務」→「已啟用的 API 和服務」
+   → 上方「+ 啟用 API 和服務」→ 搜尋 Google Drive API
+   → 點進去 → 按「啟用」
 
-3. 左側「OAuth 同意畫面」→ 選「外部」→ 建立
-   - 應用程式名稱：隨便填，例如 EC-DR 備份
+3. 左側「API 和服務」→「OAuth 同意畫面」
+   （新版介面可能叫「Google 驗證平台」，一樣的東西）
+   - 使用者類型選「外部」→ 建立
+   - 應用程式名稱：EC-DR 備份
    - 使用者支援電子郵件、開發人員聯絡資訊：填你自己的信箱
-   - 一路「儲存並繼續」到底
-   - 最後在「測試使用者」按「+ ADD USERS」，加入你自己的 Google 帳號
-     （沒加的話授權會被擋）
+   - 之後每一頁都按「儲存並繼續」到底（範圍、測試使用者都不用改）
 
-4. 左側「憑證」→ 上方「+ 建立憑證」→「OAuth 用戶端 ID」
+4. ★★ 這一步不能跳過 ★★
+   回到「OAuth 同意畫面」（新版在「目標對象 / Audience」頁），
+   找到「發布狀態」，按「發布應用程式」→ 確認。
+
+   為什麼一定要做：狀態停在「測試中」的話，
+   **Google 會在 7 天後讓授權失效**，你每個禮拜都得重新授權一次，
+   定期備份等於廢掉。發布到「正式版」之後才會長期有效。
+
+   它會問要不要送出驗證 —— 不用送。自己用、100 人以內不需要驗證。
+
+5. 左側「API 和服務」→「憑證」
+   → 上方「+ 建立憑證」→「OAuth 用戶端 ID」
    - 應用程式類型選「桌面應用程式」
-   - 建立完成後按「下載 JSON」
+   - 名稱隨便填 → 建立 → 按「下載 JSON」
 
-5. 把下載到的 JSON 放到這個位置（檔名要一模一樣）：
+6. 把下載到的 JSON 放到這個位置（檔名要一模一樣）：
        %s
 
    終端機做法：
@@ -66,7 +79,11 @@ SETUP_HELP = """
        mv ~/Downloads/client_secret_*.json %s
        chmod 600 %s
 
-6. 再跑一次這支程式，瀏覽器會跳出來要你授權，選你的帳號、按允許。
+7. 再跑一次這支程式，瀏覽器會跳出來要你授權。
+
+   會看到「Google 尚未驗證這個應用程式」的警告 —— 這是正常的，
+   因為這是你自己建的私人應用程式，沒有送給 Google 審核。
+   點「進階」→「前往 EC-DR 備份（不安全）」→ 選你的帳號 → 允許。
 ────────────────────────────────────────────────────────────────
 """ % (CRED_PATH, CONF_DIR, CRED_PATH, CRED_PATH)
 
@@ -158,6 +175,18 @@ def build_service():
         from googleapiclient.discovery import build
     except ImportError:
         print(DEPS_HELP)
+        sys.exit(1)
+    except BaseException as e:
+        # 套件裝了但載不起來（版本打架、底層的 cryptography 壞掉…）。
+        # 這種不是 ImportError，接不住就會噴一整頁看不懂的 traceback。
+        print("Google API 套件裝了，但載入失敗：\n    %s: %s" % (type(e).__name__, e))
+        print("\n多半是套件版本打架，或 pip 裝到了另一個 Python。先確認裝在同一個：")
+        print("    which python3")
+        print("    python3 -c \"import sys; print(sys.executable)\"")
+        print("\n然後用同一個 Python 重裝：")
+        print("    python3 -m pip install --user --upgrade --force-reinstall \\")
+        print("        google-api-python-client google-auth-httplib2 "
+              "google-auth-oauthlib cryptography")
         sys.exit(1)
 
     os.makedirs(CONF_DIR, mode=0o700, exist_ok=True)
