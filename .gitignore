@@ -1,6 +1,9 @@
 # 執行時資料與備份（不進版控）
 data/db.json
+data/db.json.tmp
 data/backups/
+data/drive_index.json
+data/drive_index.json.tmp
 
 # Python
 __pycache__/

@@ -150,7 +150,7 @@
 const TABS = [
   ["warn","🚨 預警中心"],["cal","📅 月排程"],["work","✂️ 素材工作台"],
   ["dash","📊 部門儀表板"],["prod","💎 寵粉商品庫"],["videos","🎞 影片資料庫"],
-  ["score","🏆 績效報表"],["settings","⚙️ 設定"]
+  ["score","🏆 績效報表"],["drive","🗂 檔案庫／留底"],["settings","⚙️ 設定"]
 ];
 let STATE = null;        // 伺服器回傳的整份資料
 let CUR_TAB = "warn";
@@ -271,13 +271,18 @@ function lightDot(l){ return `<span class="light ${l||'green'}"></span>`; }
 // ===================================================================
 function render(){
   if(!STATE) return;
+  // 檔案庫有搜尋輸入框，整頁重繪會清掉使用者打到一半的字。
+  // 骨架建好之後就只更新子區塊，不重畫整頁。
+  if(CUR_TAB==="drive" && document.getElementById("driveRoot")){ driveTick(); return; }
   const v = document.getElementById("view");
   const banner = ONLINE ? "" :
     `<div class="card" style="border-color:var(--red)">⚠️ 目前離線，顯示的是最後一次同步的資料（唯讀），連線恢復後會自動更新。</div>`;
   v.innerHTML = banner + ({
     warn:viewWarn, cal:viewCal, work:viewWork, dash:viewDash,
-    prod:viewProd, videos:viewVideos, score:viewScore, settings:viewSettings
+    prod:viewProd, videos:viewVideos, score:viewScore,
+    drive:viewDrive, settings:viewSettings
   }[CUR_TAB]||(()=>""))();
+  if(CUR_TAB==="drive"){ driveTick(); driveSearch(); }
 }
 
 // ---- 預警中心 ----
@@ -633,6 +638,295 @@ function viewScore(){
 }
 
 // ---- 設定（管理者） ----
+// ===================================================================
+// 🗂 檔案庫／本機留底
+//   來源＝Google Drive 桌面版同步資料夾，目的地＝這台 Mac mini 的硬碟
+// ===================================================================
+let DRIVE = { status:null, results:null, changes:null, busy:false, seq:0 };
+const DQ = { q:"", kind:"", status:"", days:0, sort:"mtime", limit:100, offset:0 };
+let DRIVE_TIMER = null;
+
+const DKINDS = [["","全部類型"],["video","影片"],["image","圖片"],["project","剪輯專案"],
+                ["design","設計檔"],["audio","音檔"],["doc","文件"],["archive","壓縮檔"],["other","其他"]];
+const DSTATUS = [["","全部備份狀態"],["never","未備份"],["stale","有新版待備份"],
+                 ["ok","已備份"],["rescued","來源已刪·本機有留底"],["rescued_none","來源已刪·無留底"]];
+const DDAYS = [[0,"不限時間"],[1,"今天改的"],[7,"最近 7 天"],[30,"最近 30 天"],[90,"最近 90 天"]];
+
+function viewDrive(){
+  return `<h2>🗂 檔案庫／本機留底</h2>
+  <div id="driveRoot">
+    <div id="driveStatus"></div>
+    <div class="card">
+      <div class="row">
+        <input id="dq" placeholder="下關鍵字找檔… 例：項鍊 泰文" value="${esc(DQ.q)}"
+               style="flex:2;min-width:220px" oninput="driveQueue()">
+        <select id="dkind" style="flex:1;min-width:130px" onchange="driveGo()">
+          ${DKINDS.map(([v,l])=>`<option value="${v}" ${DQ.kind===v?"selected":""}>${l}</option>`).join("")}
+        </select>
+        <select id="dstatus" style="flex:1;min-width:150px" onchange="driveGo()">
+          ${DSTATUS.map(([v,l])=>`<option value="${v}" ${DQ.status===v?"selected":""}>${l}</option>`).join("")}
+        </select>
+        <select id="ddays" style="flex:1;min-width:120px" onchange="driveGo()">
+          ${DDAYS.map(([v,l])=>`<option value="${v}" ${DQ.days==v?"selected":""}>${l}</option>`).join("")}
+        </select>
+        <select id="dsort" style="flex:1;min-width:120px" onchange="driveGo()">
+          <option value="mtime" ${DQ.sort==="mtime"?"selected":""}>最近改的在前</option>
+          <option value="size"  ${DQ.sort==="size"?"selected":""}>檔案大的在前</option>
+          <option value="name"  ${DQ.sort==="name"?"selected":""}>檔名排序</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:10px" id="dQuick"></div>
+    </div>
+    <div id="driveResults"></div>
+  </div>`;
+}
+
+// ---- 快捷條件（一鍵套用常用篩選）----
+function driveQuick(k){
+  const preset = {
+    changed:{q:"",kind:"",status:"",days:7,sort:"mtime"},
+    pending:{q:"",kind:"",status:"never",days:0,sort:"mtime"},
+    stale:  {q:"",kind:"",status:"stale",days:0,sort:"mtime"},
+    rescued:{q:"",kind:"",status:"rescued",days:0,sort:"mtime"},
+    all:    {q:"",kind:"",status:"",days:0,sort:"mtime"},
+  }[k];
+  if(!preset) return;
+  Object.assign(DQ, preset, {offset:0});
+  ["dq","dkind","dstatus","ddays","dsort"].forEach(id=>{
+    const e=document.getElementById(id); if(!e) return;
+    e.value = {dq:DQ.q,dkind:DQ.kind,dstatus:DQ.status,ddays:String(DQ.days),dsort:DQ.sort}[id];
+  });
+  driveSearch();
+}
+
+function driveQueue(){ clearTimeout(DRIVE_TIMER); DRIVE_TIMER=setTimeout(driveGo, 280); }
+function driveGo(){
+  DQ.q = val("dq"); DQ.kind = val("dkind"); DQ.status = val("dstatus");
+  DQ.days = parseInt(val("ddays"))||0; DQ.sort = val("dsort"); DQ.offset = 0;
+  driveSearch();
+}
+
+// ---- 狀態列輪詢 ----
+async function driveTick(){
+  try{
+    DRIVE.status = await api("GET","/api/drive/status");
+    renderDriveStatus();
+  }catch(e){ /* 離線時安靜略過 */ }
+}
+
+async function driveSearch(more){
+  const my = ++DRIVE.seq;                      // 只採用最後一次送出的結果
+  if(more) DQ.offset += DQ.limit; else DQ.offset = 0;
+  const qs = new URLSearchParams({q:DQ.q, kind:DQ.kind, status:DQ.status,
+    days:DQ.days, sort:DQ.sort, limit:DQ.limit, offset:DQ.offset}).toString();
+  try{
+    const r = await api("GET","/api/drive/search?"+qs);
+    if(my!==DRIVE.seq) return;
+    if(more && DRIVE.results) r.items = DRIVE.results.items.concat(r.items);
+    DRIVE.results = r;
+    renderDriveResults();
+  }catch(e){ toast(e.message, true); }
+}
+
+function renderDriveStatus(){
+  const box = document.getElementById("driveStatus"); if(!box) return;
+  const d = DRIVE.status; if(!d) return;
+  const c = d.config, st = d.stats, pg = d.progress, lr = d.lastRun;
+  const alerts = [];
+
+  if(!c.roots.length) alerts.push(`尚未設定 Google Drive 同步資料夾，先到 <b>設定</b> 填來源路徑。`);
+  c.roots.filter(r=>!r.exists).forEach(r=>
+    alerts.push(`來源路徑找不到：<code>${esc(r.path)}</code>（Drive 桌面版沒開，或路徑打錯）`));
+  if(c.roots.length && !c.backupDir)
+    alerts.push(`尚未設定<b>本機留底資料夾</b>，目前只有建索引可以搜尋，沒有實際複製任何檔案。`);
+  else if(c.backupDir && !c.backupDirExists)
+    alerts.push(`留底資料夾不存在：<code>${esc(c.backupDir)}</code>`);
+  if(st.quotaPct >= 95) alerts.push(`留底容量已用到 <b>${st.quotaPct}%</b>（${esc(st.backupUsedText)} / ${esc(st.quotaText)}），
+                 快要備不下去了。到設定調高上限，或改成只備成品。`);
+  else if(st.quotaPct >= 80) alerts.push(`留底容量已用 ${st.quotaPct}%，剩下的空間大概還能備 ${esc(st.pendingText)} 裡的一部分。`);
+  const lc = lr && lr.copy;
+  if(lc && lc.stoppedByQuota)
+    alerts.push(`<b>已達容量上限 ${st.quotaText} 而停止複製</b>，還有 ${lc.pendingLeft} 個檔案沒備到。
+                 請到設定調高上限、或改成只備成品。<b>系統不會自動刪任何東西。</b>`);
+  if(lc && lc.stoppedByDisk)
+    alerts.push(`<b>硬碟空間不足而停止複製</b>，還有 ${lc.pendingLeft} 個檔案沒備到。`);
+  if(lc && lc.failed) alerts.push(`上次有 ${lc.failed} 個檔案複製失敗（多半是串流檔下載不下來）。`);
+  if(st.placeholders) alerts.push(`有 ${st.placeholders} 個檔案在 Drive 上還沒下載到本機（串流佔位），
+                 備份時會先下載，速度會慢。`);
+
+  const pct = Math.min(100, st.quotaPct||0);
+  const barColor = pct>=95 ? "var(--red)" : pct>=80 ? "var(--yellow)" : "var(--green)";
+
+  box.innerHTML = `
+  ${alerts.length?`<div class="card" style="border-color:var(--yellow)">
+      ${alerts.map(a=>`<div style="margin:4px 0">⚠️ ${a}</div>`).join("")}</div>`:""}
+
+  ${pg.running?`<div class="card" style="border-color:var(--accent)">
+      <b>⏳ 執行中</b>
+      <div class="muted" style="margin:6px 0">${esc(pg.message||"")}</div>
+      <div style="background:var(--panel2);border-radius:6px;height:10px;overflow:hidden">
+        <div style="height:100%;width:${pg.total?Math.round(pg.done/pg.total*100):0}%;
+                    background:var(--accent);transition:width .4s"></div></div>
+      <div class="muted" style="margin-top:6px;font-size:12px">
+        ${pg.done}/${pg.total} 個檔案${pg.currentFile?`　目前：${esc(pg.currentFile)}`:""}</div>
+    </div>`:""}
+
+  <div class="card">
+    <div class="grid cols3" style="gap:16px">
+      <div>
+        <label>留底已用 / 上限</label>
+        <div style="font-size:19px;font-weight:700">${esc(st.backupUsedText)} <span class="muted"
+             style="font-size:13px">/ ${esc(st.quotaText)}</span></div>
+        <div style="background:var(--panel2);border-radius:6px;height:8px;overflow:hidden;margin-top:6px">
+          <div style="height:100%;width:${pct}%;background:${barColor}"></div></div>
+        <div class="muted" style="font-size:12px;margin-top:4px">
+          ${st.diskFreeText?`硬碟還剩 ${esc(st.diskFreeText)}`:""}</div>
+      </div>
+      <div>
+        <label>索引檔案總數</label>
+        <div style="font-size:19px;font-weight:700">${st.totalFiles.toLocaleString()}
+          <span class="muted" style="font-size:13px">個 · ${esc(st.totalText)}</span></div>
+        <div class="muted" style="font-size:12px;margin-top:4px">
+          待備份 ${st.byStatus.never + st.byStatus.stale} 個（${esc(st.pendingText)}）</div>
+      </div>
+      <div>
+        <label>上次執行</label>
+        <div style="font-size:15px;font-weight:600">${lr?esc(lr.finishedAt.replace("T"," ")):"還沒跑過"}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">
+          ${lr?`${lr.trigger==="auto"?"自動":"手動"}　耗時 ${lr.elapsedSec} 秒`:""}
+          ${c.autoEnabled?`　·　每天 ${esc(c.scanTime)} 自動執行`:`　·　<b>自動執行未開啟</b>`}</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" onclick="driveRun('backup')" ${pg.running?"disabled":""}>
+        ${pg.running?"執行中…":"立刻掃描並備份"}</button>
+      <button class="btn sec" onclick="driveRun('scan')" ${pg.running?"disabled":""}>
+        只掃描（不複製）</button>
+      <span class="muted" style="font-size:12px">備份只會新增與更新，不會刪除留底裡的舊檔。</span>
+    </div>
+  </div>`;
+
+  const quick = document.getElementById("dQuick");
+  if(quick) quick.innerHTML = `
+    <button class="btn sec sm" onclick="driveQuick('changed')">🆕 最近 7 天改過 ${badge(st.recent7)}</button>
+    <button class="btn sec sm" onclick="driveQuick('pending')">📥 還沒備份 ${badge(st.byStatus.never)}</button>
+    <button class="btn sec sm" onclick="driveQuick('stale')">♻️ 有新版待備 ${badge(st.byStatus.stale)}</button>
+    <button class="btn sec sm" onclick="driveQuick('rescued')">🛟 來源已刪·本機還有 ${badge(st.byStatus.rescued)}</button>
+    <button class="btn sec sm" onclick="driveQuick('all')">全部</button>`;
+}
+function badge(n){ return n ? `<span class="tag" style="margin-left:4px">${n}</span>` : ""; }
+
+const DSTAT_PILL = { ok:"ok", never:"wa", stale:"wa", rescued:"em", rescued_none:"em" };
+
+function renderDriveResults(){
+  const box = document.getElementById("driveResults"); if(!box) return;
+  const r = DRIVE.results;
+  if(!r) return;
+  if(!r.total){
+    box.innerHTML = `<div class="card muted">找不到符合的檔案。
+      ${DRIVE.status && !DRIVE.status.stats.totalFiles
+        ? "索引還是空的——先按上面的「只掃描」建立索引。" : "換個關鍵字或放寬篩選試試。"}</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <b>找到 ${r.total.toLocaleString()} 個檔案</b>
+      <span class="muted">合計 ${esc(fmtBytes(r.totalBytes))}</span>
+    </div>
+    <table class="responsive"><thead><tr>
+      <th>檔案</th><th>位置</th><th class="hideMobile">大小</th>
+      <th class="hideMobile">最後修改</th><th>備份狀態</th><th>關聯／標籤</th><th></th>
+    </tr></thead><tbody>
+    ${r.items.map(it=>`<tr>
+      <td data-label="檔案"><b>${esc(it.name)}</b>
+        ${it.placeholder?`<span class="tag" title="Drive 上還沒下載到本機">☁️ 未下載</span>`:""}
+        <div class="muted" style="font-size:12px">${esc(it.kindLabel)}</div></td>
+      <td data-label="位置"><span class="muted" style="font-size:12px">${esc(it.root)}/${esc(it.dir||"")}</span></td>
+      <td data-label="大小" class="hideMobile">${esc(it.sizeText)}</td>
+      <td data-label="最後修改" class="hideMobile">${esc(it.mtimeText)}</td>
+      <td data-label="備份狀態"><span class="pill ${DSTAT_PILL[it.backupStatus]||""}">${esc(it.backupStatusLabel)}</span>
+        ${it.missing?`<div class="muted" style="font-size:12px">Drive 上 ${esc((it.missingSince||"").slice(0,10))} 起找不到</div>`:""}</td>
+      <td data-label="關聯／標籤">
+        ${it.productName?`<span class="tag">💎 ${esc(it.productName)}</span> `:""}
+        ${it.videoName?`<span class="tag">🎞 ${esc(it.videoName)}</span> `:""}
+        ${(it.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join(" ")}
+        ${it.note?`<div class="muted" style="font-size:12px">${esc(it.note)}</div>`:""}</td>
+      <td style="white-space:nowrap">
+        <button class="btn sec sm" onclick="driveCopyPath('${encodeURIComponent(it.abs||"")}')"
+                title="複製完整路徑，在 Finder 按 Cmd+Shift+G 貼上就會跳到這個檔案">複製路徑</button>
+        <button class="btn sec sm" onclick="driveEdit('${encodeURIComponent(it.key)}')">標記</button></td>
+    </tr>`).join("")}
+    </tbody></table>
+    ${r.items.length < r.total
+      ? `<div class="row" style="justify-content:center;margin-top:12px">
+           <button class="btn sec" onclick="driveSearch(true)">載入更多（已顯示 ${r.items.length}／${r.total}）</button>
+         </div>` : ""}
+  </div>`;
+}
+
+function fmtBytes(n){
+  n = Number(n)||0; const u=["B","KB","MB","GB","TB"]; let i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return (i===0?n.toFixed(0):n.toFixed(1))+" "+u[i];
+}
+
+// 複製完整路徑。瀏覽器的 clipboard API 只有 https 或 localhost 才給用，
+// 同事從區網 http://192.168.x.x 連進來時要走 textarea 的老方法。
+function driveCopyPath(enc){
+  const path = decodeURIComponent(enc||"");
+  if(!path){ toast("這個檔案還沒掃到實體路徑",true); return; }
+  const done = ()=>toast("已複製路徑。到 Finder 按 Cmd+Shift+G 貼上就會跳過去。");
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(path).then(done, ()=>driveCopyFallback(path,done));
+  } else { driveCopyFallback(path, done); }
+}
+function driveCopyFallback(text, done){
+  const ta=document.createElement("textarea");
+  ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select();
+  let ok=false; try{ ok=document.execCommand("copy"); }catch(e){}
+  document.body.removeChild(ta);
+  if(ok) done(); else prompt("複製這段路徑：", text);
+}
+
+async function driveRun(kind){
+  const r = await write("POST","/api/drive/"+kind,{}, null);
+  if(r!==false) toast(kind==="backup"?"已開始背景備份":"已開始背景掃描");
+  driveTick();
+}
+
+function driveEdit(keyEnc){
+  const key = decodeURIComponent(keyEnc);
+  const it = (DRIVE.results.items||[]).find(x=>x.key===key);
+  if(!it) return;
+  showModal(`標記檔案：${it.name}`, `
+    <p class="muted" style="margin-top:0;font-size:12px">
+      Drive 來源：<code>${esc(it.abs||"—")}</code><br>
+      本機留底：${it.backupStatus==="never"?"<b>尚未備份</b>":`<code>${esc(it.backupAt?"已於 "+it.backupAt.replace("T"," ")+" 複製":"—")}</code>`}
+    </p>
+    <label>關鍵字標籤（逗號分隔，之後可以直接搜這些字）</label>
+    <input id="dtags" value="${esc((it.tags||[]).join(","))}" placeholder="項鍊,泰文,待重剪">
+    <label>關聯寵粉商品</label>
+    <select id="dprod"><option value="">— 無 —</option>
+      ${(STATE.products||[]).map(p=>`<option value="${p.id}" ${it.productId===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select>
+    <label>關聯影片</label>
+    <select id="dvid"><option value="">— 無 —</option>
+      ${(STATE.videos||[]).map(v=>`<option value="${v.id}" ${it.videoId===v.id?"selected":""}>${esc(v.name)}</option>`).join("")}</select>
+    <label>備註</label>
+    <input id="dnote" value="${esc(it.note||"")}">
+    <p class="muted">關聯之後，搜商品名或商品關鍵字也會找到這個檔案。</p>`,
+  async ()=>{
+    const ok = await write("PUT","/api/drive/file",{key, patch:{
+      tags: val("dtags"), productId: val("dprod"), videoId: val("dvid"), note: val("dnote")
+    }}, "已更新標記");
+    if(ok) driveSearch();
+    return ok;
+  });
+}
+
+// 停在檔案庫分頁時，每 5 秒更新一次狀態（備份跑起來要看得到進度）
+setInterval(()=>{ if(CUR_TAB==="drive" && document.getElementById("driveRoot")) driveTick(); }, 5000);
+
 function viewSettings(){
   const s=STATE.settings||{};
   return `<h2>⚙️ 設定（修改需管理者密碼）</h2>
@@ -652,7 +946,30 @@ function viewSettings(){
     <div><label>素材低庫存門檻</label><input type="number" id="set_low" value="${s.materialLowThreshold||5}"></div>
   </div>
   <label><input type="checkbox" id="set_newreq" ${s.requireDailyNewVideo?"checked":""} style="width:auto"> 每天固定至少 1 支新片（強制）</label>
-  <label>異地備份資料夾（Google Drive 同步路徑，留空=不啟用）</label><input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}">
+  <label>系統資料異地備份資料夾（db.json 快照丟到 Drive 同步路徑，留空=不啟用）</label><input id="set_offsite" value="${esc(s.offsiteBackupDir||"")}">
+  </div>
+
+  <div class="card">
+    <b>🗂 檔案庫／本機留底</b>
+    <p class="muted" style="margin:6px 0 0">
+      從 Google Drive 桌面版的同步資料夾（來源）複製一份到這台 Mac mini 的硬碟（留底）。
+      東西存在本機，不往雲端送。
+    </p>
+    <label>來源：Google Drive 同步資料夾（一行一個，可寫 <code>標籤=路徑</code>）</label>
+    <textarea id="set_droots" style="min-height:74px"
+      placeholder="我的雲端硬碟=/Users/你的帳號/Library/CloudStorage/GoogleDrive-你的信箱/我的雲端硬碟">${esc(
+        (s.driveRoots||[]).map(r=>(r.label?r.label+"=":"")+r.path).join("\n"))}</textarea>
+    <label>目的地：這台 Mac mini 上的留底資料夾</label>
+    <input id="set_dbak" value="${esc(s.driveBackupDir||"")}"
+      placeholder="/Users/你的帳號/EC-DR備份/Drive留底">
+    <div class="grid cols3">
+      <div><label>留底容量上限 (GB)</label><input type="number" id="set_dquota" value="${s.driveQuotaGB??500}"></div>
+      <div><label>磁碟保留空間 (GB)</label><input type="number" id="set_dmargin" value="${s.driveFreeMarginGB??20}"></div>
+      <div><label>每日自動執行時間</label><input id="set_dtime" value="${esc(s.driveScanTime||"03:00")}" placeholder="03:00"></div>
+    </div>
+    <label><input type="checkbox" id="set_dauto" ${s.driveAutoEnabled?"checked":""} style="width:auto"> 每天自動掃描並備份一次</label>
+    <label><input type="checkbox" id="set_dcopy" ${(s.driveCopyEnabled!==false)?"checked":""} style="width:auto"> 實際複製檔案（取消勾選＝只建索引可搜尋，不佔硬碟）</label>
+    <p class="muted">到達容量上限會停止複製並告警，<b>不會自動刪除任何東西</b>。</p>
   </div>
   <div class="card"><b>變更管理者密碼</b>
     <input id="set_pw" type="text" placeholder="留空則不變更">
@@ -667,7 +984,18 @@ async function saveSettings(){
     reuseCap:parseInt(val("set_cap"))||3, reuseWindowDays:parseInt(val("set_win"))||30,
     materialLowThreshold:parseInt(val("set_low"))||5,
     requireDailyNewVideo:document.getElementById("set_newreq").checked,
-    offsiteBackupDir:val("set_offsite")
+    offsiteBackupDir:val("set_offsite"),
+    driveRoots:val("set_droots").split("\n").map(x=>x.trim()).filter(Boolean).map(line=>{
+      const i=line.indexOf("=");
+      return i>0 ? {label:line.slice(0,i).trim(), path:line.slice(i+1).trim()}
+                 : {label:"", path:line};
+    }),
+    driveBackupDir:val("set_dbak"),
+    driveQuotaGB:parseFloat(val("set_dquota"))||0,
+    driveFreeMarginGB:parseFloat(val("set_dmargin"))||0,
+    driveScanTime:val("set_dtime")||"03:00",
+    driveAutoEnabled:document.getElementById("set_dauto").checked,
+    driveCopyEnabled:document.getElementById("set_dcopy").checked
   };
   const plats=val("set_plat").split(",").map(x=>x.trim()).filter(Boolean);
   const tpl=val("set_tpl").split(",").map(x=>{const[a,b]=x.split("=");return{time:(a||"").trim(),type:(b||"").trim()};}).filter(t=>t.time);

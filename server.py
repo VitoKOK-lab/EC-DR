@@ -18,6 +18,8 @@ import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
+import drive_backup
+
 # ---------------------------------------------------------------------------
 # 路徑設定
 # ---------------------------------------------------------------------------
@@ -74,6 +76,17 @@ def default_db():
             "derivativeScore": 8,
             "offsiteBackupDir": "",
             "backupKeep": 50,
+            # ---- Google Drive 檔案庫／本機留底 ----
+            # driveRoots：Drive 桌面版同步資料夾（來源，可多個）
+            "driveRoots": [],
+            # driveBackupDir：這台 Mac mini 上的留底資料夾（目的地）
+            "driveBackupDir": "",
+            "driveQuotaGB": 500,        # 留底容量上限，到頂就停並告警
+            "driveFreeMarginGB": 20,    # 磁碟至少保留這麼多空間
+            "driveAutoEnabled": False,  # 每天自動跑一次
+            "driveScanTime": "03:00",
+            "driveCopyEnabled": True,   # 關掉就只建索引不複製
+            "driveExcludes": list(drive_backup.DEFAULT_EXCLUDES),
         },
         "_meta": {"source": "default", "createdAt": now_iso()},
     }
@@ -417,6 +430,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if path.startswith("/api/drive/"):
+            # 檔案庫索引可能有數萬筆，另走一條路，不長時間佔住 db 鎖
+            return self._api_drive_get(path, parse_qs(parsed.query))
         if path.startswith("/api/"):
             return self._api_get(path, parse_qs(parsed.query))
         return self._serve_static(path)
@@ -437,6 +453,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(compute_dashboard(db, date_str))
             if path == "/api/export":
                 return self._send_json(db)
+        return self._err("not found", 404)
+
+    # --- 檔案庫（Google Drive → 本機留底） ---
+    def _api_drive_get(self, path, qs):
+        with _LOCK:                      # 只讀設定與對照表，馬上放開
+            db = load_db()
+            settings = dict(db.get("settings", {}))
+            vlookup, plookup = drive_lookups(db)
+        cfg = drive_backup.get_config(settings)
+        idx = drive_backup.load_index()
+
+        if path == "/api/drive/status":
+            return self._send_json({
+                "config": drive_public_config(cfg),
+                "stats": drive_backup.stats(idx, cfg),
+                "progress": drive_backup.progress(),
+                "lastRun": idx.get("lastRun"),
+                "runs": idx.get("runs", [])[:10],
+                "tags": [{"tag": t, "count": c} for t, c in drive_backup.all_tags(idx)[:80]],
+            })
+
+        if path == "/api/drive/search":
+            params = {k: (v[0] if v else "") for k, v in qs.items()}
+            return self._send_json(drive_backup.search(idx, params, vlookup, plookup))
+
+        if path == "/api/drive/changes":
+            days = (qs.get("days", ["7"])[0])
+            limit = (qs.get("limit", ["60"])[0])
+            out = {}
+            for bucket in ("new", "modified", "missing"):
+                out[bucket] = drive_backup.search(
+                    idx, {"event": bucket, "days": days if bucket != "missing" else 0,
+                          "limit": limit, "sort": "mtime"},
+                    vlookup, plookup)
+            out["pending"] = drive_backup.search(
+                idx, {"status": "never", "limit": limit, "sort": "mtime"}, vlookup, plookup)
+            out["stale"] = drive_backup.search(
+                idx, {"status": "stale", "limit": limit, "sort": "mtime"}, vlookup, plookup)
+            return self._send_json(out)
+
         return self._err("not found", 404)
 
     def _serve_static(self, path):
@@ -730,6 +786,33 @@ class Handler(BaseHTTPRequestHandler):
                       {"account": slot.get("account")})
                 return {"ok": True, "account": slot.get("account")}
 
+        # ---- 檔案庫（Google Drive → Mac mini 本機留底）----
+        if head == "drive":
+            sub = seg[1] if len(seg) > 1 else ""
+            cfg = drive_backup.get_config(db.get("settings", {}))
+
+            if sub in ("scan", "backup") and method == "POST":
+                do_copy = (sub == "backup")
+                if do_copy and not cfg["backupDir"]:
+                    raise ValueError("尚未設定「本機留底資料夾」。請先到設定頁填入這台 Mac mini 上的路徑。")
+                if not cfg["roots"]:
+                    raise ValueError("尚未設定 Google Drive 同步資料夾。請先到設定頁填入來源路徑。")
+                started = drive_backup.run_job_async(cfg, do_copy=do_copy,
+                                                     trigger="manual", user=user)
+                if not started.get("ok"):
+                    raise ValueError(started.get("error") or "無法啟動")
+                audit(db, user, device_id, "drive." + sub)
+                return started
+
+            if sub == "file" and method == "PUT":
+                key = body.get("key") or ""
+                rec = drive_backup.update_meta(key, body.get("patch") or {})
+                if rec is None:
+                    raise ValueError("索引裡找不到這個檔案，請先重新掃描一次。")
+                audit(db, user, device_id, "drive.file.update", key,
+                      {"fields": list((body.get("patch") or {}).keys())})
+                return {"ok": True}
+
         return None
 
     # --- 排片卡控 ---
@@ -767,6 +850,37 @@ class Handler(BaseHTTPRequestHandler):
                 vid["status"] = "舊片"  # 上架後變舊片
 
 
+def drive_lookups(db):
+    """給檔案庫搜尋用的對照表：讓「搜商品名也搜得到掛在它底下的檔案」。"""
+    vlookup = {}
+    for v in db.get("videos", []):
+        name = v.get("name") or ""
+        vlookup[v.get("id")] = {"name": name, "search": name}
+    plookup = {}
+    for p in db.get("products", []):
+        name = p.get("name") or ""
+        plookup[p.get("id")] = {
+            "name": name,
+            # 搜尋另外吃簡稱與關鍵字，但顯示只用正式片名
+            "search": " ".join(filter(None, [
+                name, p.get("nickname"), " ".join(p.get("keywords") or [])])),
+        }
+    return vlookup, plookup
+
+
+def drive_public_config(cfg):
+    """回給前端的設定（附上路徑到底存不存在，設錯路徑要看得出來）。"""
+    return {
+        "roots": [{"label": r["label"], "path": r["path"],
+                   "exists": os.path.isdir(r["path"])} for r in cfg["roots"]],
+        "backupDir": cfg["backupDir"],
+        "backupDirExists": bool(cfg["backupDir"]) and os.path.isdir(cfg["backupDir"]),
+        "quotaGB": cfg["quotaGB"], "freeMarginGB": cfg["freeMarginGB"],
+        "autoEnabled": cfg["autoEnabled"], "scanTime": cfg["scanTime"],
+        "copyEnabled": cfg["copyEnabled"], "excludes": cfg["excludes"],
+    }
+
+
 def find_user(db, name):
     for u in db.get("users", []):
         if u.get("name") == name:
@@ -780,6 +894,14 @@ def find_user(db, name):
 def main():
     ensure_dirs()
     load_db()  # 確保 db.json 存在 / 損毀時還原
+
+
+    def _settings():
+        with _LOCK:
+            return dict(load_db().get("settings", {}))
+
+    drive_backup.start_scheduler(_settings)  # 每天固定時間自動備份一次
+
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("影片排程系統已啟動： http://localhost:%d" % PORT)
     print("（區網其他電腦請用本機 IP；遠端請搭配 Cloudflare Tunnel，見 README）")
