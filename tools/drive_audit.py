@@ -27,7 +27,8 @@ import time
 import shutil
 import argparse
 import datetime
-from collections import defaultdict
+import re
+from collections import defaultdict, Counter
 
 CONF_DIR = os.path.expanduser("~/.ecdr-drive")
 CRED_PATH = os.path.join(CONF_DIR, "credentials.json")
@@ -268,6 +269,64 @@ def walk(svc, root_id, max_depth, progress_every=200):
     return root_meta, files, errors, len(seen_folders)
 
 
+# 命名雜訊：相機／手機自動產生的編號，對「怎麼重新分類」沒有參考價值
+NOISE = re.compile(r"^(img|dsc|mvi|vid|mov|dji|gopro|screenshot|螢幕|未命名|"
+                   r"final|copy|副本|new|test|untitled)[\W_]*\d*$", re.I)
+
+
+def naming_clues(files):
+    """
+    原本的資料夾分類爛，重新組織就不能照抄它。
+    這裡改從兩個比較可靠的維度找線索：
+      1. 檔案自己的年月 —— 時間軸是唯一不會騙人的組織維度
+      2. 檔名裡反覆出現的詞 —— 看得出實際上大家怎麼稱呼這些素材，
+         那些詞才是之後拿來當關鍵字／分類的候選
+    """
+    by_month = defaultdict(lambda: [0, 0])
+    zh, en = Counter(), Counter()
+    for f in files:
+        if f["kind"] in ("shortcut", "native"):
+            continue
+        m = (f.get("modifiedTime") or "")[:7]
+        if m:
+            by_month[m][0] += 1
+            by_month[m][1] += f["size"]
+        stem = os.path.splitext(f["name"])[0]
+        if NOISE.match(stem.strip()):
+            continue
+        for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", stem):
+            if not NOISE.match(w):
+                en[w.lower()] += 1
+        # 中文用 2~8 字滑窗。窗口太短，「祖母綠證書」這種五字詞會被切成
+        # 「祖母綠證」「母綠證書」兩個碎片，兩個次數一樣、誰也壓不掉誰。
+        # 上限 8 是折衷：夠長到蓋住實際會用的詞，又不會讓組合數爆掉。
+        for run in re.findall(r"[\u4e00-\u9fff]{2,}", stem):
+            if len(run) > 24:            # 極長字串多半是整句描述，切了也沒意義
+                continue
+            for n in range(2, min(len(run), 8) + 1):
+                for i in range(len(run) - n + 1):
+                    zh[run[i:i + n]] += 1
+    return by_month, zh, en
+
+
+def top_terms(counter, limit, min_count):
+    """
+    中文用滑窗切詞會產生一堆重疊碎片：「祖母綠」「祖母綠證」「母綠證書」
+    全都被數到。只留「最大化」的詞 —— 再延長一個字、次數就會掉下來的那個。
+    次數不掉，代表它只是更長詞的一部分，留長的就好。
+    """
+    items = {w: c for w, c in counter.items() if c >= min_count}
+    # 每個詞被「延長一個字」之後的最高次數（左右各延一邊都算）
+    longer = {}
+    for w2, c2 in items.items():
+        for sub in (w2[:-1], w2[1:]):
+            if len(sub) >= 2 and c2 > longer.get(sub, 0):
+                longer[sub] = c2
+    kept = [(w, c) for w, c in items.items() if c > longer.get(w, 0)]
+    kept.sort(key=lambda wc: (-wc[1], -len(wc[0])))
+    return kept[:limit]
+
+
 def report(root_meta, files, errors, folder_count, elapsed):
     total_bytes = sum(f["size"] for f in files)
     by_kind = defaultdict(lambda: [0, 0])          # kind -> [數量, 位元組]
@@ -321,6 +380,30 @@ def report(root_meta, files, errors, folder_count, elapsed):
     if len(by_top) > 25:
         P("  …另有 %d 個資料夾較小，未列出" % (len(by_top) - 25))
     P("")
+
+    by_month, zh, en = naming_clues(files)
+    if by_month:
+        P("─ 依年月（重新分類最可靠的維度） " + "─" * 31)
+        months = sorted(by_month.items(), reverse=True)
+        for m, (n, b) in months[:18]:
+            bar = "█" * max(1, int(b / max(1, max(v[1] for v in by_month.values())) * 26))
+            P("  %s  %6s 個  %10s  %s" % (m, format(n, ","), human(b), bar))
+        if len(months) > 18:
+            older = months[18:]
+            P("  更早的 %d 個月　%s 個  %s"
+              % (len(older), format(sum(v[0] for _, v in older), ","),
+                 human(sum(v[1] for _, v in older))))
+        P("")
+
+    zt, et = top_terms(zh, 24, 3), top_terms(en, 14, 3)
+    if zt or et:
+        P("─ 檔名裡反覆出現的詞（關鍵字與分類的候選） " + "─" * 21)
+        if zt:
+            P("  中文　" + "、".join("%s(%d)" % (w, c) for w, c in zt))
+        if et:
+            P("  英數　" + "、".join("%s(%d)" % (w, c) for w, c in et))
+        P("  ↑ 這些是大家實際在用的講法，拿來當本機資料庫的關鍵字比自己想的準")
+        P("")
 
     P("─ 最大的 15 個檔案 " + "─" * 45)
     for f in sorted(files, key=lambda x: -x["size"])[:15]:
