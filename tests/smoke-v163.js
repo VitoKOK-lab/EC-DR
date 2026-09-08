@@ -125,12 +125,19 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
   ok("也擋掉冒泡", /event\.stopPropagation\(\)/.test(urgentBtn(vid("A")))); }
 
 // 被指派的人看到的：紅色 ＋ 排最前面
+// v164：被指派的片改成進「本日工作」，不在待認領池了 —— 所以這裡分兩組驗。
 { reset([ v_("普通1",{assignedTo:"小葵",scheduledDate:D(1)}),
           v_("急件",{assignedTo:"小葵",scheduledDate:D(9),urgent:true,urgentBy:"管理員"}),
           v_("普通2",{assignedTo:"小葵",scheduledDate:D(2)}) ], "小葵","editor");
+  const ids=myAssignedVids().map(v=>v.id);
+  ok("**急件排到最前面**（就算它的上片日最晚）", ids[0]==="急件", ids); }
+// 待認領池裡（沒指派給任何人的）也一樣
+{ reset([ v_("普通1",{scheduledDate:D(1)}),
+          v_("急件",{scheduledDate:D(9),urgent:true,urgentBy:"管理員"}),
+          v_("普通2",{scheduledDate:D(2)}) ], "小葵","editor");
   const ids=poolAll().map(v=>v.id);
-  ok("**急件排到最前面**（就算它的上片日最晚）", ids[0]==="急件", ids);
-  const h=poolRowsHTML(poolAll(), "小葵");
+  ok("待認領池的急件也排最前面", ids[0]==="急件", ids);
+  const h=poolRowsHTML(poolAll());
   ok("急件那一列掛 urg（整列變紅）", /<tr class="urg">/.test(h), h.slice(0,200));
   ok("只有急件那一列變紅", (h.match(/class="urg"/g)||[]).length===1, h.match(/class="urg"/g));
   ok("看得到「急件」兩個字", h.includes("急件"), h.slice(0,300));

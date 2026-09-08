@@ -449,6 +449,9 @@ async function route(method, path, body){
       if(body.pwSet!=null) patch.pwSet=!!body.pwSet;
       if(body.pwAt!=null) patch.pwAt=String(body.pwAt);          // 出勤起算時間（只寫第一次）
       if(body.flexHours!=null) patch.flexHours=!!body.flexHours; // 變動工時：不判遲到早退
+      // 可以指派剪輯工作（不含標急件）。⚠️ 這一格是白名單，沒列進來的欄位會被默默丟掉 ——
+      // 加新欄位時很容易忘記這裡，忘了就是「勾了沒反應」而且不會有任何錯誤訊息。
+      if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
       if(body.workStart!=null) patch.workStart=String(body.workStart);
       if(body.workEnd!=null) patch.workEnd=String(body.workEnd);
       await window.DB.update("users", seg[1], patch); return; }
@@ -1826,6 +1829,8 @@ function afpToggleAll(btn){ const boxes=Array.from(document.querySelectorAll('.a
   const turnOn=boxes.some(b=>!b.checked); boxes.forEach(b=>b.checked=turnOn); if(btn) btn.textContent=turnOn?"全部取消":"全選"; }
 async function assignFootage(){
   if(dbBlocked()) return;
+  // 卡片不畫出來只是第一道門；真正的擋門在這裡（不然誰都能直接呼叫這支）
+  if(!canAssignWork()){ toast(T("你沒有指派剪輯工作的權限","You can't assign editing work"),true); return; }
   const who=val("afp_who");
   if(!who){ toast("請先選擇員工",true); return; }
   const ids=Array.from(document.querySelectorAll('.afp_vid:checked')).map(o=>o.value).filter(Boolean);
@@ -2108,12 +2113,12 @@ function shpBadge(v){ return (v.channel&&CHANNELS[v.channel])
 function poolCountLabel(pool, shown){ return (POOL_FILTER==="all"&&!POOL_Q)?String((pool||[]).length):((shown||[]).length+"/"+(pool||[]).length); }
 function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')"><span>${l}</span> <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join(""); }
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
-function poolRowsHTML(poolShown, me){
+function poolRowsHTML(poolShown){
   // 急件那一列整列變紅（class urg），一眼就看得到要先做哪一支
   return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
-        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的本日工作）","Nothing to claim — anything assigned to you appears in Today's Work above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
 // 上班計畫：待認領卡（快選列＋搜尋＋清單＋認領/退回鍵）
 function workPoolCard(pool, poolShown, poolCnt, me){
@@ -2130,7 +2135,7 @@ function workPoolCard(pool, poolShown, poolCnt, me){
     </div>
     <div id="pool_wrap" class="keepscroll" style="margin-top:8px${poolShown.length>5?';max-height:300px;overflow-y:auto':''}">
     <table class="responsive daytbl"><thead><tr><th>${T("影片","Video")}</th><th style="width:150px">${T("動作","Action")}</th></tr></thead>
-    <tbody id="pool_list">${poolRowsHTML(poolShown, me)}</tbody></table>
+    <tbody id="pool_list">${poolRowsHTML(poolShown)}</tbody></table>
     </div>
   </div>`;
 }
@@ -2279,13 +2284,19 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   // ③ 手上的影片
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
-    rows.push(todoRow("🎬",
+    // 三種狀態：主管指派給我還沒開始的／手上正在剪的／今天已經完成的
+    const waiting = v.stage==="待處理";
+    const label = waiting ? T("主管指派給你","Assigned to you")
+                : v.stage==="剪輯中" ? T("剪輯中","In progress")
+                : T("今天完成","Done today");
+    rows.push(todoRow(waiting?"📥":"🎬",
       `${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
-      [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"),
-       esc(dataLabel(v.source||"")), workSchedTag(v)].filter(Boolean).join("・"),
-      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中",
+      [label, esc(dataLabel(v.source||"")), workSchedTag(v)].filter(Boolean).join("・"),
+      `${days}${workBtn(v)}${undoBtn(v)}`,
+      // 「已完成」才變灰。待處理的是還沒開始，把它畫成灰的等於叫人略過它
+      v.stage!=="剪輯中" && !waiting,
       // 已經做完的就不要再紅了 —— 紅色是「快去做」，不是「這支很重要」
-      (isUrgent(v)&&v.stage==="剪輯中")?"urg":""));
+      (isUrgent(v)&&(waiting||v.stage==="剪輯中"))?"urg":""));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
   // 每日固定工作：今天還沒帶進來的才顯示；全部帶完了這一排就消失
@@ -2685,6 +2696,10 @@ function viewWork(){
   //    claimedAt，所以那種片顯示的會是它**第一次**被認領的日子。
   //    正式資料現在一筆這種都沒有（查過），先不動寫入行為 —— 動了會連帶影響
   //    editDays（剪片速度 KPI）的定義。
+  // 主管指派給我、但我還沒開始剪的：直接進「本日工作」。
+  // v164 之前這些只出現在收合的「待認領」裡 —— 被指派的人要自己去點開才看得到，
+  // 等於主管派了他也不知道。現在派了就會出現在他今天的清單上。
+  const myAssigned = myAssignedVids();
   const mine = (STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中")
     .sort((a,b)=>{ const ac=String(a.claimedAt||""), bc=String(b.claimedAt||"");
       if(!ac && !bc) return String(a.id).localeCompare(String(b.id));
@@ -2704,12 +2719,23 @@ function viewWork(){
   //   隔天自然不再出現（靠 finishedAt 是今天）；按過下班也照樣看得到今天做了什麼。
   const myDoneToday = (STATE.videos||[]).filter(v=>isMine(v) && isPublished(v) && v.stage!=="剪輯中" && String(v.finishedAt||"").slice(0,10)===today)
     .sort((a,b)=>String(a.finishedAt||"").localeCompare(String(b.finishedAt||"")));
-  const myWork = mine.concat(myDoneToday);
+  // 影片區的順序＝一個人該做的順序：
+  //   ① 急件（不管認領了沒）② 手上正在剪的 ③ 指派給我、還沒開始的 ④ 今天完成的
+  // 急件拉到最前面是刻意的：主管標它就是要它先被看到，埋在五支進行中的下面等於沒標。
+  const myWork = []
+    .concat(mine.filter(isUrgent), myAssigned.filter(isUrgent))
+    .concat(mine.filter(v=>!isUrgent(v)))
+    .concat(myAssigned.filter(v=>!isUrgent(v)))
+    .concat(myDoneToday);
   const tasks = myTasks();
   const g=scheduleGlance();
 
   // 我的剪輯工作狀態按鈕：我作業中…→（按）編輯內容 ▶（進編輯畫面，存檔＝已完成）；平台/海外二創版走各自專屬編輯視窗/完成流程
   const workBtn=(v)=>{
+    // 主管指派給我、還沒開始的：給認領鍵。認領才會開始計時，跟待認領池同一顆
+    // （claimVid 對毛片／蝦皮／馬來／海外版本都通用）。
+    if(v.stage==="待處理") return `<button class="btn sm" onclick="claimVid('${v.id}')"
+      title="${T('按一下＝認領並開始剪（變剪輯中、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>`;
     if(v.stage==="已完成") return dispStage(v)==="待審核"
       ? `<button class="btn sm" disabled style="opacity:1;background:var(--amber);box-shadow:none">${T("待審核","In review")}</button>`
       : `<button class="btn sm" disabled style="opacity:1;background:var(--green);box-shadow:none">${T("剪輯完成","Done")}</button>`;
@@ -2751,6 +2777,7 @@ function viewWork(){
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
   ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
+  ${workAssignFold()}
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
@@ -2782,10 +2809,22 @@ function setPoolQ(v){ POOL_Q=String(v||"").trim(); poolFilter(); }
 // 依分工過濾：一創只看毛片/原創、二創只看各平台語言版本（兩種都做的看全部）
 // 還沒拍的（只有文案）不放進來：認領了也沒毛片可剪
 // 排序：預排上片日期 過去→未來（沒填日期的排最後、再依編號）
-function poolAll(){ const me=currentUser();
+// 待認領池 ＝ **還沒指派給任何人**的毛片／版本。
+// ⚠️ v164 起「指派給我的」不在這裡了 —— 它們改成直接進「本日工作」（見 myAssigned）。
+//    以前兩邊都放，等於同一支片在同一頁出現兩次；而且被指派的人要自己去點開
+//    收合的「待認領」才看得到主管派給他的東西，等於沒派。
+function poolAll(){
   const zoneOK=(v)=> seesZone(zoneOfVideo(v));
-  return (STATE.videos||[]).filter(v=>zoneOK(v) && v.stage==="待處理" && !vidNotShot(v) && (v.assignedTo===me || !v.assignedTo))
+  return (STATE.videos||[]).filter(v=>zoneOK(v) && v.stage==="待處理" && !vidNotShot(v) && !v.assignedTo)
     // 急件排最前面（主管標的＝要它先被做）；其餘照預排上片日，沒排的沉到最後
+    .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
+      return (isUrgent(b)?1:0)-(isUrgent(a)?1:0) || ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
+}
+// 主管指派給我、我還沒開始剪的。條件跟待認領池一模一樣，只差在「指派給我」——
+// 兩邊合起來就是原本的 poolAll，一支都不會漏掉、也不會重複。
+function myAssignedVids(){ const me=currentUser();
+  const zoneOK=(v)=> seesZone(zoneOfVideo(v));
+  return (STATE.videos||[]).filter(v=>zoneOK(v) && v.stage==="待處理" && !vidNotShot(v) && v.assignedTo===me)
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
       return (isUrgent(b)?1:0)-(isUrgent(a)?1:0) || ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
 }
@@ -2800,7 +2839,7 @@ function poolShownOf(pool){ return (POOL_FILTER==="all"?(pool||[]):(pool||[]).fi
 function poolFilter(){
   const list=document.getElementById("pool_list"); if(!list){ render(); return; }
   const pool=poolAll(), shown=poolShownOf(pool), me=currentUser();
-  list.innerHTML=poolRowsHTML(shown, me);
+  list.innerHTML=poolRowsHTML(shown);
   const n=document.getElementById("pool_n");
   if(n){ n.textContent=poolCountLabel(pool, shown); n.className="pill "+(shown.length?"ok":"wa"); }
   const tabs=document.getElementById("pool_tabs"); if(tabs) tabs.innerHTML=poolTabsHTML(poolCntOf(pool));
@@ -4427,6 +4466,15 @@ function viewOutput(){
     <tbody>${rows}</tbody></table>
   </div>`;
 }
+// 被授權「可以指派剪輯工作」的人（canAssign）在自己的「上班計畫」也看得到這張卡。
+// 他沒有儀表板那一頁 —— 只給旗標不給入口，等於沒給。
+// 主管／經理人不走這裡（他們沒有「上班計畫」分頁，卡片在自己的頁面上）。
+function workAssignFold(){
+  if(!canAssignWork()) return "";
+  const d=dashSchedule();
+  return fold(T("指派毛片給同事","Assign footage"), d.unassignedPool.length,
+    dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount));
+}
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 function viewDashboard(){
   const editors=staffNamesSorted(["editor"]);
@@ -4458,7 +4506,7 @@ function viewDashboard(){
   <div class="dgrid">
   ${["boss","manager"].includes(currentRole())?dashAssignTaskCard():''}
 
-  ${["boss","manager"].includes(currentRole())?dashAssignFootageCard(editors, poolN, unassignedPool, assignCount):''}
+  ${canAssignWork()?dashAssignFootageCard(editors, poolN, unassignedPool, assignCount):''}
 
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   </div>
@@ -4760,6 +4808,18 @@ function unmarkShot(id){ const v=vid(id)||{};
 // ⚠️ 這是「插隊」的權力，只有主管／經理人能按 —— 誰都能標的話，大家都標急件，
 //    紅色就沒有意義了（跟「全部都是第一優先＝沒有第一優先」是同一回事）。
 //    真正的擋門在 canMarkUrgent()，按鈕只是不畫出來而已。
+// ── 誰可以指派剪輯工作 ────────────────────────────────────────
+// 主管與經理人本來就可以。除此之外，可以**逐一**給某個人這個權限
+// （users/{name}.canAssign）—— 用旗標而不是把名字寫死在程式裡：
+// 換人、多一個人、拿掉權限，都在「設定 → 成員」勾一下就好，不必改程式重新部署。
+// ⚠️ 這個權限只給「指派剪輯工作」，不包含標急件、看薪資、改設定那些。
+//    要擴張的話請明確再開一個旗標，不要偷偷讓它變成半個管理員。
+function canAssignWork(){
+  if(VIEW_AS) return false;
+  if(["boss","manager"].includes(currentRole())) return true;
+  const u=(STATE.users||[]).find(x=>x && x.name===currentUser());
+  return !!(u && u.canAssign);
+}
 function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
 const isUrgent=(v)=> !!(v && v.urgent);
 function toggleUrgent(id){
@@ -4970,7 +5030,9 @@ function vidTableRow(v){
   // **要人按的按鈕**，被收起來就等於手機上根本按不到（老闆就是這樣回報找不到的）。
   // 所以有按鈕的時候掛上 has-act，讓 CSS 把這一格留下來。
   // ⚠️ 只有「有東西可按」才掛 —— 沒按鈕的列照舊收起來，不然手機卡片會被灰標籤灌爆。
+  // 狀態欄裡可能有兩顆鈕（毛片已上傳／標急件）—— 手機要留住這一格，只要其中一顆在就掛
   const sb=shotBtn(v);
+  const ub=urgentBtn(v);
   // 標示：在地化版本標自身語言（EN）；源片的管理指標「翻了幾種語言 🌐N、重播 ↻M」
   // 只給管理員／經理人看 — 剪輯不需要這些資訊，隱藏讓畫面更乾淨
   const isAdminView=["boss","manager"].includes(currentRole());
@@ -4997,9 +5059,9 @@ function vidTableRow(v){
     <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="${T("商品","Products")}"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
     <td data-label="${T("剪輯","Editor")}"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-    <td data-label="${T("狀態","Status")}"${sb?' class="has-act"':''}><span class="ststack">
+    <td data-label="${T("狀態","Status")}"${(sb||ub)?' class="has-act"':''}><span class="ststack">
       <span class="pill" style="font-size:11px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
-      ${rev}${sb}</span></td>
+      ${rev}${urgentPill(v)}${sb}${ub}</span></td>
   </tr>`;
 }
 // 版本殼的「原本語言」跟著它的源片走（殼自己沒有 origLang）
@@ -7142,7 +7204,7 @@ function setChannelCards(s){
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工，額外多一頁「選品配對」（幫商品挑影片、送審），只有這個職位、經理人與管理員看得到；<b>人資</b>＝只看團隊看板，不能操作。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th></th></tr></thead>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -7259,11 +7321,20 @@ function viewSettings(){
       ${w.custom?`<button class="btn sec sm" style="padding:2px 7px;font-size:11px" onclick="setMemberHours('${esc(jsEsc(u.name))}','','')" title="改回全公司時間">↺</button>`:''}
       ${flexBox}
     </span>`; };
+  // 「可以指派剪輯工作」的旗標。主管與經理人本來就有，不用勾（勾了也沒差，所以顯示「本來就有」）。
+  const asgSel=(u)=>{
+    if(["boss","manager"].includes(u.role||"editor"))
+      return '<span class="muted" style="font-size:12px">本來就有</span>';
+    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
+      <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
+        onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)">可指派</label>`;
+  };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="區域">${zoneCell(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
+    <td data-label="可指派">${asgSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -7457,6 +7528,11 @@ function setMemberHours(name, start, end){
 function setMemberFlex(name, on){
   writeAdmin("PUT","/api/users/"+name,{flexHours:!!on},
     on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
+// 逐一給某個人「可以指派剪輯工作」的權限。用旗標而不是把名字寫死在程式裡：
+// 換人、多一個人、拿掉權限，在這裡勾一下就好，不必改程式重新部署。
+function setMemberAssign(name, on){
+  writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
+    on?("「"+name+"」現在可以指派剪輯工作給同事"):("已收回「"+name+"」指派剪輯工作的權限")); }
 function setMemberRole(name, role){ if(!STAFF_ROLES.concat("manager").includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
