@@ -80,14 +80,21 @@ const count=(h,re)=>(String(h).match(re)||[]).length;
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
-// ══════════ ① 毛片庫存＆指派：數字說幾支，就要有幾個勾選框 ══════════
+// ══════════ ① 指派毛片：數字說幾支，就要有幾個勾選框 ══════════
+// v170：清單從流程中控搬到儀表板了（老闆決定操作集中在儀表板）。
+// 這一條要守的事沒變 —— 數字與勾得到的列數必須一致，而且不准截斷。
 reset(); as("Regina","manager");
-{ const f=viewFlow();
-  const m=f.match(/未指派 (\d+) 支/);
-  const boxes=count(f,/class="afp_vid"/g);
+{ const d=viewDashboard();
+  const m=d.match(/未指派 <b>(\d+)<\/b> 支/);
+  const boxes=count(d,/class="afp_vid"/g);
   ok("未指派的數字抓得到", !!m);
   ok(`未指派 ${m&&m[1]} 支 → 清單就有 ${boxes} 個勾選框`, !!m && boxes===+m[1]);
-  ok("而且真的超過原本 20 的上限", boxes>20); }
+  ok("而且真的超過原本 20 的上限", boxes>20);
+  // 中控只剩一行字，那個數字也要跟儀表板一致（不然兩頁講不同的話）
+  const f=viewFlow();
+  const fm=f.match(/還有 <b>(\d+)<\/b> 支沒有指派/);
+  ok("中控寫的未指派支數與儀表板一致", !!fm && +fm[1]===boxes);
+  ok("中控已經沒有勾選框了", count(f,/class="afp_vid"/g)===0); }
 
 // ══════════ ② 待你審片：折疊上的數字說幾支，就要有幾個審片鍵 ══════════
 { const f=viewFlow();

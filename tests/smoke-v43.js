@@ -49,8 +49,16 @@ ok("儀表板排第一（那是她的落地頁）", tabs[0]==="dashboard");
 let h=viewFlow();
 ok("備片警報卡（未達60天→紅色警示）", h.includes("備片存量") && h.includes("要拍片了") && h.includes("準備腳本"));
 ok("排程存量數字與目標", h.includes(`/${60}`)||h.includes("60"));
-ok("毛片庫存卡＋未指派清單", h.includes("毛片庫存") && h.includes("毛片一") && !h.includes(">毛片二<"));
-ok("指派毛片控制存在", h.includes("assignFootage()") && h.includes("afp_who"));
+// v170：指派毛片的操作集中到儀表板了（老闆決定），中控只留「還剩幾支、要不要去拍片」。
+// 這兩條改成分別釘兩邊，能力沒有消失、只是換了地方。
+ok("中控留著毛片庫存與存量警示", h.includes("毛片庫存"));
+ok("中控不再有指派操作（不然同一件事兩個入口）",
+   !h.includes("assignFootage()") && !h.includes('id="afp_who"'));
+ok("中控會告訴人去哪裡指派", h.includes("儀表板"));
+{ localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+  const d=viewDashboard();
+  ok("**指派操作搬到儀表板、還在**", d.includes("assignFootage()") && d.includes('id="afp_who"'));
+  ok("儀表板列得出未指派的毛片", d.includes("毛片一") && !d.includes(">毛片二<")); }
 { // v120：清單本來截在 20 筆，下面卻寫「未指派 N 支」—— 數字與看得到的列數對不上，
   // 而且「全選」只勾得到前 20 支。凡是要動手勾的清單就不截斷。
   const many=STATE.videos.slice();
@@ -59,11 +67,14 @@ ok("指派毛片控制存在", h.includes("assignFootage()") && h.includes("afp_
     scheduledDate:null,publishedLink:"",driveFolder:"",locale:"",channel:"",origLang:"",
     tags:[],products:[],usageHistory:[],metrics:[]});
   STATE.videos=many;
-  const f=viewFlow();
+  // v170：清單在儀表板上，不在中控
+  const f=viewDashboard();
   const n=(f.match(/class="afp_vid"/g)||[]).length;
-  const m=f.match(/未指派 (\d+) 支/);
-  ok("未指派的數字與清單列數一致", !!m && n===+m[1]);
-  ok("超過 20 筆也全部列出來", n>20 && f.includes("大量毛片39"));
+  const m=f.match(/未指派 <b>(\d+)<\/b> 支/);
+  ok("未指派的數字與清單列數一致", !!m && n===+m[1], {n, m:m&&m[1]});
+  ok("超過 20 筆也全部列出來", n>20 && f.includes("大量毛片39"), n);
+  { const fl=viewFlow(); const mm=fl.match(/還有 <b>(\d+)<\/b> 支沒有指派/);
+    ok("中控寫的未指派支數跟儀表板的清單一致", !!mm && +mm[1]===n, {中控:mm&&mm[1], 儀表板:n}); }
   STATE.videos=STATE.videos.filter(v=>!String(v.id).startsWith("BULK")); }
 ok("各平台排到哪天 chips", h.includes("蝦皮排到 8/1") && h.includes("英文排到 未排"));
 ok("員工卡：小葵上班中＋拖延警示", h.includes("小葵") && h.includes("上班中") && h.includes("拖太久"));
