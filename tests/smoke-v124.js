@@ -123,8 +123,18 @@ ok("管理員打得開", modalHTML.includes("影片內容"));
 reset(); as("小葵","editor");
 { const ids=poolAll().map(v=>v.id);
   ok("池子看不到指派給別人的", !ids.includes("HERS"));
-  ok("池子看得到指派給自己的", ids.includes("MINE"));
-  ok("池子看得到沒指派的", ids.includes("FREE")); }
+  ok("池子看得到沒指派的", ids.includes("FREE"));
+  // v164：指派給自己的改成直接進「本日工作」，不再放在收合的待認領裡
+  //（以前兩邊都放＝同一支片在同一頁出現兩次，而且被指派的人不點開就看不到）
+  ok("指派給自己的**不在**池子裡了", !ids.includes("MINE"), ids);
+  const assigned=myAssignedVids().map(v=>v.id);
+  ok("——改成在本日工作那一份清單裡", assigned.includes("MINE"), assigned);
+  ok("本日工作那份也看不到指派給別人的", !assigned.includes("HERS"), assigned);
+  ok("本日工作那份不會混進沒指派的", !assigned.includes("FREE"), assigned);
+  // 兩份加起來要等於原本的池子，一支都不能漏
+  ok("池子＋指派給我的＝原本全部（沒有片被弄不見）",
+     ids.concat(assigned).sort().join()===["FREE","MINE"].sort().join(),
+     {ids, assigned}); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

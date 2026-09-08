@@ -143,7 +143,9 @@ reset(); as("Anna","intl"); setPoolQ("nothing here");
 reset([]); as("Regina","manager");
 { const w=viewWork();
   ok("池子空的時候搜尋框還是在（不會消失）", w.includes('id="pool_q"'));
-  ok("池子空的時候顯示原本的提示", w.includes("目前沒有指派給你或可認領的項目")); }
+  // v164：指派給你的改成進「本日工作」，提示要講清楚去哪裡找，不然會以為東西不見了
+  ok("池子空的時候顯示提示", w.includes("目前沒有可以認領的項目"));
+  ok("提示要告訴他被指派的在哪裡", w.includes("本日工作")); }
 
 // ══ render 不炸 ══
 (async()=>{
