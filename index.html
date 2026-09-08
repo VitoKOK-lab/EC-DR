@@ -173,6 +173,13 @@
   /* 今日待辦：一條清單，做完一件少一件 */
   .todo{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
   .todo:last-child{border-bottom:none}
+  /* 急件：主管標的插隊件，被指派的人畫面上整列變紅。
+     左邊那條紅槓是主要訊號 —— 只靠字的顏色的話，色弱的同仁分不出來。 */
+  .todo.urg{background:var(--redbg);border-left:4px solid var(--red);padding-left:10px;margin-left:-10px;border-radius:var(--rs)}
+  .todo.urg .ttitle{color:var(--red)}
+  tr.urg{background:var(--redbg)}
+  tr.urg td:first-child{box-shadow:inset 4px 0 0 var(--red)}
+  tr.urg a{color:var(--red);font-weight:700}
   .todo .tmain{flex:1;min-width:0}
   .todo .ttitle{font-size:14.5px;font-weight:600;overflow-wrap:anywhere}
   .todo .tsub{font-size:12px;color:var(--muted);margin-top:2px}
@@ -513,6 +520,11 @@
     table.responsive tbody{display:block;width:100%}
     table.responsive thead{display:none}
     table.responsive tr{display:block;width:100%;border:1px solid var(--line);border-radius:var(--rs);margin-bottom:10px;padding:12px;background:var(--panel)}
+    /* 急件在手機上也要是紅的。上面這條的 specificity（0,1,2）比外面的 tr.urg（0,1,1）高，
+       不在這裡再寫一次的話，手機版整列會被刷回白底 —— 實測就是這樣白的。
+       手機的列是 display:block，靠 td:first-child 打左邊那條槓沒有用，改打在列本身。 */
+    table.responsive tr.urg{background:var(--redbg);border-color:var(--red);border-left:4px solid var(--red)}
+    table.responsive tr.urg td:first-child{box-shadow:none}
     table.responsive td{display:flex;justify-content:space-between;align-items:center;border:none;padding:6px 2px;gap:10px;width:100%}
     table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700;flex:none}
     table.responsive td:empty{display:none}
@@ -768,7 +780,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=5b846018170c"></script>
-<script type="module" src="fb.js?v=5b846018170c"></script>
+<script src="app.js?v=cebf56c7264e"></script>
+<script type="module" src="fb.js?v=cebf56c7264e"></script>
 </body>
 </html>

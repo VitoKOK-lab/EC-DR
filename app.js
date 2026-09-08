@@ -2109,8 +2109,9 @@ function poolCountLabel(pool, shown){ return (POOL_FILTER==="all"&&!POOL_Q)?Stri
 function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')"><span>${l}</span> <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join(""); }
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
-  return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+  // 急件那一列整列變紅（class urg），一眼就看得到要先做哪一支
+  return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
+        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -2123,7 +2124,7 @@ function workPoolCard(pool, poolShown, poolCnt, me){
     </div>
     <div id="pool_tabs" class="vtabs" style="margin-top:10px">${poolTabsHTML(poolCnt)}</div>
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-      <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、來源…）","Find a video (name, code, source…)")}"
+      <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、網址、備註…）","Find a video (name, code, URL, notes…)")}"
         style="flex:1;min-width:150px" oninput="setPoolQ(this.value)" onkeydown="if(enterKey(event))setPoolQ(this.value)">
       <span id="pool_clear">${poolClearHTML()}</span>
     </div>
@@ -2233,8 +2234,8 @@ function taskThread(t, canPost){
   return `<div class="tmsgs">${list}</div>${box}`;
 }
 // 今日待辦的一列
-function todoRow(kind, title, sub, actions, doneCls){
-  return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
+function todoRow(kind, title, sub, actions, doneCls, cls){
+  return `<div class="todo ${doneCls?'done':''} ${cls||''}"><span class="tkind">${kind}</span>
     <div class="tmain"><div class="ttitle">${title}</div>${sub?`<div class="tsub">${sub}</div>`:""}</div>
     <div class="tact">${actions||""}</div></div>`;
 }
@@ -2279,10 +2280,12 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
-      `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
+      `${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"),
        esc(dataLabel(v.source||"")), workSchedTag(v)].filter(Boolean).join("・"),
-      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
+      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中",
+      // 已經做完的就不要再紅了 —— 紅色是「快去做」，不是「這支很重要」
+      (isUrgent(v)&&v.stage==="剪輯中")?"urg":""));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
   // 每日固定工作：今天還沒帶進來的才顯示；全部帶完了這一排就消失
@@ -2782,8 +2785,9 @@ function setPoolQ(v){ POOL_Q=String(v||"").trim(); poolFilter(); }
 function poolAll(){ const me=currentUser();
   const zoneOK=(v)=> seesZone(zoneOfVideo(v));
   return (STATE.videos||[]).filter(v=>zoneOK(v) && v.stage==="待處理" && !vidNotShot(v) && (v.assignedTo===me || !v.assignedTo))
+    // 急件排最前面（主管標的＝要它先被做）；其餘照預排上片日，沒排的沉到最後
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
-      return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
+      return (isUrgent(b)?1:0)-(isUrgent(a)?1:0) || ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
 }
 function poolCatList(){ return [["all",T("全部","All")]]
   .concat(seesTW()  ? [["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")]] : [])
@@ -2807,10 +2811,7 @@ function poolFilter(){
 // 比對片名、編號、來源、標籤、平台／語言 —— 剪輯記得哪個字就能找到
 function poolMatch(v){
   if(!POOL_Q) return true;
-  const q=POOL_Q.toLowerCase();
-  return [v.code, v.name, v.rawName, v.nameEn, v.source, v.channel, v.locale,
-          Array.isArray(v.tags)?v.tags.join(" "):""]
-    .filter(Boolean).join(" ").toLowerCase().includes(q);
+  return vidSearchText(v).includes(String(POOL_Q).toLowerCase());   // 跟影片庫同一份欄位清單
 }
 // 待認領池的快選分類。源片沒有 locale，要看「原本語言」才知道它是中文毛片還是海外原創
 function poolCat(v){
@@ -3672,7 +3673,15 @@ function dashSchedule(){
   const g=scheduleGlance();
   const poolAll=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理");
   const poolN=poolAll.length;
-  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  // 指派清單照「預排上片日期」排：先要上片的先派。沒排日期的沉到最下面 ——
+  // 它們沒有時間壓力，混在有日期的中間只會把急的那些擠下去。
+  // 急件插到最前面（主管自己標的，標了就是要它先被看到）。
+  // 以前是照 id 排（≈ 建檔順序），跟「什麼時候要上片」完全無關。
+  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>
+      (isUrgent(b)?1:0)-(isUrgent(a)?1:0)
+   || String(a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999").localeCompare(
+      String(b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999"))
+   || String(a.id).localeCompare(String(b.id)));
   const assignCount={}; poolAll.forEach(v=>{ if(v.assignedTo) assignCount[v.assignedTo]=(assignCount[v.assignedTo]||0)+1; });
   const noSchedN=(STATE.videos||[]).filter(v=>isSourceVid(v) && vidSegment(v)==="newNoSched").length;
   const wipN=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="剪輯中").length;
@@ -3746,8 +3755,17 @@ function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
       <div><label>選擇毛片（勾選，可多選）</label>
         ${unassignedPool.length?`<div style="margin-bottom:6px"><button type="button" class="btn sec sm" onclick="afpToggleAll(this)">全選</button></div>`:''}
         <div style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
-        ${unassignedPool.map(v=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
-          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none"> <span>${esc(vidTitle(v))}</span></label>`).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
+        ${unassignedPool.map(v=>{
+          const d=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+          // 上片日就是排序的依據，要看得到 —— 只印片名的話，老闆沒辦法確認順序對不對
+          const late=d && d<today;
+          const day=d?`<span style="font-size:11px;flex:none;color:${late?'var(--red)':'var(--gold-dk)'};font-weight:${late?800:600}"
+              title="${T("預排上片日"+(late?"（已經過期）":""),"Scheduled"+(late?" (overdue)":""))}">${esc(d.slice(5))}</span>`
+            :`<span class="muted" style="font-size:11px;flex:none" title="${T("還沒排上片日","No date yet")}">${T("沒排","—")}</span>`;
+          return `<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
+          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none">
+          ${day}<span style="flex:1;min-width:0">${urgentPill(v)}${esc(vidTitle(v))}</span>${urgentBtn(v)}</label>`;
+        }).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
         </div></div>
     </div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignFootage()">指派給該員工</button>
@@ -4550,6 +4568,8 @@ function newSimpleVideo(){
     <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址（拍完再補也可以）","Google Drive folder URL (can be added after shooting)")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
+    <label>${T("預排上片日期（可以先不填，之後在編輯視窗補）","Scheduled upload date (optional — can be set later)")}</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value=""></div>
     ${productRows("sv", [])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
@@ -4558,8 +4578,11 @@ function newSimpleVideo(){
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
     const svProducts=collectProducts("sv");
+    // 預排上片日期：新增時就填得起來（以前只能先存、再點開編輯視窗補一次）。
+    // 沒填就是 null —— 跟 newVideoRecord 的預設一致，不要塞空字串（月曆是用 null 判斷「沒排」的）。
+    const sched=String(val("sv_date")||"").slice(0,10) || null;
     const video={name, rawName:name, driveFolder:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
-      origLang:val("sv_lang")||"",
+      origLang:val("sv_lang")||"", scheduledDate:sched,
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
   });
@@ -4732,6 +4755,42 @@ function markShot(id){ const v=vid(id)||{};
 function unmarkShot(id){ const v=vid(id)||{};
   dbUpdate("videos", id, {shotAt:"", shotBy:"", updatedAt:nowIso()},
     {action:"取消「毛片已上傳」", target:vidTitle(v)}); }
+// ── 急件 ──────────────────────────────────────────────────────
+// 主管指派毛片時可以把某一支標成急件；被指派的人畫面上那一列會變紅、排到最前面。
+// ⚠️ 這是「插隊」的權力，只有主管／經理人能按 —— 誰都能標的話，大家都標急件，
+//    紅色就沒有意義了（跟「全部都是第一優先＝沒有第一優先」是同一回事）。
+//    真正的擋門在 canMarkUrgent()，按鈕只是不畫出來而已。
+function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
+const isUrgent=(v)=> !!(v && v.urgent);
+function toggleUrgent(id){
+  if(dbBlocked()) return;
+  const v=vid(id)||{};
+  if(!canMarkUrgent()){ toast(T("只有主管可以標急件","Only managers can flag a rush job"),true); return; }
+  const on=!isUrgent(v);
+  dbUpdate("videos", id,
+    on ? {urgent:true, urgentAt:nowIso(), urgentBy:currentUser(), updatedAt:nowIso()}
+       : {urgent:false, urgentAt:"", urgentBy:"", updatedAt:nowIso()},
+    {action: on?"標為急件":"取消急件", target:vidTitle(v)});
+}
+// 急件的紅色標記。被指派的人跟主管看到的是同一顆，不要各寫一份。
+function urgentPill(v){
+  if(!isUrgent(v)) return "";
+  const who=String(v.urgentBy||"");
+  return `<span class="pill" style="font-size:10px;background:var(--redbg);color:var(--red);border:1px solid var(--red);font-weight:800"
+    title="${T((who?who+" ":"")+"標為急件"+(v.urgentAt?("："+String(v.urgentAt).slice(5,16).replace("T"," ")):""),
+               "Rush job"+(who?" — flagged by "+who:""))}">${T("急件","RUSH")}</span>`;
+}
+// 主管在指派清單上按的那顆
+function urgentBtn(v){
+  if(!v || !canMarkUrgent()) return "";
+  return isUrgent(v)
+    ? `<button type="button" class="btn sec sm" style="flex:none;padding:2px 8px;font-size:11px"
+        onclick="event.preventDefault();event.stopPropagation();toggleUrgent('${esc(jsEsc(v.id))}')"
+        title="${T("取消急件","Clear the rush flag")}">${T("取消急件","Clear rush")}</button>`
+    : `<button type="button" class="btn sm" style="flex:none;padding:2px 8px;font-size:11px"
+        onclick="event.preventDefault();event.stopPropagation();toggleUrgent('${esc(jsEsc(v.id))}')"
+        title="${T("標成急件：被指派的人畫面上這一列會變紅並排到最前面","Flag as rush: turns red and jumps to the top of their list")}">${T("標急件","Rush")}</button>`;
+}
 // ── 毛片存量 ──────────────────────────────────────────────────
 // 「有腳本沒毛片」的還不能剪，不算存量 —— 這是老闆判斷「要不要去拍片」的依據，
 // 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
@@ -4958,11 +5017,28 @@ function vidAllOfLang(){
 }
 // 搜尋範圍含版本自己的欄位，也含源片的片名與編號 ——
 // 這樣打源片的中文片名，找得到它底下的蝦皮版。
+// ── 一支影片「搜得到的字」 ──────────────────────────────────────
+// 影片庫與待認領池共用同一份欄位清單 —— 各寫一份的話，之後加欄位一定會有一邊漏掉
+// （這兩處本來就已經漂開了：一邊搜得到文案、另一邊搜得到標籤）。
+// 網址也要搜得到：老闆手上常常只有一條雲端連結，要反查「這是哪一支」。
+function vidSearchText(v){
+  if(!v) return "";
+  const a=anchorOf(v);
+  return [v.name, v.rawName, v.nameEn, v.videoCopy, v.code, v.editor, v.claimedBy,
+          v.source, v.channel, v.locale, v.account,
+          v.driveFolder,        // 儲存資料夾網址
+          v.rawLink,            // 舊資料的毛片連結（v145 之後併進 driveFolder，舊的還在）
+          v.refLink,            // 參考來源網址
+          v.productUrl,         // 商品連結
+          v.note,               // 備註
+          Array.isArray(v.tags)?v.tags.join(" "):"",
+          Array.isArray(v.products)?v.products.map(p=>p&&p.name).join(" "):"",
+          a.name, a.code]
+    .map(x=>String(x||"")).join("  ").toLowerCase();
+}
 function vidMatchQ(v){
   const q=String(VID_Q||'').toLowerCase().trim(); if(!q) return true;
-  const a=anchorOf(v);
-  return [v.name,v.rawName,v.videoCopy,v.code,v.editor,v.channel,v.account,a.name,a.code]
-    .map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
+  return vidSearchText(v).includes(q);
 }
 function vidVisibleList(){
   let list=vidAllOfLang().filter(v=> vidGroupOf(v)===VID_VIEW).filter(vidMatchQ).filter(vidMatchSched);
@@ -5339,7 +5415,7 @@ function viewVideosLib(){
       <input type="checkbox" id="vid_uns" ${VID_UNSCHED?"checked":""} onchange="vidSetUnsched(this.checked)" style="width:auto;margin:0">
       ${T("只看還沒排日期的","Unscheduled only")}</label>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
-      <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
+      <input id="vid_q" placeholder="${T("搜尋編號／片名／網址／備註","Search code / title / URL / notes")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
       <div class="vmode" role="group" aria-label="${T("瀏覽方式","View mode")}">
         <button class="vmode-b ${VID_MODE==="list"?"on":""}" onclick="vidSetMode('list')" title="${T("清單","List")}">☰ ${T("清單","List")}</button>
         <button class="vmode-b ${VID_MODE==="grid"?"on":""}" onclick="vidSetMode('grid')" title="${T("圖片","Covers")}">▦ ${T("圖片","Covers")}</button>
