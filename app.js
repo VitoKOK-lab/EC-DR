@@ -6347,7 +6347,23 @@ async function saveVideo(id){
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
     nameEn:val("e_nameEn").trim(), videoCopyEn:val("e_vcopyEn").trim()};
   if(document.getElementById("e_lang")) video.origLang=val("e_lang")||"";   // 一創原本才有這個欄位
-  return await write("PUT",`/api/videos/${id}`,{video},T("已更新影片","Video updated"));
+  const ok=await write("PUT",`/api/videos/${id}`,{video},T("已更新影片","Video updated"));
+  // 改「剪輯人員」＝把這支片派給某個人。實務上大家都是走這條，不是走儀表板那張
+  // 「指派毛片」卡（正式資料：那張卡兩個月只用過 2 次，但用改欄位派工的有一千多次）。
+  // 這條路刻意不擋 —— 擋了會卡住四五個人每天在做的事。但要留下紀錄，
+  // 不然老闆事後查不到「這支是誰派給誰的」。
+  if(ok) logEditorChange(v0, video.editor);
+  return ok;
+}
+// 只有真的換人才記：存個檔沒動到這一格的不要洗版
+function logEditorChange(v0, next){
+  const before=String((v0&&v0.editor)||"").trim(), after=String(next||"").trim();
+  if(before===after) return;
+  const who=currentUser();
+  const act = !after ? "取消指定剪輯"
+            : !before ? (after===who ? "指定自己剪" : "指派剪輯給 "+after)
+            : (after===who ? "改成自己剪（原本 "+before+"）" : "改派剪輯：" +before+" → "+after);
+  logA(act, vidTitle(v0));
 }
 
 // ===================================================================
