@@ -182,7 +182,24 @@ function reset(videos, who, role){
   VID_MODE="grid";
   ok("圖片檢視也有（不然切到圖片就按不到）", /markShot\('A'\)/.test(vidCardHTML(vid("A")))); }
 
-// ══════════ ⑤ 不會壞掉 ══════════
+// ══════════ ⑤ 手機上按得到（老闆回報「沒有看到按鈕」就是踩這個）══════════
+// 手機版影片庫只留片名那一格，其他 td 全被 CSS 收起來 —— 按鈕在「狀態」那一格，
+// 於是桌機看得到、手機整個消失。有按鈕的那一格要掛 has-act 讓 CSS 留下它。
+{ reset([ v_("未拍的",{driveFolder:FOLDER}),
+          v_("在剪的",{claimedBy:"小葵", stage:"剪輯中"}) ], "小葵","editor");
+  const a=vidTableRow(vid("未拍的")), b2=vidTableRow(vid("在剪的"));
+  ok("有按鈕的那一列，狀態欄掛 has-act（手機才留得住）", /class="has-act"/.test(a), a.slice(-260));
+  ok("沒按鈕的列不掛（不然手機卡片會被灰標籤灌爆）", !/has-act/.test(b2), b2.slice(-200));
+  ok("has-act 掛在放按鈕的那一格上", /class="has-act"[^>]*>[\s\S]*markShot/.test(a)); }
+
+{ const HTML=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
+  ok("手機版確實有那條「只留片名」的規則（不然上面這件事就沒意義）",
+     /table\.vtable\.responsive td:not\(\.cv-name\)\{display:none\}/.test(HTML));
+  ok("CSS 有把 has-act 那一格放行", /table\.vtable\.responsive td\.has-act\{display:flex\}/.test(HTML));
+  ok("放行規則要排在隱藏規則後面，不然被蓋掉",
+     HTML.indexOf("td.has-act{display:flex}") > HTML.indexOf("td:not(.cv-name){display:none}")); }
+
+// ══════════ ⑥ 不會壞掉 ══════════
 { reset([]);
   ok("空的影片不會爆", shotBtn(null)==="" && shotBtn(undefined)==="");
   ok("vidShot 對空的回 false", vidShot(null)===false);
