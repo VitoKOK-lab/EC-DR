@@ -296,7 +296,10 @@ reset([]);
     tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null}];
   { const f=viewFlow();
     ok("流程中控可以交辦人資", f.includes("交辦 HR小姐 一件事"));
-    ok("毛片不會指派給人資", !f.split('id="afp_who"')[1].split("</select>")[0].includes("HR小姐")); }
+    // v170：指派操作搬到儀表板，規則跟著搬過去驗
+    { const dd=viewDashboard();
+      ok("毛片不會指派給人資", !dd.split('id="afp_who"')[1].split("</select>")[0].includes("HR小姐"));
+      ok("（前提）中控已經沒有那個下拉了", !f.includes('id="afp_who"')); } }
 
   // ── render 不炸 ──
   reset([sh("小葵",T0,"09:00","18:00")]);

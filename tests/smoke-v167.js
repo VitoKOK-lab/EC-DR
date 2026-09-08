@@ -67,28 +67,25 @@ function reset(){
   const h=viewDashboard();
   ok("主管的儀表板仍然有員工視角（沒被改壞）", h.includes("員工視角") && /enterViewAs\(/.test(h)); }
 
-// ══════════ ③ 流程中控最上面也有同一張卡 ══════════
+// ══════════ ③ 操作集中在儀表板，中控不重複 ══════════
+// v167 一開始是兩頁都放交辦卡（老闆說她整天在用）。後來老闆看到成品說
+// 「儀表板和中控好像很多重覆」，改成**集中在儀表板**。這一段跟著改成釘新的安排。
 { reset(); as("Regina","manager");
-  const h=viewFlow();
-  ok("流程中控也看得到多選交辦卡", h.includes("指派交辦給員工") && /class="asg_p"/.test(h));
-  // 「最上面」＝排在焦點列與其他卡片之前
-  const iAsg=h.indexOf("指派交辦給員工");
-  ok("**排在焦點列前面**（她整天在用的，不要每次都先捲過存量警示）",
-     iAsg>=0 && iAsg < h.indexOf("focusbar"), {iAsg, focus:h.indexOf("focusbar")});
-  ok("排在「團隊交辦＆回報」那一段前面", iAsg < h.indexOf("團隊交辦＆回報"));
-  ok("排在待審清單前面", h.indexOf("待審") < 0 || iAsg < h.indexOf("待審")); }
-{ reset(); as("小葵","editor");
-  ok("剪輯根本沒有流程中控那一頁", !myTabs().map(t=>t[0]).includes("flow"));
-  ok("——就算硬叫也不給那張卡", flowAssignCard()===""); }
-// ⚠️ 這裡要預覽的是**另一個經理人**，不是員工。
-//    VIEW_AS 開著的時候 currentRole() 回的是「被預覽那個人」的職位 ——
-//    預覽員工的話，上面那道角色檢查就先擋掉了，驗不到 VIEW_AS 這道門
-//    （突變測試把 `if(VIEW_AS) return ""` 拿掉是 0 紅，就是這樣抓到的）。
-{ reset(); as("管理員","boss"); VIEW_AS="Regina";
-  ok("（前提）預覽經理人時角色檢查是過的", ["boss","manager"].includes(currentRole()), currentRole());
-  ok("**員工視角（唯讀預覽）底下不給交辦卡**", flowAssignCard()===""); VIEW_AS=null; }
-{ reset(); as("Regina","manager"); VIEW_AS="小葵";
-  ok("預覽員工時也不給（這道是角色檢查擋的）", flowAssignCard()===""); VIEW_AS=null; }
+  const f=viewFlow();
+  ok("**中控不再有多選交辦卡**（同一件事不要兩個入口）",
+     !f.includes("指派交辦給員工") && !/class="asg_p"/.test(f));
+  ok("中控也沒有指派毛片的操作", !f.includes('id="afp_who"') && !f.includes("assignFootage()"));
+  ok("中控留著毛片存量警示（那是它獨有、也是要看的）", f.includes("毛片庫存")); }
+// 有未指派的毛片時，中控要指路 —— 上面那個 fixture 一支影片都沒有，
+// 沒東西可派本來就不該印那行字，所以要另外餵一支進去才驗得到。
+{ reset(); as("Regina","manager");
+  STATE.videos=[{id:"P1",code:"CP1",name:"待派的毛片",rawName:"待派的毛片",videoCopy:"腳本",
+    rawLink:"https://drive.google.com/file/d/RAW",stage:"待處理",editor:"",claimedBy:"",assignedTo:"",
+    scheduledDate:null,locale:"",channel:"",origLang:"",shotAt:"2026-09-08T10:00:00",
+    tags:[],products:[],usageHistory:[],metrics:[],deleted:false}];
+  const f=viewFlow();
+  ok("（前提）真的有一支未指派的毛片", /還有 <b>1<\/b> 支沒有指派/.test(f), (f.match(/還有[^<]*<b>\d+<\/b>[^<]*/)||[])[0]);
+  ok("中控會指路：要指派請到儀表板", f.includes("儀表板")); }
 
 // 原本每張員工卡的單人交辦沒有被拿掉 —— 有人習慣那樣用
 { reset(); as("Regina","manager");
@@ -97,11 +94,11 @@ function reset(){
 
 // ══════════ ④ 兩頁都能用，而且是同一張卡（不是各寫一份）══════════
 { reset(); as("Regina","manager");
-  const inFlow=viewFlow().includes("指派交辦給員工");
-  const inDash=viewDashboard().includes("指派交辦給員工");
-  ok("儀表板與流程中控都有（刻意重複，她在哪一頁都按得到）", inFlow && inDash);
-  ok("兩邊都是呼叫同一支 dashAssignTaskCard",
-     /function flowAssignCard[\s\S]{0,400}dashAssignTaskCard\(\)/.test(APP), "flowAssignCard 沒有共用同一張卡"); }
+  ok("交辦卡只在儀表板一個地方",
+     viewDashboard().includes("指派交辦給員工") && !viewFlow().includes("指派交辦給員工"));
+  ok("指派毛片也只在儀表板一個地方",
+     viewDashboard().includes('id="afp_who"') && !viewFlow().includes('id="afp_who"'));
+  ok("flowAssignCard 已經整支移除，不留死碼", !/function flowAssignCard/.test(APP)); }
 
 // ══════════ ⑤ 整頁不會炸 ══════════
 { reset(); as("Regina","manager");

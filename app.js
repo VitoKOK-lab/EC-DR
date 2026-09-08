@@ -1774,6 +1774,30 @@ function asgCount(){
   const b=document.getElementById("asg_go");
   if(b) b.textContent = n ? ("送出交辦給 "+n+" 人") : "送出交辦";
 }
+// 交辦時附的圖。送出之前還沒有交辦 id，Storage 沒有地方可以放，
+// 所以先在瀏覽器壓好放在記憶體，等 assignTaskSel 拿到 groupId 再上傳一次。
+// 一次交辦給 N 個人＝N 筆 task，但圖只上傳一次、N 筆共用同一個網址。
+let ASG_PIC=null;
+async function pickAsgPic(input){
+  const file=input && input.files && input.files[0];
+  if(input) input.value="";
+  if(!file) return;
+  if(dbBlocked()) return;
+  if(!/^image\//.test(String(file.type||""))){ toast(T("請選圖片檔（JPG／PNG）","Pick an image file (JPG / PNG)"),true); return; }
+  if(file.size>TASKPIC_SRC_MAX){ toast(T("這個檔案太大了（超過 12MB），確認一下是不是選到影片檔","That file is over 12MB — did you pick a video by mistake?"),true); return; }
+  try{
+    ASG_PIC=await coverCompress(file);
+    asgPicShow(String(file.name||""));
+  }catch(e){ ASG_PIC=null; toast(coverErrMsg(e), true); }
+}
+function asgPicShow(name){
+  const box=document.getElementById("asg_pic_box"); if(!box) return;
+  box.innerHTML = ASG_PIC
+    ? `<span class="pill ok" style="font-size:11px">${T("已選一張圖","1 image")}${name?"："+esc(String(name).slice(0,20)):""}</span>
+       <a href="javascript:void(0)" class="muted" style="font-size:11px;margin-left:6px" onclick="asgPicClear()">${T("取消","remove")}</a>`
+    : "";
+}
+function asgPicClear(){ ASG_PIC=null; asgPicShow(""); }
 async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!names.length){ toast("請先勾選要指派的員工",true); return; }
@@ -1783,16 +1807,26 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   // 同一次交辦共用一個 groupId，畫面才知道「這幾筆是同一件事」
   const gid=uid("G");
   const stamp=nowIso();
-  // ⚠️ 走 bulkRun，不要自己寫 for + await：那個形狀會在中間某一筆失敗時
-  //    默默少發給一個人，而且是一筆一筆等，人多的時候很慢。（smoke-v134 會擋）
+  // 附的圖只上傳一次（路徑用 groupId），N 筆共用同一個網址 ——
+  // 一人上傳一次的話，同一張圖會在 Storage 裡存 N 份。
+  let picUrl="";
+  if(ASG_PIC){
+    const DB=(typeof window!=="undefined")&&window.DB;
+    if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再送","Not connected yet — try again in a moment"),true); return; }
+    try{ picUrl=await DB.uploadTaskPic(gid, uid("P"), ASG_PIC); }
+    catch(err){ toast(coverErrMsg(err), true); return; }   // 圖傳不上去就整筆不要送，不然人家看不到你說的那張圖
+  }
   // id 先產好再送 —— 文件裡的 id 欄位必須等於文件本身的 id（全站都靠 t.id 找人）
   const rows=names.map(name=>({id:uid("T"), name}));
+  // ⚠️ 走 bulkRun，不要自己寫 for + await：那個形狀會在中間某一筆失敗時
+  //    默默少發給一個人，而且是一筆一筆等，人多的時候很慢。（smoke-v134 會擋）
   let r={done:0, failed:0, bad:[]};
   BULK_BUSY=true;
   try{
     r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id,
       {id:row.id, user:row.name, date:today, title:t, contact, report:"",
-       done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid, msgs:[]}));
+       done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid,
+       msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}));
   }finally{ BULK_BUSY=false; applyState(LAST_RAW); }
   if(contact && r.done) rememberContact(contact);
   if(r.done){
@@ -1800,6 +1834,7 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
     const a=document.getElementById('asg_txt'); if(a) a.value='';
     const c=document.getElementById('asg_contact'); if(c) c.value='';
     document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
+    asgPicClear();
   }
   // 部分失敗要講清楚是誰沒收到，不然老闆以為全都發出去了
   if(r.failed) toast("有 "+r.failed+" 人沒送出："+(r.bad||[]).map(x=>x.name).join("、")+"，請重試",true);
@@ -3484,31 +3519,23 @@ function flowRunwayCard(g, okRunway, pct){
   </div>`;
   return runwayCard;
 }
-// 流程中控②：毛片庫存＋指派（勾選未指派毛片、選人一鍵指派）
+// 流程中控②：毛片庫存警示。
+// ⚠️ 指派的操作**不在這裡**（老闆決定集中到儀表板）——
+//    儀表板與中控本來各有一份指派毛片，同一件事兩個入口、兩套畫面。
+//    這裡只留「還剩幾支、要不要去拍片」，那是中控獨有、也是老闆真正要看的。
 function flowStockCard(staff, pool, unassigned, stockDays){
-  // ---- ② 毛片庫存＋指派 ----
-  // 全部列出來，不截斷 —— 這是要動手勾的清單，勾不到的等於不存在，
-  // 而且下面寫「未指派 N 支」跟「全選」都要對得上（v120 之前截在 20 筆，數字對不上）
-  const afpRows=unassigned.map(v=>`<label style="display:flex;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--line);font-weight:400">
-      <input type="checkbox" class="afp_vid" value="${v.id}" style="width:auto;margin:0;flex:none"> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</span></label>`).join("");
-  const stockCard=`<div class="card">
+  return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">🎬 毛片庫存＆指派</b>
+      <b style="font-size:16px">🎬 毛片庫存</b>
       <span class="pill ${rawStockLow(pool.length)?'em':'ok'}">${pool.length} 支毛片・約可剪 ${stockDays} 天</span></div>
     ${!rawStockLow(pool.length)?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13.5px;line-height:1.7">
       <b style="color:var(--red)">⚠ 毛片剩 ${pool.length} 支，低於 ${LOW_STOCK} 支了 —— 要去拍片了。</b><br>
       剪輯一天可以剪好幾支，存量不補上來他們就會沒片可剪。</div>`}
     ${pool.length?'':'<p class="muted" style="font-size:13px;margin:8px 0 0">毛片池空了 — 剪輯沒有東西可以剪，請先拍毛片！</p>'}
-    ${unassigned.length?`
-    <div class="row" style="gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-      <select id="afp_who" style="width:auto;min-width:130px"><option value="">指派給誰…</option>${staff.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
-      <button class="btn sec sm" type="button" onclick="afpToggleAll(this)">全選</button>
-      <button class="btn sm" onclick="assignFootage()">指派勾選的毛片</button></div>
-    <div style="margin-top:6px${unassigned.length>6?';max-height:360px;overflow-y:auto':''}">${afpRows}</div>
-    <p class="muted" style="font-size:12px;margin:6px 0 0">未指派 ${unassigned.length} 支${unassigned.length>20?'（清單可以往下捲，全都在這裡）':''}</p>`
-    :`<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
+    ${unassigned.length
+      ? `<p class="muted" style="font-size:12px;margin:8px 0 0">還有 <b>${unassigned.length}</b> 支沒有指派 —— 要指派請到<b>儀表板</b>的「指派毛片給員工」。</p>`
+      : `<p class="muted" style="font-size:13px;margin:8px 0 0">目前沒有未指派的毛片${pool.length?'（都已指派，等認領）':''}</p>`}
   </div>`;
-  return stockCard;
 }
 // 流程中控③：待你審片（剪輯完成、還沒審的片，含各平台二創殼）
 function flowReviewQueueCard(){
@@ -3606,22 +3633,9 @@ function viewFlow(){
   // 「待你審片」擺在毛片庫存的下一個 —— 原本在整頁最後面，滑到那裡的人不多，
   // 結果剪輯剪完的片一直沒人審。預設仍然摺疊（標題上的數字就說得完該不該點開）。
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${/* 交辦卡放最上面：經理人整天在用的就是這一張，擺在下面等於每次都要先捲過
-        存量警示、待審清單。焦點列往後挪一格 —— 那是給人「掃一眼」的，不是拿來操作的。 */''}
-  ${flowAssignCard()}
   ${focus}${msgInboxCard()}${runwayCard}${stockCard}${reviewQueueCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
   ${staffCards||'<p class="muted">還沒有成員</p>'}`;
-}
-// 多選交辦卡本來只掛在儀表板上，而**經理人沒有儀表板那一頁**（見 ROLE_TABS）——
-// 所以 Regina 一直只能用下面每張員工卡裡那個「交辦一件事」的單人輸入框，一次一個人。
-// 這裡把同一張卡也放到流程中控。
-// ⚠️ 儀表板上也有同一張卡，這裡是刻意重複的：老闆說交辦是經理人整天在用的，
-//    她在哪一頁都要按得到，不要為了「不重複」逼她換頁。
-function flowAssignCard(){
-  if(!["boss","manager"].includes(currentRole())) return "";
-  if(VIEW_AS) return "";
-  return dashAssignTaskCard();
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
@@ -3814,7 +3828,13 @@ function dashAssignTaskCard(){
       ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
     </div>
     <div style="margin-top:10px"><label>交辦內容</label>
-      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()"></div>
+      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()">
+      <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+        <label class="btn sec sm" id="asg_pic_btn" style="flex:none;padding:5px 10px;font-size:12px;cursor:pointer;margin:0"
+          title="附一張圖（會自動壓縮）">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
+          style="display:none" onchange="pickAsgPic(this)"></label>
+        <span id="asg_pic_box"></span>
+      </div></div>
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
     <button class="btn" id="asg_go" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>

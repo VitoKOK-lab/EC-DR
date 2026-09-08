@@ -106,7 +106,10 @@ const cardOf=(html,name)=>html.split('<div class="card">').find(p=>p.includes('f
 ok("Regina 可以交辦員工", cardOf(f,"小美").includes("flowAssign(") && f.includes("交辦 小美 一件事"));
 ok("員工卡不顯示影片數字", (()=>{ const seg=cardOf(f,"小美"); return seg && !seg.includes("今日完成") && !seg.includes('font-size:11px">進行中'); })());
 ok("剪輯卡照樣有影片數字", (()=>{ const seg=cardOf(f,"小葵"); return seg.includes("今日完成") && seg.includes("進行中"); })());
-ok("毛片指派清單不含員工", !f.split('id="afp_who"')[1].split("</select>")[0].includes("小美"));
+// v170：指派操作搬到儀表板，這條規則跟著搬過去驗（規則本身沒有放寬）
+{ const dd=viewDashboard();
+  ok("毛片指派清單不含員工", !dd.split('id="afp_who"')[1].split("</select>")[0].includes("小美"));
+  ok("（前提）中控已經沒有那個下拉了", !f.includes('id="afp_who"')); }
 
 // ── 團隊看板：全員都有這一頁 ──
 reset();
