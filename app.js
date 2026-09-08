@@ -986,6 +986,68 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // 給字串型 onclick="fn('...')" 用：跳脫反斜線與單引號，避免名稱含 ' 時把 JS 字串截斷
 const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+// ── 留言裡的網址變成可點的連結 ───────────────────────────────────
+// ⚠️ 安全性：這是全公司都寫得進去的欄位，等於「別人打的字會變成我畫面上的 HTML」。
+//    規矩只有兩條，破一條就是 XSS：
+//    ① **一律先 esc() 再找網址**。順序反過來的話，網址以外的地方就能塞 <script>。
+//    ② **只認 http:// 與 https://**。javascript: / data: / vbscript: 一律當純文字 ——
+//       有人貼 javascript:… 而我們照做成 <a href>，點下去就是在別人的帳號裡執行他的程式。
+// 比對是在**跳脫過的字串**上做的，所以 & 已經是 &amp;，樣式要跟著認（見 [^\s<]）。
+// 網址結尾常見的中英文標點不算網址的一部分（「看這裡：https://a.com。」）。
+const URL_RE=/\bhttps?:\/\/[^\s<]+/g;
+const URL_TAIL=/[)\]}>,.;:!?、，。；：！？「」『』（）]+$/;
+function linkify(s){
+  return esc(s).replace(URL_RE, (m)=>{
+    let tail="";
+    const cut=m.match(URL_TAIL);
+    if(cut){ tail=cut[0]; m=m.slice(0, m.length-tail.length); }
+    if(!m) return tail;
+    // esc() 把 & 變成 &amp;，放回 href 才是原本的網址；再 esc 一次確保屬性安全。
+    const href=m.replace(/&amp;/g,"&");
+    return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${m}</a>`+tail;
+  });
+}
+// ── 同時被交辦的人，用顏色分得出誰是誰 ──────────────────────────
+// 色盤用的是這個系統本來就在用的低彩度色，彼此拉開色相，深色字配淺色底才看得清楚。
+const PERSON_COLORS=[
+  {fg:"#8A5A2B",bg:"#F6EDE2"}, {fg:"#2C8077",bg:"#EAF8F6"}, {fg:"#5A5AA8",bg:"#ECECF8"},
+  {fg:"#B12468",bg:"#FBE9F2"}, {fg:"#937C44",bg:"#FAF6EA"}, {fg:"#4A7A3A",bg:"#EDF5EA"},
+  {fg:"#A0522D",bg:"#F8EEE8"}, {fg:"#3A6E8F",bg:"#E9F2F7"}, {fg:"#7A4E8E",bg:"#F2EBF6"},
+  {fg:"#1F6F5C",bg:"#E7F4F0"}, {fg:"#9A6A1E",bg:"#F9F0E0"}, {fg:"#4C6EA8",bg:"#EAEFF8"},
+];
+// 名字 → 色盤位置。>>>0 保持無號，長名字才不會變負數。
+// ⚠️ 這支雜湊的品質**沒有**被測試釘住，是刻意的：色盤 12 色配 28 個同仁，
+//    換成更講究的雜湊（FNV-1a＋雪崩）實測反而略差（用到 10 色 vs 12 色）——
+//    也就是說換掉它不會讓任何人分不出誰是誰，寫一條測試去釘它只是自欺。
+//    真正保證「同一組分得開」的是下面的 groupColors，那個有測試（而且突變會變紅）。
+function personHash(name){
+  const s=String(name||"");
+  let h=0; for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+  return h;
+}
+function personColor(name){ return PERSON_COLORS[personHash(name)%PERSON_COLORS.length]; }
+// ⚠️ 光靠名字的雜湊**不可能**保證同一組裡不撞色 —— 12 個顏色配 28 個人，
+//    隨機 5 個人就有很高的機率有兩個人同色（生日問題），那顏色就白標了。
+//    而老闆要的是「同時被交辦的這幾個人分得出來」，不是「全公司都不同色」。
+//    所以：以名字的顏色為第一志願，同一組裡被佔走了就往後挪到第一個空位。
+//    → 同組保證不同色（人數 ≤ 色盤時），跨組也盡量維持同一個人同一個色。
+//    名單先排序再配，同一組在誰的畫面上、什麼時候看都是同一套顏色。
+function groupColors(names){
+  const list=Array.from(new Set((names||[]).map(n=>String(n||"")))).sort();
+  const used={}, out={};
+  list.forEach(n=>{
+    let i=personHash(n)%PERSON_COLORS.length;
+    for(let k=0;k<PERSON_COLORS.length && used[i];k++) i=(i+1)%PERSON_COLORS.length;
+    used[i]=true; out[n]=PERSON_COLORS[i];
+  });
+  return out;
+}
+// 名字做成一顆有顏色的小標籤。傳 colors（groupColors 的結果）就照那一組的配色，
+// 沒傳就用名字自己的顏色。
+function personChip(name, extra, colors){
+  const c=(colors && colors[String(name||"")]) || personColor(name);
+  return `<span class="pchip" style="color:${c.fg};background:${c.bg};border:1px solid ${c.fg}33">${esc(name)}${extra||""}</span>`;
+}
 // 注音／拼音選字的時候按 Enter 只是「挑這個字」，不是要送出。
 // 那一下的 keydown 照樣會跑進來、event.key 也還是 'Enter' ——
 // 沒擋掉的話字還沒選完就被送出，而且直接存檔（回報：格子的文字會被送出而且存檔）。
@@ -1689,14 +1751,54 @@ async function createTask(){ refreshToday(); const isIntl=currentRole()==="intl"
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
-async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
-  if(!name){ toast("請先選擇要指派的員工",true); return; }
+// 勾選要交辦的對象（可複選）。回傳勾起來的名字。
+function asgPicked(){
+  return Array.from(document.querySelectorAll(".asg_p:checked")).map(x=>x.value).filter(Boolean);
+}
+function asgToggleAll(btn){
+  const boxes=Array.from(document.querySelectorAll(".asg_p"));
+  const on=boxes.some(b=>!b.checked);      // 只要還有沒勾的就是「全選」，全勾了才變「全部取消」
+  boxes.forEach(b=>{ b.checked=on; });
+  if(btn) btn.textContent=on?"全部取消":"全選";
+  asgCount();
+}
+// 勾了幾個人即時顯示在送出鈕上 —— 一次發給 12 個人跟發給 1 個人差很多，要看得到
+function asgCount(){
+  const n=asgPicked().length;
+  const b=document.getElementById("asg_go");
+  if(b) b.textContent = n ? ("送出交辦給 "+n+" 人") : "送出交辦";
+}
+async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
+  const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
+  if(!names.length){ toast("請先勾選要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
-  const id=uid("T");
-  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
-    if(contact) rememberContact(contact);
-    const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
-  catch(e){ toast("指派失敗，請稍後再試",true); } }
+  // 一次發給很多人是不小心手滑全選就送出去的高風險動作，先問一聲
+  if(names.length>=6 && !confirm("要把這件事同時交辦給 "+names.length+" 個人嗎？\n\n「"+t+"」\n\n"+names.join("、"))) return;
+  // 同一次交辦共用一個 groupId，畫面才知道「這幾筆是同一件事」
+  const gid=uid("G");
+  const stamp=nowIso();
+  // ⚠️ 走 bulkRun，不要自己寫 for + await：那個形狀會在中間某一筆失敗時
+  //    默默少發給一個人，而且是一筆一筆等，人多的時候很慢。（smoke-v134 會擋）
+  // id 先產好再送 —— 文件裡的 id 欄位必須等於文件本身的 id（全站都靠 t.id 找人）
+  const rows=names.map(name=>({id:uid("T"), name}));
+  let r={done:0, failed:0, bad:[]};
+  BULK_BUSY=true;
+  try{
+    r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id,
+      {id:row.id, user:row.name, date:today, title:t, contact, report:"",
+       done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid, msgs:[]}));
+  }finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  if(contact && r.done) rememberContact(contact);
+  if(r.done){
+    logA("交辦工作（"+r.done+" 人）", t);
+    const a=document.getElementById('asg_txt'); if(a) a.value='';
+    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
+  }
+  // 部分失敗要講清楚是誰沒收到，不然老闆以為全都發出去了
+  if(r.failed) toast("有 "+r.failed+" 人沒送出："+(r.bad||[]).map(x=>x.name).join("、")+"，請重試",true);
+  else toast(r.done>1?("已交辦給 "+r.done+" 位同仁"):("已指派給 "+names[0]));
+}
 // 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
@@ -1803,6 +1905,53 @@ function msgDel(id){
   dbDel("tasks", id, {action:"收回訊息", target:id});
 }
 function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
+// ── 一次交辦給多個人：多筆各自獨立的 task，共用一個 groupId ────────
+// 為什麼不是「一筆塞多個人」：完成、接收、耗時、交辦成效統計全都是一人一筆在算的，
+// 塞成一筆的話「他做完了沒」就沒有答案，整套統計要重寫。
+// 一人一筆＝每個人各自完成、各自留言，統計完全不用動；groupId 只是讓畫面知道
+// 「這幾筆是同一件事」，好顯示「同時交辦給誰」。
+// 同組成員是**算出來的**，不另外存一份名單 —— 存了就要在轉移／刪除時同步維護，
+// 遲早會有一邊忘記更新。
+function taskGroupOf(t){
+  const gid=String((t&&t.groupId)||"");
+  if(!gid) return t?[t]:[];
+  return Object.values((STATE&&STATE.tasks)||{}).filter(x=>x && String(x.groupId||"")===gid);
+}
+// 同組所有人的名字（含自己），排序後回傳，好讓大家看到的順序與配色一致
+function taskMates(t){
+  return Array.from(new Set(taskGroupOf(t).map(x=>String((x&&x.user)||"")))).filter(Boolean).sort();
+}
+// ── 留言串 ────────────────────────────────────────────────
+// 一筆 task 一串留言，不是整組共用一串 —— 老闆在小葵那一串講的話是對小葵講的。
+const TASK_MSG_MAX=1000;                 // 單則上限；Firestore 單筆文件 1MB，留言是陣列要留餘裕
+function taskMsgs(t){
+  const a=Array.isArray(t&&t.msgs)?t.msgs:[];
+  return a.filter(m=>m&&m.text).slice()
+    .sort((x,y)=>String(x.at||"").localeCompare(String(y.at||"")));
+}
+// 這件事的「處理狀況」（report）沿用原本的欄位，交辦成效、下班匯報、團隊看板
+// 都在讀它，不能廢掉。改成由留言自動帶出來：
+// **只有被交辦的本人、而且寫得夠完整（≥12 字）的那一則**才會覆蓋掉 report。
+// ⚠️ 為什麼要有 12 字這道門檻：打勾完成的條件本來就是「report 滿 12 字」。
+//    若每則留言都無條件覆蓋，員工回一句「好」就會把先前寫好的處理狀況洗掉，
+//    連帶讓已經可以打勾的工作又變成不能打勾 —— 這是回歸，不是新規矩。
+function msgBecomesReport(t, msg){
+  return !!(t && msg && String(msg.by||"")===String(t.user||"") && String(msg.text||"").trim().length>=12);
+}
+async function postTaskMsg(id){
+  if(dbBlocked()) return;
+  const box=document.getElementById("tm_"+id);
+  const text=String((box&&box.value)||"").trim();
+  if(!text) return;
+  const t=taskById(id); if(!t) return;
+  const msg={at:nowIso(), by:currentUser(), text:text.slice(0,TASK_MSG_MAX)};
+  const patch={msgs:[...(Array.isArray(t.msgs)?t.msgs:[]), msg]};
+  if(msgBecomesReport(t, msg)) patch.report=msg.text;
+  try{
+    await window.DB.update("tasks", id, patch);
+    if(box) box.value="";
+  }catch(e){ toast(T("留言送不出去，請稍後再試","Could not post — try again"),true); }
+}
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
     if(t && t.assignedBy && !t.ack){ toast(isIntl?"Press “Got it” first before marking done":"請先按「收到」再回報完成",true);
@@ -1960,8 +2109,9 @@ function poolCountLabel(pool, shown){ return (POOL_FILTER==="all"&&!POOL_Q)?Stri
 function poolTabsHTML(poolCnt){ return poolCatList().map(([k,l])=>`<button class="vtab ${POOL_FILTER===k?'on':''}" onclick="setPoolFilter('${k}')"><span>${l}</span> <span class="vtab-n">${poolCnt[k]||0}</span></button>`).join(""); }
 function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('pool_q').value='';setPoolQ('')">${T("清除","Clear")}</button>`:""; }
 function poolRowsHTML(poolShown, me){
-  return (poolShown||[]).map(v=>`<tr>
-        <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+  // 急件那一列整列變紅（class urg），一眼就看得到要先做哪一支
+  return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
+        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} ${v.assignedTo===me?`<span class="tag" style="background:var(--amberbg);color:var(--accent)">${T("指派給你","Assigned to you")}</span>`:''} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有指派給你或可認領的項目","Nothing assigned to you or available to claim"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -1974,7 +2124,7 @@ function workPoolCard(pool, poolShown, poolCnt, me){
     </div>
     <div id="pool_tabs" class="vtabs" style="margin-top:10px">${poolTabsHTML(poolCnt)}</div>
     <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
-      <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、來源…）","Find a video (name, code, source…)")}"
+      <input id="pool_q" value="${esc(POOL_Q)}" placeholder="${T("找影片（片名、編號、網址、備註…）","Find a video (name, code, URL, notes…)")}"
         style="flex:1;min-width:150px" oninput="setPoolQ(this.value)" onkeydown="if(enterKey(event))setPoolQ(this.value)">
       <span id="pool_clear">${poolClearHTML()}</span>
     </div>
@@ -2047,9 +2197,45 @@ function workSchedTag(v){
            : T(md+" 接手", md);
   return `<span title="${T("這一支是 "+full+" 進到你的清單的","Added to your list "+full)}">${lab}</span>`;
 }
+// ── 「這件事同時交辦給誰」的那一排色標 ────────────────────────
+// 只有真的不只一個人才顯示 —— 一個人的時候印一顆自己的名字是廢話。
+function mateChips(t){
+  const mates=taskMates(t);
+  if(mates.length<2) return "";
+  const colors=groupColors(mates);
+  const me=currentUser();
+  const done={};
+  taskGroupOf(t).forEach(x=>{ if(x&&x.done) done[String(x.user||"")]=true; });
+  return `<div class="row" style="gap:4px;flex-wrap:wrap;margin-top:5px;align-items:center">
+    <span class="muted" style="font-size:11px">${T("同時交辦","Also assigned")}：</span>
+    ${mates.map(n=>personChip(n,
+        (done[n]?' <span style="opacity:.75">✔</span>':'')+(n===me?' <span style="opacity:.75">'+T("（你）","(you)")+'</span>':''),
+        colors)).join("")}</div>`;
+}
+// ── 留言串 ────────────────────────────────────────────────
+// 老闆與被交辦的人在同一串裡對話。網址會變成可以點的連結（linkify）。
+// canPost=false 時只顯示不給輸入（例如主管在看別人的清單）。
+function taskThread(t, canPost){
+  const msgs=taskMsgs(t);
+  const me=currentUser();
+  const list=msgs.map(m=>{
+    const who=String(m.by||"");
+    const c=personColor(who);
+    return `<div class="tmsg${who===me?' me':''}">
+      <div class="tmsg-h"><b style="color:${c.fg}">${esc(who)}</b> ${esc(String(m.at||"").slice(5,16).replace("T"," "))}</div>
+      ${linkify(m.text)}</div>`;
+  }).join("");
+  const box=canPost?`<div class="tmsg-in">
+      <input id="tm_${esc(t.id)}" placeholder="${T("回覆一句…（貼網址會自動變成連結）","Reply…")}"
+        onkeydown="if(enterKey(event))postTaskMsg('${esc(jsEsc(t.id))}')">
+      <button class="btn sm" onclick="postTaskMsg('${esc(jsEsc(t.id))}')">${T("送出","Send")}</button>
+    </div>`:"";
+  if(!list && !box) return "";
+  return `<div class="tmsgs">${list}</div>${box}`;
+}
 // 今日待辦的一列
-function todoRow(kind, title, sub, actions, doneCls){
-  return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
+function todoRow(kind, title, sub, actions, doneCls, cls){
+  return `<div class="todo ${doneCls?'done':''} ${cls||''}"><span class="tkind">${kind}</span>
     <div class="tmain"><div class="ttitle">${title}</div>${sub?`<div class="tsub">${sub}</div>`:""}</div>
     <div class="tact">${actions||""}</div></div>`;
 }
@@ -2077,21 +2263,29 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
            <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'}
              onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('完成','Done'):T('未完成','Open')}</label>
          ${assigned?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}`;
-    const note = needAck ? "" :
-      `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+    // 主管交辦的用留言串（要跟老闆來回討論）；自己排的沒有對象可以講話，
+    // 維持原本那一格「處理狀況」就好 —— 給自己開一個聊天室很奇怪。
+    // 兩邊都還是靠 report 滿 12 字才能打勾完成；交辦的 report 由留言自動帶出來
+    // （見 msgBecomesReport），所以不必打兩次字。
+    const note = needAck ? ""
+      : assigned ? mateChips(t)+taskThread(t, true)
+      : `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
-    const ttl=esc(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
+    // 交辦內容本身也可能是一條網址（老闆貼給你看的東西），要點得開
+    const ttl=linkify(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
     rows.push(todoRow(assigned?"📌":"•", ttl+taskLatePill(t), sub+note, act, t.done));
   });
   // ③ 手上的影片
   myWork.forEach(v=>{
     const days=(canSeeEditDays() && v.stage==="剪輯中")?dayBadge(v):"";
     rows.push(todoRow("🎬",
-      `<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
+      `${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v)}${enSubLine(v)}`,
       [v.stage==="剪輯中"?T("剪輯中","In progress"):T("今天完成","Done today"),
        esc(dataLabel(v.source||"")), workSchedTag(v)].filter(Boolean).join("・"),
-      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中"));
+      `${days}${workBtn(v)}${undoBtn(v)}`, v.stage!=="剪輯中",
+      // 已經做完的就不要再紅了 —— 紅色是「快去做」，不是「這支很重要」
+      (isUrgent(v)&&v.stage==="剪輯中")?"urg":""));
   });
   const nOpen=rows.filter(r=>!r.includes("todo done")).length;
   // 每日固定工作：今天還沒帶進來的才顯示；全部帶完了這一排就消失
@@ -2329,7 +2523,11 @@ function staffSorted(list){
   });
 }
 // 下拉選單的分組：剪輯 / 其他職位 / 巴基斯坦（順序即顯示順序）
-function staffOptGroups(roles){
+// 依職位細分組（剪輯／行銷／選品行銷…）。下拉與交辦的勾選清單共用同一套 ——
+// 各寫一份的話，之後新增職位一定會有一邊漏掉（v162 我就先漏了一次：
+// 誤用了登入頁那套粗分區 staffByGroup，交辦清單的分組名整個不對）。
+// 回傳 [{label, people}]，只留有人的組。
+function staffRoleGroups(roles){
   const rs = roles || ["editor","intl"];
   const pool = staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor")));
   const isEd=(u)=>(u.role||"editor")==="editor";
@@ -2346,10 +2544,15 @@ function staffOptGroups(roles){
   ];
   const used=new Set();
   return groups.map(([label,test])=>{
-    const ppl=pool.filter(u=>!used.has(u.name) && test(u));
-    ppl.forEach(u=>used.add(u.name));
-    return ppl.length?`<optgroup label="${esc(label)}">${ppl.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`:'';
-  }).join("");
+    const people=pool.filter(u=>!used.has(u.name) && test(u));
+    people.forEach(u=>used.add(u.name));
+    return {label, people};
+  }).filter(g=>g.people.length);
+}
+function staffOptGroups(roles){
+  return staffRoleGroups(roles).map(g=>
+    `<optgroup label="${esc(g.label)}">${g.people.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`
+  ).join("");
 }
 // 分區塊：台灣先分兩排（做內容的／其餘），巴基斯坦自成一區排最後。
 // 每一區列出屬於它的職位，之後要調哪個職位歸哪一排，改這裡就好。
@@ -2582,8 +2785,9 @@ function setPoolQ(v){ POOL_Q=String(v||"").trim(); poolFilter(); }
 function poolAll(){ const me=currentUser();
   const zoneOK=(v)=> seesZone(zoneOfVideo(v));
   return (STATE.videos||[]).filter(v=>zoneOK(v) && v.stage==="待處理" && !vidNotShot(v) && (v.assignedTo===me || !v.assignedTo))
+    // 急件排最前面（主管標的＝要它先被做）；其餘照預排上片日，沒排的沉到最後
     .sort((a,b)=>{ const ad=a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999"; const bd=b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999";
-      return ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
+      return (isUrgent(b)?1:0)-(isUrgent(a)?1:0) || ad.localeCompare(bd) || String(a.id).localeCompare(String(b.id)); });
 }
 function poolCatList(){ return [["all",T("全部","All")]]
   .concat(seesTW()  ? [["tw",T("中文毛片","Chinese raw")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")]] : [])
@@ -2607,10 +2811,7 @@ function poolFilter(){
 // 比對片名、編號、來源、標籤、平台／語言 —— 剪輯記得哪個字就能找到
 function poolMatch(v){
   if(!POOL_Q) return true;
-  const q=POOL_Q.toLowerCase();
-  return [v.code, v.name, v.rawName, v.nameEn, v.source, v.channel, v.locale,
-          Array.isArray(v.tags)?v.tags.join(" "):""]
-    .filter(Boolean).join(" ").toLowerCase().includes(q);
+  return vidSearchText(v).includes(String(POOL_Q).toLowerCase());   // 跟影片庫同一份欄位清單
 }
 // 待認領池的快選分類。源片沒有 locale，要看「原本語言」才知道它是中文毛片還是海外原創
 function poolCat(v){
@@ -3397,7 +3598,8 @@ function dashEditorCard(e, isToday){
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
         ${t.contact?`<div style="font-size:12px;margin-top:2px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
         ${timeLine}
-        <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+        <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?linkify(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+        ${mateChips(t)}${taskThread(t, true)}
         <div class="row" style="gap:6px;margin-top:6px">
           <button class="btn sec sm" style="padding:4px 10px" onclick="transferTask('${t.id}')">轉移</button>
           <button class="btn danger sm" style="padding:4px 10px" onclick="delTask('${t.id}')">刪除</button>
@@ -3471,7 +3673,15 @@ function dashSchedule(){
   const g=scheduleGlance();
   const poolAll=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理");
   const poolN=poolAll.length;
-  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  // 指派清單照「預排上片日期」排：先要上片的先派。沒排日期的沉到最下面 ——
+  // 它們沒有時間壓力，混在有日期的中間只會把急的那些擠下去。
+  // 急件插到最前面（主管自己標的，標了就是要它先被看到）。
+  // 以前是照 id 排（≈ 建檔順序），跟「什麼時候要上片」完全無關。
+  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>
+      (isUrgent(b)?1:0)-(isUrgent(a)?1:0)
+   || String(a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999").localeCompare(
+      String(b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999"))
+   || String(a.id).localeCompare(String(b.id)));
   const assignCount={}; poolAll.forEach(v=>{ if(v.assignedTo) assignCount[v.assignedTo]=(assignCount[v.assignedTo]||0)+1; });
   const noSchedN=(STATE.videos||[]).filter(v=>isSourceVid(v) && vidSegment(v)==="newNoSched").length;
   const wipN=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="剪輯中").length;
@@ -3506,16 +3716,33 @@ function dashAssignTaskCard(){
     <div class="row" style="align-items:baseline;gap:8px">
       <b style="font-size:16px">① 指派交辦給員工</b>
     </div>
-    <div class="grid cols2" style="margin-top:12px">
-      <div><label>選擇員工</label>
-        <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","mkt","pick","svc","ship"])}</select></div>
-      <div><label>交辦內容</label>
-        <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(enterKey(event))assignTaskSel()"></div>
+    <div style="margin-top:12px">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
+        <label style="margin:0">選擇員工（可複選）</label>
+        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">全選</button>
+      </div>
+      ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
     </div>
+    <div style="margin-top:10px"><label>交辦內容</label>
+      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()"></div>
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
-    <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
+    <button class="btn" id="asg_go" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>`;
+}
+// 交辦對象的勾選清單。用勾選盒不用 <select multiple>：
+// 手機上的多選下拉要長按、看不到已選了誰，老闆主要是在手機上交辦的。
+function asgPickerHTML(roles){
+  const groups=staffRoleGroups(roles);       // 跟交辦下拉同一套分組，不要自己再分一次
+  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">還沒有可以交辦的同仁</p>`;
+  return `<div class="asgbox">${groups.map(g=>`
+    <div class="asggrp"><div class="asggrp-t">${esc(g.label)}</div>
+      <div class="asggrp-p">${g.people.map(u=>{
+        const c=personColor(u.name);
+        return `<label class="asgp" style="border-color:${c.fg}55">
+          <input type="checkbox" class="asg_p" value="${esc(u.name)}" onchange="asgCount()">
+          <span style="color:${c.fg}">${esc(u.name)}</span></label>`; }).join("")}</div>
+    </div>`).join("")}</div>`;
 }
 // 儀表板：指派毛片給員工（勾選＋收回未認領）
 function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
@@ -3528,8 +3755,17 @@ function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
       <div><label>選擇毛片（勾選，可多選）</label>
         ${unassignedPool.length?`<div style="margin-bottom:6px"><button type="button" class="btn sec sm" onclick="afpToggleAll(this)">全選</button></div>`:''}
         <div style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
-        ${unassignedPool.map(v=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
-          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none"> <span>${esc(vidTitle(v))}</span></label>`).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
+        ${unassignedPool.map(v=>{
+          const d=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+          // 上片日就是排序的依據，要看得到 —— 只印片名的話，老闆沒辦法確認順序對不對
+          const late=d && d<today;
+          const day=d?`<span style="font-size:11px;flex:none;color:${late?'var(--red)':'var(--gold-dk)'};font-weight:${late?800:600}"
+              title="${T("預排上片日"+(late?"（已經過期）":""),"Scheduled"+(late?" (overdue)":""))}">${esc(d.slice(5))}</span>`
+            :`<span class="muted" style="font-size:11px;flex:none" title="${T("還沒排上片日","No date yet")}">${T("沒排","—")}</span>`;
+          return `<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
+          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none">
+          ${day}<span style="flex:1;min-width:0">${urgentPill(v)}${esc(vidTitle(v))}</span>${urgentBtn(v)}</label>`;
+        }).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
         </div></div>
     </div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignFootage()">指派給該員工</button>
@@ -4332,6 +4568,8 @@ function newSimpleVideo(){
     <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址（拍完再補也可以）","Google Drive folder URL (can be added after shooting)")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
+    <label>${T("預排上片日期（可以先不填，之後在編輯視窗補）","Scheduled upload date (optional — can be set later)")}</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value=""></div>
     ${productRows("sv", [])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
@@ -4340,8 +4578,11 @@ function newSimpleVideo(){
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
     const svProducts=collectProducts("sv");
+    // 預排上片日期：新增時就填得起來（以前只能先存、再點開編輯視窗補一次）。
+    // 沒填就是 null —— 跟 newVideoRecord 的預設一致，不要塞空字串（月曆是用 null 判斷「沒排」的）。
+    const sched=String(val("sv_date")||"").slice(0,10) || null;
     const video={name, rawName:name, driveFolder:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
-      origLang:val("sv_lang")||"",
+      origLang:val("sv_lang")||"", scheduledDate:sched,
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
   });
@@ -4514,6 +4755,42 @@ function markShot(id){ const v=vid(id)||{};
 function unmarkShot(id){ const v=vid(id)||{};
   dbUpdate("videos", id, {shotAt:"", shotBy:"", updatedAt:nowIso()},
     {action:"取消「毛片已上傳」", target:vidTitle(v)}); }
+// ── 急件 ──────────────────────────────────────────────────────
+// 主管指派毛片時可以把某一支標成急件；被指派的人畫面上那一列會變紅、排到最前面。
+// ⚠️ 這是「插隊」的權力，只有主管／經理人能按 —— 誰都能標的話，大家都標急件，
+//    紅色就沒有意義了（跟「全部都是第一優先＝沒有第一優先」是同一回事）。
+//    真正的擋門在 canMarkUrgent()，按鈕只是不畫出來而已。
+function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
+const isUrgent=(v)=> !!(v && v.urgent);
+function toggleUrgent(id){
+  if(dbBlocked()) return;
+  const v=vid(id)||{};
+  if(!canMarkUrgent()){ toast(T("只有主管可以標急件","Only managers can flag a rush job"),true); return; }
+  const on=!isUrgent(v);
+  dbUpdate("videos", id,
+    on ? {urgent:true, urgentAt:nowIso(), urgentBy:currentUser(), updatedAt:nowIso()}
+       : {urgent:false, urgentAt:"", urgentBy:"", updatedAt:nowIso()},
+    {action: on?"標為急件":"取消急件", target:vidTitle(v)});
+}
+// 急件的紅色標記。被指派的人跟主管看到的是同一顆，不要各寫一份。
+function urgentPill(v){
+  if(!isUrgent(v)) return "";
+  const who=String(v.urgentBy||"");
+  return `<span class="pill" style="font-size:10px;background:var(--redbg);color:var(--red);border:1px solid var(--red);font-weight:800"
+    title="${T((who?who+" ":"")+"標為急件"+(v.urgentAt?("："+String(v.urgentAt).slice(5,16).replace("T"," ")):""),
+               "Rush job"+(who?" — flagged by "+who:""))}">${T("急件","RUSH")}</span>`;
+}
+// 主管在指派清單上按的那顆
+function urgentBtn(v){
+  if(!v || !canMarkUrgent()) return "";
+  return isUrgent(v)
+    ? `<button type="button" class="btn sec sm" style="flex:none;padding:2px 8px;font-size:11px"
+        onclick="event.preventDefault();event.stopPropagation();toggleUrgent('${esc(jsEsc(v.id))}')"
+        title="${T("取消急件","Clear the rush flag")}">${T("取消急件","Clear rush")}</button>`
+    : `<button type="button" class="btn sm" style="flex:none;padding:2px 8px;font-size:11px"
+        onclick="event.preventDefault();event.stopPropagation();toggleUrgent('${esc(jsEsc(v.id))}')"
+        title="${T("標成急件：被指派的人畫面上這一列會變紅並排到最前面","Flag as rush: turns red and jumps to the top of their list")}">${T("標急件","Rush")}</button>`;
+}
 // ── 毛片存量 ──────────────────────────────────────────────────
 // 「有腳本沒毛片」的還不能剪，不算存量 —— 這是老闆判斷「要不要去拍片」的依據，
 // 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
@@ -4740,11 +5017,28 @@ function vidAllOfLang(){
 }
 // 搜尋範圍含版本自己的欄位，也含源片的片名與編號 ——
 // 這樣打源片的中文片名，找得到它底下的蝦皮版。
+// ── 一支影片「搜得到的字」 ──────────────────────────────────────
+// 影片庫與待認領池共用同一份欄位清單 —— 各寫一份的話，之後加欄位一定會有一邊漏掉
+// （這兩處本來就已經漂開了：一邊搜得到文案、另一邊搜得到標籤）。
+// 網址也要搜得到：老闆手上常常只有一條雲端連結，要反查「這是哪一支」。
+function vidSearchText(v){
+  if(!v) return "";
+  const a=anchorOf(v);
+  return [v.name, v.rawName, v.nameEn, v.videoCopy, v.code, v.editor, v.claimedBy,
+          v.source, v.channel, v.locale, v.account,
+          v.driveFolder,        // 儲存資料夾網址
+          v.rawLink,            // 舊資料的毛片連結（v145 之後併進 driveFolder，舊的還在）
+          v.refLink,            // 參考來源網址
+          v.productUrl,         // 商品連結
+          v.note,               // 備註
+          Array.isArray(v.tags)?v.tags.join(" "):"",
+          Array.isArray(v.products)?v.products.map(p=>p&&p.name).join(" "):"",
+          a.name, a.code]
+    .map(x=>String(x||"")).join("  ").toLowerCase();
+}
 function vidMatchQ(v){
   const q=String(VID_Q||'').toLowerCase().trim(); if(!q) return true;
-  const a=anchorOf(v);
-  return [v.name,v.rawName,v.videoCopy,v.code,v.editor,v.channel,v.account,a.name,a.code]
-    .map(x=>String(x||'').toLowerCase()).join("  ").includes(q);
+  return vidSearchText(v).includes(q);
 }
 function vidVisibleList(){
   let list=vidAllOfLang().filter(v=> vidGroupOf(v)===VID_VIEW).filter(vidMatchQ).filter(vidMatchSched);
@@ -5121,7 +5415,7 @@ function viewVideosLib(){
       <input type="checkbox" id="vid_uns" ${VID_UNSCHED?"checked":""} onchange="vidSetUnsched(this.checked)" style="width:auto;margin:0">
       ${T("只看還沒排日期的","Unscheduled only")}</label>
     <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
-      <input id="vid_q" placeholder="${T("搜尋編號／片名／剪輯","Search code / title / editor")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
+      <input id="vid_q" placeholder="${T("搜尋編號／片名／網址／備註","Search code / title / URL / notes")}" value="${esc(VID_Q)}" oninput="VID_Q=this.value;vidFilter()" style="flex:1;min-width:150px">
       <div class="vmode" role="group" aria-label="${T("瀏覽方式","View mode")}">
         <button class="vmode-b ${VID_MODE==="list"?"on":""}" onclick="vidSetMode('list')" title="${T("清單","List")}">☰ ${T("清單","List")}</button>
         <button class="vmode-b ${VID_MODE==="grid"?"on":""}" onclick="vidSetMode('grid')" title="${T("圖片","Covers")}">▦ ${T("圖片","Covers")}</button>
