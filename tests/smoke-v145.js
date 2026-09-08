@@ -68,9 +68,13 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   openVideoModal("V1", true);
   ok("只有存檔資料夾那一格", modalHTML.includes('id="e_drive"'));
   ok("沒有另一格「毛片雲端連結」", !modalHTML.includes('id="e_rawlink"'));
-  ok("整個視窗只出現一次資料夾網址（沒有要人貼兩次）",
-     (modalHTML.match(new RegExp(FAM.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"))||[]).length===1,
-     (modalHTML.match(new RegExp(FAM.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"))||[]).length); }
+  // v169：填好之後那一格會顯示成「連結＋編輯」，所以網址會同時出現在 href、
+  // 連結文字、與那個藏起來的 input 裡。原本用「網址出現幾次」來量已經不對了 ——
+  // 這條真正要守的是「不要叫人把同一條網址貼進兩個欄位」，改成直接釘那件事。
+  { const inputs=(modalHTML.match(/<(input|textarea)[^>]*>/g)||[])
+      .filter(x=>x.includes(FAM) && !/readonly/.test(x));
+    ok("可以填資料夾網址的欄位只有一個（沒有要人貼兩次）", inputs.length===1, inputs.length); }
+  ok("那一格的 id 就是 e_drive", (modalHTML.match(/id="e_drive"/g)||[]).length===1); }
 
 // ══════════ ② 舊資料的 rawLink 不能被洗掉 ══════════
 { reset([v_("OLD",{rawLink:OLDRAW, driveFolder:""})]);

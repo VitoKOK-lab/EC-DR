@@ -391,6 +391,11 @@
             min-width:120px;min-height:90px;background:var(--panel2);
             border-radius:var(--rs);border:1px solid var(--line);object-fit:cover}
   .tmsg-pick{flex:none;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0}
+  /* 存檔資料夾：填好之後顯示成連結，右邊一個小小的「編輯」 */
+  .drivelink{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;
+             padding:9px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel2)}
+  .drivelink>a:first-child{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px}
+  .drivelink-edit{flex:none;font-size:11px;color:var(--muted);text-decoration:underline}
   .tmsg-in button{flex:none}
 
   /* 彈窗 */
@@ -787,7 +792,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=2f226066ac35"></script>
-<script type="module" src="fb.js?v=2f226066ac35"></script>
+<script src="app.js?v=70cc3d7e969e"></script>
+<script type="module" src="fb.js?v=70cc3d7e969e"></script>
 </body>
 </html>

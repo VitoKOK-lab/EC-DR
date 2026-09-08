@@ -6609,9 +6609,14 @@ function familyDriveField(v, idAttr){
   const d=familyDrive(v);
   const src=isSourceVid(v);
   if(src) return "";   // 源片自己那一格照舊（那就是「第一個人建的」那一格）
+  // 有網址就顯示成點得開的連結（這一格本來就是唯讀的，沒有「編輯」）。
+  // ⚠️ input 一定要留在畫面上（只是藏起來）—— 存檔是讀 val(idAttr)，
+  //    把它拿掉的話存檔會把資料夾洗成空的。
+  const ok=/^https?:\/\//i.test(d);
   return `<label>${T("存檔位置","File location")}</label>
+    ${ok?`<div class="drivelink"><a href="${esc(d)}" target="_blank" rel="noopener noreferrer">${esc(d)}</a></div>`:""}
     <input id="${esc(idAttr)}" value="${esc(d)}" readonly
-      style="background:var(--panel2)" placeholder="${T("由源片決定","Set by the source video")}">
+      style="background:var(--panel2)${ok?";display:none":""}" placeholder="${T("由源片決定","Set by the source video")}">
     <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">${T(
       "這個資料夾是第一個拍好毛片的人開的，名字就是源片的檔名。",
       "This folder was created by whoever shot the raw footage first, and is named after the source video's file name.")}<br>
@@ -6620,11 +6625,30 @@ function familyDriveField(v, idAttr){
 // 源片那一格：這是「第一個拍好毛片的人」要去 Google 雲端硬碟開資料夾的地方。
 // 規矩寫在欄位旁邊，中英文都寫 —— 不然新人只會看到一個空白欄位，不知道要填什麼、
 // 更不知道資料夾要取什麼名字。名字一律用這支的檔名，這樣資料夾跟片子對得起來。
+// 按「編輯」：把連結那一排收起來，換回輸入框。切回去之後就不再變回連結了 ——
+// 打到一半突然變成唯讀的連結會很煩（跟文案欄展開後不收回去是同一個道理）。
+function driveEdit(id){
+  const box=document.getElementById(id+"_view"); if(box) box.style.display="none";
+  const inp=document.getElementById(id);
+  if(inp){ inp.style.display=""; try{ inp.focus(); inp.select(); }catch(e){} }
+}
 function ownerDriveField(v, idAttr){
   if(!isSourceVid(v)) return "";
   const nm=String((v&&(v.rawName||v.name))||"").trim();
+  // 填好之後就不要再當輸入框了 —— 那是一長串網址，佔一整格又看不出來對不對，
+  // 而且平常真正要做的動作是「點開它」，不是改它。改成一條可以點的連結，
+  // 右邊放一個小小的「編輯」讓人切回輸入框。
+  // ⚠️ input 一定要留在畫面上（只是藏起來）—— saveVideo 是讀 val(idAttr)，
+  //    真的把它拿掉的話，存一次檔就會把資料夾洗成空的。
+  const cur=String((v&&v.driveFolder)||"").trim();
+  const ok=/^https?:\/\//i.test(cur);
   return `<label>${T("存檔資料夾（這支片的所有東西都放這裡）","Drive folder (everything for this video lives here)")}</label>
-    <input id="${esc(idAttr)}" value="${esc((v&&v.driveFolder)||"")}"
+    ${ok?`<div class="drivelink" id="${esc(idAttr)}_view">
+        <a href="${esc(cur)}" target="_blank" rel="noopener noreferrer">${esc(cur)}</a>
+        <a href="javascript:void(0)" class="drivelink-edit" onclick="driveEdit('${esc(jsEsc(idAttr))}')"
+           title="${T("改成別的資料夾","Change the folder")}">${T("編輯","edit")}</a>
+      </div>`:""}
+    <input id="${esc(idAttr)}" value="${esc(cur)}" ${ok?'style="display:none"':''}
       placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">
     <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">
       ${T("第一個拍好毛片的人：先到 Google 雲端硬碟開一個新資料夾，名字就用這支的檔名",
