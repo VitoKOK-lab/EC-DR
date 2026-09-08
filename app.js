@@ -3814,6 +3814,65 @@ function dashViewAsCard(){
     </div>
   </div>`;
 }
+// ── 交辦追蹤：不分日期、涵蓋所有職位 ────────────────────────────
+// 老闆：「老闆交辦的任務要怎麼樣能夠回看，看有沒有完成，不要隔一天就消失」。
+//
+// 原本的問題（正式資料實測 2026-09-08）：交辦共 70 筆、散在 9 個不同日期，
+// 但畫面上一律只看「今天」那一天 —— 今天日期的只有 2 筆，另外 68 筆得先知道
+// 是哪一天派的、再逐日往回點才找得到。
+// 更糟的是 70 筆裡有 34 筆派給非剪輯（客服 19、選品 5、出貨 5、海外 2、人資 1），
+// 而儀表板的個人卡只列剪輯 —— 那 34 筆連往回點都看不到。
+//
+// 這張卡刻意**不看日期**：未完成的一律列出來（拖幾天都跑不掉），
+// 已完成的照完成時間由新到舊，看得到是誰、什麼時候做完的。
+let ASG_TRACK="open";                    // open｜done｜all
+function setAsgTrack(v){ ASG_TRACK=v; render(); }
+// 我派出去的交辦。主管看得到全部（含 Regina 派的），經理人只看自己派的 ——
+// 老闆要的是「整間公司交辦了什麼、做完沒」，經理人要的是「我派的那些」。
+function myAssignedOut(){
+  const me=currentUser(), boss=currentRole()==="boss";
+  return Object.values((STATE&&STATE.tasks)||{})
+    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (boss || t.assignedBy===me));
+}
+function asgTrackRow(t){
+  const st = t.done ? `<span class="pill ok" style="font-size:10px">完成 ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
+           : !t.ack ? `<span class="pill em" style="font-size:10px">還沒看</span>`
+           : `<span class="pill wa" style="font-size:10px">進行中</span>`;
+  // 拖了幾天：只對還沒做完的算，做完的講天數沒有意義
+  const late = (!t.done && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
+  const mates=taskMates(t);
+  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+    <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
+      <span class="muted" style="font-size:11px;flex:none">${esc(String(t.date||"").slice(5))}</span>
+      ${personChip(String(t.user||""), "", mates.length>1?groupColors(mates):null)}
+      ${st}
+      ${late>0?`<span class="pill em" style="font-size:10px">拖了 ${late} 天</span>`:''}
+      ${(currentRole()==="boss"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} 派的</span>`:''}
+    </div>
+    <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere">${linkify(t.title)}</div>
+    ${(t.report||"").trim()
+      ? `<div class="muted" style="font-size:12px;margin-top:2px">處理狀況：${linkify(t.report)}</div>`
+      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">還沒回報</div>`)}
+    ${fold("留言與圖片", taskMsgs(t).length||null, taskThread(t, true))}
+  </div>`;
+}
+function dashAssignTrackCard(){
+  if(!["boss","manager"].includes(currentRole())) return "";
+  const all=myAssignedOut();
+  const open=all.filter(t=>!t.done)
+    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));      // 拖最久的排最前面
+  const done=all.filter(t=>t.done)
+    .sort((a,b)=>String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||"")));
+  const list = ASG_TRACK==="open" ? open : ASG_TRACK==="done" ? done : open.concat(done);
+  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  const body=`
+    <div class="muted" style="font-size:12px;margin-top:4px">不分日期，全部列在這裡 —— 隔天不會消失。</div>
+    <div class="vtabs" style="margin-top:8px">${tab("open","還沒做完",open.length)}${tab("done","已完成",done.length)}${tab("all","全部",all.length)}</div>
+    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
+      ${list.map(asgTrackRow).join("")||'<p class="muted" style="font-size:13px;margin:10px 0 0">這一類目前沒有東西</p>'}</div>`;
+  // 沒做完的件數放在標題上 —— 收起來的時候也看得到還欠幾件
+  return fold("📋 交辦追蹤（回看做完沒）", open.length||null, body, ASG_TRACK!=="open");
+}
 // 儀表板①：指派交辦給員工
 function dashAssignTaskCard(){
   return `<div class="card" style="border-color:var(--gold)">
@@ -4578,6 +4637,8 @@ function viewDashboard(){
   ${["boss","manager"].includes(currentRole())?dashAssignTaskCard():''}
 
   ${canAssignWork()?dashAssignFootageCard(editors, poolN, unassignedPool, assignCount):''}
+
+  ${dashAssignTrackCard()}
 
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   </div>
