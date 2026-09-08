@@ -5964,7 +5964,9 @@ function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
 function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); }
 // 文案欄平常收成一排（版面才不會被一大塊空白占掉），點下去展開成 6 排好編輯。
 // 展開後就不收回去 —— 打到一半突然縮回去比占版面更煩。
-function vcopyOpen(){ const t=document.getElementById("e_vcopy");
+// 傳 id 進來就可以給別的欄位共用（貼文文案也是一整段，同樣需要展開）。
+// 不傳＝口播台詞那一格，維持舊呼叫方式不變。
+function vcopyOpen(id){ const t=document.getElementById(id||"e_vcopy");
   if(t && !(t.classList&&t.classList.contains("open"))){ t.rows=6; if(t.classList) t.classList.add("open"); } }
 // 影片視窗：平台成效卡（管理員／經理人可見）
 function vidMetricsCard(v){
@@ -6271,7 +6273,11 @@ function openVideoModal(id, edit, fromWork){
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
     ${fold(T("進階","Advanced"), advFilled||null, `
       <label>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</label>
-      <input id="e_name" value="${esc(v.name||"")}" placeholder="${T("影片貼文文案","Post caption")}">
+      ${/* 貼文文案是一整段（含換行、標籤），跟口播台詞一樣要能展開成多行；
+           以前是單行 <input>，長文案只看得到最前面一小截。點一下展開成 6 排。 */''}
+      <textarea id="e_name" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen('e_name')"
+        placeholder="${T("影片貼文文案","Post caption")}"
+        title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.name||"")}</textarea>
       <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
       <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
       <div class="grid cols2">
@@ -6459,7 +6465,9 @@ function enFieldHTML(id, label, val0, srcId, big){
       <a class="tricon" href="javascript:void(0)" onclick="trOpen('${esc(jsEsc(srcId))}')"
          title="${T("用 Google 翻譯這一格的中文，翻好自己貼回來","Translate the Chinese above with Google Translate, then paste it back")}">文<span>A</span></a>
     </label>
-    ${big ? `<textarea id="${esc(id)}" class="grow" rows="1" autocomplete="off" onfocus="this.rows=6"
+    ${/* 展開要走 vcopyOpen：只寫 this.rows=6 的話不會加上 open class，
+          CSS 的 .grow.open{overflow:auto} 就不生效，展開後長文字會被裁掉看不到。 */''}
+    ${big ? `<textarea id="${esc(id)}" class="grow" rows="1" autocomplete="off" onfocus="vcopyOpen('${esc(jsEsc(id))}')"
               placeholder="${T("英文腳本（按上面的翻譯，貼回來後可以自己改）","English script — translate above, paste back, edit freely")}">${esc(val0)}</textarea>`
           : `<input id="${esc(id)}" value="${esc(val0)}"
               placeholder="${T("英文片名（按上面的翻譯，貼回來後可以自己改）","English title — translate above, paste back, edit freely")}">`}`;
