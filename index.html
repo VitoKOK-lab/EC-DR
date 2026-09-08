@@ -511,6 +511,10 @@
     table.responsive td.cv-name .vt-title{display:inline}
     /* 影片庫手機卡片：只留片名（標籤／預排／商品／剪輯師／狀態太空洞，點進去再看） */
     table.vtable.responsive td:not(.cv-name){display:none}
+    /* ——但「有按鈕可按」的那一格要留下來。上面那條寫在狀態欄只有一顆灰標籤的
+       年代；現在「毛片已上傳 ✔」就在狀態欄裡，一起被收掉的話手機上按不到。
+       app.js 的 vidTableRow 只在真的有按鈕時才掛 has-act。 */
+    table.vtable.responsive td.has-act{display:flex}
     table.vtable.responsive tr{padding:12px 14px}
     .grid.cols2{grid-template-columns:minmax(0,1fr) !important}
 
@@ -744,7 +748,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=8deb0dcad762"></script>
-<script type="module" src="fb.js?v=8deb0dcad762"></script>
+<script src="app.js?v=8e39fcc7392f"></script>
+<script type="module" src="fb.js?v=8e39fcc7392f"></script>
 </body>
 </html>

@@ -4687,6 +4687,13 @@ function vidTableRow(v){
   const rev=v.reviewStatus==="通過"?`<span class="pill ok" style="font-size:10px">${T("已審","Reviewed")}</span>`
     :(v.reviewStatus==="退回"?`<span class="pill em" style="font-size:10px">× ${T("退回","Sent back")}</span>`:'');
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+  // 手機版的影片庫只留片名那一格，其他欄位一律收起來（見 index.html 的
+  // `table.vtable.responsive td:not(.cv-name){display:none}`）—— 那條規則寫在
+  // 「狀態欄只有一顆灰色階段標籤」的年代，很合理。但現在狀態欄裡可能有一顆
+  // **要人按的按鈕**，被收起來就等於手機上根本按不到（老闆就是這樣回報找不到的）。
+  // 所以有按鈕的時候掛上 has-act，讓 CSS 把這一格留下來。
+  // ⚠️ 只有「有東西可按」才掛 —— 沒按鈕的列照舊收起來，不然手機卡片會被灰標籤灌爆。
+  const sb=shotBtn(v);
   // 標示：在地化版本標自身語言（EN）；源片的管理指標「翻了幾種語言 🌐N、重播 ↻M」
   // 只給管理員／經理人看 — 剪輯不需要這些資訊，隱藏讓畫面更乾淨
   const isAdminView=["boss","manager"].includes(currentRole());
@@ -4713,9 +4720,9 @@ function vidTableRow(v){
     <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="${T("商品","Products")}"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
     <td data-label="${T("剪輯","Editor")}"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-    <td data-label="${T("狀態","Status")}"><span class="ststack">
+    <td data-label="${T("狀態","Status")}"${sb?' class="has-act"':''}><span class="ststack">
       <span class="pill" style="font-size:11px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
-      ${rev}${shotBtn(v)}</span></td>
+      ${rev}${sb}</span></td>
   </tr>`;
 }
 // 版本殼的「原本語言」跟著它的源片走（殼自己沒有 origLang）
