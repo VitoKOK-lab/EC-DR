@@ -102,20 +102,38 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   ok("兩個都沒有 → 就是沒毛片（防線沒被拆）", !vidHasRaw(vid("C")));
   ok("沒毛片就亮「缺毛片」", vidMissing(vid("C")).map(x=>x.k).includes("raw"));
   ok("沒毛片就算「未拍」", vidNotShot(vid("C"))); }
+// ⚠️ v161 推翻了這一段原本的規矩。原本釘的是「有資料夾就不算未拍」——
+//    當時對，因為只有**拍完的人**才會去開資料夾。
+//    後來流程改了：寫腳本的人就先把資料夾開好，讓剪輯之後統一存同一個地方。
+//    資料夾從此是「東西要放哪裡」，不是「東西已經在了」。
+//    正式資料實測：240 支待處理的片裡 51 支只有資料夾沒毛片，全被誤判成已拍。
+//    所以「拍了沒」不再看資料夾（見 vidShot）；「毛片連結指到哪裡」不變。
 { reset([v_("D",{driveFolder:FAM})]);
-  ok("有資料夾就不算未拍", !vidNotShot(vid("D")));
-  ok("有資料夾就不亮「缺毛片」", !vidMissing(vid("D")).map(x=>x.k).includes("raw")); }
+  ok("只有資料夾（腳本階段先開好的）→ 還是算未拍", vidNotShot(vid("D")));
+  ok("只有資料夾 → 照樣亮「缺毛片」", vidMissing(vid("D")).map(x=>x.k).includes("raw"));
+  ok("但資料夾還是打得開（位置沒有變）", vidRawLink(vid("D"))===FAM && vidHasRaw(vid("D"))); }
+// 按過「毛片拍好了」才算拍了
+{ reset([v_("E",{driveFolder:FAM, shotAt:"2026-09-08T10:00:00", shotBy:"泓儒"})]);
+  ok("按過「毛片拍好了」→ 算已拍", !vidNotShot(vid("E")));
+  ok("按過之後不再亮「缺毛片」", !vidMissing(vid("E")).map(x=>x.k).includes("raw")); }
+// 已經有人在剪的，顯然拍了（不然他剪什麼）
+{ reset([v_("F",{driveFolder:FAM, claimedBy:"小葵", stage:"剪輯中"})]);
+  ok("已經有人認領 → 算已拍", !vidNotShot(vid("F"))); }
 // 二創殼繼承源片的資料夾 → 也拿得到毛片
 { reset([v_("SRC",{driveFolder:FAM,stage:"已上片",published:true,publishedLink:"http://x"}),
          v_("SHELL",{locale:"en",sourceVideoId:"SRC",account:"tiktok-EN"})]);
   ok("二創殼拿得到源片資料夾當毛片位置", vidRawLink(vid("SHELL"))===FAM); }
 
-// ══════════ ④ 毛片存量：只有資料夾也要算進去 ══════════
-{ reset([v_("S1",{driveFolder:FAM}), v_("S2",{rawLink:OLDRAW}), v_("S3")]);
+// ══════════ ④ 毛片存量：只算真的拍好的 ══════════
+// ⚠️ v161：存量是「老闆判斷要不要去拍片」的依據，所以只能算真的拍好的。
+//    腳本階段先開好的資料夾算進去 → 老闆會以為存量夠，然後不去拍。
+{ reset([v_("S1",{driveFolder:FAM}), v_("S2",{rawLink:OLDRAW}), v_("S3"),
+         v_("S4",{driveFolder:FAM, shotAt:"2026-09-08T10:00:00"})]);
   const ids=rawStock().map(v=>v.id);
-  ok("有資料夾的算庫存", ids.includes("S1"), ids);
-  ok("舊的有 rawLink 的也算", ids.includes("S2"), ids);
-  ok("兩個都沒有的不算", !ids.includes("S3"), ids); }
+  ok("只有資料夾的不算庫存（還沒拍）", !ids.includes("S1"), ids);
+  ok("舊的有 rawLink 的算", ids.includes("S2"), ids);
+  ok("兩個都沒有的不算", !ids.includes("S3"), ids);
+  ok("按過「拍好了」的算", ids.includes("S4"), ids); }
 
 // ══════════ ⑤ 海外的「下載毛片」按鈕指到同一個地方 ══════════
 { reset([v_("SRC",{driveFolder:FAM,stage:"已上片",published:true,publishedLink:"http://x"}),
