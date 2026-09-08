@@ -358,6 +358,26 @@
   .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
   .pill.ok{background:var(--greenbg);color:var(--green)}
   .pos{color:var(--green);font-weight:800}
+  /* 人名色標：同時被交辦的人一眼分得出誰是誰（配色由 app.js 的 groupColors 算） */
+  .pchip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+  /* 交辦對象的勾選清單 */
+  .asgbox{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--panel2);max-height:260px;overflow:auto}
+  .asggrp+.asggrp{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+  .asggrp-t{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em}
+  .asggrp-p{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+  .asgp{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid var(--line);
+        border-radius:999px;background:var(--panel);font-size:13px;font-weight:600;cursor:pointer;margin:0}
+  .asgp input{width:auto;margin:0;flex:none}
+  .asgp:has(input:checked){background:var(--amberbg);box-shadow:inset 0 0 0 1px var(--gold)}
+  /* 留言串 */
+  .tmsgs{margin-top:6px;display:flex;flex-direction:column;gap:5px}
+  .tmsg{font-size:12.5px;line-height:1.5;padding:5px 9px;border-radius:var(--rs);background:var(--panel2);overflow-wrap:anywhere}
+  .tmsg.me{background:var(--amberbg)}
+  .tmsg-h{font-size:11px;color:var(--muted);margin-bottom:1px}
+  .tmsg a{overflow-wrap:anywhere}
+  .tmsg-in{display:flex;gap:6px;margin-top:6px}
+  .tmsg-in input{flex:1;min-width:0;font-size:13px;padding:6px 10px}
+  .tmsg-in button{flex:none}
 
   /* 彈窗 */
   .modal{position:fixed;inset:0;background:rgba(43,35,32,.46);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
@@ -748,7 +768,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=8e39fcc7392f"></script>
-<script type="module" src="fb.js?v=8e39fcc7392f"></script>
+<script src="app.js?v=5b846018170c"></script>
+<script type="module" src="fb.js?v=5b846018170c"></script>
 </body>
 </html>

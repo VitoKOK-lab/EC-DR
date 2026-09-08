@@ -75,10 +75,16 @@ ok("流程中控員工卡照順序", ascending(order(h,["小華","小葵","阿�
 // ── 儀表板的下拉 ──
 reset(); as("管理員","boss");
 let d=viewDashboard();
-ok("指派交辦下拉照職位分組", d.includes('label="剪輯"') && d.includes('label="巴基斯坦"'));
+// v162：交辦對象從單選下拉改成可複選的勾選清單，所以這裡改抓 .asgbox 那一段。
+// ⚠️ 一定要切出「只有交辦那一塊」再判斷 —— 直接在整頁 d 上找 "剪輯" 的話，
+//    員工視角、指派毛片那兩個下拉也有同樣的字，測試會因為別人而過。
+const asgSeg=(html)=>html.split('class="asgbox"')[1].split('id="asg_txt"')[0];
+{ const seg=asgSeg(d);
+  ok("交辦對象照職位分組", seg.includes(">剪輯</div>") && seg.includes(">巴基斯坦</div>"), seg.slice(0,160));
+  ok("交辦對象：剪輯在巴基斯坦之前", seg.indexOf(">剪輯</div>")<seg.indexOf(">巴基斯坦</div>"));
+  ok("每個人都是一個可勾的核取方塊（不是單選下拉）",
+     /<input type="checkbox" class="asg_p" value="小葵"/.test(seg), seg.slice(0,200)); }
 ok("一創／二創分組已移除", !d.includes('label="一次創作"') && !d.includes('label="二次創作"'));
-{ const seg=d.split('id="asg_who"')[1].split("</select>")[0];
-  ok("交辦下拉：剪輯在巴基斯坦之前", seg.indexOf("剪輯")<seg.indexOf("巴基斯坦")); }
 { const seg=d.split('id="va_who"')[1].split("</select>")[0];
   ok("員工視角下拉有人資分組（不會被誤歸剪輯）",
      seg.includes('label="人資"') && seg.split('label="剪輯"')[1].split("</optgroup>")[0].indexOf("HR小姐")<0); }

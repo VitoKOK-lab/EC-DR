@@ -986,6 +986,68 @@ window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // 給字串型 onclick="fn('...')" 用：跳脫反斜線與單引號，避免名稱含 ' 時把 JS 字串截斷
 const jsEsc = s => String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+// ── 留言裡的網址變成可點的連結 ───────────────────────────────────
+// ⚠️ 安全性：這是全公司都寫得進去的欄位，等於「別人打的字會變成我畫面上的 HTML」。
+//    規矩只有兩條，破一條就是 XSS：
+//    ① **一律先 esc() 再找網址**。順序反過來的話，網址以外的地方就能塞 <script>。
+//    ② **只認 http:// 與 https://**。javascript: / data: / vbscript: 一律當純文字 ——
+//       有人貼 javascript:… 而我們照做成 <a href>，點下去就是在別人的帳號裡執行他的程式。
+// 比對是在**跳脫過的字串**上做的，所以 & 已經是 &amp;，樣式要跟著認（見 [^\s<]）。
+// 網址結尾常見的中英文標點不算網址的一部分（「看這裡：https://a.com。」）。
+const URL_RE=/\bhttps?:\/\/[^\s<]+/g;
+const URL_TAIL=/[)\]}>,.;:!?、，。；：！？「」『』（）]+$/;
+function linkify(s){
+  return esc(s).replace(URL_RE, (m)=>{
+    let tail="";
+    const cut=m.match(URL_TAIL);
+    if(cut){ tail=cut[0]; m=m.slice(0, m.length-tail.length); }
+    if(!m) return tail;
+    // esc() 把 & 變成 &amp;，放回 href 才是原本的網址；再 esc 一次確保屬性安全。
+    const href=m.replace(/&amp;/g,"&");
+    return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${m}</a>`+tail;
+  });
+}
+// ── 同時被交辦的人，用顏色分得出誰是誰 ──────────────────────────
+// 色盤用的是這個系統本來就在用的低彩度色，彼此拉開色相，深色字配淺色底才看得清楚。
+const PERSON_COLORS=[
+  {fg:"#8A5A2B",bg:"#F6EDE2"}, {fg:"#2C8077",bg:"#EAF8F6"}, {fg:"#5A5AA8",bg:"#ECECF8"},
+  {fg:"#B12468",bg:"#FBE9F2"}, {fg:"#937C44",bg:"#FAF6EA"}, {fg:"#4A7A3A",bg:"#EDF5EA"},
+  {fg:"#A0522D",bg:"#F8EEE8"}, {fg:"#3A6E8F",bg:"#E9F2F7"}, {fg:"#7A4E8E",bg:"#F2EBF6"},
+  {fg:"#1F6F5C",bg:"#E7F4F0"}, {fg:"#9A6A1E",bg:"#F9F0E0"}, {fg:"#4C6EA8",bg:"#EAEFF8"},
+];
+// 名字 → 色盤位置。>>>0 保持無號，長名字才不會變負數。
+// ⚠️ 這支雜湊的品質**沒有**被測試釘住，是刻意的：色盤 12 色配 28 個同仁，
+//    換成更講究的雜湊（FNV-1a＋雪崩）實測反而略差（用到 10 色 vs 12 色）——
+//    也就是說換掉它不會讓任何人分不出誰是誰，寫一條測試去釘它只是自欺。
+//    真正保證「同一組分得開」的是下面的 groupColors，那個有測試（而且突變會變紅）。
+function personHash(name){
+  const s=String(name||"");
+  let h=0; for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))>>>0; }
+  return h;
+}
+function personColor(name){ return PERSON_COLORS[personHash(name)%PERSON_COLORS.length]; }
+// ⚠️ 光靠名字的雜湊**不可能**保證同一組裡不撞色 —— 12 個顏色配 28 個人，
+//    隨機 5 個人就有很高的機率有兩個人同色（生日問題），那顏色就白標了。
+//    而老闆要的是「同時被交辦的這幾個人分得出來」，不是「全公司都不同色」。
+//    所以：以名字的顏色為第一志願，同一組裡被佔走了就往後挪到第一個空位。
+//    → 同組保證不同色（人數 ≤ 色盤時），跨組也盡量維持同一個人同一個色。
+//    名單先排序再配，同一組在誰的畫面上、什麼時候看都是同一套顏色。
+function groupColors(names){
+  const list=Array.from(new Set((names||[]).map(n=>String(n||"")))).sort();
+  const used={}, out={};
+  list.forEach(n=>{
+    let i=personHash(n)%PERSON_COLORS.length;
+    for(let k=0;k<PERSON_COLORS.length && used[i];k++) i=(i+1)%PERSON_COLORS.length;
+    used[i]=true; out[n]=PERSON_COLORS[i];
+  });
+  return out;
+}
+// 名字做成一顆有顏色的小標籤。傳 colors（groupColors 的結果）就照那一組的配色，
+// 沒傳就用名字自己的顏色。
+function personChip(name, extra, colors){
+  const c=(colors && colors[String(name||"")]) || personColor(name);
+  return `<span class="pchip" style="color:${c.fg};background:${c.bg};border:1px solid ${c.fg}33">${esc(name)}${extra||""}</span>`;
+}
 // 注音／拼音選字的時候按 Enter 只是「挑這個字」，不是要送出。
 // 那一下的 keydown 照樣會跑進來、event.key 也還是 'Enter' ——
 // 沒擋掉的話字還沒選完就被送出，而且直接存檔（回報：格子的文字會被送出而且存檔）。
@@ -1689,14 +1751,54 @@ async function createTask(){ refreshToday(); const isIntl=currentRole()==="intl"
     const inp=document.getElementById('wp_newtask'); if(inp) inp.value=''; const c=document.getElementById('wp_contact'); if(c) c.value=''; }
   catch(e){ toast(isIntl?"Failed to add, please try again":"新增失敗，請稍後再試",true); } }
 // 主管交辦給指定員工：自動出現在他的頁面（今天），需按「收到」
-async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return; const name=val("asg_who"); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
-  if(!name){ toast("請先選擇要指派的員工",true); return; }
+// 勾選要交辦的對象（可複選）。回傳勾起來的名字。
+function asgPicked(){
+  return Array.from(document.querySelectorAll(".asg_p:checked")).map(x=>x.value).filter(Boolean);
+}
+function asgToggleAll(btn){
+  const boxes=Array.from(document.querySelectorAll(".asg_p"));
+  const on=boxes.some(b=>!b.checked);      // 只要還有沒勾的就是「全選」，全勾了才變「全部取消」
+  boxes.forEach(b=>{ b.checked=on; });
+  if(btn) btn.textContent=on?"全部取消":"全選";
+  asgCount();
+}
+// 勾了幾個人即時顯示在送出鈕上 —— 一次發給 12 個人跟發給 1 個人差很多，要看得到
+function asgCount(){
+  const n=asgPicked().length;
+  const b=document.getElementById("asg_go");
+  if(b) b.textContent = n ? ("送出交辦給 "+n+" 人") : "送出交辦";
+}
+async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
+  const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
+  if(!names.length){ toast("請先勾選要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
-  const id=uid("T");
-  try{ await window.DB.set("tasks", id, {id, user:name, date:today, title:t, contact, report:"", done:false, assignedBy:currentUser(), ack:false, createdAt:nowIso()});
-    if(contact) rememberContact(contact);
-    const a=document.getElementById('asg_txt'); if(a) a.value=''; const c=document.getElementById('asg_contact'); if(c) c.value=''; toast("已指派給 "+name); }
-  catch(e){ toast("指派失敗，請稍後再試",true); } }
+  // 一次發給很多人是不小心手滑全選就送出去的高風險動作，先問一聲
+  if(names.length>=6 && !confirm("要把這件事同時交辦給 "+names.length+" 個人嗎？\n\n「"+t+"」\n\n"+names.join("、"))) return;
+  // 同一次交辦共用一個 groupId，畫面才知道「這幾筆是同一件事」
+  const gid=uid("G");
+  const stamp=nowIso();
+  // ⚠️ 走 bulkRun，不要自己寫 for + await：那個形狀會在中間某一筆失敗時
+  //    默默少發給一個人，而且是一筆一筆等，人多的時候很慢。（smoke-v134 會擋）
+  // id 先產好再送 —— 文件裡的 id 欄位必須等於文件本身的 id（全站都靠 t.id 找人）
+  const rows=names.map(name=>({id:uid("T"), name}));
+  let r={done:0, failed:0, bad:[]};
+  BULK_BUSY=true;
+  try{
+    r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id,
+      {id:row.id, user:row.name, date:today, title:t, contact, report:"",
+       done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid, msgs:[]}));
+  }finally{ BULK_BUSY=false; applyState(LAST_RAW); }
+  if(contact && r.done) rememberContact(contact);
+  if(r.done){
+    logA("交辦工作（"+r.done+" 人）", t);
+    const a=document.getElementById('asg_txt'); if(a) a.value='';
+    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
+  }
+  // 部分失敗要講清楚是誰沒收到，不然老闆以為全都發出去了
+  if(r.failed) toast("有 "+r.failed+" 人沒送出："+(r.bad||[]).map(x=>x.name).join("、")+"，請重試",true);
+  else toast(r.done>1?("已交辦給 "+r.done+" 位同仁"):("已指派給 "+names[0]));
+}
 // 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
@@ -1803,6 +1905,53 @@ function msgDel(id){
   dbDel("tasks", id, {action:"收回訊息", target:id});
 }
 function taskReport(id, v){ if(VIEW_AS) return; window.DB.update("tasks", id, {report:v}).catch(()=>{}); }   // 逐字輸入不記錄、不打擾
+// ── 一次交辦給多個人：多筆各自獨立的 task，共用一個 groupId ────────
+// 為什麼不是「一筆塞多個人」：完成、接收、耗時、交辦成效統計全都是一人一筆在算的，
+// 塞成一筆的話「他做完了沒」就沒有答案，整套統計要重寫。
+// 一人一筆＝每個人各自完成、各自留言，統計完全不用動；groupId 只是讓畫面知道
+// 「這幾筆是同一件事」，好顯示「同時交辦給誰」。
+// 同組成員是**算出來的**，不另外存一份名單 —— 存了就要在轉移／刪除時同步維護，
+// 遲早會有一邊忘記更新。
+function taskGroupOf(t){
+  const gid=String((t&&t.groupId)||"");
+  if(!gid) return t?[t]:[];
+  return Object.values((STATE&&STATE.tasks)||{}).filter(x=>x && String(x.groupId||"")===gid);
+}
+// 同組所有人的名字（含自己），排序後回傳，好讓大家看到的順序與配色一致
+function taskMates(t){
+  return Array.from(new Set(taskGroupOf(t).map(x=>String((x&&x.user)||"")))).filter(Boolean).sort();
+}
+// ── 留言串 ────────────────────────────────────────────────
+// 一筆 task 一串留言，不是整組共用一串 —— 老闆在小葵那一串講的話是對小葵講的。
+const TASK_MSG_MAX=1000;                 // 單則上限；Firestore 單筆文件 1MB，留言是陣列要留餘裕
+function taskMsgs(t){
+  const a=Array.isArray(t&&t.msgs)?t.msgs:[];
+  return a.filter(m=>m&&m.text).slice()
+    .sort((x,y)=>String(x.at||"").localeCompare(String(y.at||"")));
+}
+// 這件事的「處理狀況」（report）沿用原本的欄位，交辦成效、下班匯報、團隊看板
+// 都在讀它，不能廢掉。改成由留言自動帶出來：
+// **只有被交辦的本人、而且寫得夠完整（≥12 字）的那一則**才會覆蓋掉 report。
+// ⚠️ 為什麼要有 12 字這道門檻：打勾完成的條件本來就是「report 滿 12 字」。
+//    若每則留言都無條件覆蓋，員工回一句「好」就會把先前寫好的處理狀況洗掉，
+//    連帶讓已經可以打勾的工作又變成不能打勾 —— 這是回歸，不是新規矩。
+function msgBecomesReport(t, msg){
+  return !!(t && msg && String(msg.by||"")===String(t.user||"") && String(msg.text||"").trim().length>=12);
+}
+async function postTaskMsg(id){
+  if(dbBlocked()) return;
+  const box=document.getElementById("tm_"+id);
+  const text=String((box&&box.value)||"").trim();
+  if(!text) return;
+  const t=taskById(id); if(!t) return;
+  const msg={at:nowIso(), by:currentUser(), text:text.slice(0,TASK_MSG_MAX)};
+  const patch={msgs:[...(Array.isArray(t.msgs)?t.msgs:[]), msg]};
+  if(msgBecomesReport(t, msg)) patch.report=msg.text;
+  try{
+    await window.DB.update("tasks", id, patch);
+    if(box) box.value="";
+  }catch(e){ toast(T("留言送不出去，請稍後再試","Could not post — try again"),true); }
+}
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
     if(t && t.assignedBy && !t.ack){ toast(isIntl?"Press “Got it” first before marking done":"請先按「收到」再回報完成",true);
@@ -2047,6 +2196,42 @@ function workSchedTag(v){
            : T(md+" 接手", md);
   return `<span title="${T("這一支是 "+full+" 進到你的清單的","Added to your list "+full)}">${lab}</span>`;
 }
+// ── 「這件事同時交辦給誰」的那一排色標 ────────────────────────
+// 只有真的不只一個人才顯示 —— 一個人的時候印一顆自己的名字是廢話。
+function mateChips(t){
+  const mates=taskMates(t);
+  if(mates.length<2) return "";
+  const colors=groupColors(mates);
+  const me=currentUser();
+  const done={};
+  taskGroupOf(t).forEach(x=>{ if(x&&x.done) done[String(x.user||"")]=true; });
+  return `<div class="row" style="gap:4px;flex-wrap:wrap;margin-top:5px;align-items:center">
+    <span class="muted" style="font-size:11px">${T("同時交辦","Also assigned")}：</span>
+    ${mates.map(n=>personChip(n,
+        (done[n]?' <span style="opacity:.75">✔</span>':'')+(n===me?' <span style="opacity:.75">'+T("（你）","(you)")+'</span>':''),
+        colors)).join("")}</div>`;
+}
+// ── 留言串 ────────────────────────────────────────────────
+// 老闆與被交辦的人在同一串裡對話。網址會變成可以點的連結（linkify）。
+// canPost=false 時只顯示不給輸入（例如主管在看別人的清單）。
+function taskThread(t, canPost){
+  const msgs=taskMsgs(t);
+  const me=currentUser();
+  const list=msgs.map(m=>{
+    const who=String(m.by||"");
+    const c=personColor(who);
+    return `<div class="tmsg${who===me?' me':''}">
+      <div class="tmsg-h"><b style="color:${c.fg}">${esc(who)}</b> ${esc(String(m.at||"").slice(5,16).replace("T"," "))}</div>
+      ${linkify(m.text)}</div>`;
+  }).join("");
+  const box=canPost?`<div class="tmsg-in">
+      <input id="tm_${esc(t.id)}" placeholder="${T("回覆一句…（貼網址會自動變成連結）","Reply…")}"
+        onkeydown="if(enterKey(event))postTaskMsg('${esc(jsEsc(t.id))}')">
+      <button class="btn sm" onclick="postTaskMsg('${esc(jsEsc(t.id))}')">${T("送出","Send")}</button>
+    </div>`:"";
+  if(!list && !box) return "";
+  return `<div class="tmsgs">${list}</div>${box}`;
+}
 // 今日待辦的一列
 function todoRow(kind, title, sub, actions, doneCls){
   return `<div class="todo ${doneCls?'done':''}"><span class="tkind">${kind}</span>
@@ -2077,11 +2262,17 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
            <input type="checkbox" id="tc_${t.id}" ${t.done?'checked':''} ${can||t.done?'':'disabled'}
              onchange="taskDone('${t.id}',this.checked)" style="width:auto;margin:0"> ${t.done?T('完成','Done'):T('未完成','Open')}</label>
          ${assigned?'':`<button class="btn sec sm" style="padding:3px 9px" onclick="delTask('${t.id}')">✕</button>`}`;
-    const note = needAck ? "" :
-      `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+    // 主管交辦的用留言串（要跟老闆來回討論）；自己排的沒有對象可以講話，
+    // 維持原本那一格「處理狀況」就好 —— 給自己開一個聊天室很奇怪。
+    // 兩邊都還是靠 report 滿 12 字才能打勾完成；交辦的 report 由留言自動帶出來
+    // （見 msgBecomesReport），所以不必打兩次字。
+    const note = needAck ? ""
+      : assigned ? mateChips(t)+taskThread(t, true)
+      : `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
-    const ttl=esc(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
+    // 交辦內容本身也可能是一條網址（老闆貼給你看的東西），要點得開
+    const ttl=linkify(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
     rows.push(todoRow(assigned?"📌":"•", ttl+taskLatePill(t), sub+note, act, t.done));
   });
   // ③ 手上的影片
@@ -2329,7 +2520,11 @@ function staffSorted(list){
   });
 }
 // 下拉選單的分組：剪輯 / 其他職位 / 巴基斯坦（順序即顯示順序）
-function staffOptGroups(roles){
+// 依職位細分組（剪輯／行銷／選品行銷…）。下拉與交辦的勾選清單共用同一套 ——
+// 各寫一份的話，之後新增職位一定會有一邊漏掉（v162 我就先漏了一次：
+// 誤用了登入頁那套粗分區 staffByGroup，交辦清單的分組名整個不對）。
+// 回傳 [{label, people}]，只留有人的組。
+function staffRoleGroups(roles){
   const rs = roles || ["editor","intl"];
   const pool = staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor")));
   const isEd=(u)=>(u.role||"editor")==="editor";
@@ -2346,10 +2541,15 @@ function staffOptGroups(roles){
   ];
   const used=new Set();
   return groups.map(([label,test])=>{
-    const ppl=pool.filter(u=>!used.has(u.name) && test(u));
-    ppl.forEach(u=>used.add(u.name));
-    return ppl.length?`<optgroup label="${esc(label)}">${ppl.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`:'';
-  }).join("");
+    const people=pool.filter(u=>!used.has(u.name) && test(u));
+    people.forEach(u=>used.add(u.name));
+    return {label, people};
+  }).filter(g=>g.people.length);
+}
+function staffOptGroups(roles){
+  return staffRoleGroups(roles).map(g=>
+    `<optgroup label="${esc(g.label)}">${g.people.map(u=>`<option value="${esc(u.name)}">${esc(u.name)}</option>`).join("")}</optgroup>`
+  ).join("");
 }
 // 分區塊：台灣先分兩排（做內容的／其餘），巴基斯坦自成一區排最後。
 // 每一區列出屬於它的職位，之後要調哪個職位歸哪一排，改這裡就好。
@@ -3397,7 +3597,8 @@ function dashEditorCard(e, isToday){
         <div class="muted" style="font-size:11px;margin-top:2px">交辦日 ${esc((t.date||'').slice(5)||'-')}</div>
         ${t.contact?`<div style="font-size:12px;margin-top:2px"><span class="muted">對接窗口：</span><b style="color:var(--gold-dk)">${esc(t.contact)}</b></div>`:''}
         ${timeLine}
-        <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?esc(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+        <div style="font-size:12px;margin-top:3px"><span class="muted">處理結果／下一步：</span>${t.report?linkify(t.report):'<span style="color:var(--red);font-weight:600">尚未回報</span>'}</div>
+        ${mateChips(t)}${taskThread(t, true)}
         <div class="row" style="gap:6px;margin-top:6px">
           <button class="btn sec sm" style="padding:4px 10px" onclick="transferTask('${t.id}')">轉移</button>
           <button class="btn danger sm" style="padding:4px 10px" onclick="delTask('${t.id}')">刪除</button>
@@ -3506,16 +3707,33 @@ function dashAssignTaskCard(){
     <div class="row" style="align-items:baseline;gap:8px">
       <b style="font-size:16px">① 指派交辦給員工</b>
     </div>
-    <div class="grid cols2" style="margin-top:12px">
-      <div><label>選擇員工</label>
-        <select id="asg_who"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","mkt","pick","svc","ship"])}</select></div>
-      <div><label>交辦內容</label>
-        <input id="asg_txt" placeholder="要交辦的工作內容…" onkeydown="if(enterKey(event))assignTaskSel()"></div>
+    <div style="margin-top:12px">
+      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
+        <label style="margin:0">選擇員工（可複選）</label>
+        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">全選</button>
+      </div>
+      ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
     </div>
+    <div style="margin-top:10px"><label>交辦內容</label>
+      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()"></div>
     <div style="margin-top:10px"><label>對接窗口（選填）</label>
       <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
-    <button class="btn" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
+    <button class="btn" id="asg_go" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
   </div>`;
+}
+// 交辦對象的勾選清單。用勾選盒不用 <select multiple>：
+// 手機上的多選下拉要長按、看不到已選了誰，老闆主要是在手機上交辦的。
+function asgPickerHTML(roles){
+  const groups=staffRoleGroups(roles);       // 跟交辦下拉同一套分組，不要自己再分一次
+  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">還沒有可以交辦的同仁</p>`;
+  return `<div class="asgbox">${groups.map(g=>`
+    <div class="asggrp"><div class="asggrp-t">${esc(g.label)}</div>
+      <div class="asggrp-p">${g.people.map(u=>{
+        const c=personColor(u.name);
+        return `<label class="asgp" style="border-color:${c.fg}55">
+          <input type="checkbox" class="asg_p" value="${esc(u.name)}" onchange="asgCount()">
+          <span style="color:${c.fg}">${esc(u.name)}</span></label>`; }).join("")}</div>
+    </div>`).join("")}</div>`;
 }
 // 儀表板：指派毛片給員工（勾選＋收回未認領）
 function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){

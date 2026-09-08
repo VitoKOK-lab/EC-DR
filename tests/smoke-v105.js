@@ -16,7 +16,15 @@ global.document={getElementById:(id)=>{ if(id==="view") return viewEl;
     const e=el(); if(id==="modalRoot"){Object.defineProperty(e,"innerHTML",{set(v){modalHTML=v;},get(){return modalHTML;}});} return e;},
   get activeElement(){ return active; },
   addEventListener(){},createElement:()=>el(),body:{classList:{toggle(){},add(){},remove(){}}},
-  querySelector:()=>null,querySelectorAll:()=>[]};
+  querySelector:()=>null,
+  // v162：交辦對象改成勾選清單，assignTaskSel 是用 .asg_p:checked 讀的。
+  // picked 裡放誰，就等於畫面上勾了誰。
+  querySelectorAll:(sel)=>{
+    if(String(sel||"").indexOf(".asg_p")===0)
+      return picked.map(n=>({value:n, checked:true}));
+    return [];
+  }};
+let picked=[];
 global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,scrollTo(){},DB:null,location:{reload(){}}};
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
@@ -34,7 +42,7 @@ toast=(m)=>{ toasts.push(String(m)); };
 
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 function reset(){
-  calls=[]; toasts=[]; fields={}; modalHTML=""; active=null;
+  calls=[]; toasts=[]; fields={}; modalHTML=""; active=null; picked=[];
   STATE={ users:[{name:"小葵",role:"editor",craft:"both"},{name:"Regina",role:"manager"}],
     settings:{dailyTarget:4,videoTags:[],sources:["老闆自拍"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01",
@@ -67,7 +75,7 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("交辦內容與對象正確", t && t.user==="小葵" && t.title==="半夜交辦的事" && t.assignedBy==="Regina"); }
 
   reset(); pinAt("2026-08-03T00:05:00","2026-08-02");
-  fields.asg_who="小葵"; fields.asg_txt="指派也一樣"; fields.asg_contact="";
+  picked=["小葵"]; fields.asg_txt="指派也一樣"; fields.asg_contact="";
   await assignTaskSel(); await wait(30);
   ok("指派工作：也蓋 08-03", ((calls.find(c=>c[0]==="set"&&c[1]==="tasks")||[])[3]||{}).date==="2026-08-03");
 

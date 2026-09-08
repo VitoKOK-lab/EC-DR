@@ -56,7 +56,8 @@ reset(); as("管理員","boss");
     global.window.DB=_w; return hit; })());
   const d=viewDashboard();
   ok("員工視角下拉有員工分組", d.split('id="va_who"')[1].split("</select>")[0].includes('label="員工"'));
-  ok("交辦下拉有員工分組", d.split('id="asg_who"')[1].split("</select>")[0].includes('label="員工"'));
+  // v162：交辦對象改成勾選清單（.asgbox），不再是 <select id="asg_who">
+  ok("交辦對象有員工分組", d.split('class="asgbox"')[1].split('id="asg_txt"')[0].includes(">員工</div>"));
   ok("毛片指派下拉不含員工（員工不剪片）", !d.split('id="afp_who"')[1].split("</select>")[0].includes("小美")); }
 
 // ── 登入頁分區：員工在海外之前、海外排最後 ──
