@@ -52,7 +52,10 @@ const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
   boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["match","選品配對"],["log","操作紀錄"],["trash","回收桶"]],
-  manager: [["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["match","選品配對"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程＋選品配對；管理員看得到同一頁
+  // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
+  // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
+  // 放第一個 —— 她最常用的多選交辦卡就在那上面。
+  manager: [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["match","選品配對"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程＋選品配對；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
@@ -3568,9 +3571,22 @@ function viewFlow(){
   // 「待你審片」擺在毛片庫存的下一個 —— 原本在整頁最後面，滑到那裡的人不多，
   // 結果剪輯剪完的片一直沒人審。預設仍然摺疊（標題上的數字就說得完該不該點開）。
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
+  ${/* 交辦卡放最上面：經理人整天在用的就是這一張，擺在下面等於每次都要先捲過
+        存量警示、待審清單。焦點列往後挪一格 —— 那是給人「掃一眼」的，不是拿來操作的。 */''}
+  ${flowAssignCard()}
   ${focus}${msgInboxCard()}${runwayCard}${stockCard}${reviewQueueCard}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
   ${staffCards||'<p class="muted">還沒有成員</p>'}`;
+}
+// 多選交辦卡本來只掛在儀表板上，而**經理人沒有儀表板那一頁**（見 ROLE_TABS）——
+// 所以 Regina 一直只能用下面每張員工卡裡那個「交辦一件事」的單人輸入框，一次一個人。
+// 這裡把同一張卡也放到流程中控。
+// ⚠️ 儀表板上也有同一張卡，這裡是刻意重複的：老闆說交辦是經理人整天在用的，
+//    她在哪一頁都要按得到，不要為了「不重複」逼她換頁。
+function flowAssignCard(){
+  if(!["boss","manager"].includes(currentRole())) return "";
+  if(VIEW_AS) return "";
+  return dashAssignTaskCard();
 }
 
 // ===== 儀表板：小工具（各卡片共用）=====
