@@ -1934,7 +1934,8 @@ function taskMates(t){
 const TASK_MSG_MAX=1000;                 // 單則上限；Firestore 單筆文件 1MB，留言是陣列要留餘裕
 function taskMsgs(t){
   const a=Array.isArray(t&&t.msgs)?t.msgs:[];
-  return a.filter(m=>m&&m.text).slice()
+  // 只有圖沒有字的留言也要留下來 —— 只看 text 的話，貼圖不打字就整則消失
+  return a.filter(m=>m&&(m.text||m.pic)).slice()
     .sort((x,y)=>String(x.at||"").localeCompare(String(y.at||"")));
 }
 // 這件事的「處理狀況」（report）沿用原本的欄位，交辦成效、下班匯報、團隊看板
@@ -1946,19 +1947,43 @@ function taskMsgs(t){
 function msgBecomesReport(t, msg){
   return !!(t && msg && String(msg.by||"")===String(t.user||"") && String(msg.text||"").trim().length>=12);
 }
-async function postTaskMsg(id){
+async function postTaskMsg(id, pic){
   if(dbBlocked()) return;
   const box=document.getElementById("tm_"+id);
   const text=String((box&&box.value)||"").trim();
-  if(!text) return;
+  if(!text && !pic) return;                       // 沒字也沒圖就不要送空的
   const t=taskById(id); if(!t) return;
   const msg={at:nowIso(), by:currentUser(), text:text.slice(0,TASK_MSG_MAX)};
+  if(pic) msg.pic=String(pic);
   const patch={msgs:[...(Array.isArray(t.msgs)?t.msgs:[]), msg]};
   if(msgBecomesReport(t, msg)) patch.report=msg.text;
   try{
     await window.DB.update("tasks", id, patch);
     if(box) box.value="";
   }catch(e){ toast(T("留言送不出去，請稍後再試","Could not post — try again"),true); }
+}
+// ── 交辦留言貼圖 ────────────────────────────────────────────
+// 走的是封面上傳那一套現成管線：先在瀏覽器壓縮（長邊 720、JPEG 0.72），
+// 再上傳 Storage，最後把網址存進留言。壓縮是流量費用的關鍵 ——
+// 手機直出一張 4MB，壓完大約 60–100KB。
+const TASKPIC_SRC_MAX=12*1024*1024;   // 選檔上限：跟封面同一條，擋的是「選到影片檔」
+async function pickTaskPic(id, input){
+  const file=input && input.files && input.files[0];
+  if(input) input.value="";                       // 先清掉，不然同一張圖選第二次不會觸發 change
+  if(!file) return;
+  if(dbBlocked()) return;
+  if(!/^image\//.test(String(file.type||""))){ toast(T("請選圖片檔（JPG／PNG）","Pick an image file (JPG / PNG)"),true); return; }
+  if(file.size>TASKPIC_SRC_MAX){ toast(T("這個檔案太大了（超過 12MB），確認一下是不是選到影片檔","That file is over 12MB — did you pick a video by mistake?"),true); return; }
+  const DB=(typeof window!=="undefined")&&window.DB;
+  if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再上傳","Not connected yet — try again in a moment"),true); return; }
+  const btn=document.getElementById("tp_"+id);
+  if(btn) btn.textContent=T("傳送中…","Uploading…");
+  try{
+    const blob=await coverCompress(file);
+    const url=await DB.uploadTaskPic(id, uid("P"), blob);
+    await postTaskMsg(id, url);                   // 圖跟同時打的字會一起變成同一則留言
+  }catch(e){ toast(coverErrMsg(e), true); }
+  finally{ if(btn) btn.textContent="📷"; }
 }
 function taskDone(id, done){ const isIntl=currentRole()==="intl"; const t2=taskById(id);
   if(done){ const t=Object.values((STATE&&STATE.tasks)||{}).find(x=>x&&x.id===id);
@@ -2223,19 +2248,29 @@ function mateChips(t){
 // ── 留言串 ────────────────────────────────────────────────
 // 老闆與被交辦的人在同一串裡對話。網址會變成可以點的連結（linkify）。
 // canPost=false 時只顯示不給輸入（例如主管在看別人的清單）。
+// 留言圖片的網址檢查：只放行 https。
+// pic 這個欄位跟留言文字一樣是「別人寫得進資料庫的東西」，直接塞進 <img src>
+// 等於讓人指定瀏覽器要去載什麼；javascript: / data: 一律不認。
+function picSafe(u){ return /^https:\/\//i.test(String(u||"")); }
 function taskThread(t, canPost){
   const msgs=taskMsgs(t);
   const me=currentUser();
   const list=msgs.map(m=>{
     const who=String(m.by||"");
     const c=personColor(who);
+    // 圖片：縮圖點一下開新分頁看原圖。⚠️ 只吃 https 的網址 ——
+    // pic 是存在資料庫的字串，跟留言內容一樣是別人寫得進來的，直接塞進 src 等於開後門。
+    const pic=picSafe(m.pic) ? `<a href="${esc(m.pic)}" target="_blank" rel="noopener noreferrer"
+        title="${T("點一下看原圖","Open full size")}"><img class="tmsg-pic" src="${esc(m.pic)}" alt="${T("留言圖片","Attached image")}" loading="lazy"></a>` : "";
     return `<div class="tmsg${who===me?' me':''}">
       <div class="tmsg-h"><b style="color:${c.fg}">${esc(who)}</b> ${esc(String(m.at||"").slice(5,16).replace("T"," "))}</div>
-      ${linkify(m.text)}</div>`;
+      ${linkify(m.text)}${pic}</div>`;
   }).join("");
   const box=canPost?`<div class="tmsg-in">
-      <input id="tm_${esc(t.id)}" placeholder="${T("回覆一句…（貼網址會自動變成連結）","Reply…")}"
+      <input id="tm_${esc(t.id)}" placeholder="${T("回覆一句…（可以貼網址、傳圖片）","Reply…")}"
         onkeydown="if(enterKey(event))postTaskMsg('${esc(jsEsc(t.id))}')">
+      <label class="btn sec sm tmsg-pick" id="tp_${esc(t.id)}" title="${T("傳一張圖片（會自動壓縮）","Attach an image (auto-compressed)")}">📷<input
+        type="file" accept="image/*" style="display:none" onchange="pickTaskPic('${esc(jsEsc(t.id))}',this)"></label>
       <button class="btn sm" onclick="postTaskMsg('${esc(jsEsc(t.id))}')">${T("送出","Send")}</button>
     </div>`:"";
   if(!list && !box) return "";

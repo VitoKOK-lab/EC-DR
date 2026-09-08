@@ -215,6 +215,16 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       await uploadBytes(r, blob, { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" });
       return await getDownloadURL(r);
     },
+    // ── 交辦留言裡的圖片（Firebase Storage）──
+    // 跟封面不同：封面是「一支片一張、重傳蓋掉」，留言是「一則一張、會一直累積」，
+    // 所以路徑要帶不重複的檔名，不能用固定路徑（會互相蓋掉）。
+    // cacheControl 同樣設一年＋immutable —— 每次上傳都是新網址，讓瀏覽器永久快取，
+    // 一張圖全公司只會下載一次。
+    async uploadTaskPic(taskId, picId, blob) {
+      const r = storageRef(storage, "taskpix/" + String(taskId) + "/" + String(picId) + ".jpg");
+      await uploadBytes(r, blob, { contentType: "image/jpeg", cacheControl: "public, max-age=31536000, immutable" });
+      return await getDownloadURL(r);
+    },
     // 刪不掉不算失敗（可能本來就沒有）：影片那筆的 cover 欄位清掉才是真正的「移除」
     async deleteCover(id) {
       try { await deleteObject(storageRef(storage, "covers/" + String(id) + ".jpg")); return true; }
