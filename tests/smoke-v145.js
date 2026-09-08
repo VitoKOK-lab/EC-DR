@@ -112,9 +112,9 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   ok("只有資料夾（腳本階段先開好的）→ 還是算未拍", vidNotShot(vid("D")));
   ok("只有資料夾 → 照樣亮「缺毛片」", vidMissing(vid("D")).map(x=>x.k).includes("raw"));
   ok("但資料夾還是打得開（位置沒有變）", vidRawLink(vid("D"))===FAM && vidHasRaw(vid("D"))); }
-// 按過「毛片拍好了」才算拍了
+// 按過「毛片已上傳」才算拍了
 { reset([v_("E",{driveFolder:FAM, shotAt:"2026-09-08T10:00:00", shotBy:"泓儒"})]);
-  ok("按過「毛片拍好了」→ 算已拍", !vidNotShot(vid("E")));
+  ok("按過「毛片已上傳」→ 算已拍", !vidNotShot(vid("E")));
   ok("按過之後不再亮「缺毛片」", !vidMissing(vid("E")).map(x=>x.k).includes("raw")); }
 // 已經有人在剪的，顯然拍了（不然他剪什麼）
 { reset([v_("F",{driveFolder:FAM, claimedBy:"小葵", stage:"剪輯中"})]);

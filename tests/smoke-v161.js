@@ -47,11 +47,12 @@ const v_=(id,o)=>Object.assign({id,code:"C"+id,name:"",rawName:"片"+id,videoCop
   claimedAt:"",finishedAt:"",durationMin:0,publishedLink:"",driveFolder:"",reviewStatus:"",
   locale:"",channel:"",origLang:"",account:"",sourceVideoId:"",cover:"",remakes:[],tags:[],
   products:[],usageHistory:[],metrics:[],deleted:false,source:"官方IP",shotAt:"",shotBy:""},o||{});
-let WRITES=[];
+let WRITES=[], LOGS=[];
 function reset(videos, who, role){
-  WRITES=[]; modalHTML=""; viewEl.innerHTML=""; VIEW_AS=null; BRAND="";
+  WRITES=[]; LOGS=[]; modalHTML=""; viewEl.innerHTML=""; VIEW_AS=null; BRAND="";
   VID_VIEW="raw"; VID_MODE="list"; POOL_FILTER="all"; POOL_Q=""; VID_Q=""; FOLD_OPEN={};
-  global.window.DB={ set:async()=>{}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{},
+  global.window.DB={ set:async(c,id,p)=>{ if(c==="logs") LOGS.push(p); },
+    del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{},
     update:async(c,id,p)=>{ WRITES.push({c,id,p}); }, videosWatched:()=>true,
     netState:()=>({online:true,pending:false}) };
   const raw={ users:[{name:"小葵",role:"editor"},{name:"管理員",role:"boss"},{name:"泓儒",role:"editor"}],
@@ -73,7 +74,7 @@ function reset(videos, who, role){
   ok("什麼都沒有 → 未拍", vidNotShot(vid("空")));
   ok("**只有資料夾（腳本階段先開好的）→ 還是未拍**", vidNotShot(vid("只有資料夾")));
   ok("有毛片連結（舊資料）→ 已拍", !vidNotShot(vid("有毛片連結")));
-  ok("按過「毛片拍好了」→ 已拍", !vidNotShot(vid("按過拍好了")));
+  ok("按過「毛片已上傳」→ 已拍", !vidNotShot(vid("按過拍好了")));
   ok("已經有人認領 → 已拍（剪輯不會去認領沒東西剪的片）", !vidNotShot(vid("有人在剪")));
   ok("已上片 → 已拍（都播出去了）", !vidNotShot(vid("已上片"))); }
 
@@ -106,17 +107,20 @@ function reset(videos, who, role){
   ok("只有資料夾、有排日期 → 未拍・已排程", vidSegment(vid("腳本有排"))==="scriptSched");
   ok("拍好了 → 待剪", vidSegment(vid("拍好"))==="rawNoSched", vidSegment(vid("拍好"))); }
 
-// ══════════ ③ 「毛片拍好了」那顆鈕 ══════════
+// ══════════ ③ 「毛片已上傳」那顆鈕 ══════════
+// ⚠️ 按鈕上的字要盯死：老闆指名要寫「已上傳」不是「拍好了」——
+//    對剪輯來說重點是檔案進資料夾了沒，不是攝影機關了沒。
 { reset([ v_("A",{driveFolder:FOLDER}) ]);
   const b=shotBtn(vid("A"));
-  ok("未拍的片有「毛片拍好了」鈕", /毛片拍好了/.test(b), b.slice(0,120));
+  ok("未拍的片有「毛片已上傳」鈕", /毛片已上傳/.test(b), b.slice(0,120));
+  ok("按鈕不可以再寫「拍好了」", !/拍好了/.test(b), b.slice(0,120));
   ok("按鈕會呼叫 markShot 並帶對 id", /markShot\('A'\)/.test(b));
   ok("按鈕有擋掉冒泡（不然會連編輯視窗一起彈出來）", /event\.stopPropagation\(\)/.test(b));
   ok("按鈕有寫清楚按了會怎樣", /待剪/.test(b)); }
 
 { reset([ v_("B",{driveFolder:FOLDER, shotAt:"2026-09-08T10:00:00", shotBy:"泓儒"}) ]);
   const b=shotBtn(vid("B"));
-  ok("按過的片改成給「還沒拍」的收回鍵", /還沒拍/.test(b) && /unmarkShot\('B'\)/.test(b), b.slice(0,140));
+  ok("按過的片改成給「還沒上傳」的收回鍵", /還沒上傳/.test(b) && /unmarkShot\('B'\)/.test(b), b.slice(0,140));
   ok("收回鍵也擋掉冒泡", /event\.stopPropagation\(\)/.test(b));
   ok("滑過去看得到是誰標的", /泓儒/.test(b)); }
 
@@ -145,13 +149,16 @@ function reset(videos, who, role){
   ok("按下去會寫 videos", !!w, WRITES);
   ok("記下什麼時候", w && /^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(String(w.p.shotAt||"")), w&&w.p);
   ok("記下是誰按的", w && w.p.shotBy==="泓儒", w&&w.p);
-  ok("只動這三個欄位，別的不碰", w && Object.keys(w.p).sort().join(",")==="shotAt,shotBy,updatedAt", w&&Object.keys(w.p)); }
+  ok("只動這三個欄位，別的不碰", w && Object.keys(w.p).sort().join(",")==="shotAt,shotBy,updatedAt", w&&Object.keys(w.p));
+  // 操作紀錄上的字要跟按鈕一致，不然老闆事後翻紀錄會看到兩套講法
+  ok("操作紀錄寫「標記毛片已上傳」", LOGS.some(l=>l.action==="標記毛片已上傳"), LOGS.map(l=>l.action)); }
 
 { reset([ v_("B",{shotAt:"2026-09-08T10:00:00", shotBy:"泓儒"}) ], "小葵","editor");
   unmarkShot("B");
   await new Promise(r=>setTimeout(r,10));
   const w=WRITES.find(x=>x.c==="videos" && x.id==="B");
-  ok("收回時把兩個欄位清掉", w && w.p.shotAt==="" && w.p.shotBy==="", w&&w.p); }
+  ok("收回時把兩個欄位清掉", w && w.p.shotAt==="" && w.p.shotBy==="", w&&w.p);
+  ok("操作紀錄寫「取消「毛片已上傳」」", LOGS.some(l=>l.action==="取消「毛片已上傳」"), LOGS.map(l=>l.action)); }
 
 // 誰都能按 —— 這是事實不是權限
 { for(const [who,role] of [["小葵","editor"],["管理員","boss"],["泓儒","editor"]]){

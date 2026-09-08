@@ -4461,10 +4461,8 @@ function vidIsOld(v){
   if(t.includes("新片")&&!t.includes("舊片")) return false;
   return isPublished(v) && airedPast(v);   // 必須「已完成」＋過了排程日才算舊片（剪太慢過期但沒剪完的不算）
 }
-// 「還沒拍」的判斷只看毛片雲端連結，分段見下面的 vidSegment
-// 有寫文案、但毛片還沒拍（沒有毛片雲端連結）——「待剪」的前一站
-// 為什麼用「有沒有毛片雲端連結」判斷：原始片名每一支都有（新增時必填），
-// 毛片連結才是「這支真的拍出來了」的訊號；實際資料裡待剪的 58 支有 57 支都填了。
+// 「這支有東西可剪了沒」是「未拍」與「待剪」的分界，判斷寫在下面的 vidShot，
+// 分段見再下面的 vidSegment。⚠️ v161 起這題**不看資料夾**，理由在 vidShot 上面。
 // 毛片放在哪：就是這支的資料夾。
 // 「毛片雲端連結」跟「存檔位置」本來就是同一個地方 —— 第一個拍好毛片的人開的那個
 // 資料夾，毛片、成片、二創、封面全在裡面。以前拆成兩格只是在讓人把同一條網址貼兩次。
@@ -4473,7 +4471,6 @@ const vidRawLink=(v)=>String(v&&v.rawLink||"").trim() || familyDrive(v);
 // ⚠️ 這個是「有沒有連結可以打開」（位置），**不是**「拍了沒」（狀態）。
 //    兩個問題自從 v145 把毛片連結與存檔資料夾併成一格之後就分家了，見下面 vidShot。
 const vidHasRaw=(v)=>!!vidRawLink(v);
-// 還沒拍＝沒有毛片雲端連結。判斷只看這一個欄位：
 // 原始片名每一支都有（新增時必填），文案則常常晚一點才補，
 // 所以「有沒有文案」不能拿來判斷拍了沒 —— 只填片名就排日期的那些，
 // 以前會被當成待剪片，其實根本還沒拍。
@@ -4490,7 +4487,7 @@ const vidHasRaw=(v)=>!!vidRawLink(v);
 // 正式資料實測：240 支待處理的片裡有 51 支是這樣（其中 27 支是併欄之後才建的）。
 //
 // 所以「拍了沒」改成看四件事，資料夾**完全不參與**：
-//   ① 有人按過「毛片拍好了」（shotAt）—— 這是現在唯一明確的信號
+//   ① 有人按過「毛片已上傳」（shotAt）—— 這是現在唯一明確的信號
 //   ② 有毛片連結（rawLink）—— 舊資料相容：以前是拍完的人自己貼的
 //   ③ 已經有人認領或指定了剪輯 —— 剪輯不會去認領沒東西剪的片
 //   ④ 已經剪完／上片了 —— 都播出去了當然拍過（正式資料裡這種有 292 支）
@@ -4505,14 +4502,18 @@ function vidShot(v){
   return false;
 }
 const vidNotShot=(v)=> !vidShot(v);
-// 標記／取消「毛片拍好了」。誰都能按 —— 這是一件事實，不是權限。
-// 按錯了在「待剪」那一頁按「↩ 還沒拍」就收得回來。
+// 標記／取消「毛片已上傳」。誰都能按 —— 這是一件事實，不是權限。
+// 按錯了在「待剪」那一頁按「↩ 還沒上傳」就收得回來。
+// ⚠️ 按鈕上寫「已上傳」，欄位卻叫 shotAt/shotBy、分頁叫「未拍」——
+//    這不是筆誤：對剪輯來說有沒有東西可剪的關鍵是「檔案進資料夾了沒」，
+//    所以畫面上講上傳；欄位沿用既有的 shot 命名，才不會跟「未拍」那一頁對不起來。
+//    要改就兩邊一起改，不要只改一半。
 function markShot(id){ const v=vid(id)||{};
   dbUpdate("videos", id, {shotAt:nowIso(), shotBy:currentUser(), updatedAt:nowIso()},
-    {action:"標記毛片拍好了", target:vidTitle(v)}); }
+    {action:"標記毛片已上傳", target:vidTitle(v)}); }
 function unmarkShot(id){ const v=vid(id)||{};
   dbUpdate("videos", id, {shotAt:"", shotBy:"", updatedAt:nowIso()},
-    {action:"取消「毛片拍好了」", target:vidTitle(v)}); }
+    {action:"取消「毛片已上傳」", target:vidTitle(v)}); }
 // ── 毛片存量 ──────────────────────────────────────────────────
 // 「有腳本沒毛片」的還不能剪，不算存量 —— 這是老闆判斷「要不要去拍片」的依據，
 // 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
@@ -4658,7 +4659,7 @@ function vidOpenFn(v){
        : v.locale ? `openIntlModal('${v.id}')`
        : `editVideo('${v.id}')`;
 }
-// 「毛片拍好了 ✔」／「↩ 還沒拍」。清單與圖片檢視共用一顆，不要各寫一份。
+// 「毛片已上傳 ✔」／「↩ 還沒上傳」。清單與圖片檢視共用一顆，不要各寫一份。
 // ⚠️ 整列／整張卡本身是可以點開編輯視窗的，所以這顆一定要 stopPropagation，
 //    不然按下去會連編輯視窗一起彈出來。
 function shotBtn(v){
@@ -4666,13 +4667,13 @@ function shotBtn(v){
   if(vidNotShot(v))
     return `<button class="btn sm" style="padding:2px 9px;font-size:11px;white-space:nowrap"
       onclick="event.stopPropagation();markShot('${esc(jsEsc(v.id))}')"
-      title="${T("毛片拍好、放進資料夾了？按一下，這支就會進到待剪清單","Footage shot and in the folder? Tap to move it to the editing queue")}">${T("毛片拍好了 ✔","Footage ready ✔")}</button>`;
+      title="${T("毛片已經上傳到資料夾了？按一下，這支就會進到待剪清單","Footage uploaded to the folder? Tap to move it to the editing queue")}">${T("毛片已上傳 ✔","Footage uploaded ✔")}</button>`;
   // 只有「用按鈕標過」的才給收回鍵 —— 有毛片連結或已經有人在剪的不需要，
   // 那些本來就不是靠這顆鈕進來的。
   if(String(v.shotAt||"").trim())
     return `<button class="btn sec sm" style="padding:2px 9px;font-size:11px;white-space:nowrap"
       onclick="event.stopPropagation();unmarkShot('${esc(jsEsc(v.id))}')"
-      title="${T((v.shotBy?v.shotBy+" ":"")+"標記過毛片拍好了。按錯的話按這裡收回。", "Marked as shot"+(v.shotBy?" by "+v.shotBy:"")+". Tap to undo.")}">↩ ${T("還沒拍","Not shot")}</button>`;
+      title="${T((v.shotBy?v.shotBy+" ":"")+"標記過毛片已上傳。按錯的話按這裡收回。", "Marked as uploaded"+(v.shotBy?" by "+v.shotBy:"")+". Tap to undo.")}">↩ ${T("還沒上傳","Not uploaded")}</button>`;
   return "";
 }
 function vidTableRow(v){
