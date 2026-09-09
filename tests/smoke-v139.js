@@ -215,16 +215,18 @@ reset(60);
   ok("人資的團隊看板：看得到熱圖", /每天完成上片/.test(hr));
   ok("管理員的團隊看板：一樣看得到", /完成上架/.test(boss) && /每天完成上片/.test(boss)); }
 // ⚠️ 「選品行銷」是這條規則最容易踩到的例外：他**不剪片**（在 NO_EDIT_ROLES 裡），
-//    但選品配對要從影片庫大流挑片、也要顯示配對影片的片名（viewMatch 會呼叫 vid()）。
-//    所以「不剪片」不等於「不用影片資料」—— 這兩個清單必須分開。
+//    但仍然需要影片資料。這兩個清單必須分開，不能拿「不剪片」當「不用影片」。
+//
+// v175：選品配對工作台整頁移除之後，pick 目前的分頁跟 cs 一樣（本日工作＋團隊看板），
+//    所以「他到底還需不需要整份影片庫」要等新設計定案才知道。
+//    在那之前**維持現狀**（needVideos("pick")===true）—— 順手把它關掉是行為變更，
+//    而且新設計八成又要用到，關了再開只是白繞一圈。
 { ok("選品行銷不剪片", NO_EDIT_ROLES.includes("pick"));
-  ok("但選品行銷需要影片資料（選品配對要挑片、要顯示片名）", needVideos("pick")===true);
+  ok("選品行銷仍然拿得到影片資料（新設計要用；不剪片≠不用影片）", needVideos("pick")===true);
   ok("兩個清單是分開的，不是同一份", NO_EDIT_ROLES!==NO_VIDEO_ROLES && !NO_VIDEO_ROLES.includes("pick"));
   const APPCODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
   ok("needVideos 不是拿 NO_EDIT_ROLES 在判斷",
-     /NO_VIDEO_ROLES\.includes\(r\)/.test(APPCODE) && !/needVideos[\s\S]{0,120}NO_EDIT_ROLES/.test(APPCODE));
-  ok("選品配對真的會讀影片（所以上面那條不是多慮）",
-     /function viewMatch\(\)[\s\S]{0,3000}?vid\(/.test(APP)); }
+     /NO_VIDEO_ROLES\.includes\(r\)/.test(APPCODE) && !/needVideos[\s\S]{0,120}NO_EDIT_ROLES/.test(APPCODE)); }
 // 開機不再無條件訂閱影片，改成 app.js 依職位呼叫
 { ok("fb.js 開機的即時訂閱裡沒有 videos",
      !/onSnapshot\(collection\(db,\s*"videos"/.test(FB.split("即時訂閱")[1]||""));

@@ -710,6 +710,31 @@
     .vgrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
     .cv-slot,.cv-box{width:80px}
   }
+  /* ===== 溝通（v178）：一則對話一行，點開才展開 =====
+     老闆：「如果有多次的雙向對話回覆，點擊再打開就好」
+     收合時整則只佔一行 —— 對方是誰、前 12 個字、狀態、幾則回覆、時間。
+     ⚠️ 一行要真的是一行：中間那段文字 min-width:0 + ellipsis，
+        少了 min-width:0，flex 子項不會縮，長字串會把右邊的狀態擠出去。 */
+  .commrow{border-bottom:1px solid var(--line)}
+  /* 點擊區至少 44px 高（Apple/Material 的最小觸控目標）——
+     內容短的那幾列（沒有狀態藥丸的）光靠 padding 撐不到。 */
+  .commrow>summary{list-style:none;cursor:pointer;padding:9px 2px;border-radius:6px;min-height:44px;display:flex;align-items:center}
+  .commrow>summary::-webkit-details-marker{display:none}
+  .commrow>summary:hover{background:var(--panel2)}
+  .commrow[open]>summary{background:var(--panel2)}
+  .commrow.arch{opacity:.6}
+  .commhead{display:flex;align-items:center;gap:6px;min-width:0}
+  .commdir{flex:none;color:var(--muted);font-size:12px;width:14px;text-align:center}
+  .commtxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+  .commwhen{flex:none;font-size:11px;white-space:nowrap}
+  .commdot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .commok{flex:none;padding:2px 9px;font-size:11px;font-weight:800;min-height:0}
+  .commbody{padding:2px 2px 12px}
+  @media(max-width:600px){
+    /* 手機上先保住「誰＋內容」，時間可以不看 —— 一行就是一行，不要換行 */
+    .commwhen{display:none}
+    .commrow>summary{padding:11px 2px}     /* 點擊區高一點，達到 44px */
+  }
   table.vtable{margin-top:4px;table-layout:fixed}
   /* 月排程「清單」檢視：整個月一張表（日期／時間／貼文文案）。
      ⚠️ 這張表**不加** .responsive —— 只有三欄，手機上直接橫著看就好；
@@ -800,7 +825,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=07bb7f9e591b"></script>
-<script type="module" src="fb.js?v=07bb7f9e591b"></script>
+<script src="app.js?v=ab917e4e4e7c"></script>
+<script type="module" src="fb.js?v=ab917e4e4e7c"></script>
 </body>
 </html>

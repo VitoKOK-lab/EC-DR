@@ -6,7 +6,7 @@
 // 職位。intl＝巴基斯坦團隊（全英文介面，做英/泰版二創）。
 // mkt／svc／ship 是後來加的不剪片職位，權限與畫面比照 cs。
 // pick＝選品行銷（v138）：從「商品」出發幫商品配一支影片、送老闆審核，畫面與權限比照 cs，
-// 額外多一頁「選品配對」——只有這個職位、經理人（Regina）與管理員看得到。
+// （原本額外多一頁「選品配對」，v175 整頁移除，老闆要重新設計。）
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷", pick:"選品行銷",
                     svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
 const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing", pick:"Curation Marketing",
@@ -22,7 +22,7 @@ const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 // 這個職位的畫面用不用得到影片資料。
 // ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
 //    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
-//    「選品行銷」不剪片，但選品配對要從影片庫大流挑片，所以他一定要。
+//    「選品行銷」不剪片，但仍然拿得到影片資料（新設計要用）—— 見 NO_VIDEO_ROLES。
 //    以後新增職位或新增卡片，請照同一個方法驗一次（tests/smoke-v139.js 有現成的比對），
 //    不要用猜的。
 //
@@ -51,11 +51,11 @@ function videosLoading(){
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["match","選品配對"],["log","操作紀錄"],["trash","回收桶"]],
+  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["match","選品配對"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程＋選品配對；管理員看得到同一頁
+  manager: [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
   editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
   intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
@@ -65,9 +65,24 @@ const ROLE_TABS = {
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
-// 選品行銷：比照「員工」的交辦工作／團隊看板，額外加一頁「選品配對」
-ROLE_TABS.pick = ROLE_TABS.cs.concat([["match","選品配對"]]);
+// 選品行銷：畫面與權限比照「員工」。
+// （選品配對工作台在 v175 整個移除，老闆要重新設計 —— 見下面 route() 的說明。）
+ROLE_TABS.pick = ROLE_TABS.cs;
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
+// ── 上片時間一律只選「整點」（v177，老闆指定：「以整點選就好，不用分」）──
+// 為什麼不用 <input type="time">：那個一定會出現分鐘，手機上還要撥兩個滾輪，
+// 而實際上片時間本來就是抓整點（PUB_TIMES 也都是整點）。改成 24 個選項的下拉，
+// 一次點到位，也不可能存進 10:37 這種對不上排程的時間。
+const HOURS=Array.from({length:24},(_,h)=>String(h).padStart(2,"0")+":00");
+// 舊資料可能有 10:30 這種：不丟掉，補進選單裡（不然一存檔就被洗成別的時間）
+function hourOptions(cur, blankLabel){
+  const v=String(cur||"").slice(0,5);
+  const list=HOURS.slice();
+  if(v && !list.includes(v)) list.push(v);          // 舊的非整點值，保留
+  list.sort();
+  return `<option value="">${esc(blankLabel||T("不指定","No time"))}</option>`
+    + list.map(t=>`<option value="${t}" ${t===v?"selected":""}>${t}${HOURS.includes(t)?"":T("（舊資料）"," (legacy)")}</option>`).join("");
+}
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 // 本機還有沒送出去的寫入（打卡、交辦…）。這種東西自己看得到、別人看不到，
 // 一定要標出來 —— 出過事：員工看到自己打了卡，主管看到他沒打卡。
@@ -149,6 +164,9 @@ function dataLabel(x){
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
+  // v178：「溝通」是每個人都有的（老闆的三塊之一）。放在最前面 ——
+  // 有人找你、或你派出去的有回音，是每天最先要處理的事。
+  t.unshift(["chat", currentRole()==="intl"?"Messages":"溝通"]);
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -236,36 +254,11 @@ function newVideoRecord(over){
   return Object.assign(rec, over||{});
 }
 
-// ---------- 選品配對（v138）----------
-// `products/{id}` — 選品行銷的商品庫（跟 videos.products[] 的「銷售商品」是兩件事：
-// 那是印在影片貼文裡的商品資訊，這裡是「這個商品要配哪支影片賣」的工作追蹤）。
-// 刻意不做軟刪除／回收桶：這個集合量小、是工作追蹤用，不像影片庫需要救援機制。
-function newProductId(){ return uid("PD"); }
-function newProductRecord(over){
-  const rec={ id:newProductId(), name:"", sku:"", image:"", officialUrl:"", shoplineLink:"",
-    activeVideoId:"",
-    createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(), updatedAt:"" };
-  return Object.assign(rec, over||{});
-}
-// `matches/{id}` — 一次「幫某商品挑影片」的配對草案／送審／核准紀錄。
-// status：draft（草稿，選品行銷還在編輯）／submitted（已送老闆審核）／
-//         approved（老闆核准，寫回 products.activeVideoId＝正式配對）／rejected（老闆退回，可修改後重新送審）。
-function newMatchId(){ return uid("MT"); }
-function newMatchRecord(over){
-  const rec={ id:newMatchId(), productId:"", primaryVideoId:null, backupVideoId:null,
-    suggestedCopyEdit:"", suggestedLaunchDate:"",
-    status:"draft", createdBy:(typeof currentUser==="function"?(currentUser()||""):""), createdAt:nowIso(),
-    submittedBy:"", submittedAt:"", reviewedBy:"", reviewedAt:"", bossNote:"", finalVideoId:"" };
-  return Object.assign(rec, over||{});
-}
-// 一支影片「已完成、可以拿去配對」：已完成或已上片（vidSegment 的 old 片仍算完成，只是要重播）
-function matchVidDone(v){ return isPublished(v) || vidIsOld(v); }
-// 一支影片「還沒拍、只有腳本」：沿用待認領池同一套判斷標準（vidNotShot）
-function matchVidScript(v){ return vidNotShot(v); }
-// 一支影片是否還「等待選品中」：沒有任何商品把它訂為正式配對影片（activeVideoId）。
-// 刻意不存成影片的欄位——訂了又退、換了商品，欄位很容易跟 products 對不上；
-// 用當下的 products 即時算，永遠不會兩邊兜不起來。
-function videoAwaitingCuration(v){ return !(STATE.products||[]).some(p=>p.activeVideoId===v.id); }
+// ---------- 選品配對：v175 整個移除（老闆要重新設計）----------
+// 原本這裡有 products／matches 兩個集合的資料形狀（newProductRecord／newMatchRecord）
+// 與三個判斷（matchVidDone／matchVidScript／videoAwaitingCuration）。
+// 工作台整頁拿掉之後就沒有人用了，留著只會讓下一個讀 code 的人以為還有這個功能。
+// 資料庫裡那兩個集合沒有動。
 
 // ---------- 衍生計算 ----------
 function parseDate(s){ s=String(s||"").slice(0,10); const d=new Date(s+"T00:00:00"); return isNaN(d)?null:d; }
@@ -409,6 +402,10 @@ function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean);
   if(seg[1]==="users" && seg[2]) return "成員 "+decodeURIComponent(seg[2]);
   if(seg[1]==="schedule" && seg[2]) return "排程 "+seg[2];
   if(seg[1]==="settings") return "系統設定";
+  // ⚠️ 選品配對工作台在 v175 拿掉了，但這兩行**要留著**：
+  //    操作紀錄裡還有當初那些 products／matches 的舊紀錄，少了這兩行，
+  //    那些歷史紀錄會從「商品 XXX」變成一串看不懂的 id。
+  //    （fb.js 也還在訂閱那兩個集合 —— 合計 4 筆，就是為了讓這兩行查得到名字。）
   if(seg[1]==="products" && seg[2]){ const p=(STATE.products||[]).find(x=>x.id===seg[2]); return p?("商品 "+p.name):seg[2]; }
   if(seg[1]==="matches" && seg[2]){ const m=(STATE.matches||[]).find(x=>x.id===seg[2]);
     const p=m&&(STATE.products||[]).find(x=>x.id===m.productId); return p?("配對 "+p.name):seg[2]; }
@@ -542,63 +539,8 @@ async function route(method, path, body){
       return;
     }
   }
-  if(head==="products"){
-    if(method==="POST" && seg.length===1){
-      const inc=Object.assign({}, body.product); delete inc.id;
-      if(!String(inc.name||"").trim()) throw new Error("請輸入商品名稱");
-      const p=newProductRecord(inc); await window.DB.set("products", p.id, p); return;
-    }
-    const id=seg[1], p=(STATE.products||[]).find(x=>x.id===id), action=seg[2];
-    if(!p) throw new Error("找不到商品");
-    if(method==="PUT"){
-      const patch=Object.assign({}, body.product); delete patch.id; patch.updatedAt=nowIso();
-      await window.DB.update("products", id, patch); return;
-    }
-    if(method==="DELETE"){ await window.DB.del("products", id); return; }
-  }
-  if(head==="matches"){
-    if(method==="POST" && seg.length===1){
-      const inc=Object.assign({}, body.match); delete inc.id;
-      if(!inc.productId || !(STATE.products||[]).some(x=>x.id===inc.productId)) throw new Error("請先選擇商品");
-      const m=newMatchRecord(inc);
-      // 一次「建立並送審」：不用先建立再回頭查新 id 才能送審第二趟
-      if(body.submit){
-        if(!m.primaryVideoId) throw new Error("請先選擇主選影片");
-        m.status="submitted"; m.submittedBy=user; m.submittedAt=nowIso();
-      }
-      await window.DB.set("matches", m.id, m); return;
-    }
-    const id=seg[1], m=(STATE.matches||[]).find(x=>x.id===id), action=seg[2];
-    if(!m) throw new Error("找不到配對");
-    if(!action && method==="PUT"){
-      if(!["draft","rejected"].includes(m.status)) throw new Error("已送審或已核准的配對不可直接修改，請先建立新的配對");
-      const inc=body.match||{}, patch={status:"draft"};
-      ["productId","primaryVideoId","backupVideoId","suggestedCopyEdit","suggestedLaunchDate"].forEach(k=>{
-        if(inc[k]!==undefined) patch[k]=inc[k]; });
-      await window.DB.update("matches", id, patch); return;
-    }
-    if(action==="submit" && method==="POST"){
-      if(!m.productId || !m.primaryVideoId) throw new Error("請先選擇商品與主選影片");
-      await window.DB.update("matches", id, {status:"submitted", submittedBy:user, submittedAt:nowIso()}); return;
-    }
-    if(action==="approve" && method==="POST"){
-      const finalId=body.finalVideoId||m.primaryVideoId;
-      if(![m.primaryVideoId, m.backupVideoId].includes(finalId)) throw new Error("核准的影片必須是主選或備選影片");
-      await window.DB.update("matches", id, {status:"approved", finalVideoId:finalId,
-        reviewedBy:user, reviewedAt:nowIso(), bossNote:body.bossNote||""});
-      // 正式配對：寫回商品，1 商品＝1 影片
-      await window.DB.update("products", m.productId, {activeVideoId:finalId, updatedAt:nowIso()});
-      return;
-    }
-    if(action==="reject" && method==="POST"){
-      await window.DB.update("matches", id, {status:"rejected", reviewedBy:user, reviewedAt:nowIso(),
-        bossNote:body.bossNote||""}); return;
-    }
-    if(method==="DELETE"){
-      if(!["draft","rejected"].includes(m.status)) throw new Error("已送審或已核准的配對不可刪除");
-      await window.DB.del("matches", id); return;
-    }
-  }
+  // v175：products／matches 的路由跟著選品配對工作台一起移除。
+  // 資料庫那兩個集合沒有動（各 2 筆），只是現在沒有任何畫面走得到它們。
   throw new Error("不支援的操作");
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -924,12 +866,12 @@ function decorate(raw){
 //    所以：① 沒登記在表裡的分頁一律照畫（不是「一律不畫」）。
 //         ② users／settings 影響職位、語言、分頁本身，一律照畫，不進這張表。
 //         ③ 只登記「人多、或重繪特別貴」而且我逐一量過的那幾頁；
-//            冷門的管理頁（設定、操作紀錄、回收桶、選品配對、平台成效）
+//            冷門的管理頁（設定、操作紀錄、回收桶、平台成效）
 //            故意不登記 —— 省下來的沒幾毫秒，不值得冒表寫錯的風險。
 //
 // 這張表的來源是三份東西的**聯集**：正式資料實測、合成資料實測、逐頁讀 code。
 // 只用其中一份會漏 —— 正式快照裡根本沒有 products／matches，光看它會以為
-// 選品配對不吃那兩個集合；合成資料的影片沒有 metrics，光看它會以為平台成效
+// 合成資料的影片沒有 metrics，光看它會以為平台成效
 // 什麼都不吃。tests/smoke-v154.js 會逐一實測把關，漏寫就變紅。
 const GLOBAL_COLLS=["users","settings"];
 const TAB_DEPS={
@@ -1169,7 +1111,7 @@ function render(){
   // （人資 v152 移出去了 —— 他有「剪輯成效」要查，真的用得到。）
   // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
-  const fn = { dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, match:viewMatch, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -1455,7 +1397,8 @@ function openDay(ds){
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
   // 時間欄給彈性寬、按鈕不縮 —— 原本兩者都沒設 flex，窄螢幕上 time input 會撐爆把按鈕壓過去
   const timeField = `<div style="flex:1 1 130px;min-width:0"><label style="margin:0 0 2px">${T("上片時間","Time")}</label>
-    <input id="od_time" type="time" value="${autoTime}" style="width:100%"></div>`;
+    ${/* v177：跟編輯視窗同一套 —— 只選整點 */''}
+    <select id="od_time" style="width:100%">${hourOptions(autoTime)}</select></div>`;
   OD_DS=ds;
   const picker = `<div class="card" style="border-color:var(--accent)"><b>${T("排一支影片到這天","Schedule a video on this day")}</b>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
@@ -1883,7 +1826,9 @@ function asgCount(){
 // 交辦時附的圖。送出之前還沒有交辦 id，Storage 沒有地方可以放，
 // 所以先在瀏覽器壓好放在記憶體，等 assignTaskSel 拿到 groupId 再上傳一次。
 // 一次交辦給 N 個人＝N 筆 task，但圖只上傳一次、N 筆共用同一個網址。
-let ASG_PIC=null;
+// ASG_PIC＝剛選好、還沒上傳的圖（Blob）；ASG_PIC_URL＝已經在 Storage 上的圖（從草稿載回來的）。
+// 兩個要分開：草稿裡的圖早就傳上去了，送出時再傳一次等於同一張圖在 Storage 裡存兩份。
+let ASG_PIC=null, ASG_PIC_URL="", ASG_FROM_DRAFT="";
 async function pickAsgPic(input){
   const file=input && input.files && input.files[0];
   if(input) input.value="";
@@ -1893,58 +1838,142 @@ async function pickAsgPic(input){
   if(file.size>TASKPIC_SRC_MAX){ toast(T("這個檔案太大了（超過 12MB），確認一下是不是選到影片檔","That file is over 12MB — did you pick a video by mistake?"),true); return; }
   try{
     ASG_PIC=await coverCompress(file);
+    ASG_PIC_URL="";                       // 自己選了新的圖 → 草稿帶回來的那張就不算數了
     asgPicShow(String(file.name||""));
   }catch(e){ ASG_PIC=null; toast(coverErrMsg(e), true); }
 }
 function asgPicShow(name){
   const box=document.getElementById("asg_pic_box"); if(!box) return;
-  box.innerHTML = ASG_PIC
+  const has=!!ASG_PIC || !!ASG_PIC_URL;
+  box.innerHTML = has
     ? `<span class="pill ok" style="font-size:11px">${T("已選一張圖","1 image")}${name?"："+esc(String(name).slice(0,20)):""}</span>
        <a href="javascript:void(0)" class="muted" style="font-size:11px;margin-left:6px" onclick="asgPicClear()">${T("取消","remove")}</a>`
     : "";
 }
-function asgPicClear(){ ASG_PIC=null; asgPicShow(""); }
+function asgPicClear(){ ASG_PIC=null; ASG_PIC_URL=""; asgPicShow(""); }
 async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!names.length){ toast("請先勾選要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   // 一次發給很多人是不小心手滑全選就送出去的高風險動作，先問一聲
-  if(names.length>=6 && !confirm("要把這件事同時交辦給 "+names.length+" 個人嗎？\n\n「"+t+"」\n\n"+names.join("、"))) return;
+  if(names.length>=6 && !confirm((commTracks()?"要把這件事同時交辦給 ":"要把這則訊息同時傳給 ")+names.length+" 個人嗎？\n\n「"+t+"」\n\n"+names.join("、"))) return;
   // 同一次交辦共用一個 groupId，畫面才知道「這幾筆是同一件事」
   const gid=uid("G");
   const stamp=nowIso();
   // 附的圖只上傳一次（路徑用 groupId），N 筆共用同一個網址 ——
   // 一人上傳一次的話，同一張圖會在 Storage 裡存 N 份。
-  let picUrl="";
+  // 從草稿載回來的圖早就在 Storage 上了 → 直接用那個網址，不要再傳一次
+  let picUrl=ASG_PIC_URL||"";
   if(ASG_PIC){
     const DB=(typeof window!=="undefined")&&window.DB;
     if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再送","Not connected yet — try again in a moment"),true); return; }
     try{ picUrl=await DB.uploadTaskPic(gid, uid("P"), ASG_PIC); }
     catch(err){ toast(coverErrMsg(err), true); return; }   // 圖傳不上去就整筆不要送，不然人家看不到你說的那張圖
   }
+  // ── v178：同一個輸入框，送出來的東西依「誰在發」分兩種 ────────────
+  // 主管／人資／小主管發的 → 交辦（進對方的每日工作、要按 OK 才收）
+  // 同事之間發的           → 訊息（對方看得到、可以一直來回，但不變成他的工作）
+  // 兩種都能多選收件人、都能貼圖、都有留言串 —— 差別只有「會不會變成工作」。
+  const tracks=commTracks();
   // id 先產好再送 —— 文件裡的 id 欄位必須等於文件本身的 id（全站都靠 t.id 找人）
-  const rows=names.map(name=>({id:uid("T"), name}));
+  const rows=names.map(name=>({id:uid(tracks?"T":"P"), name}));
   // ⚠️ 走 bulkRun，不要自己寫 for + await：那個形狀會在中間某一筆失敗時
   //    默默少發給一個人，而且是一筆一筆等，人多的時候很慢。（smoke-v134 會擋）
   let r={done:0, failed:0, bad:[]};
   BULK_BUSY=true;
   try{
-    r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id,
-      {id:row.id, user:row.name, date:today, title:t, contact, report:"",
-       done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid,
-       msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}));
+    r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id, tracks
+      ? {id:row.id, user:row.name, date:today, title:t, contact, report:"",
+         done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid,
+         msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}
+      // 訊息：kind:"p2p" —— isTask() 認不得它，所以不會跑進對方的今日待辦、
+      // 也不會混進交辦成效。但它一樣有 msgs 留言串跟圖片。
+      : {id:row.id, kind:"p2p", user:row.name, from:currentUser(), date:today, title:t,
+         ack:false, ackAt:"", reply:"", replyAt:"", fromSeen:false, fromSeenAt:"",
+         createdAt:stamp, groupId:gid,
+         msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}));
   }finally{ BULK_BUSY=false; applyState(LAST_RAW); }
   if(contact && r.done) rememberContact(contact);
   if(r.done){
-    logA("交辦工作（"+r.done+" 人）", t);
+    logA(tracks?("交辦工作（"+r.done+" 人）"):("傳訊息給同事（"+r.done+" 人）"), t);
     const a=document.getElementById('asg_txt'); if(a) a.value='';
     const c=document.getElementById('asg_contact'); if(c) c.value='';
     document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
     asgPicClear();
+    // 「等發送出去才會離開草稿」—— 真的送出去了才刪，送失敗的話草稿要留著
+    if(ASG_FROM_DRAFT){ const d=ASG_FROM_DRAFT; ASG_FROM_DRAFT="";
+      window.DB.del("tasks", d).catch(()=>{}); }
   }
   // 部分失敗要講清楚是誰沒收到，不然老闆以為全都發出去了
   if(r.failed) toast("有 "+r.failed+" 人沒送出："+(r.bad||[]).map(x=>x.name).join("、")+"，請重試",true);
-  else toast(r.done>1?("已交辦給 "+r.done+" 位同仁"):("已指派給 "+names[0]));
+  else toast(tracks ? (r.done>1?("已交辦給 "+r.done+" 位同仁"):("已指派給 "+names[0]))
+                    : (r.done>1?("已傳給 "+r.done+" 位同仁"):("已傳給 "+names[0])));
+}
+// ── 草稿（v174）：先寫下來，還沒決定要發給誰 ─────────────────────
+// 老闆：「我要加一個草稿，可以先預寫訊息，讓自己可以先記錄，然後還沒有決定要發給誰
+//        （包含可以用照片的訊息），等發送出去才會離開草稿。」
+//
+// 草稿是**只有自己看得到**的東西：kind:"draft"，沒有收件人（user 留空）。
+// 用 kind 分流，isTask() 只認沒有 kind 的那些 —— 草稿不會混進交辦成效、
+// 不會出現在任何人的待辦、也不會被算成「派出去了」。
+function isDraft(t){ return !!(t && t.kind==="draft"); }
+function myDrafts(){
+  const me=currentUser();
+  return Object.values((STATE&&STATE.tasks)||{})
+    .filter(t=>isDraft(t) && String(t.by||"")===me)
+    .sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+}
+const DRAFT_MAX=60;                  // 一個人最多存幾則（草稿是暫存區，不是資料庫）
+async function saveDraft(){ refreshToday();
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  if(dbBlocked()) return;
+  const text=(val("asg_txt")||"").trim();
+  const contact=(val("asg_contact")||"").trim();
+  if(!text && !ASG_PIC && !ASG_PIC_URL){ toast(T("先寫點東西或選一張圖再存草稿","Write something or attach an image first"),true); return; }
+  const mine=myDrafts();
+  // 改的是既有草稿就不算新增一則，所以只有「真的要新增」時才擋
+  if(!ASG_FROM_DRAFT && mine.length>=DRAFT_MAX){ toast(T("草稿太多了（上限 "+DRAFT_MAX+" 則），先送出或刪掉幾則","Too many drafts"),true); return; }
+  const id=ASG_FROM_DRAFT||uid("D");
+  let pic=ASG_PIC_URL||"";
+  if(ASG_PIC){
+    const DB=(typeof window!=="undefined")&&window.DB;
+    if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再存","Not connected yet — try again in a moment"),true); return; }
+    try{ pic=await DB.uploadTaskPic(id, uid("P"), ASG_PIC); }
+    catch(err){ toast(coverErrMsg(err), true); return; }
+  }
+  const stamp=nowIso();
+  const old=taskById(id);
+  try{
+    await window.DB.set("tasks", id, {id, kind:"draft", by:currentUser(), user:"",
+      text:text.slice(0,TASK_MSG_MAX), pic, contact,
+      createdAt:(old&&old.createdAt)||stamp, updatedAt:stamp});
+    const a=document.getElementById('asg_txt'); if(a) a.value='';
+    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    asgPicClear(); ASG_FROM_DRAFT="";
+    logA(old?"改草稿":"存草稿", text.slice(0,40)||"（只有圖）");
+    toast(T("已存成草稿（只有你看得到）","Saved as a draft — only you can see it"));
+    render();
+  }catch(e){ toast(T("草稿存不起來，請稍後再試","Could not save the draft — try again"),true); }
+}
+// 把草稿載回上面那張交辦卡：這時候還沒送出去，所以草稿**還留著**
+function loadDraft(id){
+  const d=taskById(id); if(!d || !isDraft(d)) return;
+  if(String(d.by||"")!==currentUser()){ toast(T("只能用自己的草稿","That draft isn't yours"),true); return; }
+  ASG_FROM_DRAFT=id;
+  ASG_PIC=null;
+  ASG_PIC_URL=picSafe(d.pic)?String(d.pic):"";
+  render();
+  const a=document.getElementById('asg_txt'); if(a){ a.value=String(d.text||""); try{ a.focus(); }catch(e){} }
+  const c=document.getElementById('asg_contact'); if(c) c.value=String(d.contact||"");
+  asgPicShow("");
+  toast(T("草稿帶上來了，勾好人就可以送出","Draft loaded — pick who to send it to"));
+}
+function delDraft(id){
+  const d=taskById(id); if(!d) return;
+  if(String(d.by||"")!==currentUser()){ toast(T("只能刪自己的草稿","That draft isn't yours"),true); return; }
+  if(!confirm(T("刪掉這則草稿？","Delete this draft?"))) return;
+  if(ASG_FROM_DRAFT===id){ ASG_FROM_DRAFT=""; ASG_PIC_URL=""; }
+  dbDel("tasks", id, {action:"刪草稿", target:String(d.text||"").slice(0,40)||"（只有圖）"});
 }
 // 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
@@ -2642,6 +2671,154 @@ function p2pFold(){
   return fold(T("傳訊息給同事","Message a colleague"), nBack||null, body, false);
 }
 // ── 同事之間的訊息（主管／管理員）：工作上的溝通要追蹤得到 ──
+// ===================================================================
+// 溝通（v178）：**一套**訊息，取代原本四套
+//
+// 老闆：「我覺的要切兩塊，溝通（雙向都能看到和對話，就是溝通用的，老闆和 HR、
+//        主管交辨的才會後需要剛才加的完成和封存）和看版…第三個區塊是「每日工作」」
+//        「合成一套，都能雙向，都能傳照片，整合成一樣，雙向，差別是 regina hr
+//         指派的問題或工作，會跳到今日的工作交辨（要有小圖 ok）然後如果有多次的
+//         雙向對話回覆，點擊再打開就好」
+//
+// 為什麼非整合不可（正式資料 2026-09-09）：
+//     交辦（別人派的）    70    有留言串、能貼圖、要完成、要封存
+//     同事訊息 p2p         3    一來一回就結束，不能貼圖，沒有留言串
+//     找主管／人資說       1    只能回一次
+//     HR 通知              0    單向，只能按「收到」
+// 四套各做一半，所以三套幾乎沒人用。合成一套之後，能做的事一模一樣：
+// 都能多選收件人、都能貼圖、都能一直來回、網址都會變成連結。
+//
+// **唯一的差別**：誰發的。
+//   ・主管／人資／小主管發的 → 是「交辦」，會跳進對方的每日工作，而且要按 OK 才收
+//   ・同事之間發的           → 就是訊息，不會變成對方的工作
+// 這條規則寫在 commTracks() 一個地方，畫面上也直接寫給使用者看，不要讓人猜。
+// ===================================================================
+// 我發出去的東西會不會變成對方的工作？
+const MGMT_ASSIGN_ROLES=["boss","manager","hr"];
+function commTracks(){
+  if(VIEW_AS) return false;
+  // ⚠️ 只有主管／經理人／人資。**小主管不算** —— 老闆更正：
+  //    「他只能是剪輯部的小主管，只能指派影片」。指派影片跟「派事情給人做」
+  //    是兩回事：前者是排剪輯工作，後者會變成對方的待辦、還要追蹤完成。
+  return MGMT_ASSIGN_ROLES.includes(currentRole());
+}
+// 一則「溝通」＝交辦、同事訊息、找主管說一件事、HR 通知，四種都算
+function isComm(t){
+  if(!t) return false;
+  if(isP2P(t)||isMsg(t)||isNotice(t)) return true;
+  return isTask(t) && !!String(t.assignedBy||"").trim();   // 自己排給自己的工作不是溝通
+}
+// 這一則跟我有關嗎（我發的、或發給我的）
+function commMine(t){
+  const me=currentUser();
+  return String(t.user||"")===me || String(t.from||"")===me || String(t.assignedBy||"")===me;
+}
+function commFrom(t){ return String(t.from || t.assignedBy || t.user || ""); }
+function commTo(t){ return String(t.user||""); }
+// 對方是誰（畫面上要顯示的那個人）
+function commPeer(t){ const me=currentUser(); return commFrom(t)===me ? commTo(t) : commFrom(t); }
+// 最後一次有動靜是什麼時候 —— 排序用，新的在最上面
+function commLastAt(t){
+  const ms=taskMsgs(t);
+  const last=ms.length?String(ms[ms.length-1].at||""):"";
+  return [last, String(t.replyAt||""), String(t.ackAt||""), String(t.createdAt||""), String(t.date||"")]
+    .filter(Boolean).sort().pop() || "";
+}
+// 這一則有沒有等我做的事（用來排序、標紅點）
+function commWaitingMe(t){
+  const me=currentUser();
+  if(commTo(t)===me && !t.ack) return true;                         // 我還沒按收到
+  if(isTracked(t) && commTo(t)===me && !t.done) return true;        // 派給我、還沒做完
+  if(commFrom(t)===me && isTracked(t) && t.done && !taskArchived(t)) return true;  // 對方做完了，等我按 OK
+  return false;
+}
+const isTracked=(t)=>isTask(t) && !!String(t.assignedBy||"").trim();
+// 收合時只顯示前 N 個字（老闆指定 12 字），點開才看全文
+const COMM_SNIP=12;
+function commSnip(s){
+  const t=String(s||"").replace(/\s+/g," ").trim();
+  return t.length>COMM_SNIP ? t.slice(0,COMM_SNIP)+"…" : (t||T("（沒有內容）","(empty)"));
+}
+function commList(){
+  return Object.values((STATE&&STATE.tasks)||{})
+    .filter(t=>isComm(t) && commMine(t))
+    .sort((a,b)=>{
+      const aw=commWaitingMe(a), bw=commWaitingMe(b);
+      if(aw!==bw) return aw?-1:1;                                   // 等我做的排最前面
+      return String(commLastAt(b)).localeCompare(String(commLastAt(a)));   // 其餘照最後動靜
+    });
+}
+// 一則的標題列（收合時看到的就只有這一行）
+function commRow(t){
+  const me=currentUser();
+  const out=commFrom(t)===me;
+  const peer=commPeer(t);
+  const c=personColor(peer||"");
+  const tracked=isTracked(t);
+  const arch=taskArchived(t);
+  const n=taskMsgs(t).length;
+  const wait=commWaitingMe(t);
+  const st = !tracked ? ""
+    : arch ? `<span class="pill" style="font-size:10px">${T("已封存","Archived")}</span>`
+    : t.done ? `<span class="pill ok" style="font-size:10px">${T("回報完成","Done")}</span>`
+    : !t.ack ? `<span class="pill em" style="font-size:10px">${T("還沒看","Unopened")}</span>`
+    : `<span class="pill wa" style="font-size:10px">${T("進行中","In progress")}</span>`;
+  // 小小的 OK（老闆指定「要有小圖ok」）：只有派的人自己看得到、按得動
+  const okBtn = (tracked && out && canArchiveTask(t))
+    ? (arch ? `<button class="btn sec sm commok" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',false)"
+                 title="${T("放回還沒收的清單","Reopen")}">↩</button>`
+            : `<button class="btn sm commok" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',true)"
+                 title="${T("這件事我認可了，收起來","Archive — I'm happy with it")}">OK</button>`)
+    : "";
+  const head=`<div class="commhead">
+      <span class="commdir" title="${out?T("我發的","Sent"):T("收到的","Received")}">${out?"↗":"↘"}</span>
+      ${personChip(peer||T("（全體）","(everyone)"), "", null)}
+      <span class="commtxt">${esc(commSnip(t.title))}</span>
+      ${st}${n?`<span class="pill" style="font-size:10px">💬 ${n}</span>`:""}
+      ${wait?`<span class="commdot" title="${T("等你處理","Needs you")}"></span>`:""}
+      <span class="muted commwhen">${esc(String(commLastAt(t)).slice(5,16).replace("T"," "))}</span>
+      ${okBtn}
+    </div>`;
+  const body=`<div class="commbody">
+      <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap">${linkify(t.title)}</div>
+      ${tracked&&(t.report||"").trim()?`<div class="muted" style="font-size:12px;margin-top:4px">${T("處理狀況","Progress")}：${linkify(t.report)}</div>`:""}
+      ${(commTo(t)===me && tracked && !t.ack)
+        ? `<div style="margin-top:6px"><button class="btn sm" onclick="ackTask('${esc(jsEsc(t.id))}')">${T("收到","Got it")}</button></div>` : ""}
+      ${taskThread(t, true)}
+    </div>`;
+  return `<details class="commrow${arch?" arch":""}"><summary>${head}</summary>${body}</details>`;
+}
+let COMM_TAB="open";                 // open＝進行中｜arch＝已收起｜all
+function setCommTab(v){ COMM_TAB=v; render(); }
+function viewChat(){
+  const all=commList();
+  const open=all.filter(t=>!taskArchived(t));
+  const arch=all.filter(taskArchived);
+  const list=COMM_TAB==="arch"?arch:COMM_TAB==="all"?all:open;
+  const wait=open.filter(commWaitingMe).length;
+  const tab=(k,label,n)=>`<button class="vtab ${COMM_TAB===k?'on':''}" onclick="setCommTab('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  const tracks=commTracks();
+  return `<h2>${T("溝通","Messages")}</h2>
+  ${wait?`<div class="focusbar"><div><span class="fn warn">${wait}</span><span class="fl">${T("等你處理","Needs you")}</span></div>
+    <div><span class="fn">${open.length}</span><span class="fl">${T("進行中","Open")}</span></div>
+    <div><span class="fn">${arch.length}</span><span class="fl">${T("已收起","Archived")}</span></div></div>`:""}
+  ${dashAssignTaskCard({title: tracks?T("交辦一件事（會進到對方的今日工作）","Assign work (lands in their daily work)")
+                                :T("傳訊息給同事","Message a colleague"),
+                        hint: tracks?T("你是主管／人資，所以你發的會變成對方的工作，做完你要按 OK 才收起來。",
+                                       "You're a manager — what you send becomes their work, and only closes when you press OK.")
+                                   :T("同事之間的訊息：對方看得到、可以一直來回，但不會變成他的工作。",
+                                       "A colleague message — they can reply, but it won't become a task for them.")})}
+  <div class="card">
+    <b style="font-size:16px">${T("我的對話","My conversations")}</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">${T(
+      "我發的和收到的都在這裡。收合時只看得到前 "+COMM_SNIP+" 個字 —— 點一下展開看全文、看圖、繼續回。",
+      "Everything you sent and received. Tap a line to open the full thread.")}</div>
+    <div class="vtabs" style="margin-top:8px">${tab("open",T("進行中","Open"),open.length)}${tab("arch",T("已收起","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
+    <div style="margin-top:6px">${list.map(commRow).join("")
+      ||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>
+  </div>
+  ${asgDraftFold()}`;
+}
 function p2pWatchCard(){
   if(!["boss","manager"].includes(currentRole())) return "";
   const list=allP2P().sort(msgSort);
@@ -2721,16 +2898,18 @@ function staffRoleGroups(roles){
   const rs = roles || ["editor","intl"];
   const pool = staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor")));
   const isEd=(u)=>(u.role||"editor")==="editor";
+  // v174：這份分組現在也出現在員工自己的畫面上（交辦卡不再是主管專用），
+  // 海外同仁看的是英文介面 —— 標題寫死中文會直接漏出去，所以一律走 T()。
   const groups=[
-    ["剪輯",     isEd],
-    ["行銷",     u=>u.role==="mkt"],
-    ["選品行銷", u=>u.role==="pick"],
-    ["客服",     u=>u.role==="svc"],
-    ["出貨",     u=>u.role==="ship"],
-    ["員工",     u=>u.role==="cs"],
-    ["巴基斯坦", u=>u.role==="intl"],
-    ["經理人",   u=>u.role==="manager"],
-    ["人資",     u=>u.role==="hr"],
+    [T("剪輯","Editing"),         isEd],
+    [T("行銷","Marketing"),       u=>u.role==="mkt"],
+    [T("選品行銷","Curation"),    u=>u.role==="pick"],
+    [T("客服","Customer service"),u=>u.role==="svc"],
+    [T("出貨","Shipping"),        u=>u.role==="ship"],
+    [T("員工","Staff"),           u=>u.role==="cs"],
+    [T("巴基斯坦","Pakistan"),    u=>u.role==="intl"],
+    [T("經理人","Manager"),       u=>u.role==="manager"],
+    [T("人資","HR"),              u=>u.role==="hr"],
   ];
   const used=new Set();
   return groups.map(([label,test])=>{
@@ -2855,6 +3034,9 @@ function viewWorkCS(me){
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
+  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
+  ${dashAssignTrackCard()}
   ${fold("之後要做", nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
@@ -2960,6 +3142,9 @@ function viewWork(){
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
+  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
+  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
+  ${dashAssignTrackCard()}
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
@@ -3488,7 +3673,9 @@ function viewAttend(){
       </span></div>
     ${(()=>{ const ns=staff.filter(u=>!attendStartOf(u.name));
       return ns.length?`<div class="muted" style="font-size:12px;margin-top:6px">尚未起算 ${ns.length} 人（${ns.map(u=>esc(u.name)).join("、")}）—— 他們設好自己的密碼之後才開始計算遲到早退。</div>`:""; })()}
-    <table class="responsive" style="margin-top:10px">
+    ${/* v176：手機上一列＝一張小卡，26 個人就是 26 張，這張卡原本 7312px（8.7 個螢幕）。
+           上面那排藥丸（已到／遲到／未打卡）就是「一眼要看的」，逐人明細改成點開再看。 */''}
+    ${fold("逐人明細", todayRows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th>${canFixAttend()?"<th>補登</th>":""}</tr></thead>
       <tbody>${todayRows.map(({u,sh})=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
         const note=String((sh&&sh.issueNote)||"").trim();
@@ -3515,7 +3702,7 @@ function viewAttend(){
           <td data-label="狀況">${flags||state}</td>
           <td data-label="裝置">${a.in?`<span class="muted" style="font-size:11px">${esc(a.dev||"—")}${a.devUA?"・"+esc(a.devUA):""}</span>`:'<span class="muted">—</span>'}</td>
           ${canFixAttend()?`<td data-label="補登">${attFixBtn(u.name, today)}</td>`:""}
-        </tr>`; }).join("")}</tbody></table>
+        </tr>`; }).join("")}</tbody></table>`)}
   </div>`;
   // ── 同一台裝置幫多人打卡 ──
   const byDev={};
@@ -3543,14 +3730,16 @@ function viewAttend(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">出勤異常與說明 <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1}</span></b>
       <span class="pill ${noNote.length?'em':'ok'}">${noNote.length?`${noNote.length} 筆還沒說明`:"都說明了"}</span></div>
-    <table class="responsive" style="margin-top:10px">
+    ${/* v176：這張卡原本 17326px＝20 個螢幕（101 列，手機上每列一張小卡）。
+           要看的結論在上面那顆藥丸，逐筆內容改成點開再看。 */''}
+    ${fold("逐筆異常", issueRows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>日期</th><th>同仁</th><th>異常</th><th>本人說明</th></tr></thead>
       <tbody>${issueRows.map(s=>`<tr>
         <td data-label="日期">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）</td>
         <td data-label="同仁"><b>${esc(s.user)}</b></td>
         <td data-label="異常">${esc(attIssues(s).join("、"))}</td>
         <td data-label="本人說明">${String(s.issueNote||"").trim()?esc(s.issueNote):'<span class="pill em" style="font-size:10px">尚未說明</span>'}</td>
-      </tr>`).join("")}</tbody></table>
+      </tr>`).join("")}</tbody></table>`)}
   </div>`:"";
   // ── 月報表 ──
   const rows=staff.map(u=>({u, s:attSum(u.name, ym)}));
@@ -3562,7 +3751,7 @@ function viewAttend(){
         <b style="font-size:14px">${y} 年 ${m+1} 月</b>
         <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="attMonthMove(1)">›</button>
       </span></div>
-    <table class="responsive" style="margin-top:10px">
+    ${fold("逐人月統計", rows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>出勤天數</th><th>總工時</th><th>遲到</th><th>早退</th><th>沒打下班</th></tr></thead>
       <tbody>${rows.map(({u,s})=>{ const flex=workHoursOf(u.name).flex; return `<tr>
         <td data-label="同仁"><b>${esc(u.name)}</b>${shiftTag(u.name)}</td>
@@ -3571,16 +3760,16 @@ function viewAttend(){
         <td data-label="遲到" class="${!flex&&s.late?'':'muted'}">${flex?'—':(s.late?`${s.late} 次・${s.lateMin} 分`:'0')}</td>
         <td data-label="早退" class="${!flex&&s.early?'':'muted'}">${flex?'—':(s.early||0)}</td>
         <td data-label="沒打下班" class="${s.noOut||s.auto?'':'muted'}">${s.noOut?`${s.noOut} 天未結`:(s.auto?`${s.auto} 天系統補`:'0')}</td>
-      </tr>`; }).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>
+      </tr>`; }).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>`)}
     <div class="muted" style="font-size:12px;margin-top:8px">遲到＝超過上班時間 ${wh.grace} 分鐘寬限；「系統補」＝當天忘了打下班、隔天由系統以下班時間補登。<br>
       每個人從「自己設定密碼」那天起才開始計算遲到早退，之前的打卡只留著參考。變動工時的人只算工時，遲到早退顯示「—」。</div>
   </div>`;
   // ── 個人明細 ──
   const detail=staff.map(u=>{
     if(!attRows(u.name, ym).length) return "";
-    return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>${shiftTag(u.name)}
-      ${attDetailTable(u.name, ym)}
-    </div>`; }).join("");
+    // v176：一個人的明細在手機上就是 2100px，5 個人就 10 個螢幕。改成一人一折。
+    return `<div class="card">${fold(u.name+" "+y+"/"+(m+1)+" 明細", attRows(u.name, ym).length,
+      attDetailTable(u.name, ym))}</div>`; }).join("");
   return `<h2>出勤</h2>${myAttendCard()}${attFixAnyCard()}${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
     <h3 style="margin:20px 0 10px">個人明細</h3>${detail||'<div class="card muted">這個月還沒有打卡紀錄</div>'}`;
 }
@@ -3931,85 +4120,181 @@ function dashViewAsCard(){
 //
 // 這張卡刻意**不看日期**：未完成的一律列出來（拖幾天都跑不掉），
 // 已完成的照完成時間由新到舊，看得到是誰、什麼時候做完的。
-let ASG_TRACK="open";                    // open｜done｜all
+// ── 交辦追蹤（v174 改成「留在發訊方，按 OK 才封存」）───────────────
+// 老闆：「就是看誰發出去的（包含員工）對方有回或是沒有回，都會留在發訊方，
+//        直到發訊方按下『OK』才會封存起來，不然可以一直互動，互傳。」
+//
+// 兩個關鍵字：
+//   ① **發訊方**：這張卡問的是「我派出去的」，不是「派給我的」。誰派的就留在誰那裡。
+//      所以它不再是主管專用 —— 員工派給員工的，也留在那個員工自己的畫面上。
+//   ② **按 OK 才收**：收掉的條件不是「對方打勾完成」，是**發訊的人自己認可**。
+//      對方說做完了但做得不對，一樣留著；沒按 OK 就可以一直在留言串裡來回。
+let ASG_TRACK="open";                    // open＝還沒收（未封存）｜arch＝已封存｜all
+let ASG_SCOPE="mine";                    // mine＝我派的｜all＝全公司（只有主管切得動）
 function setAsgTrack(v){ ASG_TRACK=v; render(); }
-// 我派出去的交辦。主管看得到全部（含 Regina 派的），經理人只看自己派的 ——
-// 老闆要的是「整間公司交辦了什麼、做完沒」，經理人要的是「我派的那些」。
+function setAsgScope(v){ ASG_SCOPE=(v==="all")?"all":"mine"; render(); }
+const canSeeAllAssigned=()=>!VIEW_AS && currentRole()==="boss";
+// 我派出去的交辦。主管可以切成「全公司」（含 Regina 與同事之間派的）——
+// 老闆要看得到整間公司交辦了什麼，但預設仍然是「我派的」，不然自己派的會被淹掉。
 function myAssignedOut(){
-  const me=currentUser(), boss=currentRole()==="boss";
+  const me=currentUser();
+  const all=canSeeAllAssigned() && ASG_SCOPE==="all";
   return Object.values((STATE&&STATE.tasks)||{})
-    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (boss || t.assignedBy===me));
+    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (all || t.assignedBy===me));
+}
+const taskArchived=(t)=>!!(t && t.archived);
+// 誰可以按 OK：派這件事的人本人。主管另外有一把萬能鑰匙（他要能清掉離職同事留下的）
+function canArchiveTask(t){
+  if(VIEW_AS || !t) return false;
+  return String(t.assignedBy||"")===currentUser() || currentRole()==="boss";
+}
+function archiveTask(id, on){
+  const t=taskById(id);
+  if(!canArchiveTask(t)){ toast(T("只有交辦的人可以收起來","Only the person who assigned it can archive it"),true); return; }
+  dbUpdate("tasks", id,
+    on ? {archived:true, archivedAt:nowIso(), archivedBy:currentUser()}
+       : {archived:false, archivedAt:"", archivedBy:""},
+    {action: on?"交辦封存（按 OK）":"交辦取消封存", target:(t&&t.title)||id});
 }
 function asgTrackRow(t){
-  const st = t.done ? `<span class="pill ok" style="font-size:10px">完成 ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
-           : !t.ack ? `<span class="pill em" style="font-size:10px">還沒看</span>`
-           : `<span class="pill wa" style="font-size:10px">進行中</span>`;
-  // 拖了幾天：只對還沒做完的算，做完的講天數沒有意義
-  const late = (!t.done && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
+  const arch=taskArchived(t);
+  const st = t.done ? `<span class="pill ok" style="font-size:10px">${T("對方回報完成","Marked done")} ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
+           : !t.ack ? `<span class="pill em" style="font-size:10px">${T("還沒看","Unopened")}</span>`
+           : `<span class="pill wa" style="font-size:10px">${T("進行中","In progress")}</span>`;
+  // 拖了幾天：只對還沒做完、也還沒收起來的算。做完的、封存的講天數沒有意義
+  const late = (!t.done && !arch && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
   const mates=taskMates(t);
-  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+  const okBtn = canArchiveTask(t)
+    ? (arch ? `<button class="btn sec sm" style="flex:none;padding:3px 10px;font-size:11px"
+                 onclick="archiveTask('${esc(jsEsc(t.id))}',false)"
+                 title="${T("放回還沒收的清單","Put it back on the open list")}">${T("重新打開","Reopen")}</button>`
+            : `<button class="btn sm" style="flex:none;padding:3px 14px;font-size:12px;font-weight:800"
+                 onclick="archiveTask('${esc(jsEsc(t.id))}',true)"
+                 title="${T("這件事我認可了，收起來","I'm happy with this — archive it")}">OK</button>`)
+    : "";
+  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)${arch?';opacity:.62':''}">
     <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
       <span class="muted" style="font-size:11px;flex:none">${esc(String(t.date||"").slice(5))}</span>
       ${personChip(String(t.user||""), "", mates.length>1?groupColors(mates):null)}
       ${st}
-      ${late>0?`<span class="pill em" style="font-size:10px">拖了 ${late} 天</span>`:''}
-      ${(currentRole()==="boss"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} 派的</span>`:''}
+      ${late>0?`<span class="pill em" style="font-size:10px">${T("拖了 "+late+" 天", late+"d late")}</span>`:''}
+      ${arch?`<span class="pill" style="font-size:10px">${T("已封存","Archived")} ${String(t.archivedAt||"").slice(5,10)}</span>`:''}
+      ${(ASG_SCOPE==="all"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} ${T("派的","assigned")}</span>`:''}
+      <span style="flex:1"></span>${okBtn}
     </div>
     <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere">${linkify(t.title)}</div>
     ${(t.report||"").trim()
-      ? `<div class="muted" style="font-size:12px;margin-top:2px">處理狀況：${linkify(t.report)}</div>`
-      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">還沒回報</div>`)}
-    ${fold("留言與圖片", taskMsgs(t).length||null, taskThread(t, true))}
+      ? `<div class="muted" style="font-size:12px;margin-top:2px">${T("處理狀況","Progress")}：${linkify(t.report)}</div>`
+      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">${T("還沒回報","No progress note yet")}</div>`)}
+    ${fold(T("留言與圖片","Messages & images"), taskMsgs(t).length||null, taskThread(t, true))}
   </div>`;
 }
-function dashAssignTrackCard(){
-  if(!["boss","manager"].includes(currentRole())) return "";
-  const all=myAssignedOut();
-  const open=all.filter(t=>!t.done)
-    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));      // 拖最久的排最前面
-  const done=all.filter(t=>t.done)
-    .sort((a,b)=>String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||"")));
-  const list = ASG_TRACK==="open" ? open : ASG_TRACK==="done" ? done : open.concat(done);
-  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
-  const body=`
-    <div class="muted" style="font-size:12px;margin-top:4px">不分日期，全部列在這裡 —— 隔天不會消失。</div>
-    <div class="vtabs" style="margin-top:8px">${tab("open","還沒做完",open.length)}${tab("done","已完成",done.length)}${tab("all","全部",all.length)}</div>
-    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
-      ${list.map(asgTrackRow).join("")||'<p class="muted" style="font-size:13px;margin:10px 0 0">這一類目前沒有東西</p>'}</div>`;
-  // 沒做完的件數放在標題上 —— 收起來的時候也看得到還欠幾件
-  return fold("📋 交辦追蹤（回看做完沒）", open.length||null, body, ASG_TRACK!=="open");
+// 草稿那一折（就在交辦追蹤裡面）：只有自己看得到
+function asgDraftFold(){
+  const list=myDrafts();
+  const rows=list.map(d=>{
+    const pic=picSafe(d.pic)?`<a href="${esc(d.pic)}" target="_blank" rel="noopener noreferrer"><img class="tmsg-pic" src="${esc(d.pic)}" alt="${T("草稿圖片","Draft image")}" loading="lazy"></a>`:"";
+    const on=ASG_FROM_DRAFT===d.id;
+    return `<div style="padding:9px 0;border-bottom:1px solid var(--line)${on?';background:var(--amberbg)':''}">
+      <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
+        <span class="muted" style="font-size:11px">${esc(String(d.updatedAt||d.createdAt||"").slice(5,16).replace("T"," "))}</span>
+        ${on?`<span class="pill wa" style="font-size:10px">${T("正在上面編輯","Loaded above")}</span>`:''}
+        <span style="flex:1"></span>
+        <button class="btn sm" style="flex:none;padding:3px 12px;font-size:11px" onclick="loadDraft('${esc(jsEsc(d.id))}')">${T("拿上去用","Use it")}</button>
+        <button class="btn sec sm" style="flex:none;padding:3px 10px;font-size:11px" onclick="delDraft('${esc(jsEsc(d.id))}')">${T("刪除","Delete")}</button>
+      </div>
+      <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere;white-space:pre-wrap">${linkify(d.text||"")}</div>${pic}
+    </div>`;
+  }).join("");
+  const body=`<div class="muted" style="font-size:12px;margin-top:4px">${T(
+    "先寫下來、還沒決定要發給誰的都放這裡。只有你看得到；按「拿上去用」帶回上面那張卡，勾好人送出去它才會離開草稿。",
+    "Things you've written but haven't decided who to send to. Only you can see these.")}</div>
+    <div style="margin-top:4px">${rows||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("還沒有草稿","No drafts yet")}</p>`}</div>`;
+  return fold(T("📝 我的草稿","📝 My drafts"), list.length||null, body, false);
 }
-// 儀表板①：指派交辦給員工
-function dashAssignTaskCard(){
+function dashAssignTrackCard(){
+  if(VIEW_AS) return "";
+  const all=myAssignedOut();
+  // 「還沒收」＝沒封存的，不管對方做完沒 —— 收掉的條件是我按 OK，不是他打勾
+  const open=all.filter(t=>!taskArchived(t))
+    .sort((a,b)=>{
+      // 沒做完的排前面（拖最久的最上面），對方回報完成的排後面（等我按 OK）
+      if(!!a.done!==!!b.done) return a.done?1:-1;
+      return a.done ? String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||""))
+                    : String(a.date||"").localeCompare(String(b.date||""));
+    });
+  const arch=all.filter(taskArchived)
+    .sort((a,b)=>String(b.archivedAt||b.date||"").localeCompare(String(a.archivedAt||a.date||"")));
+  const list = ASG_TRACK==="arch" ? arch : ASG_TRACK==="all" ? open.concat(arch) : open;
+  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  const scope=canSeeAllAssigned()
+    ? `<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn ${ASG_SCOPE==="mine"?"":"sec"} sm" style="padding:3px 12px;font-size:11px" onclick="setAsgScope('mine')">${T("我派的","Mine")}</button>
+        <button class="btn ${ASG_SCOPE==="all"?"":"sec"} sm" style="padding:3px 12px;font-size:11px" onclick="setAsgScope('all')">${T("全公司","Everyone's")}</button>
+       </div>` : "";
+  const body=`
+    <div class="muted" style="font-size:12px;margin-top:4px">${T(
+      "你派出去的都留在這裡，不分日期、隔天不會消失。對方有沒有回都一樣 —— 你按下「OK」才會收起來。",
+      "Everything you assigned stays here regardless of date. It only goes away when you press OK.")}</div>
+    ${scope}
+    <div class="vtabs" style="margin-top:8px">${tab("open",T("還沒收","Open"),open.length)}${tab("arch",T("已封存","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
+    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
+      ${list.map(asgTrackRow).join("")||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>
+    ${asgDraftFold()}`;
+  // 還沒收的件數放在標題上 —— 收起來的時候也看得到還欠幾件
+  return fold(T("📋 交辦追蹤（我派出去的）","📋 What I assigned"), open.length||null, body, ASG_TRACK!=="open");
+}
+// 交辦卡（v174 起全公司共用一張）。
+// 老闆問「不然他們平日怎麼互動?」—— 以前這張卡只有儀表板有，而儀表板只有
+// 主管跟經理人看得到，所以同事之間根本派不了事情給對方。現在人人都有，
+// 卡片本身完全一樣（多選、附圖、網址自動變連結、留言串），差別只有標題那一行。
+//
+// ⚠️ 收件清單要拿掉自己 —— 自己排給自己的工作走「＋新增工作」那條，
+//    從交辦進來會變成「我交辦給我自己」，交辦成效跟追蹤都會多一筆假的。
+function dashAssignTaskCard(opts){
+  const o=opts||{};
+  const title=o.title || T("① 指派交辦給員工","① Assign work");
   return `<div class="card" style="border-color:var(--gold)">
     <div class="row" style="align-items:baseline;gap:8px">
-      <b style="font-size:16px">① 指派交辦給員工</b>
+      <b style="font-size:16px">${esc(title)}</b>
     </div>
+    ${o.hint?`<div class="muted" style="font-size:12px;margin-top:4px">${esc(o.hint)}</div>`:""}
     <div style="margin-top:12px">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
-        <label style="margin:0">選擇員工（可複選）</label>
-        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">全選</button>
+        <label style="margin:0">${T("選擇員工（可複選）","Pick people (multiple)")}</label>
+        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
       </div>
       ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
     </div>
-    <div style="margin-top:10px"><label>交辦內容</label>
-      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()">
+    <div style="margin-top:10px"><label>${T("交辦內容","What needs doing")}</label>
+      <input id="asg_txt" placeholder="${T("要交辦的工作內容…（可以直接貼網址）","What needs doing… (URLs become links)")}" onkeydown="if(enterKey(event))assignTaskSel()">
       <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
         <label class="btn sec sm" id="asg_pic_btn" style="flex:none;padding:5px 10px;font-size:12px;cursor:pointer;margin:0"
-          title="附一張圖（會自動壓縮）">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
+          title="${T("附一張圖（會自動壓縮）","Attach an image (auto-compressed)")}">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
           style="display:none" onchange="pickAsgPic(this)"></label>
         <span id="asg_pic_box"></span>
       </div></div>
-    <div style="margin-top:10px"><label>對接窗口（選填）</label>
-      <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
-    <button class="btn" id="asg_go" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
+    <div style="margin-top:10px"><label>${T("對接窗口（選填）","Contact person (optional)")}</label>
+      <input id="asg_contact" list="asg_contact_dl" placeholder="${T("選用過的窗口或輸入新的（沒有可留空）","Pick or type a contact (optional)")}" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出交辦","Send")}</button>
+      ${/* 還沒決定要發給誰的，先存起來 —— 存草稿不需要勾任何人 */''}
+      <button class="btn sec" id="asg_draft" style="flex:1" onclick="saveDraft()"
+        title="${T("還沒決定要發給誰？先存下來，只有你看得到","Not sure who to send it to yet? Save it — only you can see it")}">${
+        ASG_FROM_DRAFT?T("更新草稿","Update draft"):T("存成草稿","Save draft")}</button>
+    </div>
   </div>`;
 }
 // 交辦對象的勾選清單。用勾選盒不用 <select multiple>：
 // 手機上的多選下拉要長按、看不到已選了誰，老闆主要是在手機上交辦的。
 function asgPickerHTML(roles){
-  const groups=staffRoleGroups(roles);       // 跟交辦下拉同一套分組，不要自己再分一次
-  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">還沒有可以交辦的同仁</p>`;
+  // 自己不出現在名單上 —— 「我交辦給我自己」在追蹤與交辦成效裡都是一筆假的。
+  // 要記自己的事走「＋新增工作」那條。（主管沒有 users 文件，本來就不在名單裡）
+  const me=currentUser();
+  const groups=staffRoleGroups(roles)        // 跟交辦下拉同一套分組，不要自己再分一次
+    .map(g=>({label:g.label, people:g.people.filter(u=>u.name!==me)}))
+    .filter(g=>g.people.length);
+  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">${T("還沒有可以交辦的同仁","No colleagues to assign to yet")}</p>`;
   return `<div class="asgbox">${groups.map(g=>`
     <div class="asggrp"><div class="asggrp-t">${esc(g.label)}</div>
       <div class="asggrp-p">${g.people.map(u=>{
@@ -4249,19 +4534,28 @@ function teamBarCard(months, ym){
   </div>`;
 }
 // 一件交辦的顯示：誰交辦的 → 收到沒 → 做完沒 → 處理結果
+//
+// v178（老闆指定）：看板上**每一則只顯示 12 個字，點擊再展開**。
+// 團隊看板是「掃過去看誰卡住了」的地方，不是逐字讀內容的地方 ——
+// 攤開全文會讓 28 個人的卡片變成一面字牆（實測 19.9 個螢幕）。
+// 收合時保留的是「狀態」跟「誰交辦的」：那才是掃的時候要判斷的東西。
 function teamTaskRow(t){
   const st=t.done?`<span class="pill ok" style="font-size:10px">${T("完成","Done")}</span>`
     :(t.assignedBy&&!t.ack)?`<span class="pill em" style="font-size:10px">${T("還沒接收","Not seen")}</span>`
     :`<span class="pill wa" style="font-size:10px">${T("處理中","In progress")}</span>`;
   const from=t.assignedBy?`<span class="muted" style="font-size:11px">${T("主管交辦","Assigned")}</span>`
     :`<span class="muted" style="font-size:11px">${T("自己安排","self")}</span>`;
-  return `<div style="padding:7px 0;border-bottom:1px solid var(--line)">
-    <div style="display:flex;gap:6px;align-items:center;justify-content:space-between">
-      <span style="font-size:13px;font-weight:600;min-width:0">${esc(t.title)}</span><span style="flex:none">${st}</span></div>
-    <div style="margin-top:2px">${from}${t.contact?` <span class="muted" style="font-size:11px">・${T("窗口","contact")} ${esc(t.contact)}</span>`:''}</div>
-    ${(t.report||"").trim()?`<div class="muted" style="font-size:12px;margin-top:2px">${T("處理狀況","Update")}：${esc(t.report)}</div>`
+  const full=String(t.title||"");
+  const short=commSnip(full);
+  const body=`<div class="commbody">
+    <div style="font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap">${linkify(full)}</div>
+    <div style="margin-top:3px">${from}${t.contact?` <span class="muted" style="font-size:11px">・${T("窗口","contact")} ${esc(t.contact)}</span>`:''}</div>
+    ${(t.report||"").trim()?`<div class="muted" style="font-size:12px;margin-top:2px">${T("處理狀況","Update")}：${linkify(t.report)}</div>`
       :(t.done?'':`<div class="muted" style="font-size:12px;margin-top:2px">（${T("還沒回報","no update yet")}）</div>`)}
   </div>`;
+  return `<details class="commrow"><summary><div class="commhead">
+      <span class="commtxt" style="font-weight:600">${esc(short)}</span>
+      <span style="flex:none">${st}</span></div></summary>${body}</details>`;
 }
 // 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
 function teamDayCard(u, allTasks){
@@ -5055,8 +5349,30 @@ function unmarkShot(id){ const v=vid(id)||{};
 function canAssignWork(){
   if(VIEW_AS) return false;
   if(["boss","manager"].includes(currentRole())) return true;
+  return isSubLead();
+}
+// ── 小主管（v178）─────────────────────────────────────────────────
+// 老闆：「regina 還有鴻儒，干脆把鴻儒變成小主管，但他不用看到儀表版」
+//
+// 不新增職位 —— 用他早就打勾的 canAssign 當開關就好。多一個職位要同時維護
+// ROLE_TABS、ROLE_LABEL、STAFF_GROUPS、登入頁分組、交辦名單…（v138 那次就是
+// 漏了其中幾處，選品行銷的人整個從登入頁消失）。
+//
+// 老闆更正（v179）：「他只能是**剪輯部的**小主管，**只能指派影片**，看不到主管看板」
+// 所以小主管拿到的就只有一件事：**把毛片指派給剪輯**。
+//   ・他派出去的訊息**不會**變成對方的工作（那是主管才有的，見 commTracks）
+//   ・他**看不到**主管版看板
+//   ・當然也沒有儀表板、出勤、設定、操作紀錄、回收桶
+function isSubLead(){
+  if(VIEW_AS) return false;
+  if(["boss","manager"].includes(currentRole())) return false;   // 主管本來就是主管，不叫小主管
   const u=(STATE.users||[]).find(x=>x && x.name===currentUser());
   return !!(u && u.canAssign);
+}
+// 誰看得到「主管版」的團隊看板（多出：交辦追蹤全隊、備片存量、成效）
+// ⚠️ 小主管不在裡面 —— 他只管指派影片，不看管理面的東西。
+function seesLeadBoard(){
+  return !VIEW_AS && ["boss","manager","hr"].includes(currentRole());
 }
 function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
 const isUrgent=(v)=> !!(v && v.urgent);
@@ -5875,322 +6191,19 @@ function viewPerf(){
 }
 
 // ===================================================================
-// 選品配對（v138）—— 選品行銷從「商品」出發，幫商品挑一支影片來賣，送老闆審核；
-// 老闆核准其中一支（主選或備選）之後，正式建立「1 商品 → 1 影片」配對。
-// 只有「選品行銷」「經理人（Regina）」「管理員」看得到這一頁（見 ROLE_TABS）。
+// 選品配對工作台：v175 整個移除（老闆決定重新設計）
+//
+// 原本是「選品行銷從商品出發，幫商品挑一支影片來賣，送老闆審核」那一整套：
+// 一頁工作台（商品選單＋候選影片牆＋主選/備選＋送審）＋老闆的審核佇列＋歷史紀錄。
+//
+// 為什麼整個拿掉而不是留著改：老闆說要重新設計，留著舊的會有兩個問題 ——
+// 一是新舊兩套並存，同事會走錯入口；二是舊的那 320 行會一直牽制新設計的形狀。
+// 正式資料實測：products 2 筆、matches 2 筆（上線至今幾乎沒被用過），
+// 所以拿掉不會讓任何人手上的工作消失。
+//
+// ⚠️ 資料庫裡的 products／matches 那兩個集合**沒有動**，4 筆資料原封不動留著。
+//    要不要清是另一件事，等新設計定案再說。
 // ===================================================================
-function canViewMatch(){ return ["pick","boss","manager"].includes(currentRole()); }
-let MATCH_PRODUCT_ID=null, MATCH_PRIMARY_ID=null, MATCH_BACKUP_ID=null, MATCH_EDITING_ID=null;
-let MATCH_VTAB="done", MATCH_VQ="", MATCH_VFILTER="awaiting";
-
-function viewMatch(){
-  // 導覽已經照角色過濾，這裡是最後一道守門（真正的守門原則見 editVideo 上面的註解）
-  if(!canViewMatch()) return `<h2>選品配對</h2><p class="muted">你沒有這一頁的權限。</p>`;
-  const isBoss=["boss","manager"].includes(currentRole());
-  return `<h2>選品配對工作台</h2>`
-    + (isBoss?matchQueueCard():"")
-    + matchWorkbenchHTML()
-    + matchHistoryCard(isBoss);
-}
-
-// 老闆／經理人／管理員：待審核佇列，核准其中一支（主選或備選）或退回
-function matchQueueCard(){
-  const pending=(STATE.matches||[]).filter(m=>m.status==="submitted");
-  const rows=pending.map(m=>{
-    const p=(STATE.products||[]).find(x=>x.id===m.productId);
-    const pv=vid(m.primaryVideoId), bv=m.backupVideoId?vid(m.backupVideoId):null;
-    return `<div class="card" style="background:var(--panel2)">
-      <div class="row" style="justify-content:space-between">
-        <b>${esc(p?p.name:m.productId)}</b>
-        <span class="muted" style="font-size:12px">送審人：${esc(m.submittedBy||m.createdBy||"")}</span>
-      </div>
-      <p class="muted" style="margin:4px 0;font-size:13px">SKU：${esc((p&&p.sku)||"未填")}　建議上架：${esc(m.suggestedLaunchDate||"未填")}</p>
-      <div class="grid cols2">
-        <div class="card" style="margin:0"><div class="muted" style="font-size:12px">主選影片</div><b>${pv?esc(vidTitle(pv)):"-"}</b></div>
-        <div class="card" style="margin:0"><div class="muted" style="font-size:12px">備選影片</div><b>${bv?esc(vidTitle(bv)):"（無）"}</b></div>
-      </div>
-      ${m.suggestedCopyEdit?`<p style="margin-top:8px"><b>建議文案修改：</b>${esc(m.suggestedCopyEdit)}</p>`:""}
-      <div class="row" style="margin-top:10px">
-        <button class="btn sm" onclick="approveMatch('${esc(jsEsc(m.id))}','${esc(jsEsc(m.primaryVideoId))}')">✅ 核准主選</button>
-        ${bv?`<button class="btn sm sec" onclick="approveMatch('${esc(jsEsc(m.id))}','${esc(jsEsc(m.backupVideoId))}')">✅ 核准備選</button>`:""}
-        <button class="btn sm danger" onclick="rejectMatch('${esc(jsEsc(m.id))}')">↩ 退回</button>
-      </div>
-    </div>`;
-  }).join("");
-  return `<div class="card"><b>📥 待你審核（${pending.length}）</b>
-    ${rows||`<p class="muted" style="margin-top:8px">目前沒有待審核的配對</p>`}</div>`;
-}
-async function approveMatch(id, finalVideoId){
-  if(!finalVideoId){ toast("尚未選擇影片",true); return; }
-  await write("POST",`/api/matches/${id}/approve`,{finalVideoId},"已核准，正式建立商品配對");
-}
-async function rejectMatch(id){
-  const note=prompt("退回原因（會顯示給選品人員）：");
-  if(note===null) return;
-  await write("POST",`/api/matches/${id}/reject`,{bossNote:note},"已退回");
-}
-
-// 三欄工作台：商品資訊 → 選擇影片 → 建立配對並送審
-function matchWorkbenchHTML(){
-  const products=(STATE.products||[]).slice().sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
-  if(MATCH_PRODUCT_ID && !products.some(x=>x.id===MATCH_PRODUCT_ID)) MATCH_PRODUCT_ID=null;
-  const p=MATCH_PRODUCT_ID?products.find(x=>x.id===MATCH_PRODUCT_ID):null;
-  return `
-  <div class="grid cols3" style="align-items:start">
-    <div class="card">
-      <b>1️⃣ 商品資訊</b>
-      <label>選擇商品</label>
-      <select onchange="pickMatchProduct(this.value)">
-        <option value="">— 請選擇 —</option>
-        ${products.map(x=>`<option value="${esc(x.id)}" ${x.id===MATCH_PRODUCT_ID?"selected":""}>${esc(x.name)}</option>`).join("")}
-      </select>
-      ${p?matchProductInfoHTML(p):`<p class="muted" style="margin-top:10px">尚未選擇商品</p>`}
-      <button class="btn sm sec" style="margin-top:12px;width:100%" onclick="editProductModal()">＋ 新增商品</button>
-    </div>
-    <div class="card">
-      <b>2️⃣ 選擇影片</b>
-      ${matchVideoPickerHTML()}
-    </div>
-    <div class="card">
-      <b>3️⃣ 建立配對並送審</b>
-      ${matchSummaryHTML(p)}
-    </div>
-  </div>`;
-}
-function pickMatchProduct(id){
-  MATCH_PRODUCT_ID=id||null; MATCH_PRIMARY_ID=null; MATCH_BACKUP_ID=null; MATCH_EDITING_ID=null; render();
-}
-function matchProductInfoHTML(p){
-  const av=p.activeVideoId?vid(p.activeVideoId):null;
-  return `<div class="card" style="background:var(--panel2);margin-top:10px">
-    <div class="row">
-      ${p.image?`<img src="${esc(p.image)}" style="width:56px;height:56px;object-fit:cover;border-radius:4px">`:""}
-      <div><b>${esc(p.name)}</b><div class="muted" style="font-size:12px">SKU：${esc(p.sku||"未填")}</div></div>
-    </div>
-    <p class="muted" style="margin:10px 0 4px;font-size:13px">官網商品網址</p>
-    ${p.officialUrl?`<a href="${esc(p.officialUrl)}" target="_blank">${esc(p.officialUrl)}</a>`
-      :`<span class="pill wa">尚未建立官網商品頁，請先新增商品才能往下配影片</span>`}
-    ${av?`<p style="margin-top:10px"><span class="pill ok">✅ 已正式配對：${esc(vidTitle(av))}</span></p>`:""}
-  </div>`;
-}
-
-// 貼商品網址→自動抓名稱／SKU／圖片：純前端用公開 CORS 代理讀網頁 HTML，
-// 解析 Open Graph（og:title／og:image）與商品結構化資料（JSON-LD Product 的 sku／mpn／gtin）。
-// 抓不到就回傳空字串，不擋流程——欄位本來就可以手動填或修正。
-function decodeHtmlEntities(s){
-  return String(s==null?"":s).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m,e)=>{
-    if(e[0]==="#"){ const cp=(e[1].toLowerCase()==="x")?parseInt(e.slice(2),16):parseInt(e.slice(1),10);
-      return isNaN(cp)?m:String.fromCodePoint(cp); }
-    const map={amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:" "}; return map[e.toLowerCase()]||m;
-  });
-}
-function parseProductMetaHTML(html){
-  const s=String(html||"");
-  const metaContent=(prop)=>{
-    const esc_=prop.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
-    const re1=new RegExp('<meta[^>]+(?:property|name)=["\']'+esc_+'["\'][^>]*content=["\']([^"\']*)["\']',"i");
-    const re2=new RegExp('<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']'+esc_+'["\']',"i");
-    const m=s.match(re1)||s.match(re2); return m?m[1].trim():"";
-  };
-  let name=metaContent("og:title");
-  if(!name){ const tm=s.match(/<title[^>]*>([^<]*)<\/title>/i); if(tm) name=tm[1].trim(); }
-  let image=metaContent("og:image");
-  let sku="";
-  const ldBlocks=s.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)||[];
-  for(const block of ldBlocks){
-    const jsonText=block.replace(/^<script[^>]*>/i,"").replace(/<\/script>$/i,"");
-    try{
-      const data=JSON.parse(jsonText);
-      const items=Array.isArray(data)?data:(data["@graph"]||[data]);
-      for(const it of items){
-        if(!it) continue;
-        const types=Array.isArray(it["@type"])?it["@type"]:[it["@type"]];
-        if(!types.includes("Product")) continue;
-        sku=it.sku||it.mpn||it.gtin13||it.productID||sku;
-        if(!name) name=it.name||name;
-        if(!image){ const im=it.image; image=Array.isArray(im)?im[0]:((im&&im.url)||im)||image; }
-        if(sku) break;
-      }
-    }catch(e){}
-    if(sku) break;
-  }
-  return { name:decodeHtmlEntities(name), image:decodeHtmlEntities(image), sku:decodeHtmlEntities(sku) };
-}
-async function fetchProductMeta(url){
-  const u=String(url||"").trim();
-  if(!/^https?:\/\//i.test(u)) throw new Error("請先輸入正確的網址（需以 http(s):// 開頭）");
-  const res=await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent(u));
-  if(!res.ok) throw new Error("讀不到這個網址（HTTP "+res.status+"）");
-  return parseProductMetaHTML(await res.text());
-}
-async function autoFillProduct(){
-  const url=val("pd_url").trim();
-  if(!url){ toast("請先輸入商品網址",true); return; }
-  const btn=document.getElementById("pd_fetch");
-  if(btn){ btn.disabled=true; btn.textContent="抓取中…"; }
-  try{
-    const meta=await fetchProductMeta(url);
-    if(meta.name) document.getElementById("pd_name").value=meta.name;
-    if(meta.image) document.getElementById("pd_img").value=meta.image;
-    if(meta.sku) document.getElementById("pd_sku").value=meta.sku;
-    MODAL_DIRTY=true;
-    toast((meta.name||meta.image||meta.sku)?"已自動帶入，記得確認正不正確":"這個網址抓不到商品資料，請手動填", !(meta.name||meta.image||meta.sku));
-  }catch(e){ toast(e.message||"抓取失敗，請手動填",true); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent="🔍 自動抓取"; } }
-}
-function editProductModal(id){
-  const p=id?(STATE.products||[]).find(x=>x.id===id):{};
-  if(id && !p) return;
-  showModal(id?"編輯商品":"新增商品", `
-    <label>商品網址</label>
-    <div class="row" style="gap:8px;flex-wrap:nowrap">
-      <input id="pd_url" style="flex:1;min-width:120px" placeholder="https://…" value="${esc((p&&p.officialUrl)||"")}">
-      <button type="button" class="btn sm sec" id="pd_fetch" style="flex:none" onclick="autoFillProduct()">🔍 自動抓取</button>
-    </div>
-    <label>商品名稱</label><input id="pd_name" value="${esc((p&&p.name)||"")}">
-    <label>SKU</label><input id="pd_sku" value="${esc((p&&p.sku)||"")}">
-    <label>商品圖片網址</label><input id="pd_img" value="${esc((p&&p.image)||"")}">
-  `, async ()=>{
-    const name=val("pd_name").trim();
-    if(!name){ toast("請輸入商品名稱",true); return false; }
-    const product={name, sku:val("pd_sku").trim(), image:val("pd_img").trim(), officialUrl:val("pd_url").trim()};
-    return id ? await write("PUT",`/api/products/${id}`,{product},"已更新商品")
-              : await write("POST","/api/products",{product},"已新增商品");
-  });
-}
-
-// 選片：分「已完成影片」／「僅有腳本」兩個分頁，可篩選「等待選品中」與關鍵字
-function matchVideoPickerHTML(){
-  return `
-    <div class="row" style="margin-bottom:8px">
-      <button class="btn sm ${MATCH_VTAB==='done'?'':'sec'}" onclick="setMatchVTab('done')">已完成影片</button>
-      <button class="btn sm ${MATCH_VTAB==='script'?'':'sec'}" onclick="setMatchVTab('script')">僅有腳本</button>
-    </div>
-    <input id="mv_q" placeholder="用關鍵字篩選文案／標題" value="${esc(MATCH_VQ)}" oninput="MATCH_VQ=this.value;matchVFilter()">
-    <select style="margin-top:6px" onchange="MATCH_VFILTER=this.value;matchVFilter()">
-      <option value="awaiting" ${MATCH_VFILTER==='awaiting'?'selected':''}>等待選品中</option>
-      <option value="all" ${MATCH_VFILTER==='all'?'selected':''}>全部影片</option>
-    </select>
-    <div id="mv_list" style="margin-top:10px;max-height:520px;overflow:auto">${matchVideoListHTML()}</div>
-    <p class="muted" style="margin-top:8px;font-size:12px">可選擇 2 支影片：1 支主選影片＋1 支備選影片。最後正式配對仍是 1 商品＝1 影片。</p>`;
-}
-function setMatchVTab(t){ MATCH_VTAB=t; render(); }
-function matchVFilter(){ const el=document.getElementById("mv_list"); if(el) el.innerHTML=matchVideoListHTML(); }
-const MATCH_VSHOW=40;   // 候選影片一次最多畫幾張（見下面的說明）
-function matchVideoListHTML(){
-  const q=MATCH_VQ.trim().toLowerCase();
-  // 候選片源＝影片庫大流＋影片庫A。大流是現成成品，優先推薦；沒有的話再用關鍵字往庫A裡搜（見 isDF 排序）
-  const pool=(STATE.videosDF||[]).concat(STATE.videos||[]);
-  const list=pool.filter(v=>{
-    if(MATCH_VTAB==="done" && !matchVidDone(v)) return false;
-    if(MATCH_VTAB==="script" && !matchVidScript(v)) return false;
-    if(MATCH_VFILTER==="awaiting" && !videoAwaitingCuration(v)) return false;
-    if(q && !`${v.name||""} ${v.videoCopy||""}`.toLowerCase().includes(q)) return false;
-    return true;
-  }).sort((a,b)=>(isDF(b)?1:0)-(isDF(a)?1:0));
-  if(!list.length) return `<p class="muted">沒有符合條件的影片</p>`;
-  // ⚠️ 這裡以前把**每一支**候選片都畫成一張卡（一張兩顆按鈕）。實測正式資料：
-  //    6278 個 DOM 節點、403KB HTML —— 整個選品配對頁 100% 的份量都在這一塊，
-  //    手機上光是把它塞進畫面就要 2.4 秒。而外框是 max-height:520px 的捲動區，
-  //    同一時間看得到的只有 5 張左右，其餘 750 張是純粹白做的。
-  //    照操作紀錄那一頁的慣例改成「只畫前 N 張」＋講清楚還有幾支。
-  //    選到的主選／備選一定要在裡面 —— 不然捲不到會以為自己沒選到。
-  const picked=list.filter(v=>v.id===MATCH_PRIMARY_ID||v.id===MATCH_BACKUP_ID);
-  const rest  =list.filter(v=>v.id!==MATCH_PRIMARY_ID&&v.id!==MATCH_BACKUP_ID);
-  const shown =picked.concat(rest.slice(0, Math.max(0, MATCH_VSHOW-picked.length)));
-  const more  =list.length-shown.length;
-  const moreLine = more
-    ? `<p class="muted" style="font-size:12px;margin:8px 0 0">符合的共 <b>${list.length}</b> 支，這裡只列前 ${shown.length} 支 —— 用上面的搜尋或分頁縮小範圍。（已選的一定會列出來）</p>`
-    : "";
-  return shown.map(v=>{
-    const isP=v.id===MATCH_PRIMARY_ID, isB=v.id===MATCH_BACKUP_ID;
-    return `<div class="card" style="background:var(--panel2);margin-bottom:8px;${isP?'border-color:var(--accent)':(isB?'border-color:var(--gold)':'')}">
-      <div class="row" style="justify-content:space-between">
-        <div><b>${esc(vidTitle(v))}</b> <span class="muted" style="font-size:12px">${esc(v.code||v.id)}</span></div>
-        ${isP?`<span class="pill ok">主選影片</span>`:isB?`<span class="pill wa">備選影片</span>`:""}
-      </div>
-      <div class="row" style="margin-top:4px">
-        ${isDF(v)?`<span class="tag" style="border-color:var(--gold);color:var(--gold-dk)">大流</span>`:""}
-        <span class="tag">${matchVidScript(v)?"僅腳本":"已完成"}</span>
-        ${videoAwaitingCuration(v)?`<span class="pill wa">等待選品中</span>`:""}
-      </div>
-      ${v.videoCopy?`<p class="muted" style="font-size:12px;margin:6px 0">影片文案：${esc(v.videoCopy).slice(0,80)}</p>`:""}
-      <div class="row" style="margin-top:6px">
-        <button class="btn sm ${isP?'sec':''}" onclick="setMatchVideo('primary','${esc(jsEsc(v.id))}')">${isP?"取消主選":"設為主選"}</button>
-        <button class="btn sm ${isB?'sec':''}" onclick="setMatchVideo('backup','${esc(jsEsc(v.id))}')">${isB?"取消備選":"設為備選"}</button>
-      </div>
-    </div>`;
-  }).join("")+moreLine;
-}
-function setMatchVideo(slot,id){
-  if(slot==="primary"){ MATCH_PRIMARY_ID=(MATCH_PRIMARY_ID===id)?null:id; if(MATCH_BACKUP_ID===MATCH_PRIMARY_ID) MATCH_BACKUP_ID=null; }
-  else { MATCH_BACKUP_ID=(MATCH_BACKUP_ID===id)?null:id; if(MATCH_PRIMARY_ID===MATCH_BACKUP_ID) MATCH_PRIMARY_ID=null; }
-  render();
-}
-
-// 建立配對並送審：選好的商品＋主選／備選影片彙整成摘要，按鍵開彈窗填文案建議與上架日期
-function matchSummaryHTML(p){
-  if(!p) return `<p class="muted">請先選擇商品</p>`;
-  const pv=MATCH_PRIMARY_ID?vid(MATCH_PRIMARY_ID):null, bv=MATCH_BACKUP_ID?vid(MATCH_BACKUP_ID):null;
-  return `<div class="card" style="background:var(--panel2)">
-      <p><b>商品</b>：${esc(p.name)}</p>
-      <p><b>主選影片</b>：${pv?esc(vidTitle(pv)):'<span class="muted">尚未選擇</span>'}</p>
-      <p><b>備選影片</b>：${bv?esc(vidTitle(bv)):'<span class="muted">（可留空）</span>'}</p>
-    </div>
-    <button class="btn" style="width:100%;margin-top:12px" onclick="openMatchSubmit()" ${pv?"":"disabled"}>📤 填寫文案建議與上架日期，送老闆審核</button>`;
-}
-function openMatchSubmit(){
-  if(!MATCH_PRODUCT_ID || !MATCH_PRIMARY_ID){ toast("請先選擇商品與主選影片",true); return; }
-  // 同一位選品人員對同一個商品，若已有草稿或被退回的配對，直接接續編輯（不會愈開愈多筆）
-  const existing=(STATE.matches||[]).find(m=>m.productId===MATCH_PRODUCT_ID && m.createdBy===currentUser()
-    && ["draft","rejected"].includes(m.status));
-  MATCH_EDITING_ID=existing?existing.id:null;
-  showModal("建立配對並送審", `
-    ${existing&&existing.status==="rejected"?`<p class="pill em">此配對先前被退回：${esc(existing.bossNote||"（無說明）")}</p>`:""}
-    <label>建議文案修改（例如：商品名稱要換掉、片尾 CTA 要換、原文案可直接使用…）</label>
-    <textarea id="mm_copy" maxlength="200">${esc((existing&&existing.suggestedCopyEdit)||"")}</textarea>
-    <label>建議上架日期</label>
-    <input type="date" id="mm_date" value="${esc((existing&&existing.suggestedLaunchDate)||today)}">
-  `, submitMatch);
-}
-async function submitMatch(){
-  const match={ productId:MATCH_PRODUCT_ID, primaryVideoId:MATCH_PRIMARY_ID, backupVideoId:MATCH_BACKUP_ID,
-    suggestedCopyEdit:val("mm_copy").trim(), suggestedLaunchDate:val("mm_date") };
-  let ok;
-  if(MATCH_EDITING_ID){
-    ok=await write("PUT",`/api/matches/${MATCH_EDITING_ID}`,{match});
-    if(ok) ok=await write("POST",`/api/matches/${MATCH_EDITING_ID}/submit`,{},"已送老闆審核");
-  } else {
-    ok=await write("POST","/api/matches",{match, submit:true},"已送老闆審核");
-  }
-  if(!ok) return false;
-  MATCH_PRIMARY_ID=null; MATCH_BACKUP_ID=null; MATCH_EDITING_ID=null;
-  return true;
-}
-
-// 配對紀錄：選品行銷看自己送出的，老闆／經理人／管理員看全部
-function matchHistoryCard(isBoss){
-  const list=(STATE.matches||[]).filter(m=>isBoss||m.createdBy===currentUser())
-    .slice().sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-  const label={draft:"草稿",submitted:"審核中",approved:"已核准",rejected:"已退回"};
-  const cls={draft:"",submitted:"wa",approved:"ok",rejected:"em"};
-  const rows=list.map(m=>{
-    const p=(STATE.products||[]).find(x=>x.id===m.productId);
-    const fv=m.finalVideoId?vid(m.finalVideoId):null;
-    return `<tr>
-      <td data-label="商品">${esc(p?p.name:m.productId)}</td>
-      <td data-label="主選">${(()=>{ const v=vid(m.primaryVideoId); return v?esc(vidTitle(v)):"-"; })()}</td>
-      <td data-label="備選">${(()=>{ const v=m.backupVideoId?vid(m.backupVideoId):null; return v?esc(vidTitle(v)):"-"; })()}</td>
-      <td data-label="送審人">${esc(m.createdBy||"")}</td>
-      <td data-label="狀態">${cls[m.status]?`<span class="pill ${cls[m.status]}">${esc(label[m.status]||m.status)}</span>`:esc(label[m.status]||m.status)}</td>
-      <td data-label="最終影片">${fv?esc(vidTitle(fv)):"-"}</td>
-    </tr>`;
-  }).join("");
-  return `<div class="card"><b>📋 ${isBoss?"全部":"我的"}配對紀錄</b>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>商品</th><th>主選</th><th>備選</th><th>送審人</th><th>狀態</th><th>最終影片</th></tr></thead>
-    <tbody>${rows||`<tr><td class="muted">尚無紀錄</td></tr>`}</tbody></table></div>`;
-}
-
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
 // 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
 // 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
@@ -6497,7 +6510,14 @@ function openVideoModal(id, edit, fromWork){
     ${enFieldHTML("e_vcopyEn", T("英文腳本","English script"), v.videoCopyEn||"", "e_vcopy", true)}
     ${familyDriveField(v,"e_drive") || ownerDriveField(v,"e_drive")}
     <label>${T("預排上片日期","Scheduled upload date")}</label>
-    <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:2 1 170px;min-width:0">
+        <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div></div>
+      ${/* v177：日期旁邊多一格「幾點」，只選整點 */''}
+      <div style="flex:1 1 116px;min-width:0">
+        <label style="margin:0 0 2px;font-size:12px">${T("幾點上片","Time")}</label>
+        <select id="e_time" style="width:100%">${hourOptions(v.publishTime)}</select></div>
+    </div>
     <div id="e_schedbox">${schedBoxHTML(v)}</div>
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     ${reviewCard}
@@ -6582,6 +6602,8 @@ async function saveVideo(id){
     stage:["boss","manager"].includes(currentRole())?val("e_stage"):String(v0.stage||"待處理"),
     editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
+    // v177：幾點上片（只有整點）。沒有這一格的視窗（二創殼等）不要動到舊值
+    publishTime:document.getElementById("e_time") ? val("e_time") : String(v0.publishTime||""),
     driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""),
     // 帳號：只有英／泰源片那一格會出現；沒出現就不要動舊值（二創殼的帳號是建立時定的）
     account:document.getElementById("e_acct") ? val("e_acct").trim() : String(v0.account||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
@@ -7531,9 +7553,11 @@ function setChannelCards(s){
 // 設定：成員名單（角色、改名、重設密碼、刪除）
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工，額外多一頁「選品配對」（幫商品挑影片、送審），只有這個職位、經理人與管理員看得到；<b>人資</b>＝只看團隊看板，不能操作。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
-    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+    <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
+    ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
+           平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
+    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>

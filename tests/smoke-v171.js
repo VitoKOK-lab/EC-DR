@@ -38,7 +38,8 @@ function as(w,r){ localStorage.setItem("ecdr_user",w); localStorage.setItem("ecd
 const t_=(id,o)=>Object.assign({id,user:"小葵",date:D(0),title:"做一件事",contact:"",report:"",
   done:false,doneAt:"",assignedBy:"管理員",ack:true,createdAt:D(0)+"T09:00:00",groupId:"",msgs:[]},o||{});
 function reset(tasks){
-  ASG_TRACK="open"; VIEW_AS=null; BRAND=""; FOLD_OPEN={};
+  ASG_TRACK="open"; ASG_SCOPE="mine"; ASG_FROM_DRAFT=""; ASG_PIC=null; ASG_PIC_URL="";
+  VIEW_AS=null; BRAND=""; FOLD_OPEN={};
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{},
     setSettings:async()=>{}, videosWatched:()=>true, netState:()=>({online:true,pending:false}) };
   const map={}; (tasks||[]).forEach(t=>{ map[t.id]=t; });
@@ -82,27 +83,61 @@ function reset(tasks){
     ok("**"+x+"交辦看得到**（儀表板的個人卡只列剪輯，這些原本連往回點都看不到）", h.includes(x)));
   ok("四個人的名字都印出來", ["小美","怡萍","茂泉","HR"].every(n=>h.includes(n))); }
 
-// ══════════ ③ 三個分類 ══════════
+// ══════════ ③ 三個分類（v174：分類的依據從「做完沒」改成「我收了沒」）══════════
+// 老闆：「對方有回或是沒有回，都會留在發訊方，直到發訊方按下『OK』才會封存起來」
+// 所以「還沒收」裡面本來就會有「對方已經回報完成」的那些 —— 那正是等我按 OK 的。
 { reset([ t_("還沒做的甲"), t_("還沒做的乙"),
-          t_("已做完的丙",{done:true,doneAt:D(-1)+"T10:00:00"}) ]);
+          t_("已做完的丙",{done:true,doneAt:D(-1)+"T10:00:00"}),
+          t_("已封存的丁",{done:true,doneAt:D(-3)+"T10:00:00",archived:true,archivedAt:D(-2)+"T09:00:00",archivedBy:"管理員"}) ]);
   as("管理員","boss");
   ASG_TRACK="open";
   { const h=dashAssignTrackCard();
-    ok("「還沒做完」只列未完成", h.includes("還沒做的甲") && h.includes("還沒做的乙") && !h.includes("已做完的丙")); }
-  ASG_TRACK="done";
+    ok("**「還沒收」＝沒封存的，做完的也還在（等我按 OK）**",
+       h.includes("還沒做的甲") && h.includes("還沒做的乙") && h.includes("已做完的丙") && !h.includes("已封存的丁"), h.slice(0,240)); }
+  ASG_TRACK="arch";
   { const h=dashAssignTrackCard();
-    ok("「已完成」只列完成", h.includes("已做完的丙") && !h.includes("還沒做的甲")); }
+    ok("「已封存」只列按過 OK 的", h.includes("已封存的丁") && !h.includes("還沒做的甲") && !h.includes("已做完的丙")); }
   ASG_TRACK="all";
   { const h=dashAssignTrackCard();
-    ok("「全部」三筆都在", h.includes("還沒做的甲") && h.includes("還沒做的乙") && h.includes("已做完的丙")); }
+    ok("「全部」四筆都在", ["還沒做的甲","還沒做的乙","已做完的丙","已封存的丁"].every(x=>h.includes(x))); }
   ASG_TRACK="open"; }
-{ reset([ t_("a"), t_("b"), t_("c",{done:true,doneAt:D(0)+"T10:00:00"}) ]);
+{ reset([ t_("a"), t_("b"), t_("c",{done:true,doneAt:D(0)+"T10:00:00"}),
+          t_("d",{archived:true,archivedAt:D(0)+"T11:00:00"}) ]);
   as("管理員","boss");
   const h=dashAssignTrackCard();
   const n=(s)=>{ const m=h.match(new RegExp(s+"<\\/span> <span class=\"vtab-n\">(\\d+)<")); return m?+m[1]:null; };
-  ok("數字：還沒做完 2", n("還沒做完")===2, n("還沒做完"));
-  ok("數字：已完成 1", n("已完成")===1, n("已完成"));
-  ok("數字：全部 3", n("全部")===3, n("全部")); }
+  ok("數字：還沒收 3（含對方已回報完成的那一筆）", n("還沒收")===3, n("還沒收"));
+  ok("數字：已封存 1", n("已封存")===1, n("已封存"));
+  ok("數字：全部 4", n("全部")===4, n("全部")); }
+
+// ══════════ ③-2 按 OK 才封存（v174 的核心）══════════
+{ reset([ t_("等我認可的",{done:true,doneAt:D(-1)+"T10:00:00"}) ]);
+  as("管理員","boss"); ASG_TRACK="open";
+  const h=dashAssignTrackCard();
+  ok("**對方回報完成之後，還是留在我這裡**", h.includes("等我認可的"));
+  ok("而且有一顆 OK 可以按", /archiveTask\('[^']+',true\)/.test(h) && />OK</.test(h), (h.match(/archiveTask\([^)]*\)/g)||[])); }
+{ reset([ t_("沒做完也可以收",{done:false}) ]);
+  as("管理員","boss"); ASG_TRACK="open";
+  ok("沒做完的也給 OK（有些事後來不用做了，發訊的人自己收掉）",
+     /archiveTask\('[^']+',true\)/.test(dashAssignTrackCard())); }
+{ reset([ t_("已收的",{archived:true,archivedAt:D(-1)+"T10:00:00",archivedBy:"管理員"}) ]);
+  as("管理員","boss"); ASG_TRACK="arch";
+  const h=dashAssignTrackCard();
+  ok("封存的可以重新打開（按錯了要救得回來）", /archiveTask\('[^']+',false\)/.test(h));
+  ok("封存的標了封存日期", h.includes("已封存")); }
+// 誰可以按 OK：派的人本人，別人不行
+{ reset([ t_("R1",{assignedBy:"Regina",user:"小葵"}) ]);
+  as("Regina","manager");
+  ok("派的人自己可以按 OK", canArchiveTask(taskById("R1"))===true); }
+{ reset([ t_("R1",{assignedBy:"Regina",user:"小葵"}) ]);
+  as("小葵","editor");
+  ok("**被交辦的人不能自己把它收掉**", canArchiveTask(taskById("R1"))===false); }
+{ reset([ t_("R1",{assignedBy:"Regina",user:"小葵"}) ]);
+  as("管理員","boss");
+  ok("主管有萬能鑰匙（要清得掉離職同事留下的）", canArchiveTask(taskById("R1"))===true); }
+{ reset([ t_("R1",{assignedBy:"Regina",user:"小葵"}) ]);
+  as("Regina","manager"); VIEW_AS={name:"小葵",role:"editor"};
+  ok("員工視角是唯讀，不能按 OK", canArchiveTask(taskById("R1"))===false); VIEW_AS=null; }
 
 // ══════════ ④ 每一列講得出「做完沒、誰、什麼時候」 ══════════
 { reset([ t_("完成的",{done:true, doneAt:D(-2)+"T17:30:00", report:"已經跟廠商確認完畢了"}) ]);
@@ -137,23 +172,47 @@ function reset(tasks){
   const h=dashAssignTrackCard();
   ok("最近做完的排前面", h.indexOf("昨天完成")<h.indexOf("上週完成")); }
 
-// ══════════ ⑤ 誰看得到什麼 ══════════
+// ══════════ ⑤ 誰看得到什麼（v174：改成「誰發的就留在誰那裡」）══════════
+// 老闆：「就是看誰發出去的（**包含員工**）…都會留在發訊方」
+// 所以這張卡不再是主管專用 —— 每個人都看得到自己派出去的那些。
 { reset([ t_("老闆派的",{assignedBy:"管理員"}), t_("Regina派的",{assignedBy:"Regina"}),
           t_("自己排的",{assignedBy:""}) ]);
   as("管理員","boss");
   const h=dashAssignTrackCard();
-  ok("主管看得到全部人派的（他要的是整間公司的狀況）",
-     h.includes("老闆派的") && h.includes("Regina派的"), h.slice(0,300));
+  ok("**預設只看自己派的**（自己派的才不會被整間公司的量淹掉）",
+     h.includes("老闆派的") && !h.includes("Regina派的"), h.slice(0,300));
   ok("**自己排的工作不算交辦，不要混進來**", !h.includes("自己排的"));
-  ok("別人派的會標出來是誰派的", /Regina 派的/.test(h), (h.match(/[^>]*派的/)||[])[0]); }
+  ASG_SCOPE="all";
+  const h2=dashAssignTrackCard();
+  ok("主管切到「全公司」就看得到別人派的", h2.includes("老闆派的") && h2.includes("Regina派的"));
+  ok("別人派的會標出來是誰派的", /Regina 派的/.test(h2), (h2.match(/[^>]*派的/)||[])[0]);
+  ASG_SCOPE="mine"; }
 { reset([ t_("老闆派的",{assignedBy:"管理員"}), t_("Regina派的",{assignedBy:"Regina"}) ]);
   as("Regina","manager");
   const h=dashAssignTrackCard();
-  ok("經理人只看自己派的", h.includes("Regina派的") && !h.includes("老闆派的")); }
-{ reset([ t_("A") ]); as("小葵","editor");
-  ok("剪輯看不到這張卡", dashAssignTrackCard()===""); }
-{ reset([ t_("A") ]); as("小美","cs");
-  ok("員工也看不到", dashAssignTrackCard()===""); }
+  ok("經理人只看自己派的", h.includes("Regina派的") && !h.includes("老闆派的"));
+  ok("**經理人沒有「全公司」那個切換**（那是主管的）", !h.includes("setAsgScope"));
+  ASG_SCOPE="all";
+  ok("就算硬把狀態切成 all，經理人還是只看得到自己派的",
+     !dashAssignTrackCard().includes("老闆派的"));
+  ASG_SCOPE="mine"; }
+// v174：員工自己派出去的，也要留在他自己畫面上
+{ reset([ t_("小葵派給小美的",{assignedBy:"小葵",user:"小美"}),
+          t_("老闆派給小葵的",{assignedBy:"管理員",user:"小葵"}) ]);
+  as("小葵","editor");
+  const h=dashAssignTrackCard();
+  ok("**剪輯也看得到這張卡了**", h!=="");
+  ok("剪輯看得到自己派出去的", h.includes("小葵派給小美的"));
+  ok("**別人派給我的不算「我派出去的」，不要混進來**", !h.includes("老闆派給小葵的"));
+  ok("員工沒有「全公司」那個切換", !h.includes("setAsgScope")); }
+{ reset([ t_("小美派的",{assignedBy:"小美",user:"小葵"}) ]);
+  as("小美","cs");
+  ok("客服也看得到自己派出去的", dashAssignTrackCard().includes("小美派的")); }
+{ reset([ t_("A",{assignedBy:"管理員"}) ]); as("小葵","editor");
+  ok("自己什麼都沒派的時候，卡還是在（只是空的）—— 不會整張消失",
+     dashAssignTrackCard()!=="" ); }
+{ reset([ t_("A") ]); as("管理員","boss"); VIEW_AS={name:"小葵",role:"editor"};
+  ok("員工視角（唯讀預覽）不畫這張卡", dashAssignTrackCard()===""); VIEW_AS=null; }
 
 // HR 通知不是交辦，不要混進來
 { reset([ Object.assign(t_("HR通知"),{kind:"notice"}), t_("真的交辦") ]);
