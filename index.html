@@ -711,6 +711,14 @@
     .cv-slot,.cv-box{width:80px}
   }
   table.vtable{margin-top:4px;table-layout:fixed}
+  /* 月排程「清單」檢視：整個月一張表（日期／時間／貼文文案）。
+     ⚠️ 這張表**不加** .responsive —— 只有三欄，手機上直接橫著看就好；
+     套 .responsive 會被拆成一張一張的卡，反而失去「一路往下核對」的作用。
+     文案要能整段換行，所以在這裡把 vtable 的 nowrap／overflow 收掉。 */
+  table.callist{table-layout:fixed;min-width:340px}
+  table.callist td{vertical-align:top;padding:7px 8px;overflow:visible;white-space:normal;word-break:break-word}
+  table.callist tbody tr.cl-today{background:var(--amberbg)}
+  table.callist tbody tr:hover{background:var(--panel2)}
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
   .vidscroll table.vtable{margin-top:0}
@@ -792,7 +800,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=2be8aec023a1"></script>
-<script type="module" src="fb.js?v=2be8aec023a1"></script>
+<script src="app.js?v=07bb7f9e591b"></script>
+<script type="module" src="fb.js?v=07bb7f9e591b"></script>
 </body>
 </html>

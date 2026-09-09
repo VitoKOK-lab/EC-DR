@@ -1288,6 +1288,110 @@ function calTWBody(){
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
+// ── 月排程「清單」檢視（v172，老闆指定）────────────────────────────
+// 月曆一格只放得下一個數字，看得到「這天排了幾支」，看不到「排了哪幾支」。
+// 想核對整個月排了什麼，只能一天一天點開 —— 三十天就是三十次。
+// 清單模式把整個月攤成一張表：日期／幾點／影片貼文文案，由上往下一路看完。
+//
+// 兩條規矩：
+//   ① **只能看**。要改還是照舊 —— 點日期，開那天的視窗，一次改一天。
+//      （所以每一列的日期都是可以點的，點下去就是原本那個視窗。）
+//   ② **不印編號**。編號是系統流水號，每一列長得都差不多，只會把真正要看的
+//      貼文文案擠掉。這裡一律 vidName()＝影片貼文文案（沒填才退回原始片名）。
+let CAL_MODE="grid";                     // grid＝月曆｜list＝清單
+function calSetMode(m){ CAL_MODE=(m==="list")?"list":"grid"; render(); }
+function calModeTabs(){
+  const b=(k,label)=>`<button class="vtab ${CAL_MODE===k?'on':''}" onclick="calSetMode('${k}')"><span>${label}</span></button>`;
+  return `<div class="vtabs" style="margin:0 0 12px">${b("grid",T("月曆","Calendar"))}${b("list",T("清單","List"))}</div>`;
+}
+// 版本殼的名字：自己沒填貼文文案就用源片的，不要印成「(未命名)」
+function calRowName(v){
+  if(!v) return T("(未命名)","(untitled)");
+  const own=stripHash(zhTW(v.name||v.rawName||""));
+  if(own) return own;
+  const s=srcOf(v); return (s?vidName(s):"") || T("(未命名)","(untitled)");
+}
+const calTimeSort=(a,b)=>String(a.time||"99:99").localeCompare(String(b.time||"99:99"));
+// 台灣社群那一條：排程格（含大流二創）＋預排上片日落在這天的片
+function calRowsTW(ds){
+  return dayVideoList(ds).map(it=>{
+    const v=vid(it.videoId), re=it.slot&&it.slot.reused;
+    return {time:(re?(it.slot.time||""):(v&&v.publishTime)||""), name:calRowName(v),
+            open:v?vidOpenFn(v):""};
+  }).sort(calTimeSort);
+}
+// 海外／蝦皮／馬來那三條：lineDayList 回的是影片本身
+function calRowsLine(list){
+  return (list||[]).map(v=>({time:v.publishTime||"", name:calRowName(v), open:""})).sort(calTimeSort);
+}
+function calListBody(cfg){
+  const {ym, move, dayOpen, rows, head} = cfg;
+  const [y,m]=ym, days=new Date(y,m+1,0).getDate();
+  let total=0, body="";
+  for(let d=1;d<=days;d++){
+    const ds=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const list=rows(ds); total+=list.length;
+    const wd=WD_LABEL[new Date(ds+"T00:00:00").getDay()];
+    const isToday=ds===today;
+    // 日期那一格：整格可以點，點下去就是原本改排程的視窗（清單本身只能看）
+    const dcell=`<a href="javascript:void(0)" onclick="${dayOpen(ds)}" style="font-weight:700"
+        title="${T("點日期改這天的排程","Click the date to edit this day")}">${m+1}/${d}</a>
+      <span class="muted" style="font-size:11px">（${wd}）</span>${isToday?` <span class="pill wa" style="font-size:10px">${T("今天","Today")}</span>`:""}`;
+    if(!list.length){
+      body+=`<tr class="${isToday?'cl-today':''}"><td>${dcell}</td><td class="muted">—</td>
+        <td class="muted" style="font-style:italic">${T("（這天還沒排）","(nothing scheduled)")}</td></tr>`;
+      continue;
+    }
+    list.forEach((r,i)=>{
+      body+=`<tr class="${isToday?'cl-today':''}">
+        <td>${i===0?dcell:""}</td>
+        <td style="white-space:nowrap">${esc(r.time)||'<span class="muted">—</span>'}</td>
+        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</td></tr>`;
+    });
+  }
+  return `<div class="card">
+    ${head||""}
+    <div class="calhead">
+      <button class="calnav" onclick="${move(-1)}" title="${T("上月","Previous month")}">‹</button>
+      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
+      <button class="calnav" onclick="${move(1)}" title="${T("下月","Next month")}">›</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
+    <div style="overflow-x:auto">
+      <table class="vtable callist"><colgroup><col style="width:130px"><col style="width:74px"><col></colgroup>
+        <thead><tr><th>${T("日期","Date")}</th><th>${T("時間","Time")}</th><th>${T("影片貼文文案","Post caption")}</th></tr></thead>
+        <tbody>${body}</tbody></table>
+    </div>
+  </div>`;
+}
+// 各平台各自的清單體：狀態初始化跟月曆那邊一模一樣，不然換模式會炸在 null 上
+function calListFor(plat){
+  if(plat==="en"||plat==="th"){
+    const loc=INTL_LOCALES.includes(plat)?plat:"en";
+    INTL_LOC=loc;
+    const accts=intlAccountsFor(loc).map(a=>a.name);
+    if(!INTL_ACCT || !accts.includes(INTL_ACCT)) INTL_ACCT=accts[0]||"";
+    if(!INTL_CAL_YM){ const t=new Date(); INTL_CAL_YM=[t.getFullYear(), t.getMonth()]; }
+    if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("這個語言還沒有 TikTok 帳號。","No TikTok accounts for this language yet.")}</p></div>`;
+    const acc=intlCurAcct();
+    return calListBody({ ym:INTL_CAL_YM, move:(n)=>`calMoveIntl(${n})`, dayOpen:(ds)=>`openDayIntl('${ds}')`,
+      rows:(ds)=>calRowsLine(intlDayList(ds,acc)),
+      head:`<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b>
+        <select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select></div>` });
+  }
+  if(plat==="shopee"||plat==="ms"){
+    const accts=chAccounts(plat), st=CH_CAL[plat];
+    if(!st.ym){ const t=new Date(); st.ym=[t.getFullYear(), t.getMonth()]; }
+    if(!accts.length) return `<div class="card"><p class="muted" style="padding:18px 4px">${T("還沒有這個平台的帳號。","No accounts for this platform yet.")}</p></div>`;
+    const acc=chCurAcct(plat);
+    return calListBody({ ym:st.ym, move:(n)=>`calMoveCh('${plat}',${n})`, dayOpen:(ds)=>`openDayCh('${plat}','${ds}')`,
+      rows:(ds)=>calRowsLine(chDayList(plat,ds,acc)),
+      head:`<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b>
+        <select onchange="chSetAcct('${plat}',this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select></div>` });
+  }
+  if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
+  return calListBody({ ym:CAL_YM, move:(n)=>`calMove(${n})`, dayOpen:(ds)=>`openDay('${ds}')`, rows:calRowsTW });
+}
 // ---- 月排程合一：一個分頁、下面選平台（社群媒體／海外 TikTok／蝦皮／馬來）----
 // CAL_PLAT_FOR＝這個預設是為哪個職位套的。職位沒變就不再套，使用者選了什麼就是什麼。
 let CAL_PLAT="tw", CAL_PLAT_FOR=null;
@@ -1313,8 +1417,10 @@ function viewCal(){
     <select onchange="calSetPlat(this.value)" style="width:auto;min-width:170px">
       ${plats.map(([k,l])=>`<option value="${k}" ${CAL_PLAT===k?'selected':''}>${esc(l)}</option>`).join("")}
     </select></div>`;
-  const body= (CAL_PLAT==="en"||CAL_PLAT==="th") ? calIntlBody(CAL_PLAT) : (CAL_PLAT==="shopee"||CAL_PLAT==="ms") ? calChBody(CAL_PLAT) : calTWBody();
-  return `<h2>${T("月排程","Schedule")}</h2>${sel}${body}`;
+  const body= CAL_MODE==="list" ? calListFor(CAL_PLAT)
+    : (CAL_PLAT==="en"||CAL_PLAT==="th") ? calIntlBody(CAL_PLAT)
+    : (CAL_PLAT==="shopee"||CAL_PLAT==="ms") ? calChBody(CAL_PLAT) : calTWBody();
+  return `<h2>${T("月排程","Schedule")}</h2>${sel}${calModeTabs()}${body}`;
 }
 
 function openDay(ds){
@@ -3814,6 +3920,65 @@ function dashViewAsCard(){
     </div>
   </div>`;
 }
+// ── 交辦追蹤：不分日期、涵蓋所有職位 ────────────────────────────
+// 老闆：「老闆交辦的任務要怎麼樣能夠回看，看有沒有完成，不要隔一天就消失」。
+//
+// 原本的問題（正式資料實測 2026-09-08）：交辦共 70 筆、散在 9 個不同日期，
+// 但畫面上一律只看「今天」那一天 —— 今天日期的只有 2 筆，另外 68 筆得先知道
+// 是哪一天派的、再逐日往回點才找得到。
+// 更糟的是 70 筆裡有 34 筆派給非剪輯（客服 19、選品 5、出貨 5、海外 2、人資 1），
+// 而儀表板的個人卡只列剪輯 —— 那 34 筆連往回點都看不到。
+//
+// 這張卡刻意**不看日期**：未完成的一律列出來（拖幾天都跑不掉），
+// 已完成的照完成時間由新到舊，看得到是誰、什麼時候做完的。
+let ASG_TRACK="open";                    // open｜done｜all
+function setAsgTrack(v){ ASG_TRACK=v; render(); }
+// 我派出去的交辦。主管看得到全部（含 Regina 派的），經理人只看自己派的 ——
+// 老闆要的是「整間公司交辦了什麼、做完沒」，經理人要的是「我派的那些」。
+function myAssignedOut(){
+  const me=currentUser(), boss=currentRole()==="boss";
+  return Object.values((STATE&&STATE.tasks)||{})
+    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (boss || t.assignedBy===me));
+}
+function asgTrackRow(t){
+  const st = t.done ? `<span class="pill ok" style="font-size:10px">完成 ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
+           : !t.ack ? `<span class="pill em" style="font-size:10px">還沒看</span>`
+           : `<span class="pill wa" style="font-size:10px">進行中</span>`;
+  // 拖了幾天：只對還沒做完的算，做完的講天數沒有意義
+  const late = (!t.done && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
+  const mates=taskMates(t);
+  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+    <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
+      <span class="muted" style="font-size:11px;flex:none">${esc(String(t.date||"").slice(5))}</span>
+      ${personChip(String(t.user||""), "", mates.length>1?groupColors(mates):null)}
+      ${st}
+      ${late>0?`<span class="pill em" style="font-size:10px">拖了 ${late} 天</span>`:''}
+      ${(currentRole()==="boss"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} 派的</span>`:''}
+    </div>
+    <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere">${linkify(t.title)}</div>
+    ${(t.report||"").trim()
+      ? `<div class="muted" style="font-size:12px;margin-top:2px">處理狀況：${linkify(t.report)}</div>`
+      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">還沒回報</div>`)}
+    ${fold("留言與圖片", taskMsgs(t).length||null, taskThread(t, true))}
+  </div>`;
+}
+function dashAssignTrackCard(){
+  if(!["boss","manager"].includes(currentRole())) return "";
+  const all=myAssignedOut();
+  const open=all.filter(t=>!t.done)
+    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));      // 拖最久的排最前面
+  const done=all.filter(t=>t.done)
+    .sort((a,b)=>String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||"")));
+  const list = ASG_TRACK==="open" ? open : ASG_TRACK==="done" ? done : open.concat(done);
+  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  const body=`
+    <div class="muted" style="font-size:12px;margin-top:4px">不分日期，全部列在這裡 —— 隔天不會消失。</div>
+    <div class="vtabs" style="margin-top:8px">${tab("open","還沒做完",open.length)}${tab("done","已完成",done.length)}${tab("all","全部",all.length)}</div>
+    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
+      ${list.map(asgTrackRow).join("")||'<p class="muted" style="font-size:13px;margin:10px 0 0">這一類目前沒有東西</p>'}</div>`;
+  // 沒做完的件數放在標題上 —— 收起來的時候也看得到還欠幾件
+  return fold("📋 交辦追蹤（回看做完沒）", open.length||null, body, ASG_TRACK!=="open");
+}
 // 儀表板①：指派交辦給員工
 function dashAssignTaskCard(){
   return `<div class="card" style="border-color:var(--gold)">
@@ -4578,6 +4743,8 @@ function viewDashboard(){
   ${["boss","manager"].includes(currentRole())?dashAssignTaskCard():''}
 
   ${canAssignWork()?dashAssignFootageCard(editors, poolN, unassignedPool, assignCount):''}
+
+  ${dashAssignTrackCard()}
 
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   </div>
@@ -6351,6 +6518,9 @@ function openVideoModal(id, edit, fromWork){
         title="${T("點一下展開成 6 排比較好編輯","Click to expand for easier editing")}">${esc(v.name||"")}</textarea>
       <label>${T("參考來源的網址（選填）","Reference link (optional)")}</label>
       <input id="e_ref" type="url" value="${esc(v.refLink||"")}" placeholder="${T("這支的靈感／參考影片是哪來的，貼網址","Where this idea came from — paste a link")}">
+      ${/* 存檔資料夾的輸入框住在這裡（主畫面那一格只顯示連結）。
+           空的時候這裡是空盒子，輸入框還在主畫面上等人填。 */''}
+      ${advDriveField(v,"e_drive")}
       <div class="grid cols2">
         <div><label>${T("片源","Source")}</label><select id="e_src">${sources.map(c=>`<option value="${esc(c)}" ${v.source===c?"selected":""}>${esc(dataLabel(c))}</option>`).join("")}</select></div>
         <div><label>${T("階段","Stage")}</label>
@@ -6645,37 +6815,76 @@ function familyDriveField(v, idAttr){
 // 源片那一格：這是「第一個拍好毛片的人」要去 Google 雲端硬碟開資料夾的地方。
 // 規矩寫在欄位旁邊，中英文都寫 —— 不然新人只會看到一個空白欄位，不知道要填什麼、
 // 更不知道資料夾要取什麼名字。名字一律用這支的檔名，這樣資料夾跟片子對得起來。
-// 按「編輯」：把連結那一排收起來，換回輸入框。切回去之後就不再變回連結了 ——
-// 打到一半突然變成唯讀的連結會很煩（跟文案欄展開後不收回去是同一個道理）。
-function driveEdit(id){
-  const box=document.getElementById(id+"_view"); if(box) box.style.display="none";
-  const inp=document.getElementById(id);
-  if(inp){ inp.style.display=""; try{ inp.focus(); inp.select(); }catch(e){} }
+//
+// ── 輸入框住哪裡（v172，老闆指定）────────────────────────────────
+// 網址一填完就變成超連結，**當下就變**，不用先存檔、也不用關掉再打開。
+// 要改的話到下面「進階」裡面改 —— 主畫面這一格只負責「點開它」。
+//
+// 為什麼要這樣：這一格平常真正要做的動作是點開資料夾，不是改網址。
+// 之前填完還是一長串網址躺在輸入框裡（老闆截圖就是這個畫面），
+// 一長串看不出對不對、又佔一整格，而且很容易被誤按改掉。
+//
+// ⚠️ 全畫面只有**一個** id=e_drive 的 input，saveVideo 讀的就是它。
+//    有網址時它一開始就長在「進階」裡；空的時候長在主畫面（拍毛片的人要馬上看得到）。
+//    填完當下用 appendChild 把它整顆搬進「進階」—— 搬動不是複製，
+//    複製一份會變成兩個同 id，val() 讀到哪一個就看運氣了。
+const DRIVE_ADV_SLOT=(id)=>id+"_advslot";      // 「進階」裡放輸入框的位置
+function driveIsUrl(s){ return /^https?:\/\//i.test(String(s||"").trim()); }
+// 輸入框打完字（change／blur）：是網址就立刻變成連結，並把輸入框搬進「進階」
+function driveTyped(id){
+  const inp=document.getElementById(id); if(!inp) return;
+  const val=String(inp.value||"").trim();
+  const view=document.getElementById(id+"_view");
+  const link=document.getElementById(id+"_a");
+  const hint=document.getElementById(id+"_hint");
+  const slot=document.getElementById(DRIVE_ADV_SLOT(id));
+  if(!driveIsUrl(val)){                        // 還沒填完／貼錯 → 維持輸入框，不要搶著變
+    if(view) view.style.display="none";
+    if(hint) hint.style.display="none";
+    return;
+  }
+  if(link){ link.setAttribute("href", val); link.textContent=val; }
+  if(view) view.style.display="";
+  if(hint) hint.style.display="";
+  if(slot && inp.parentNode!==slot){ try{ slot.appendChild(inp); }catch(e){} }
 }
 function ownerDriveField(v, idAttr){
   if(!isSourceVid(v)) return "";
   const nm=String((v&&(v.rawName||v.name))||"").trim();
-  // 填好之後就不要再當輸入框了 —— 那是一長串網址，佔一整格又看不出來對不對，
-  // 而且平常真正要做的動作是「點開它」，不是改它。改成一條可以點的連結，
-  // 右邊放一個小小的「編輯」讓人切回輸入框。
-  // ⚠️ input 一定要留在畫面上（只是藏起來）—— saveVideo 是讀 val(idAttr)，
-  //    真的把它拿掉的話，存一次檔就會把資料夾洗成空的。
   const cur=String((v&&v.driveFolder)||"").trim();
-  const ok=/^https?:\/\//i.test(cur);
+  const ok=driveIsUrl(cur);
+  // 已經有網址 → 輸入框不在這裡（在「進階」），這一格只有連結
+  const input=`<input id="${esc(idAttr)}" value="${esc(cur)}" onchange="driveTyped('${esc(jsEsc(idAttr))}')"
+      onblur="driveTyped('${esc(jsEsc(idAttr))}')"
+      placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">`;
   return `<label>${T("存檔資料夾（這支片的所有東西都放這裡）","Drive folder (everything for this video lives here)")}</label>
-    ${ok?`<div class="drivelink" id="${esc(idAttr)}_view">
-        <a href="${esc(cur)}" target="_blank" rel="noopener noreferrer">${esc(cur)}</a>
-        <a href="javascript:void(0)" class="drivelink-edit" onclick="driveEdit('${esc(jsEsc(idAttr))}')"
-           title="${T("改成別的資料夾","Change the folder")}">${T("編輯","edit")}</a>
-      </div>`:""}
-    <input id="${esc(idAttr)}" value="${esc(cur)}" ${ok?'style="display:none"':''}
-      placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">
+    <div class="drivelink" id="${esc(idAttr)}_view" ${ok?"":'style="display:none"'}>
+      <a id="${esc(idAttr)}_a" href="${esc(ok?cur:"about:blank")}" target="_blank" rel="noopener noreferrer">${esc(cur)}</a>
+    </div>
+    ${ok?"":input}
+    <div class="muted" id="${esc(idAttr)}_hint" style="font-size:11px;margin-top:4px${ok?"":";display:none"}">${T(
+      "要換成別的資料夾：拉到下面的「進階」裡改。","To point this at a different folder, change it under “Advanced” below.")}</div>
     <div class="muted" style="font-size:11px;margin-top:4px;line-height:1.6">
       ${T("第一個拍好毛片的人：先到 Google 雲端硬碟開一個新資料夾，名字就用這支的檔名",
           "Whoever shoots the raw footage first: create a new folder in Google Drive, named after this video's file name")}${
       nm?` —— <b>${esc(nm)}</b> <a href="javascript:void(0)" onclick="copyStr('${esc(jsEsc(encodeURIComponent(nm)))}')">${T("複製檔名","copy")}</a>`:""}${T("。","." )}<br>
       ${driveRuleLine()}
     </div>`;
+}
+// 「進階」裡的存檔資料夾：輸入框真正的家。
+// 空的時候這裡只有一個空盒子 —— 輸入框還在主畫面上，填完才會被搬進來。
+function advDriveField(v, idAttr){
+  if(!isSourceVid(v)) return "";
+  const cur=String((v&&v.driveFolder)||"").trim();
+  const ok=driveIsUrl(cur);
+  const input=`<input id="${esc(idAttr)}" value="${esc(cur)}" onchange="driveTyped('${esc(jsEsc(idAttr))}')"
+      onblur="driveTyped('${esc(jsEsc(idAttr))}')"
+      placeholder="${T("貼上 Google 雲端硬碟的資料夾網址","Paste the Google Drive folder URL")}">`;
+  return `<label>${T("改存檔資料夾","Change the Drive folder")}</label>
+    <div id="${esc(DRIVE_ADV_SLOT(idAttr))}">${ok?input:""}</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">${T(
+      "上面那條連結就是這一格的內容。改了要按「儲存」才算數。",
+      "The link above is this field's value. Press Save for a change to take effect.")}</div>`;
 }
 // 海外 TikTok 帳號清單（設定維護）：每筆 {locale, name}；每帳號每日目標
 function intlAccounts(){ const a=STATE.settings&&STATE.settings.intlAccounts; return Array.isArray(a)?a.filter(x=>x&&x.name):[]; }

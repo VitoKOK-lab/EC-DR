@@ -173,8 +173,13 @@ ok("只有商品網址也自動展開", isOpen(modalHTML,"商品與導購"));
 // 不是上片之後才填。所以它不再是「上片後有沒有料」的依據，而是一定看得到。
 reset([v_("V1",{driveFolder:"http://drive/done"})]); as("Regina","manager");
 openVideoModal("V1", true);
+// v172：填好之後主畫面那一格只剩「一條可以點的連結」，輸入框搬到「進階」。
+// 所以這裡要問的是**看得到的那一格**在不在主畫面（e_drive_view），
+// 不是輸入框在哪裡 —— 輸入框現在本來就該在下面。
 ok("存檔資料夾不用展開就看得到（在主畫面，不在折疊裡）",
-   modalHTML.includes('id="e_drive"') && modalHTML.indexOf('id="e_drive"')<modalHTML.indexOf("上片後"));
+   modalHTML.includes('id="e_drive_view"') && modalHTML.indexOf('id="e_drive_view"')<modalHTML.indexOf("上片後"));
+ok("而且是點得開的連結（不是一長串網址躺在輸入框裡）",
+   modalHTML.includes('id="e_drive_a"') && modalHTML.includes('href="http://drive/done"'));
 ok("只有存檔資料夾不會讓「上片後」自動展開", !isOpen(modalHTML,"上片後"));
 reset([v_("V1",{metrics:[{platform:"IG",views:100}]})]); as("Regina","manager");
 openVideoModal("V1", true);
