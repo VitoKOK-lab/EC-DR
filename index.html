@@ -44,10 +44,11 @@
           background:#D98324;box-shadow:0 0 0 2px rgba(217,131,36,.18);
           margin:0 0 1px 5px;vertical-align:middle}
   /* 「這支還缺什麼」小燈號：直接把缺的那一項寫出來（手機沒有 hover，不能只靠 title） */
-  .misspill{display:inline-block;flex:none;margin-left:6px;padding:1px 7px;border-radius:999px;
-            font-size:10.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap;vertical-align:middle;
-            background:var(--amberbg);color:var(--gold-dk);border:1px solid var(--gold)}
-  .misspill.late{background:var(--redbg);color:var(--red);border-color:#E2B7B0}
+  /* v187：改成實心 —— 淡底淡字的藥丸在一整頁文字裡看不出是警告。 */
+  .misspill{display:inline-block;flex:none;margin-left:6px;padding:1.5px 8px;border-radius:999px;
+            font-size:10.5px;font-weight:800;letter-spacing:.02em;white-space:nowrap;vertical-align:middle;
+            background:var(--gold);color:#fff;border:1px solid var(--gold)}
+  .misspill.late{background:var(--red);border-color:var(--red);color:#fff}
   /* 指派鎖：主管把片指派給某位剪輯後，其他剪輯照樣看得到（數字才對得上）但點不開。
      用「整列變淡＋游標變禁止」表達，不是隱藏 —— 看得到有這件事，只是不歸自己管。 */
   .vlock{opacity:.5;cursor:not-allowed}
@@ -377,9 +378,14 @@
      （details.fold 有底色、外框、陰影，套上去會變成卡中有卡）。 */
   /* v184：勾了寵粉／銷售才亮的提醒條 —— 不是錯誤，是「這裡還要填」，所以用金色不用紅色 */
   /* v185：月曆格子右上角的「來不及」角標。點進去才知道等於沒提醒，所以直接畫在格子上。 */
-  .calwarn{position:absolute;top:4px;right:4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;
-    background:var(--amber);color:#fff;font-size:10px;font-weight:800;line-height:17px;text-align:center}
+  /* v187：月曆格子的角標。原本只有一個小數字，跟格子裡本來就有的「3/4」「缺1」
+     混在一起看不出是警告 —— 加上 ⚠ 與外框，而且整格描一圈同色的邊。 */
+  .calwarn{position:absolute;top:5px;right:5px;padding:1px 7px;border-radius:999px;
+    background:var(--amber);color:#fff;font-size:11px;font-weight:800;line-height:1.5;
+    letter-spacing:.02em;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25)}
   .calwarn.late{background:var(--red)}
+  .day.haswarn{border-color:var(--amber)}
+  .day.haswarn.late{border-color:var(--red)}
   .prodhint{background:var(--amberbg);border:1px solid var(--gold);border-radius:var(--rs);
     padding:8px 10px;font-size:13px;line-height:1.6;margin-bottom:8px}
   details.revfold{background:transparent;border:none;box-shadow:none;margin:0;overflow:visible}
@@ -813,6 +819,18 @@
   table.callist{table-layout:fixed;min-width:340px}
   table.callist td{vertical-align:top;padding:7px 8px;overflow:visible;white-space:normal;word-break:break-word}
   table.callist tbody tr.cl-today{background:var(--amberbg)}
+  /* v187（老闆指定）：「還沒審或是還沒剪好，沒有商品連結，要明顯，一看就知道」。
+     一顆小藥丸在 98 列裡等於沒有 —— 整列標出來才掃得到。
+       紅＝來不及了（還沒剪好、或過期）｜黃＝還沒審｜灰金＝缺商品與連結
+     ⚠️ 用 box-shadow 畫左邊那條帶子不用 border-left：<td> 上加 border 會把
+        整列的欄寬推掉，三欄的寬度就對不齊了。 */
+  table.callist tbody tr.cl-warn>td:first-child{box-shadow:inset 4px 0 0 var(--amber)}
+  table.callist tbody tr.cl-warn{background:var(--amberbg)}
+  table.callist tbody tr.cl-warn.late>td:first-child{box-shadow:inset 4px 0 0 var(--red)}
+  table.callist tbody tr.cl-warn.late{background:var(--redbg)}
+  table.callist tbody tr.cl-warn.miss>td:first-child{box-shadow:inset 4px 0 0 var(--gold)}
+  table.callist tbody tr.cl-warn.miss{background:var(--chip)}
+  table.callist tbody tr.cl-warn:hover{filter:brightness(.97)}
   table.callist tbody tr:hover{background:var(--panel2)}
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
@@ -895,7 +913,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=a4a8bd0f6d1a"></script>
-<script type="module" src="fb.js?v=a4a8bd0f6d1a"></script>
+<script src="app.js?v=c0373790292b"></script>
+<script type="module" src="fb.js?v=c0373790292b"></script>
 </body>
 </html>

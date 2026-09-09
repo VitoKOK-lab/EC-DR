@@ -16,6 +16,10 @@ global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 let toasts=[]; let calls=[];
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="members";
+
 const _toast=toast; toast=(m,bad)=>{ toasts.push(String(m)); };
 
 const T0=new Date(Date.now()+288e5).toISOString().slice(0,10);

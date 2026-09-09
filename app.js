@@ -1255,15 +1255,16 @@ function calTWBody(){
     const filled = b.full;
     const empty = (b.total||0)===0;                 // 一支都還沒排
     const cls = filled ? "filled" : (empty ? "empty" : (within10 ? "bad urgent" : "blank"));
-    cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
+    // v187：有來不及的片就把整格描一圈色邊 —— 角標一個小數字太容易被略過
+    const dw = calDayWarn(ds);
+    cells += `<div class="day ${cls} ${isToday?'today':''}${dw.n?(" haswarn"+(dw.late?" late":"")):""}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
       ${dayIsMine(ds)?`<span class="mymk" title="${T("這天有你剪的片","You have work this day")}">✦</span>`:''}
       ${/* v185（老闆指定）：來不及的那幾天，在月曆上就要看得到 ——
             點進去才知道等於沒提醒。數字＝這天有幾支還沒好。 */''}
-      ${(()=>{ const w=calDayWarn(ds); return w.n
-          ? `<span class="calwarn${w.late?" late":""}" title="${esc(w.tip)}">${w.n}</span>` : ""; })()}
+      ${dw.n?`<span class="calwarn${dw.late?" late":""}" title="${esc(dw.tip)}">⚠ ${dw.n}</span>`:""}
     </div>`;
   }
   return `
@@ -1342,7 +1343,15 @@ function calListBody(cfg){
       continue;
     }
     list.forEach((r,i)=>{
-      body+=`<tr class="${isToday?'cl-today':''}">
+      // v187（老闆指定）：「這個還沒審或是還沒剪好，沒有商品連結，要明顯，
+      // 一看就知道」。原本只在片名後面掛一顆小藥丸 —— 一個月 98 列滑下來，
+      // 那顆藥丸跟其他字長得一樣重，等於沒有。改成**整列**標出來：
+      // 左邊一條粗色帶＋整列淡底色，掃過去就看得到是哪幾列有問題。
+      const w=r.v?calWarn(r.v):null;
+      const miss=r.v?(prodMissing(r.v)?"prod":""):"";
+      const rowCls=[isToday?"cl-today":"",
+        w?("cl-warn"+(w.late?" late":"")):(miss?"cl-warn miss":"")].filter(Boolean).join(" ");
+      body+=`<tr class="${rowCls}">
         <td>${i===0?dcell:""}</td>
         <td style="white-space:nowrap">${esc(r.time)||'<span class="muted">—</span>'}</td>
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
@@ -8163,6 +8172,9 @@ function setContactsCard(contactList, contactRows){
       <button class="btn" onclick="addContact()">＋ 新增窗口</button></div>
   </div>`;
 }
+// v188：設定分成五個子頁（見 viewSettings 裡的說明）
+let SET_TAB="basic";
+function setSetTab(k){ SET_TAB=k; render(); try{ window.scrollTo(0,0); }catch(e){} }
 function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
@@ -8225,39 +8237,56 @@ function viewSettings(){
     <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(jsEsc(c))}')">改名</button>
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
-  return `<h2>設定</h2>
-  ${/* v181：操作紀錄與回收桶從導覽列收進這裡（兩個都是偶爾才用的維護工具）。
-        ⚠️ 一定要有入口 —— 把分頁拿掉卻沒補入口，等於整個功能消失。 */''}
-  <div class="card">
-    <b style="font-size:16px">維護工具</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">偶爾才用的東西收在這裡，不佔上面的分頁。</div>
-    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button class="btn sec" onclick="CUR_TAB='log';buildNav();render()">📜 操作紀錄</button>
-      <button class="btn sec" onclick="CUR_TAB='trash';buildNav();render()">🗑 回收桶</button>
-    </div>
-  </div>
+  // ── v188（老闆指定：「管理員的設定太多了，要分類分頁面」）─────────────
+  // 正式資料實測：整頁 83,951 字元、14 個區塊、**221 個輸入欄位**擠在同一頁。
+  // 光是成員名單 27 個人就佔掉一半以上（每人四顆鍵）。要改「每天上片目標」
+  // 得先滑過蝦皮、馬來、Boss Sunny、27 個人。
+  //
+  // 分成五個子頁，規則是「什麼時候會用到」而不是「功能像不像」：
+  //   基本  每天都可能動的（上片目標、上下班時間、密碼）
+  //   成員  人事異動才動（最長的一區，自己一頁）
+  //   平台  接新平台／改匯率才動
+  //   分類  標籤這種偶爾補一個的
+  //   維護  出事才用的（操作紀錄、回收桶、一次性轉檔）
+  // 只有一層子分頁，不再往下分 —— 再分下去就變成「東西藏在哪一層」的猜謎。
+  const TABS=[["basic","基本"],["members","成員"+paren(members.length)],["plat","平台"],
+              ["tags","分類"],["maint","維護"]];
+  if(!TABS.some(t=>t[0]===SET_TAB)) SET_TAB="basic";
+  const tabBar=`<div class="vtabs" style="margin-bottom:14px">${TABS.map(([k,label])=>
+    `<button class="vtab ${SET_TAB===k?'on':''}" onclick="setSetTab('${k}')"><span>${esc(label)}</span></button>`).join("")}</div>`;
+
+  const basic=`
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／天 —— 社群媒體月排程以此判斷「已排滿／缺幾支」，不分影片類型。</span></div>
   </div>
-  <div class="card">
-    <label>預排天數視窗</label>
+  <div class="card"><b>排程與網站</b>
+    <label style="margin-top:6px">預排天數視窗</label>
     <input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}" style="max-width:160px">
-    <label style="margin-top:12px">投放平台（顯示名稱=utm代號，一行一個）</label>
-    <textarea id="set_plat" style="min-height:88px">${esc(platStr)}</textarea>
     <label style="margin-top:12px">Shopline 網址</label>
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
-    <label style="margin-top:12px">管理員密碼（登入用，可自行修改）</label>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
+  <div class="card"><b>管理員密碼</b>
+    <label style="margin-top:6px">登入用，可自行修改</label>
     <input id="set_pw" type="password" autocomplete="new-password" placeholder="要改才填，留空＝維持原本的密碼">
     <div class="muted" style="font-size:12px;margin-top:4px">系統只留密碼的雜湊、不留原文，所以這裡不會顯示你目前的密碼。忘記的話只能從資料庫改。</div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
-  ${setWorkHoursCard(s)}
+  ${setWorkHoursCard(s)}`;
+
+  const plat=`
+  <div class="card"><b>投放平台</b>
+    <label style="margin-top:6px">顯示名稱=utm代號，一行一個</label>
+    <textarea id="set_plat" style="min-height:88px">${esc(platStr)}</textarea>
+    <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
+  </div>
   ${setIntlCard(s)}
   ${setRatesCard(s)}
-  ${setChannelCards(s)}
-  ${setMembersCard(members, memberRows)}
+  ${setChannelCards(s)}`;
+
+  const tags=`
   <div class="card"><b>影片標籤</b>
     <div class="muted" style="font-size:12px;margin-top:4px">新增／編輯影片時可勾選的標籤。刪除標籤不影響已套用在影片上的。</div>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -8265,14 +8294,36 @@ function viewSettings(){
     </div>
     <div class="row" style="gap:8px;margin-top:12px"><input id="tag_new" placeholder="新增標籤名稱" style="flex:1;min-width:150px" onkeydown="if(enterKey(event))addVideoTagSel()">
       <button class="btn" onclick="addVideoTagSel()">＋ 新增標籤</button></div>
+  </div>`;
+
+  const maint=`
+  ${/* v181：操作紀錄與回收桶從導覽列收進設定（兩個都是偶爾才用的維護工具）。
+        ⚠️ 一定要有入口 —— 把分頁拿掉卻沒補入口，等於整個功能消失。 */''}
+  <div class="card">
+    <b style="font-size:16px">維護工具</b>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn sec" onclick="CUR_TAB='log';buildNav();render()">📜 操作紀錄</button>
+      <button class="btn sec" onclick="CUR_TAB='trash';buildNav();render()">🗑 回收桶</button>
+    </div>
   </div>
-  ${setContactsCard(contactList, contactRows)}
   <div class="card"><b>資料維護</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">一次性的整理，跑過就不用再跑。</div>
     <div class="row" style="gap:8px;margin-top:8px"><span class="muted" style="flex:1">把「現有」影片標題與文案裡的簡體字一次轉成繁體存回資料庫（新增/編輯時本來就會自動轉）。</span>
       <button class="btn sec sm" onclick="convertExistingToTW()" style="white-space:nowrap">現有簡體轉繁體</button></div>
     <div class="row" style="gap:8px;margin-top:10px"><span class="muted" style="flex:1">把所有影片與標籤清單裡的「每日寵粉」標籤改成「寵粉」。</span>
       <button class="btn sec sm" onclick="migratePamperTag()" style="white-space:nowrap">每日寵粉 → 寵粉</button></div>
-  </div>`;
+  </div>
+  ${/* v183 把「對接窗口」那一格從交辦卡與新增工作上拿掉了（老闆：「都不用了」），
+        所以這份名單現在沒有任何地方在用它。資料留著、管理介面收到維護區，
+        要真的刪再說 —— 靜靜刪掉別人的資料不是我該做的決定。 */''}
+  ${setContactsCard(contactList, contactRows)}`;
+
+  const body = SET_TAB==="members" ? setMembersCard(members, memberRows)
+             : SET_TAB==="plat"    ? plat
+             : SET_TAB==="tags"    ? tags
+             : SET_TAB==="maint"   ? maint
+             : basic;
+  return `<h2>設定</h2>${tabBar}${body}`;
 }
 // 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）
