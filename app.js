@@ -3495,7 +3495,9 @@ function viewAttend(){
       </span></div>
     ${(()=>{ const ns=staff.filter(u=>!attendStartOf(u.name));
       return ns.length?`<div class="muted" style="font-size:12px;margin-top:6px">尚未起算 ${ns.length} 人（${ns.map(u=>esc(u.name)).join("、")}）—— 他們設好自己的密碼之後才開始計算遲到早退。</div>`:""; })()}
-    <table class="responsive" style="margin-top:10px">
+    ${/* v176：手機上一列＝一張小卡，26 個人就是 26 張，這張卡原本 7312px（8.7 個螢幕）。
+           上面那排藥丸（已到／遲到／未打卡）就是「一眼要看的」，逐人明細改成點開再看。 */''}
+    ${fold("逐人明細", todayRows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th><th>裝置</th>${canFixAttend()?"<th>補登</th>":""}</tr></thead>
       <tbody>${todayRows.map(({u,sh})=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
         const note=String((sh&&sh.issueNote)||"").trim();
@@ -3522,7 +3524,7 @@ function viewAttend(){
           <td data-label="狀況">${flags||state}</td>
           <td data-label="裝置">${a.in?`<span class="muted" style="font-size:11px">${esc(a.dev||"—")}${a.devUA?"・"+esc(a.devUA):""}</span>`:'<span class="muted">—</span>'}</td>
           ${canFixAttend()?`<td data-label="補登">${attFixBtn(u.name, today)}</td>`:""}
-        </tr>`; }).join("")}</tbody></table>
+        </tr>`; }).join("")}</tbody></table>`)}
   </div>`;
   // ── 同一台裝置幫多人打卡 ──
   const byDev={};
@@ -3550,14 +3552,16 @@ function viewAttend(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <b style="font-size:16px">出勤異常與說明 <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1}</span></b>
       <span class="pill ${noNote.length?'em':'ok'}">${noNote.length?`${noNote.length} 筆還沒說明`:"都說明了"}</span></div>
-    <table class="responsive" style="margin-top:10px">
+    ${/* v176：這張卡原本 17326px＝20 個螢幕（101 列，手機上每列一張小卡）。
+           要看的結論在上面那顆藥丸，逐筆內容改成點開再看。 */''}
+    ${fold("逐筆異常", issueRows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>日期</th><th>同仁</th><th>異常</th><th>本人說明</th></tr></thead>
       <tbody>${issueRows.map(s=>`<tr>
         <td data-label="日期">${esc(String(s.date).slice(5))}（${weekdayZh(s.date)}）</td>
         <td data-label="同仁"><b>${esc(s.user)}</b></td>
         <td data-label="異常">${esc(attIssues(s).join("、"))}</td>
         <td data-label="本人說明">${String(s.issueNote||"").trim()?esc(s.issueNote):'<span class="pill em" style="font-size:10px">尚未說明</span>'}</td>
-      </tr>`).join("")}</tbody></table>
+      </tr>`).join("")}</tbody></table>`)}
   </div>`:"";
   // ── 月報表 ──
   const rows=staff.map(u=>({u, s:attSum(u.name, ym)}));
@@ -3569,7 +3573,7 @@ function viewAttend(){
         <b style="font-size:14px">${y} 年 ${m+1} 月</b>
         <button class="calnav" style="width:30px;height:30px;font-size:16px" onclick="attMonthMove(1)">›</button>
       </span></div>
-    <table class="responsive" style="margin-top:10px">
+    ${fold("逐人月統計", rows.length, `<table class="responsive" style="margin-top:10px">
       <thead><tr><th>同仁</th><th>出勤天數</th><th>總工時</th><th>遲到</th><th>早退</th><th>沒打下班</th></tr></thead>
       <tbody>${rows.map(({u,s})=>{ const flex=workHoursOf(u.name).flex; return `<tr>
         <td data-label="同仁"><b>${esc(u.name)}</b>${shiftTag(u.name)}</td>
@@ -3578,16 +3582,16 @@ function viewAttend(){
         <td data-label="遲到" class="${!flex&&s.late?'':'muted'}">${flex?'—':(s.late?`${s.late} 次・${s.lateMin} 分`:'0')}</td>
         <td data-label="早退" class="${!flex&&s.early?'':'muted'}">${flex?'—':(s.early||0)}</td>
         <td data-label="沒打下班" class="${s.noOut||s.auto?'':'muted'}">${s.noOut?`${s.noOut} 天未結`:(s.auto?`${s.auto} 天系統補`:'0')}</td>
-      </tr>`; }).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>
+      </tr>`; }).join("")||'<tr><td colspan="6" class="muted">這個月還沒有打卡紀錄</td></tr>'}</tbody></table>`)}
     <div class="muted" style="font-size:12px;margin-top:8px">遲到＝超過上班時間 ${wh.grace} 分鐘寬限；「系統補」＝當天忘了打下班、隔天由系統以下班時間補登。<br>
       每個人從「自己設定密碼」那天起才開始計算遲到早退，之前的打卡只留著參考。變動工時的人只算工時，遲到早退顯示「—」。</div>
   </div>`;
   // ── 個人明細 ──
   const detail=staff.map(u=>{
     if(!attRows(u.name, ym).length) return "";
-    return `<div class="card"><b style="font-size:15px">${esc(u.name)} <span class="muted" style="font-size:12px;font-weight:400">${y}/${m+1} 明細</span></b>${shiftTag(u.name)}
-      ${attDetailTable(u.name, ym)}
-    </div>`; }).join("");
+    // v176：一個人的明細在手機上就是 2100px，5 個人就 10 個螢幕。改成一人一折。
+    return `<div class="card">${fold(u.name+" "+y+"/"+(m+1)+" 明細", attRows(u.name, ym).length,
+      attDetailTable(u.name, ym))}</div>`; }).join("");
   return `<h2>出勤</h2>${myAttendCard()}${attFixAnyCard()}${todayCard}${devChangeCard}${devCard}${issueCard}${monthCard}
     <h3 style="margin:20px 0 10px">個人明細</h3>${detail||'<div class="card muted">這個月還沒有打卡紀錄</div>'}`;
 }
@@ -7331,8 +7335,10 @@ function setChannelCards(s){
 function setMembersCard(members, memberRows){
   return `<div class="card"><b>成員（${members.length}）</b>
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
-    <table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
-    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>
+    ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
+           平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
+    <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
       <button class="btn" onclick="addMember()">＋ 新增成員</button></div>
