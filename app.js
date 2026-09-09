@@ -69,6 +69,20 @@ ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
 // （選品配對工作台在 v175 整個移除，老闆要重新設計 —— 見下面 route() 的說明。）
 ROLE_TABS.pick = ROLE_TABS.cs;
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
+// ── 上片時間一律只選「整點」（v177，老闆指定：「以整點選就好，不用分」）──
+// 為什麼不用 <input type="time">：那個一定會出現分鐘，手機上還要撥兩個滾輪，
+// 而實際上片時間本來就是抓整點（PUB_TIMES 也都是整點）。改成 24 個選項的下拉，
+// 一次點到位，也不可能存進 10:37 這種對不上排程的時間。
+const HOURS=Array.from({length:24},(_,h)=>String(h).padStart(2,"0")+":00");
+// 舊資料可能有 10:30 這種：不丟掉，補進選單裡（不然一存檔就被洗成別的時間）
+function hourOptions(cur, blankLabel){
+  const v=String(cur||"").slice(0,5);
+  const list=HOURS.slice();
+  if(v && !list.includes(v)) list.push(v);          // 舊的非整點值，保留
+  list.sort();
+  return `<option value="">${esc(blankLabel||T("不指定","No time"))}</option>`
+    + list.map(t=>`<option value="${t}" ${t===v?"selected":""}>${t}${HOURS.includes(t)?"":T("（舊資料）"," (legacy)")}</option>`).join("");
+}
 let STATE = null, CUR_TAB = null, ONLINE = true, LAST_RAW = null, BULK_BUSY = false;
 // 本機還有沒送出去的寫入（打卡、交辦…）。這種東西自己看得到、別人看不到，
 // 一定要標出來 —— 出過事：員工看到自己打了卡，主管看到他沒打卡。
@@ -1380,7 +1394,8 @@ function openDay(ds){
   const dayCount = list.length; const autoTime = PUB_TIMES[dayCount] || PUB_TIMES[PUB_TIMES.length-1];
   // 時間欄給彈性寬、按鈕不縮 —— 原本兩者都沒設 flex，窄螢幕上 time input 會撐爆把按鈕壓過去
   const timeField = `<div style="flex:1 1 130px;min-width:0"><label style="margin:0 0 2px">${T("上片時間","Time")}</label>
-    <input id="od_time" type="time" value="${autoTime}" style="width:100%"></div>`;
+    ${/* v177：跟編輯視窗同一套 —— 只選整點 */''}
+    <select id="od_time" style="width:100%">${hourOptions(autoTime)}</select></div>`;
   OD_DS=ds;
   const picker = `<div class="card" style="border-color:var(--accent)"><b>${T("排一支影片到這天","Schedule a video on this day")}</b>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
@@ -6300,7 +6315,14 @@ function openVideoModal(id, edit, fromWork){
     ${enFieldHTML("e_vcopyEn", T("英文腳本","English script"), v.videoCopyEn||"", "e_vcopy", true)}
     ${familyDriveField(v,"e_drive") || ownerDriveField(v,"e_drive")}
     <label>${T("預排上片日期","Scheduled upload date")}</label>
-    <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div>
+    <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:2 1 170px;min-width:0">
+        <div class="dateField"><span class="dateIco">🗓</span><input id="e_date" type="date" value="${esc(v.scheduledDate||"")}"></div></div>
+      ${/* v177：日期旁邊多一格「幾點」，只選整點 */''}
+      <div style="flex:1 1 116px;min-width:0">
+        <label style="margin:0 0 2px;font-size:12px">${T("幾點上片","Time")}</label>
+        <select id="e_time" style="width:100%">${hourOptions(v.publishTime)}</select></div>
+    </div>
     <div id="e_schedbox">${schedBoxHTML(v)}</div>
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     ${reviewCard}
@@ -6385,6 +6407,8 @@ async function saveVideo(id){
     stage:["boss","manager"].includes(currentRole())?val("e_stage"):String(v0.stage||"待處理"),
     editor:val("e_editor"),
     scheduledDate:val("e_date")||null,
+    // v177：幾點上片（只有整點）。沒有這一格的視窗（二創殼等）不要動到舊值
+    publishTime:document.getElementById("e_time") ? val("e_time") : String(v0.publishTime||""),
     driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""),
     // 帳號：只有英／泰源片那一格會出現；沒出現就不要動舊值（二創殼的帳號是建立時定的）
     account:document.getElementById("e_acct") ? val("e_acct").trim() : String(v0.account||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
