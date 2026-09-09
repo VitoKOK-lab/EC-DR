@@ -86,94 +86,97 @@ as("小美","cs");     ok("看不到別人發的", myMsgs().map(m=>m.id).join()=
 
 // ══ 員工端：折疊、沒訊息不亮紅點 ══
 reset([]); as("小葵","editor");
-{ const w=viewWork();
-  ok("工作頁有「找主管／人資說一件事」", w.includes("找主管／人資說一件事"));
-  ok("是折疊的，不是一整張卡", w.includes('<details class="fold"') && !w.includes('<details class="fold" open><summary>找主管'));
-  ok("可以選人資或主管", w.includes('id="msg_to"') && w.includes('value="hr"') && w.includes('value="boss"'));
-  ok("有輸入框與送出鍵", w.includes('id="msg_txt"') && w.includes("sendMsg()"));
-  ok("沒訊息時不亮紅點", !w.split("找主管／人資說一件事")[1].slice(0,60).includes('class="n"')); }
+// v183：舊的「找主管／人資說一件事」那張卡退休了。
+// 老闆：「找主管，找hr也是一種溝通呀，全部移到溝通去…這不是說好要整合在一起嗎?」
+// 取代它的不是「換一頁再開一張同樣的卡」，而是**同一張傳訊息卡**裡多了管理層 ——
+// 找主管跟傳給任何一個同事，現在是完全一樣的動作。
+{ const w=viewWork(), c=viewChat();
+  ok("**每日工作上不再有那張卡**",
+     !w.includes("找主管／人資說一件事") && !w.includes('id="msg_txt"'));
+  ok("**傳訊息那張卡裡選得到人資**", c.includes('value="HR小姐"'));
+  ok("**也選得到經理人**", c.includes('value="Regina"'));
+  ok("**也選得到管理員**（他沒有員工卡，本來永遠不在名單上）", c.includes('value="管理員"'));
+  ok("管理員在畫面上顯示成 Vito", c.includes(">Vito<"));
+  ok("**舊的送出鍵整個不見了**（不會再產生新的 kind:\"msg\"）",
+     !c.includes("sendMsg()") && typeof sendMsg==="undefined"); }
 reset([msg("M1","小葵","hr","請假")]); as("小葵","editor");
-{ const w=viewWork();
-  ok("等回覆中會寫出來", w.includes("等對方回覆中"));
-  ok("還沒被回覆可以自己收回", w.includes("msgDel('M1')"));
-  ok("還在等回覆時不亮紅點", !w.split("找主管／人資說一件事")[1].slice(0,60).includes('class="n"')); }
+{ COMM_TAB="open"; const c=viewChat();
+  ok("等回覆中會寫出來", c.includes("等對方回覆中"));
+  ok("還沒被回覆可以自己收回", c.includes("msgDel('M1')")); }
 reset([msg("M1","小葵","hr","請假",{reply:"准了",replyBy:"HR小姐",replyAt:T0+"T10:00:00",seen:false})]);
 as("小葵","editor");
-{ const w=viewWork();
-  ok("有回覆沒看過 → 亮紅點 1", w.split("找主管／人資說一件事")[1].slice(0,60).includes('class="n">1<'));
-  ok("看得到回覆內容與是誰回的", w.includes("准了") && w.includes("HR小姐"));
-  ok("有「知道了」可以清掉紅點", w.includes("msgSeen('M1')"));
-  ok("已回覆就不能再收回", !w.includes("msgDel('M1')")); }
+{ COMM_TAB="open"; const c=viewChat();
+  ok("有回覆沒看過 → 導覽列亮紅點 1", commUnread()===1, commUnread());
+  ok("看得到回覆內容與是誰回的", c.includes("准了") && c.includes("HR小姐"));
+  ok("有「知道了」可以清掉紅點", c.includes("msgSeen('M1')"));
+  ok("已回覆就不能再收回", !c.includes("msgDel('M1')")); }
 reset([msg("M1","小葵","hr","請假",{reply:"准了",replyBy:"HR小姐",replyAt:T0+"T10:00:00",seen:true})]);
 as("小葵","editor");
-{ const w=viewWork();
-  ok("看過之後紅點消失", !w.split("找主管／人資說一件事")[1].slice(0,60).includes('class="n"'));
-  ok("看過之後顯示已回覆", w.includes("已回覆")); }
+{ COMM_TAB="open"; const c=viewChat();
+  ok("看過之後紅點消失", commUnread()===0, commUnread());
+  ok("看過之後還是看得到回覆內容", c.includes("准了")); }
 reset([msg("M1","小美","boss","電腦壞了")]); as("小美","cs");
-ok("不剪片的員工也發得出訊息", viewWork().includes("找主管／人資說一件事") && viewWork().includes("sendMsg()"));
+{ const c=viewChat();
+  ok("不剪片的員工也發得出訊息（同一張卡）", /class="asg_p"/.test(c) && c.includes('value="Regina"'));
+  ok("而且看得到自己發過的那一則", c.includes("電腦壞了")); }
 
 // 人資自己也是員工，他也要能發訊息 —— 但只能發給主管，不能發給自己
 reset([]); as("HR小姐","hr");
-{ const t=viewTeam();
-  ok("人資的看板上也有發訊息的地方", t.includes("找主管／人資說一件事") && t.includes("sendMsg()"));
-  const sel=t.split('id="msg_to"')[1].split("</select>")[0];
-  ok("人資只能發給主管", sel.includes('value="boss"') && !sel.includes('value="hr"')); }
+{ const c=viewChat();
+  ok("人資也在「傳訊息」發訊息", /class="asg_p"/.test(c));
+  ok("**人資的名單上沒有他自己**（自己傳給自己是假的一筆）", !c.includes('value="HR小姐"'));
+  ok("人資選得到主管與管理員", c.includes('value="Regina"') && c.includes('value="管理員"'));
+  ok("**看板上不再有發訊息的地方**", !viewTeam().includes('id="msg_txt"')); }
 reset([msg("M1","HR小姐","boss","我想調整排班")]); as("HR小姐","hr");
-ok("人資看得到自己發出去的", viewTeam().includes("我想調整排班"));
-as("管理員","boss");
-ok("管理員收得到人資發的", viewFlow().includes("我想調整排班"));
-as("小葵","editor");
-{ const sel=viewWork().split('id="msg_to"')[1].split("</select>")[0];
-  ok("一般員工兩個對象都選得到", sel.includes('value="hr"') && sel.includes('value="boss"')); }
+COMM_TAB="open";
+ok("人資看得到自己發出去的", viewChat().includes("我想調整排班"));
+as("管理員","boss"); COMM_TAB="open";
+ok("管理員在「傳訊息」收得到人資發的", viewChat().includes("我想調整排班"));
 
 // ══ 人資／主管端：沒訊息整張卡不出現 ══
-reset([]); as("HR小姐","hr");
-ok("人資沒收到訊息時完全不出現這張卡", !viewTeam().includes("同仁來訊"));
-as("Regina","manager");
-ok("主管沒收到訊息時也不出現", !viewFlow().includes("同仁來訊"));
-reset([msg("M1","小葵","hr","我下週三想請假")]); as("HR小姐","hr");
-{ const t=viewTeam();
-  ok("人資看得到來訊", t.includes("同仁來訊") && t.includes("小葵") && t.includes("我下週三想請假"));
-  ok("標出待回覆", t.includes("1 則待回覆"));
-  ok("有回覆框", t.includes('id="mr_M1"') && t.includes("msgReply('M1')")); }
+// v183：收訊的那一頭也搬到「傳訊息」——舊資料照樣回得了，只是不再有第二個地方。
+reset([msg("M1","小葵","hr","我下週三想請假")]); as("HR小姐","hr"); COMM_TAB="open";
+{ const c=viewChat();
+  ok("人資看得到來訊", c.includes("小葵") && c.includes("我下週三想請假"));
+  ok("有回覆框", c.includes('id="mr_M1"') && c.includes("msgReply('M1')"));
+  ok("**看板上不再有「同仁來訊」**", !viewTeam().includes("同仁來訊")); }
 reset([msg("M1","小葵","hr","請假",{reply:"准了",replyBy:"HR小姐",replyAt:T0+"T10:00:00"})]);
-as("HR小姐","hr");
-{ const t=viewTeam();
-  ok("回覆過就不再顯示輸入框", !t.includes('id="mr_M1"'));
-  ok("顯示回覆內容", t.includes("准了"));
-  ok("全部回覆完顯示都回覆了", t.includes("都回覆了")); }
-reset([msg("M1","小美","boss","電腦壞了")]); as("Regina","manager");
-ok("主管看得到給主管的來訊", viewFlow().includes("同仁來訊") && viewFlow().includes("電腦壞了"));
+as("HR小姐","hr"); COMM_TAB="open";
+{ const c=viewChat();
+  ok("回覆過就不再顯示輸入框", !c.includes('id="mr_M1"')); }
+reset([msg("M1","小美","boss","電腦壞了")]); as("Regina","manager"); COMM_TAB="open";
+ok("主管看得到給主管的來訊", viewChat().includes("電腦壞了"));
 reset([msg("M1","小葵","hr","給人資的"), msg("M2","小美","boss","給主管的")]);
-as("管理員","boss");
-{ const f=viewFlow();
-  ok("管理員在流程中控看得到兩種", f.includes("給人資的") && f.includes("給主管的"));
-  ok("管理員看得出這則是給誰的", f.includes("給人資") && f.includes("給主管")); }
-as("小葵","editor");
-ok("一般員工的團隊看板不會看到別人的來訊", !viewTeam().includes("同仁來訊"));
+as("管理員","boss"); COMM_TAB="open";
+{ const c=viewChat();
+  ok("管理員兩種都看得到", c.includes("給人資的") && c.includes("給主管的")); }
+as("小葵","editor"); COMM_TAB="open";
+ok("一般員工看不到別人的來訊", !viewChat().includes("給主管的"));
 ok("團隊看板仍然沒有按鍵", !viewTeam().includes("<button") && !viewTeam().includes("onclick"));
 
 // ══ 送出／回覆／收回 ══
 (async()=>{
+  // v183：送出走合併後的那一條（assignTaskSel）。「員工發訊息給人資」現在
+  // 產生的是 kind:"p2p"，跟他傳給任何同事一模一樣 —— 這正是「整合在一起」。
+  // 舊的 kind:"msg" 不再產生，但已經存在的照樣讀得到、回得了（上面驗過）。
   reset([]); as("小葵","editor");
-  fields.msg_to="hr"; fields.msg_txt="我下週三想請假";
-  await sendMsg(); await wait(20);
+  asgPicked=()=>["HR小姐"]; fields.asg_txt="我下週三想請假";
+  await assignTaskSel(); await wait(20);
   { const c=calls.find(x=>x[0]==="set"&&x[1]==="tasks");
-    ok("送出會寫入一筆訊息", !!c && c[3].kind==="msg" && c[3].user==="小葵" && c[3].to==="hr"
-       && c[3].title==="我下週三想請假" && c[3].reply==="" && c[3].seen===false);
-    ok("送出後清空輸入框", fields.msg_txt===""); }
-  reset([]); as("小美","cs"); fields.msg_to="boss"; fields.msg_txt="電腦壞了";
-  await sendMsg(); await wait(20);
-  ok("選主管就送給主管", calls.some(x=>x[0]==="set"&&x[3].to==="boss"));
-  reset([]); as("小葵","editor"); fields.msg_to="hr"; fields.msg_txt="   ";
-  await sendMsg(); await wait(20);
-  ok("空白不送出", !calls.length && toasts.some(t=>t.includes("請先寫下")));
-  reset([]); as("小葵","editor"); VIEW_AS="小葵"; fields.msg_to="hr"; fields.msg_txt="不該送出";
-  await sendMsg(); await wait(20);
-  ok("員工視角唯讀不會送出", !calls.length); VIEW_AS=null;
-  reset([]); as("小葵","editor"); fields.msg_to="亂填"; fields.msg_txt="x";
-  await sendMsg(); await wait(20);
-  ok("收件人只認得人資與主管", calls.some(x=>x[0]==="set"&&x[3].to==="hr"));
+    ok("送出會寫入一筆訊息", !!c && c[3].kind==="p2p" && c[3].from==="小葵" && c[3].user==="HR小姐"
+       && c[3].title==="我下週三想請假", c&&c[3]);
+    ok("**員工發的不會變成對方的工作**", !!c && !c[3].assignedBy); }
+  reset([]); as("Regina","manager");
+  asgPicked=()=>["小葵"]; fields.asg_txt="這件事下週前處理完";
+  await assignTaskSel(); await wait(20);
+  { const c=calls.find(x=>x[0]==="set"&&x[1]==="tasks");
+    ok("**主管發的才會變成交辦**", !!c && !c[3].kind && c[3].assignedBy==="Regina", c&&c[3]); }
+  reset([]); as("小葵","editor"); asgPicked=()=>["HR小姐"]; fields.asg_txt="   ";
+  await assignTaskSel(); await wait(20);
+  ok("空白不送出", !calls.length);
+  reset([]); as("小葵","editor"); asgPicked=()=>[]; fields.asg_txt="沒選人";
+  await assignTaskSel(); await wait(20);
+  ok("沒選收件人不送出", !calls.length);
 
   reset([msg("M1","小葵","hr","請假")]); as("HR小姐","hr");
   fields.mr_M1="可以，記得填假單";
@@ -201,17 +204,18 @@ ok("團隊看板仍然沒有按鍵", !viewTeam().includes("<button") && !viewTea
 
   // ══ 海外剪輯看到的是英文 ══
   reset([msg("M1","Anna","hr","leave request",{reply:"approved",replyBy:"HR小姐",replyAt:T0+"T10:00:00"})]);
-  as("Anna","intl");
-  { const w=viewWork();
-    ok("海外的折疊標題是英文", w.includes("Message HR / manager") && !w.includes("找主管／人資說一件事"));
-    ok("海外的按鍵也是英文", w.includes(">Send<") && w.includes(">OK<")); }
-  reset([msg("M1","Anna","hr","waiting")]); as("Anna","intl");
-  ok("海外的等待字樣是英文", viewWork().includes("Waiting for a reply"));
+  as("Anna","intl"); COMM_TAB="open";
+  { const c=viewChat();
+    ok("海外看到的是英文標題", c.includes("<h2>Messages</h2>"));
+    ok("海外的按鍵也是英文", c.includes(">Send<") && c.includes(">OK<")); }
+  reset([msg("M1","Anna","hr","waiting")]); as("Anna","intl"); COMM_TAB="open";
+  ok("海外的等待字樣是英文", viewChat().includes("Waiting for a reply"));
 
   // ══ render 不炸 ══
   reset([msg("M1","小葵","hr","x"), msg("M2","小美","boss","y")]);
   [["小葵","editor","work"],["小美","cs","work"],["Anna","intl","work"],
-   ["HR小姐","hr","team"],["Regina","manager","flow"],["管理員","boss","flow"],["管理員","boss","dashboard"]].forEach(([u,r,tab])=>{
+   ["小葵","editor","chat"],["HR小姐","hr","chat"],["Regina","manager","chat"],["管理員","boss","chat"],
+   ["HR小姐","hr","board"],["Regina","manager","board"],["管理員","boss","board"]].forEach(([u,r,tab])=>{
     as(u,r); CUR_TAB=tab;
     try{ render(); ok(`[${r}] ${tab}`, true); }catch(e){ ok(`[${r}] ${tab} → ${e.message}`, false); } });
 

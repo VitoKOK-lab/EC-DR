@@ -63,7 +63,11 @@ ok("沒有事件也不會爆", enterKey(null)===false && enterKey(undefined)===f
   const bare=(raw.match(/key\s*===\s*['"]Enter['"]/g)||[]).length;
   const guarded=(raw.match(/enterKey\(event\)/g)||[]).length;
   ok("沒有任何一處還在裸用 key==='Enter'", bare===1);            // 只剩 enterKey 自己那一行
-  ok("而且真的有一堆地方在用 enterKey", guarded>=15); }
+  // 這一條是防「空轉」用的：如果全站一個 enterKey 都沒有，上面那條會永遠通過。
+  // v183 把四套訊息併成一套，少掉五個輸入框（找主管／人資、傳訊息給同事、
+  // 兩個對接窗口、交辦內容改成 textarea），所以門檻從 15 降到 12 ——
+  // 降的是「數量」，上面那條「一個都不准裸用」沒有放寬。
+  ok("而且真的有一堆地方在用 enterKey", guarded>=12, guarded); }
 
 // ══════════ ② 沒做完的工作不會隔天消失 ══════════
 reset([

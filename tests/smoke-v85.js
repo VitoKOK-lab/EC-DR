@@ -156,13 +156,14 @@ reset(); as("Regina","manager"); teamSetGroup("cs");
 { const t=viewTeam();
   ok("只看員工那一組", t.includes("小美") && t.includes("阿凱") && !t.includes("阿明") && !t.includes("Anna"));
   ok("有篩選時寫出剩幾人", t.includes("顯示 2 / 6 人")); }
-reset(); as("小葵","editor"); teamSetGroup("hr");
+// v182 起篩選是主管的工具 —— 底下這幾條全部改用主管的身分驗
+reset(); as("Regina","manager"); teamSetGroup("hr");
 ok("只看人資", viewTeam().includes("HR小姐") && !viewTeam().includes("小美"));
-reset(); as("小葵","editor"); teamSetQ("阿");
+reset(); as("Regina","manager"); teamSetQ("阿");
 ok("找人：阿明與阿凱", viewTeam().includes("阿明") && viewTeam().includes("阿凱") && !viewTeam().includes("小葵</b>"));
-reset(); as("小葵","editor"); teamSetGroup("editor"); teamSetQ("阿");
+reset(); as("Regina","manager"); teamSetGroup("editor"); teamSetQ("阿");
 ok("分組＋找人一起用", viewTeam().includes("阿明") && !viewTeam().includes("阿凱"));
-reset(); as("小葵","editor"); teamSetQ("沒有這個人");
+reset(); as("Regina","manager"); teamSetQ("沒有這個人");
 { const t=viewTeam();
   ok("找不到人時給提示", t.includes("沒有符合的人"));
   ok("找不到人時篩選列還在（才改得回來）", t.includes("teamSetGroup(")); }

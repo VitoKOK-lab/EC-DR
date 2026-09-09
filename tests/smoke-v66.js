@@ -76,7 +76,7 @@ reset(); as("管理員","boss");
 reset(); as("小美","cs");
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
 // v181：儀表板＋流程中控＋團隊看板併成一個「看板」（board）
-ok("員工分頁＝溝通／每日工作／看板", JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["work","每日工作"],["board","看板"]]), myTabs());
+ok("員工分頁＝傳訊息／每日工作／看板", JSON.stringify(myTabs())===JSON.stringify([["chat","傳訊息"],["work","每日工作"],["board","看板"]]), myTabs());
 let w=viewWork();
 ok("員工畫面沒有毛片／影片區", !w.includes("待認領") && !w.includes("待剪") && !w.includes("我的剪輯工作") && !w.includes("建立二創"));
 ok("員工有今天要做的事清單", w.includes("今天要做的事") && !w.includes("剪輯以外"));
@@ -130,10 +130,15 @@ let t=viewTeam();
   ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>tt.includes(n)));
   ok("台灣現在看得到海外同事（v142 不分區）", tt.includes("Anna")); }
 // 員工那一邊：今日區塊只有自己
-{ const dayPart=t.split("我今天")[1]?t.split("我今天")[1].split("本月成效")[0]:"";
-  ok("**員工的今日區塊只有自己那一張**",
+// v183：順序改成「我今天 → 我的出勤 → 大家今天」，全員又回來了
+{ const dayPart=t.split("我今天")[1]?t.split("我今天")[1].split("大家今天")[0]:"";
+  ok("**「我今天」那一段只有自己**",
      dayPart.includes("小葵") && !dayPart.includes("小美") && !dayPart.includes("阿凱"),
-     {自己:dayPart.includes("小葵"), 小美:dayPart.includes("小美"), 阿凱:dayPart.includes("阿凱")}); }
+     {自己:dayPart.includes("小葵"), 小美:dayPart.includes("小美"), 阿凱:dayPart.includes("阿凱")});
+  ok("**自己的下面就是「我的出勤」**", dayPart.includes("我的出勤"));
+  const allPart=t.split("大家今天")[1]?t.split("大家今天")[1].split("本月成效")[0]:"";
+  ok("**「大家今天」看得到同事**", allPart.includes("小美") && allPart.includes("阿凱"),
+     {小美:allPart.includes("小美"), 阿凱:allPart.includes("阿凱")}); }
 { as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
   ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));

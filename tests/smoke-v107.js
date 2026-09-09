@@ -118,7 +118,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
        t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && t.includes("巴基斯坦（")); }
   reset(); as("小葵","editor"); CUR_TAB="team";
   { const t=viewTeam();
-    ok("**員工只有一格（自己那張）**", (t.match(/class="teamgrid"/g)||[]).length===1,
+    // v183：員工＝自己一格（我今天）＋全員一格（大家今天）
+    ok("**員工兩格：自己＋全員**", (t.match(/class="teamgrid"/g)||[]).length===2,
        (t.match(/class="teamgrid"/g)||[]).length); }
   reset(); as("Regina","manager"); CUR_TAB="flow";
   { const f=viewFlow();
@@ -126,7 +127,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("新職位的人也能被交辦", ["阿華","阿豪","茂泉"].every(n=>f.includes("交辦 "+n+" 一件事"))); }
 
   // 依職位篩選
-  reset(); as("小葵","editor"); TEAM_GROUP="ship";
+  // v182 起篩選是**主管的工具**（員工那一頁只有自己＋全員，沒有篩選列），
+  // 所以「篩了會怎樣」要用主管的身分驗。
+  reset(); as("Regina","manager"); TEAM_GROUP="ship";
   { const t=viewTeam();
     ok("只看出貨", t.includes("茂泉") && !t.includes("阿華") && !t.includes("Asmeer")); }
   // 巴基斯坦那一組只有看得到兩區的人（主管）篩得出來

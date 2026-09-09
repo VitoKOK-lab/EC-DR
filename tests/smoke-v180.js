@@ -62,23 +62,35 @@ const dayPart=(h)=>{ const i=h.search(/我今天|今日成效|My day|>Today/); i
   //    少寫一種就會把整個月成效區塊也算進來（那裡本來就列所有人）。
   const j=h.search(/本月成效|月成效|This month|Monthly/); return h.slice(i, j<0?h.length:j); };
 
-// ══════════ ① 員工只看到自己那張卡 ══════════
+// ══════════ ① 員工先看到自己那張，再看到全員 ══════════
+// v183（老闆改的）：「先出現，我今天、我的出勤，然後下面還是把全員的都帶進來」。
+// v180 那版是「只看自己、別人全部藏起來」—— 他要的是**自己的先出現**，不是藏。
+const mePart=(h)=>{ const i=h.search(/我今天|My day/); if(i<0) return "";
+  const j=h.search(/大家今天|The team today/); return h.slice(i, j<0?h.length:j); };
+const allPart=(h)=>{ const i=h.search(/大家今天|The team today/); if(i<0) return "";
+  const j=h.search(/本月成效|月成效|This month|Monthly/); return h.slice(i, j<0?h.length:j); };
 { reset(); as("小葵","editor");
-  const h=viewTeam(), d=dayPart(h);
-  ok("**員工的今日區塊只有自己**", d.includes("小葵") && !d.includes("阿明") && !d.includes("小美"),
+  const h=viewTeam(), d=mePart(h), a=allPart(h);
+  ok("**「我今天」那一段只有自己**", d.includes("小葵") && !d.includes("阿明") && !d.includes("小美"),
      {自己:d.includes("小葵"), 阿明:d.includes("阿明"), 小美:d.includes("小美")});
+  ok("**自己的下面接「我的出勤」**", d.includes("我的出勤"), d.slice(-160));
   ok("標題寫「我今天」而不是「今日成效」", h.includes("我今天") && !h.includes("今日成效"));
-  ok("**只有一格 teamgrid**", (h.match(/class="teamgrid"/g)||[]).length===1,
+  ok("**兩格 teamgrid：自己一格、全員一格**", (h.match(/class="teamgrid"/g)||[]).length===2,
      (h.match(/class="teamgrid"/g)||[]).length);
-  ok("**看不到別人被交辦了什麼**", !d.includes("別人的交辦內容"));
+  ok("**全員那一段真的把大家都帶進來了**", a.includes("阿明") && a.includes("小美"),
+     {阿明:a.includes("阿明"), 小美:a.includes("小美")});
+  ok("**每一張都套同一個固定高度**（不然排起來像壞掉的磁磚）",
+     (a.match(/class="tdclamp"/g)||[]).length===(a.match(/class="card"/g)||[]).length
+     && (a.match(/class="tdclamp"/g)||[]).length>1,
+     {外框:(a.match(/class="tdclamp"/g)||[]).length, 卡片:(a.match(/class="card"/g)||[]).length});
   ok("但全隊總數還看得到（那是他要知道的）",
      h.includes("今日出勤") && h.includes("交辦完成")); }
 { reset(); as("小美","cs");
-  const d=dayPart(viewTeam());
-  ok("不剪片的職位也一樣，只有自己那張", d.includes("小美") && !d.includes("小葵")); }
+  const h=viewTeam();
+  ok("不剪片的職位也一樣：自己在前面", mePart(h).includes("小美") && !mePart(h).includes("小葵")); }
 { reset(); as("Anna","intl");
-  const d=dayPart(viewTeam());
-  ok("海外同仁也一樣", d.includes("Anna") && !d.includes("小葵")); }
+  const h=viewTeam();
+  ok("海外同仁也一樣", mePart(h).includes("Anna") && !mePart(h).includes("小葵")); }
 // 主管／人資照舊看得到每一個人
 { [["Regina","manager"],["管理員","boss"],["HR","hr"]].forEach(([w,r])=>{
     reset(); as(w,r);
@@ -98,14 +110,17 @@ const dayPart=(h)=>{ const i=h.search(/我今天|今日成效|My day|>Today/); i
   ok("月成效那幾欄還在", h.includes("出勤天數") && h.includes("交辦完成")); }
 
 // ══════════ ③ 每個人看得到自己的出勤 ══════════
+// v183：「我的出勤」搬到看板了（老闆：「員工的『我的出勤』應該和看板放在一起吧」）
 { reset(); as("小葵","editor");
-  const h=viewWork();
-  ok("**剪輯的每日工作有「我的出勤」**", h.includes("我的出勤"), h.slice(0,150));
-  ok("看得到自己這個月的天數與工時", /出勤 \d+ 天/.test(h) && h.includes("累計工時")); }
+  const h=viewBoard();
+  ok("**剪輯的看板有「我的出勤」**", h.includes("我的出勤"), h.slice(0,150));
+  ok("看得到自己這個月的天數與工時", /出勤 \d+ 天/.test(h) && h.includes("累計工時"));
+  ok("**每日工作上已經沒有它了**", !viewWork().includes("我的出勤")); }
 { reset(); as("小美","cs");
-  ok("**不剪片的職位也有**", viewWork().includes("我的出勤")); }
+  ok("**不剪片的職位也有**", viewBoard().includes("我的出勤"));
+  ok("**而且不在每日工作上**", !viewWork().includes("我的出勤")); }
 { reset(); as("Anna","intl");
-  const h=viewWork();
+  const h=viewBoard();
   ok("**海外同仁也有，而且是英文**", h.includes("My attendance"));
   // ⚠️ 不要用 split("</details>") 去切 —— 每日紀錄那張表本身就包在一層巢狀
   //    <details> 裡，第一個 </details> 會在表格**之前**就把字串切斷，
@@ -121,12 +136,14 @@ const dayPart=(h)=>{ const i=h.search(/我今天|今日成效|My day|>Today/); i
      (attDetailTable("Anna", ym).match(/<tr>/g)||[]).length>0,
      (attDetailTable("Anna", ym).match(/<tr>/g)||[]).length); }
 { reset(); as("小葵","editor");
-  const h=viewWork();
+  const h=viewBoard();
   ok("**只有自己的**（別人的名字不會出現在那張卡裡）",
      !((h.split("我的出勤")[1]||"").split("</details>")[0]||"").includes("阿明")); }
-// 打卡資料變了，這一頁要跟著重畫
-{ ok("TAB_DEPS 的 work 有掛 shifts（不然打完卡不會更新）",
-     (TAB_DEPS.work||[]).includes("shifts"), TAB_DEPS.work); }
+// 打卡資料變了，看板要跟著重畫（出勤搬到看板，所以 work 不用再掛 shifts）
+{ ok("TAB_DEPS 的 board 有掛 shifts（不然打完卡不會更新）",
+     (TAB_DEPS.board||[]).includes("shifts"), TAB_DEPS.board);
+  ok("work 不再多訂 shifts（那張卡已經不在這一頁了）",
+     !(TAB_DEPS.work||[]).includes("shifts"), TAB_DEPS.work); }
 
 // ══════════ ④ 沒有把別的弄壞 ══════════
 { let bad=null;
