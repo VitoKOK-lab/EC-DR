@@ -86,8 +86,12 @@ ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).lengt
 { as("Regina","manager"); const mg=viewTeam();
   ok("主管看得到三組（含巴基斯坦）", mg.includes(h4("台灣・剪輯行銷",2)) && mg.includes(h4("台灣・其他",3)) && mg.includes("巴基斯坦（"));
   as("小葵","editor"); const tw=viewTeam();
-  ok("**員工不再看到一整排別人的分組**", (tw.match(/class="teamgrid"/g)||[]).length===1,
+  // v183（老闆改回來了）：「先出現，我今天、我的出勤，然後下面還是把全員的都帶進來」。
+  // 員工現在有兩格：① 自己那張（我今天）② 全員（大家今天，不再分組）。
+  // 「不分組」是刻意的 —— 分組小標是主管在管人的時候用的。
+  ok("**員工是「自己一格＋全員一格」**", (tw.match(/class="teamgrid"/g)||[]).length===2,
      (tw.match(/class="teamgrid"/g)||[]).length);
+  ok("**員工那一頁沒有分組小標**", !tw.includes(h4("台灣・剪輯行銷",2)), tw.slice(0,120));
   as("Regina","manager"); }
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 

@@ -70,7 +70,7 @@ reset();
 
 // ── 分頁：人資（v152 多了「剪輯成效」—— 他要查誰做完幾支、審過沒、檔案在哪）──
 ok("HR 分頁＝團隊看板＋剪輯成效＋出勤",
-   JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["board","看板"],["output","剪輯產出"],["attend","出勤"]]), myTabs());
+   JSON.stringify(myTabs())===JSON.stringify([["chat","傳訊息"],["board","看板"],["output","剪輯產出"],["attend","出勤"]]), myTabs());
 
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡，另外測）
@@ -92,10 +92,21 @@ ok("**員工看到的是「我今天」不是「今日成效」**", h.includes("
 ok("**員工看得到自己那張卡**", h.includes("小葵"));
 // ⚠️ 只能看「今日卡片」那一段 —— 月成效（熱圖／長條圖／月統計表）老闆決定維持公開，
 //    那裡本來就會列出每一個人的名字，拿整頁去比會誤判。
-{ const dayPart=h.split("我今天")[1].split("本月成效")[0]||"";
-  ok("**員工的今日區塊只有自己那一張卡**",
+// v183（老闆改回來了）：「先出現，我今天、我的出勤，然後下面還是把全員的都帶進來」。
+//   v180 那版是「員工只看自己那一張、其他人全部藏起來」——他要的不是藏起來，
+//   是**自己的先出現**。所以現在要驗的是「順序」，不是「看不看得到別人」。
+{ const dayPart=h.split("我今天")[1].split("大家今天")[0]||"";
+  ok("**「我今天」那一段只有自己**",
      dayPart.includes("小葵") && !dayPart.includes("Anna") && !dayPart.includes("HR小姐"),
      {自己:dayPart.includes("小葵"), Anna:dayPart.includes("Anna"), HR:dayPart.includes("HR小姐")});
+  ok("**「我今天」下面接的是「我的出勤」**", dayPart.includes("我的出勤"), dayPart.slice(-200));
+  { const allPart=h.split("大家今天")[1].split("本月成效")[0]||"";
+    ok("**「大家今天」把全員都帶進來了**",
+       ["小葵","Anna","HR小姐"].every(n=>allPart.includes(n)),
+       ["小葵","Anna","HR小姐"].filter(n=>!allPart.includes(n)));
+    ok("**每一張都套同一個固定高度**（不一樣高排起來像壞掉的磁磚）",
+       (allPart.match(/class="tdclamp"/g)||[]).length===(allPart.match(/class="card"/g)||[]).length,
+       {外框:(allPart.match(/class="tdclamp"/g)||[]).length, 卡片:(allPart.match(/class="card"/g)||[]).length}); }
   ok("（對照）主管的今日區塊看得到每一個人",
      ["小葵","Anna","HR小姐"].every(n=>(hAll.split("今日成效")[1].split("本月成效")[0]||"").includes(n))); }
 ok("但全隊總數還是看得到（那是他要知道的）",

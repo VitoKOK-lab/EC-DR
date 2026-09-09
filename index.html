@@ -373,6 +373,11 @@
      佔掉大半個手機螢幕，而真正要打字的通常只有一件。 */
   /* ⚠️ 要寫 details.repfold（0,1,1）才蓋得過上面的 details.fold —— 
      只寫 .repfold（0,1,0）會輸，結果折疊框反而比原本的輸入框更佔位子。 */
+  /* v183：審片卡裡面的「待審核」折疊 —— 它在卡片**裡面**，不能長得像一張新卡片
+     （details.fold 有底色、外框、陰影，套上去會變成卡中有卡）。 */
+  details.revfold{background:transparent;border:none;box-shadow:none;margin:0;overflow:visible}
+  details.revfold>summary{padding:0;font-weight:400;font-size:13px;flex-wrap:nowrap;align-items:baseline}
+  details.revfold>summary>b{min-width:0}
   details.repfold{border:none;background:transparent;box-shadow:none;margin:2px 0 0;overflow:visible}
   details.repfold>summary{padding:3px 0;font-weight:400;font-size:12.5px;color:var(--muted)}
   details.repfold>summary:hover{background:transparent;color:var(--txt)}
@@ -381,6 +386,31 @@
   .asgwho{color:var(--muted);font-weight:400}
   .asgwho.on{color:var(--gold-dk);font-weight:700}
   .asgbox{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--panel2);max-height:none}
+  /* v183：訊息框跟附圖鍵同一行（老闆指定）。訊息是多行的：rows=1 起跳，
+     打到第二行由 asgGrow() 把高度撐開，所以這裡不能寫死 height。 */
+  .asgmsg{display:flex;gap:8px;align-items:flex-end}
+  .asgmsg>textarea{flex:1;min-width:0;resize:none;overflow-y:hidden;line-height:21px}
+  .asgmsg>#asg_pic_btn{flex:none;margin:0;padding:0 12px;font-size:15px;cursor:pointer;align-self:stretch;
+    display:flex;align-items:center}
+  /* v183：全員卡片一樣高（老闆：「所有人預設統一大小，才會整齊，每人預設 4 行」）。
+     216px ＝ 卡片內距 ＋ 姓名列 ＋ 上班時間 ＋ 三格數字 ＋ 大約四行內容。
+     滿出來的才畫下緣漸層（.over 由 tdClampScan() 量完才加）——
+     漸層就是「還有」的意思，老闆說不要文字說明。點一下展開，再點收回去。 */
+  /* ⚠️ 用 height 不是 max-height：max-height 只擋高的，矮的還是矮 ——
+     排出來一格高一格矮，就不是老闆說的「所有人預設統一大小，才會整齊」。 */
+  .tdclamp{position:relative;height:216px;overflow:hidden;cursor:pointer}
+  .tdclamp.open{height:auto}
+  .tdclamp>.card{height:100%;box-sizing:border-box}
+  .tdclamp.open>.card{height:auto}
+  .tdclamp.over::after{content:"";position:absolute;left:0;right:0;bottom:0;height:44px;pointer-events:none;
+    background:linear-gradient(to bottom,transparent,var(--panel) 78%)}
+  .tdclamp.open.over::after{display:none}
+
+  /* 導覽列的小紅點（老闆：「有人傳訊給你，『傳訊息』會有小紅點提醒」）。
+     直接印數字 —— 只有一個點的話，看到了也不知道是一則還是十則。 */
+  .navdot{position:absolute;top:7px;right:4px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;
+    background:var(--red);color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;
+    box-shadow:0 0 0 2px var(--panel)}
   /* ⚠️ 原本有 max-height:260px + overflow:auto，會在**一排的中間**切斷，
      看起來像壞掉。現在整個清單本來就收在折疊裡，不需要再限高。 */
   .asggrp+.asggrp{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
@@ -748,6 +778,12 @@
     background:transparent;color:var(--muted);border:1px solid var(--line);box-shadow:none}
   .commok:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
   .commok:active{transform:scale(.96)}
+  /* v183：對方回報完成、正等我按的那一顆要看得出來是一顆鍵。
+     v182 一律做淡的，結果在 66 列裡完全找不到（老闆：「沒有看見」）。
+     只有這一種狀態變實心 —— 其他狀態照舊是淡的，不會又變回一排黑點。 */
+  .commok.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .commok.on:hover{background:var(--accent);border-color:var(--accent)}
+  .commok[disabled]{opacity:.45;cursor:not-allowed}
   .commbody{padding:2px 2px 12px}
   @media(max-width:600px){
     /* 手機上先保住「誰＋內容」—— 一行就是一行，不要換行。
@@ -852,7 +888,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=b8ffb091d47e"></script>
-<script type="module" src="fb.js?v=b8ffb091d47e"></script>
+<script src="app.js?v=dd4996bea398"></script>
+<script type="module" src="fb.js?v=dd4996bea398"></script>
 </body>
 </html>

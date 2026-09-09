@@ -70,13 +70,17 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
 { reset([]); as("小葵","editor");
   const tabs=myTabs().map(t=>t[0]);
   ok("（前提）剪輯沒有儀表板那一頁", !tabs.includes("dashboard"), tabs);
-  const h=viewWork();
-  ok("**剪輯的「上班計畫」上有交辦卡**", /class="asg_p"/.test(h) && h.includes("交辦一件事給同事"), h.slice(0,160));
-  ok("剪輯的畫面上也有交辦追蹤", h.includes("交辦追蹤")); }
+  // v183：交辦卡跟交辦追蹤搬到「傳訊息」了（老闆：「為什麼每日工作裡又有溝通…
+  // 全部移到溝通去」）。「每個人都派得動」這件事沒變，只是換了一頁。
+  const c=viewChat();
+  ok("**剪輯在「傳訊息」上有這張卡**", /class="asg_p"/.test(c) && c.includes("傳訊息"), c.slice(0,160));
+  ok("剪輯也看得到交辦追蹤", c.includes("交辦追蹤"));
+  ok("**每日工作上沒有了**", !/class="asg_p"/.test(viewWork()) && !viewWork().includes("交辦追蹤")); }
 { reset([]); as("小美","cs");
-  const h=viewWork();      // 不剪片的職位走 viewWorkCS
-  ok("**客服的「本日工作」上也有交辦卡**", /class="asg_p"/.test(h) && h.includes("交辦一件事給同事"));
-  ok("客服的畫面上也有交辦追蹤", h.includes("交辦追蹤")); }
+  const c=viewChat();
+  ok("**客服在「傳訊息」上也有這張卡**", /class="asg_p"/.test(c));
+  ok("客服也看得到交辦追蹤", c.includes("交辦追蹤"));
+  ok("**客服的每日工作上也沒有了**", !/class="asg_p"/.test(viewWork())); }
 { reset([]); as("管理員","boss");
   ok("主管的儀表板照舊有那張卡（沒有被搬走）", /class="asg_p"/.test(viewDashboard())); }
 // 自己不會出現在自己的名單上
@@ -92,9 +96,9 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
 
 // ══════════ ② 海外同仁看到的是英文（這張卡以前只在儀表板，海外走不到）══════════
 { reset([]); as("Anna","intl");
-  const h=viewWork();
+  const h=viewChat();
   ok("海外也有這張卡", /class="asg_p"/.test(h));
-  const card=h.slice(h.indexOf("asg_txt")-1200, h.indexOf("asg_contact")+400);
+  const card=h.slice(h.indexOf("asg_txt")-1400, h.indexOf("asg_txt")+900);
   // 同事的名字本來就是中文（那是資料，不是介面），先拿掉再看有沒有漏中文。
   // 介面本身的全面檢查另有 audit-lang.js（那支的員工名字都是 ASCII）。
   const names=(STATE.users||[]).map(u=>u.name);
@@ -179,11 +183,15 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("草稿不會被算成「我派出去的」", myAssignedOut().length===0); }
 { reset([ d_("D1",{by:"小葵",text:"先記著的事"}) ]);
   as("小葵","editor");
-  const h=dashAssignTrackCard();
-  ok("追蹤卡裡看得到自己的草稿", h.includes("先記著的事") && h.includes("我的草稿")); }
+  // v183：草稿夾從追蹤卡裡挪到「傳訊息」頁的最下面 —— 兩個都在同一頁上的話，
+  // asg_draft_* 那些 id 會有兩份，點編輯會抓到上面那一份。
+  const h=viewChat();
+  ok("在「傳訊息」看得到自己的草稿", h.includes("先記著的事") && h.includes("我的草稿"));
+  ok("草稿夾只有一份（id 不會重複）", (h.match(/我的草稿/g)||[]).length===1,
+     (h.match(/我的草稿/g)||[]).length); }
 { reset([ d_("D1",{by:"小美"}) ]);
   as("小葵","editor");
-  ok("別人的草稿不會出現在我的畫面上", !dashAssignTrackCard().includes("草稿內容D1")); }
+  ok("別人的草稿不會出現在我的畫面上", !viewChat().includes("草稿內容D1")); }
 // 載入草稿：這時候還沒送出去，草稿要留著
 { reset([ d_("D1",{by:"小葵",text:"帶上去的內容",pic:"https://storage.example/a.jpg"}) ]);
   as("小葵","editor");
@@ -241,11 +249,11 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("**草稿裡的 javascript: 不會變成 <img src>**", !h.includes("javascript:alert"), (h.match(/src="[^"]*"/g)||[])); }
 { reset([ d_("D1",{by:"小葵",text:'看這個 <img src=x onerror=alert(1)>'}) ]);
   as("小葵","editor");
-  ok("草稿內容有跳脫，不會塞進標籤", !/<img src=x/.test(dashAssignTrackCard())); }
+  ok("草稿內容有跳脫，不會塞進標籤", !/<img src=x/.test(viewChat())); }
 { reset([ d_("D1",{by:"小葵",text:"參考這個 https://drive.google.com/drive/folders/ABC"}) ]);
   as("小葵","editor");
   ok("草稿裡的網址一樣會變成可以點的連結",
-     /<a href="https:\/\/drive\.google\.com\/drive\/folders\/ABC"/.test(dashAssignTrackCard())); }
+     /<a href="https:\/\/drive\.google\.com\/drive\/folders\/ABC"/.test(viewChat())); }
 { reset([]); as("小葵","editor");
   ok("草稿有上限，不會被無限灌爆", typeof DRAFT_MAX==="number" && DRAFT_MAX>0 && DRAFT_MAX<=200, DRAFT_MAX); }
 
