@@ -221,7 +221,8 @@ ok("有商品時「商品與導購」照樣自動展開", isOpen(modalHTML,"商�
 // v144：存檔資料夾搬到主畫面了（拍毛片的人一進來就要填），不再影響這一折
 reset([v_("V1",{driveFolder:"http://d"})]); as("Regina","manager");
 openVideoModal("V1", true);
-ok("存檔資料夾在主畫面，不用展開", modalHTML.indexOf('id="e_drive"')<modalHTML.indexOf("上片後"));
+// v172：填好之後主畫面留的是連結（e_drive_view），輸入框搬進「進階」
+ok("存檔資料夾在主畫面，不用展開", modalHTML.indexOf('id="e_drive_view"')<modalHTML.indexOf("上片後"));
 reset([v_("V1",{metrics:[{platform:"IG",views:9}]})]); as("Regina","manager");
 openVideoModal("V1", true);
 ok("有成效資料時「上片後」照樣自動展開", isOpen(modalHTML,"上片後"));
