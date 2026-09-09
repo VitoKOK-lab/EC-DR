@@ -89,7 +89,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   reset([mkVid("V001")]);
   as("小葵","editor");
   batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bv"+i]="口播"+(i+1); fields["bl"+i]=""; }
+  // v184：存檔資料夾、預排日期、上片時間都變必填了（老闆：「沒有寫，不給存檔」）
+  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bv"+i]="口播"+(i+1);
+    fields["bl"+i]="https://drive.google.com/drive/folders/F"+i;
+    fields["bd"+i]=T0; fields["bt"+i]="15:00"; }
   fields.b_lang="";
   await MODAL_OK(); await wait(30);
   { const made=Object.values(db.videos||{});

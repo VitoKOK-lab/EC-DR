@@ -47,7 +47,7 @@ ok("剪輯中不算待審核", !needsReview(STATE.videos[3]));
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 WORK_ZONE="shopee"; POOL_FILTER="all";
 let h=viewWork();
-{ const card=h.split("審片進度")[1].split("最近 7 天剪完的片")[0];   // 只看審片進度卡（今日完成的片本來就會留在「我的今日工作」；v128 起下面還有一張七天盤點卡）
+{ const card=h.split("審片進度")[1].split("剪完等審的片")[0].split("最近 7 天剪完的片")[0];   // v184：還沒審的那張卡標題會變
   ok("剪輯審片卡只列今天那支", card.includes("今天剪完的片") && !card.includes("六月完成的舊片") && !card.includes("已上傳的片")); }
 ok("審片卡計數=1", h.includes("審片進度") && h.split("審片進度")[1].includes('">1</span>'));
 

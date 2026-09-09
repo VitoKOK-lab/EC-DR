@@ -1282,12 +1282,12 @@ function calRowsTW(ds){
   return dayVideoList(ds).map(it=>{
     const v=vid(it.videoId), re=it.slot&&it.slot.reused;
     return {time:(re?(it.slot.time||""):(v&&v.publishTime)||""), name:calRowName(v),
-            open:v?vidOpenFn(v):""};
+            open:v?vidOpenFn(v):"", v:v||null};
   }).sort(calTimeSort);
 }
 // 海外／蝦皮／馬來那三條：lineDayList 回的是影片本身
 function calRowsLine(list){
-  return (list||[]).map(v=>({time:v.publishTime||"", name:calRowName(v), open:""})).sort(calTimeSort);
+  return (list||[]).map(v=>({time:v.publishTime||"", name:calRowName(v), open:"", v:v||null})).sort(calTimeSort);
 }
 function calListBody(cfg){
   const {ym, move, dayOpen, rows, head} = cfg;
@@ -1311,7 +1311,10 @@ function calListBody(cfg){
       body+=`<tr class="${isToday?'cl-today':''}">
         <td>${i===0?dcell:""}</td>
         <td style="white-space:nowrap">${esc(r.time)||'<span class="muted">—</span>'}</td>
-        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</td></tr>`;
+        ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
+              影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
+              不是另做一個，兩份標準遲早會不一樣。 */''}
+        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
   return `<div class="card">
@@ -1712,7 +1715,7 @@ function allNotices(){ return Object.values((STATE&&STATE.tasks)||{}).filter(isN
 // 今天要做的事：今天排的 ＋ **以前排的但還沒做完的**。
 // 原本只有「主管交辦的」會延到隔天，自己排的沒做完隔天就消失 —— 那等於幫人忘記，
 // 而且看板上也查不到它去哪了。沒做完就一直留在原本的位置，直到打勾為止。
-// 排在未來的不算（那些在「之後要做」，到那天才會進來）。
+// 排在未來的不算（那些在「預排工作提醒」，到那天才會進來）。
 function taskOverdue(t){ return isTask(t) && !t.done && String(t.date||"")<today; }
 // 做完的當天還要留著，隔天才收掉。勾完就當場消失會讓人以為東西不見了，也沒辦法反悔。
 // 要看 doneAt（哪一天做完的）不是 date（哪一天排的）—— 一件拖了三天的事今天才做完，
@@ -1844,7 +1847,12 @@ function asgToggleAll(btn){
 function asgCount(){
   const names=asgPicked(), n=names.length;
   const b=document.getElementById("asg_go");
-  if(b) b.textContent = n ? T("送出給 "+n+" 人","Send to "+n) : T("送出","Send");
+  // 挑了未來的日期 → 鍵上直接寫「9/12 送出」，不然按下去會以為是現在就發
+  const d=String((document.getElementById("asg_date")||{}).value||"").slice(0,10);
+  const later=d && d>today;
+  const when=later ? d.slice(5).replace("-","/") : "";
+  if(b) b.textContent = later ? T(when+" 送出"+(n?("給 "+n+" 人"):""), "Send on "+when)
+                       : n ? T("送出給 "+n+" 人","Send to "+n) : T("送出","Send");
   // 收合的時候標題就要說「現在要發給誰」—— 不然點開之前完全看不出勾了什麼
   const who=document.getElementById("asg_who");
   if(who){
@@ -1897,6 +1905,10 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   // v183：對接窗口整欄拿掉（老闆：「對接窗口先移除，都不用了」）。
   // 舊資料上的 contact 還在、畫面上照樣看得到，只是不再有地方新增。
   const names=asgPicked(); const t=val("asg_txt").trim(); const contact="";
+  // v184：可以預排 —— 挑未來的日期，那天才會出現在對方畫面上。
+  // 過去的日期不收（打錯的話對方永遠看不到，而且會一直卡在「拖了 N 天」）。
+  const when=String(val("asg_date")||today).slice(0,10) || today;
+  if(when<today){ toast(T("出現日期不能挑過去的","Pick today or a future date"),true); return; }
   if(!names.length){ toast("請先勾選要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   // 一次發給很多人是不小心手滑全選就送出去的高風險動作，先問一聲
@@ -1927,12 +1939,12 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   BULK_BUSY=true;
   try{
     r=await bulkRun(rows, (row)=>window.DB.set("tasks", row.id, tracks
-      ? {id:row.id, user:row.name, date:today, title:t, contact, report:"",
+      ? {id:row.id, user:row.name, date:when, title:t, contact, report:"",
          done:false, assignedBy:currentUser(), ack:false, createdAt:stamp, groupId:gid,
          msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}
       // 訊息：kind:"p2p" —— isTask() 認不得它，所以不會跑進對方的今日待辦、
       // 也不會混進交辦成效。但它一樣有 msgs 留言串跟圖片。
-      : {id:row.id, kind:"p2p", user:row.name, from:currentUser(), date:today, title:t,
+      : {id:row.id, kind:"p2p", user:row.name, from:currentUser(), date:when, title:t,
          ack:false, ackAt:"", reply:"", replyAt:"", fromSeen:false, fromSeenAt:"",
          createdAt:stamp, groupId:gid,
          msgs: picUrl?[{at:stamp, by:currentUser(), text:"", pic:picUrl}]:[]}));
@@ -1941,6 +1953,7 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   if(r.done){
     logA(tracks?("交辦工作（"+r.done+" 人）"):("傳訊息給同事（"+r.done+" 人）"), t);
     const a=document.getElementById('asg_txt'); if(a){ a.value=''; asgGrow(a); }
+    const dd=document.getElementById('asg_date'); if(dd) dd.value=today;
     document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
     asgPicClear();
     // 「等發送出去才會離開草稿」—— 真的送出去了才刪，送失敗的話草稿要留著
@@ -2255,7 +2268,11 @@ function workReviewCard(me){
             擠到三個螢幕以下。改成不換行、鍵縮短成「已審過」，完整說明留在 title。 */''}
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center">
         <span style="flex:1;min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        <button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過","Approved")}</button></div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
+        ${/* v184：只有 Regina 按得動 —— 剪輯那邊畫成一個「等她」的字樣，
+              不要留一顆按不動的鍵（那比沒有還糟：會以為系統壞了）。 */''}
+        ${canReview()
+          ? `<button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`
+          : `<span class="pill wa" style="font-size:10px;flex:none">${T("等 Regina 審","Waiting on Regina")}</span>`}</div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
     ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
@@ -2308,9 +2325,14 @@ function reviewStateHTML(v){
 // 上面那張「審片進度」只講今天要處理的事；這一張是給剪輯自己盤點用的 ——
 // 「這三支等五天了」拿得出去提醒主管，「好像還沒審」不行。
 function workRecent7Card(me){
+  // v184（老闆指定）：「目前的待審的片子，記錄七天，改成沒有上限，
+  //   只要還沒審過的都會出現」。七天一到就消失，等於幫人忘記 ——
+  //   而且現在只有 Regina 能審，等超過七天本來就很常見。
+  //   規矩：**還沒審過的一律留著**，審過的才只留最近七天。
   const from=new Date(Date.now()+288e5-6*864e5).toISOString().slice(0,10);   // 含今天共 7 天
   const list=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
-      && String(v.finishedAt||"").slice(0,10)>=from)
+      && String(v.finishedAt||"").trim()
+      && (needsReview(v) || String(v.finishedAt||"").slice(0,10)>=from))
     .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
   if(!list.length) return "";
   const nWait=list.filter(needsReview).length;
@@ -2321,12 +2343,12 @@ function workRecent7Card(me){
         <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
       <span style="flex:none">${reviewStateHTML(v)}</span></div>`).join("");
   return `<details class="fold" ${foldState("work.recent7", false)}>
-    <summary>${T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
+    <summary>${nWait?T("剪完等審的片","Finished — waiting on review"):T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
       nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
     <div class="foldbody">
       <div class="muted" style="font-size:12px;margin-bottom:4px">${T(
-        "還沒審的會寫出等了幾天，可以直接拿這個去問主管。「已審過」後面是按下通過的人 —— 自己標的會註明。",
-        "Unreviewed ones show how many days they've waited. “Approved” shows who pressed it — self-marked ones are labelled.")}</div>
+        "還沒審過的**一直留在這裡**（不管過多久），審過的只留最近七天。等了幾天會寫出來，可以直接拿這個去問 Regina。",
+        "Anything still unreviewed stays here no matter how old; approved ones drop off after 7 days.")}</div>
       ${rows}</div></details>`;
 }
 // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
@@ -2404,10 +2426,16 @@ function foldState(key, defOpen){
 //    於是照樣畫出一個空盒子。所以要 trim 過再判斷。
 //    （v144 把「存檔資料夾」從「上片後」搬到主畫面之後，剪輯與海外看到的
 //      「上片後」就一直是這種空盒子 —— 成效表只有老闆／主管看得到。）
-function fold(title, count, body, open){
+function fold(title, count, body, open, id){
   if(!String(body==null?"":body).trim()) return "";
-  return `<details class="fold" ${foldState(title, open)}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
+  return `<details class="fold"${id?` id="${esc(id)}"`:""} ${foldState(title, open)}><summary>${esc(title)}${count!=null?`<span class="n">${count}</span>`:""}</summary>
     <div class="foldbody">${body}</div></details>`;
+}
+// 「這支要導購」的提醒條。勾了寵粉／銷售才顯示（見 prodHintSync）。
+function prodHintHTML(prefix, on){
+  return `<div id="${esc(prefix)}_prodhint" class="prodhint"${on?"":' style="display:none"'}>${T(
+    "這支標了「寵粉」或「銷售」＝要導購的片。<b>商品名稱</b>和<b>商品官網連結</b>兩個都要填 —— 少一個，觀眾看完不知道去哪買。",
+    "Tagged for selling: fill in <b>both</b> the product name and the product page URL — without them viewers can't find the product.")}</div>`;
 }
 // 我排在未來的工作（到那天才會進今日待辦）
 function myFutureTasks(){ return Object.values((STATE&&STATE.tasks)||{})
@@ -2584,14 +2612,21 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
       <span class="pill ${nOpen?'wa':'ok'}">${nOpen?T("還有 "+nOpen+" 件","„"+nOpen+" left").replace("„","")+"":T("都做完了 ✓","All done ✓")}</span></div>
     <div style="margin-top:6px">${rows.join("")||`<div class="emptyState"><span class="es-mk">✦</span>${T("今天沒有待辦，可以到下面認領工作","Nothing today — claim something below")}</div>`}</div>
     ${presets}
-    <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
-      <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(enterKey(event))createTask()">
+    ${/* v184（老闆指定）：「這個地方應該是『預排工作提醒』，這是給自己用的」。
+          本來這一排只有一個「新增一件事…」的框，沒有標題 —— 看起來像「幫別人加一件事」。
+          它其實是**自己記給自己的**：寫下來、挑一天，那天才會跳出來提醒你。 */''}
+    <div class="wpnew">
+      <label style="margin-top:10px">${T("預排工作提醒","Remind myself")}</label>
+      <div class="muted" style="font-size:12px;margin:-2px 0 6px">${T(
+        "自己記給自己的。挑今天就是今天要做；挑未來的日期，那天才會跳出來提醒你。",
+        "A note to yourself. Pick today to do it now, or a future date and it appears that day.")}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      <input id="wp_newtask" placeholder="${T("要提醒自己什麼…","What should I remember…")}" style="flex:2;min-width:140px" onkeydown="if(enterKey(event))createTask()">
       ${/* v183：對接窗口拿掉（老闆：「對接窗口先移除，都不用了」）。
             createTask() 讀不到這個欄位就會存空字串，舊資料上的窗口照樣看得到。 */''}
       <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
       <button class="btn sm" style="flex:none" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button>
-    </div>
-    <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
+    </div></div>
   </div>`;
 }
 // ⚠️ myMsgFold()（工作頁上那張「找主管／人資說一件事」）v183 移除了 ——
@@ -2729,6 +2764,7 @@ function commLastAt(t){
 // 這一則有沒有等我做的事（用來排序、標紅點）
 function commWaitingMe(t){
   const me=currentUser();
+  if(commScheduled(t)) return false;      // 還沒到那天，誰都不用急
   // 舊的「找主管／人資」：收訊方是角色不是名字，要另外問
   if(isMsg(t)){
     return String(t.user||"")===me ? (!msgOpen(t) && !t.seen)       // 對方回了，我還沒按知道了
@@ -2772,9 +2808,15 @@ function gotoComm(id){
     if(el && el.scrollIntoView) el.scrollIntoView({block:"center"});
   }); }catch(e){}
 }
+// v184：預排的訊息（挑了未來的日期）——**那天之前收訊方看不到**。
+// 不擋的話「預排」等於沒有：東西照樣立刻出現在對方畫面上，只是日期寫著未來。
+// 發訊方自己看得到（要知道排出去了、也要能反悔），但標成「還沒送出」。
+const commScheduled=(t)=>String((t&&t.date)||"")>today;
 function commList(){
+  const me=currentUser();
   return Object.values((STATE&&STATE.tasks)||{})
     .filter(t=>isComm(t) && commMine(t))
+    .filter(t=>!(commScheduled(t) && commFrom(t)!==me))
     .sort((a,b)=>{
       const aw=commWaitingMe(a), bw=commWaitingMe(b);
       if(aw!==bw) return aw?-1:1;                                   // 等我做的排最前面
@@ -2791,6 +2833,9 @@ function commRow(t){
   const arch=taskArchived(t);
   const n=taskMsgs(t).length;
   const wait=commWaitingMe(t);
+  const sch = commScheduled(t)
+    ? `<span class="pill wa" style="font-size:10px">${T(String(t.date||"").slice(5).replace("-","/")+" 才送出",
+        "sends "+String(t.date||"").slice(5))}</span>` : "";
   const st = !tracked ? ""
     : arch ? `<span class="pill" style="font-size:10px">${T("已封存","Archived")}</span>`
     : t.done ? `<span class="pill ok" style="font-size:10px">${T("回報完成","Done")}</span>`
@@ -2817,7 +2862,7 @@ function commRow(t){
       <span class="commdir" title="${out?T("我發的","Sent"):T("收到的","Received")}">${out?"↗":"↘"}</span>
       ${personChip(peer||T("（全體）","(everyone)"), "", null)}
       <span class="commtxt">${esc(commSnip(t.title))}</span>
-      ${st}${n?`<span class="pill" style="font-size:10px">💬 ${n}</span>`:""}
+      ${sch}${st}${n?`<span class="pill" style="font-size:10px">💬 ${n}</span>`:""}
       ${wait?`<span class="commdot" title="${T("等你處理","Needs you")}"></span>`:""}
       <span class="muted commwhen">${esc(String(commLastAt(t)).slice(5,16).replace("T"," "))}</span>
       ${okBtn}
@@ -2945,7 +2990,7 @@ function msgInboxCard(){
     </div>`).join("")}
   </div>`;
 }
-// ── 之後要做（折疊）──
+// ── 預排工作提醒（折疊）：自己排給自己、排在未來的那些 ──
 function futureTasksBody(){
   const list=myFutureTasks(); if(!list.length) return "";
   return list.map(t=>`<div class="todo">
@@ -3125,7 +3170,7 @@ function viewWorkCS(me){
         搬到「傳訊息」了。老闆：「你就新增了溝通，為什麼每日工作裡又有溝通…
         這不是說好要整合在一起嗎?」這一頁現在只留「今天要做什麼」。
         我的出勤也搬走了（跟看板放在一起）。 */''}
-  ${fold("之後要做", nFuture, futureTasksBody())}
+  ${fold(T("預排工作提醒","Reminders"), nFuture, futureTasksBody())}
   <div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
@@ -3229,7 +3274,7 @@ function viewWork(){
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
   ${/* v183：訊息相關的五張卡全部搬到「傳訊息」；我的出勤搬到「看板」。
         這一頁只留「今天要做什麼」。 */''}
-  ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
+  ${fold(T("預排工作提醒","Reminders"), nFuture, futureTasksBody())}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
       ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
           <div class="ttitle">${esc(vidTitle(v))}</div>
@@ -4337,7 +4382,11 @@ function dashAssignTrackCard(){
       "Everything you assigned stays here regardless of date. It only goes away when you press OK.")}</div>
     ${scope}
     <div class="vtabs" style="margin-top:8px">${tab("open",T("還沒收","Open"),open.length)}${tab("arch",T("已封存","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
-    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
+    ${/* v184：這一格會自己捲動。每次資料同步（幾秒一次）就整頁重畫，
+          沒有 keepscroll 的話捲動位置會歸零 —— 老闆：「我往下滑看過去的留言，
+          你停約三秒就會跳回最上面? 我無法看。」
+          ⚠️ keepscroll **一定要帶 id**，render() 是靠 id 對回去的。 */''}
+    <div id="asgtrack_scroll" class="keepscroll" style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
       ${list.map(asgTrackRow).join("")||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>`;
     // ⚠️ 草稿夾**不放這裡** —— 這張卡跟草稿夾現在同在「傳訊息」頁上，
     //    兩份的話 asg_draft_* 那些 id 會重複，點編輯會抓到上面那一份。
@@ -4383,6 +4432,17 @@ function dashAssignTaskCard(opts){
           style="display:none" onchange="pickAsgPic(this)"></label>
       </div>
       <span id="asg_pic_box"></span></div>
+    ${/* v184（老闆指定）：「傳訊息給同事，要能夠選出現的日期，可以預排」。
+          預設今天＝現在就送出去。挑未來的日期＝那天才會出現在對方的清單上，
+          發訊人這邊也是那天才進「進行中」。 */''}
+    <div class="row" style="gap:8px;margin-top:10px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:150px">
+        <label style="margin:0 0 3px">${T("哪一天出現","When it appears")}</label>
+        <div class="dateField"><span class="dateIco">🗓</span>
+          <input id="asg_date" type="date" value="${today}" min="${today}" onchange="asgCount()"
+            title="${T("預設今天＝馬上送出。挑未來的日期，那天才會出現在對方畫面上。","Defaults to today. Pick a future date to schedule it.")}"></div>
+      </div>
+    </div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出","Send")}</button>
       ${/* 還沒決定要發給誰的，先存起來 —— 存草稿不需要勾任何人 */''}
@@ -4427,7 +4487,7 @@ function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
         <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
       <div><label>選擇毛片（勾選，可多選）</label>
         ${unassignedPool.length?`<div style="margin-bottom:6px"><button type="button" class="btn sec sm" onclick="afpToggleAll(this)">全選</button></div>`:''}
-        <div style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
+        <div id="afp_scroll" class="keepscroll" style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
         ${unassignedPool.map(v=>{
           const d=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
           // 上片日就是排序的依據，要看得到 —— 只印片名的話，老闆沒辦法確認順序對不對
@@ -4538,7 +4598,7 @@ function teamDayStat(name, allTasks){
 }
 // 某人「某個月」的成效：完成量、剪片速度、平均工時、帶商品、出勤天數、交辦完成
 function teamMonthStat(name, allTasks, ym){
-  const fin=(STATE.videos||[]).filter(v=>v.editor===name&&isPublished(v)&&String(v.finishedAt||"").slice(0,7)===ym);
+  const fin=(STATE.videos||[]).filter(v=>v.editor===name&&countsAsDone(v)&&String(v.finishedAt||"").slice(0,7)===ym);
   const days=fin.map(editDays).filter(x=>x!=null);
   const mins=fin.map(v=>v.durationMin).filter(x=>typeof x==="number");
   const tasks=realTasks(allTasks).filter(t=>t.user===name&&String(t.date||"").slice(0,7)===ym);
@@ -4571,7 +4631,7 @@ function teamHeatData(staff, ym){
   const days=ymDays(ym);
   const idx={}; const rows=staff.map(u=>{ const r={u, cells:new Array(days).fill(0), total:0}; idx[u.name]=r; return r; });
   (STATE.videos||[]).forEach(v=>{
-    if(!isPublished(v)) return;
+    if(!countsAsDone(v)) return;
     const f=String(v.finishedAt||"").slice(0,10);
     if(f.slice(0,7)!==ym) return;
     const r=idx[v.editor]; if(!r) return;
@@ -4620,7 +4680,8 @@ function teamHeatCard(staff, ym){
         ${T("多","more")}${max?`　<span class="muted">${T("單日最多 "+max+" 支","peak "+max)}</span>`:""}</span>
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">${T(
-      "顏色越深＝那天完成越多，淺灰格＝那天沒有完成上片。","Darker = more finished that day; a pale cell means none.")
+      "顏色越深＝那天完成越多，淺灰格＝那天沒有完成上片。<b>Regina 審過的才算</b>，還在待審的先不計入。",
+      "Darker = more finished that day; a pale cell means none. Only clips Regina has approved are counted.")
       + (today.slice(0,7)===ym ? T("今天之後的日子不畫格子。"," Days after today are left undrawn.") : "")}</div>
     <div class="hm-wrap"><table class="hm">
       <thead><tr><th class="hm-n"></th>${head}<th class="hm-t">${T("合計","Total")}</th></tr></thead>
@@ -4960,6 +5021,9 @@ function viewBoard(){
   <div class="muted" style="font-size:12px;margin:-6px 0 12px">${T(
     "上半部是主管在用的（要不要去拍片、派誰剪、誰卡住了）；下半部全公司都看得到。",
     "The top half is for managers; everything below is what everyone sees.")}</div>
+  ${/* v184（老闆指定）：「這個是 vito 管理員要看的，用其他人的視角，要移到最上面，
+        我隨時要用」。本來排在主管區的最後一張，要滑過五張卡才看得到。 */''}
+  ${currentRole()==="boss"?dashViewAsCard():""}
   ${flowRunwayCard(g, okRunway, pct)}
   ${flowStockCard(staff.filter(u=>!NO_EDIT_ROLES.includes(u.role)), pool, unassigned, Math.floor(pool.length/daily))}
   ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
@@ -4967,7 +5031,6 @@ function viewBoard(){
   ${flowReviewQueueCard()}
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
-  ${currentRole()==="boss"?dashViewAsCard():""}
   <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
     <span class="muted" style="font-size:13px;font-weight:400">${T("（下面這一段全公司都看得到）","(everyone sees this part)")}</span></h3>
   ${teamBoardBody()}`;
@@ -5002,6 +5065,8 @@ function outState(v){ return v.reviewStatus==="通過" ? "ok" : (v.reviewStatus=
 // 某人某月「做完的片」。用 editor 而不是 claimedBy —— 完成的功勞記在剪輯身上。
 // 二創版本也算（那也是他剪的），所以不篩 isSourceVid。
 function outVideosOf(name, ym){
+  // ⚠️ 這一頁**不套** countsAsDone —— 它整頁的重點就是「審到哪了」：
+  //    審過幾支、還沒審幾支、退回幾支。把還沒審的濾掉，那三個數字就沒得算了。
   return (STATE.videos||[]).filter(v=>v.editor===name && isPublished(v)
       && String(v.finishedAt||"").slice(0,7)===ym)
     .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
@@ -5240,7 +5305,7 @@ function viewDashboard(){
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const D=SHIFT_DATE, isToday=(D===today);
   const hm=dashHM, dur=dashDur, minLabel=dashMin;
-  const fin=(STATE.videos||[]).filter(v=>isPublished(v)&&v.finishedAt&&v.editor);
+  const fin=(STATE.videos||[]).filter(v=>countsAsDone(v)&&v.finishedAt&&v.editor);
   const perEditor=dashEditorRows(editors, shifts, allTasks, D, isToday);
   const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
   const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
@@ -5286,8 +5351,15 @@ function batchNewFootage(){ if(dbBlocked()) return;
       <input id="bn${i}" placeholder="${T("毛片片名（留空＝不建立這支）","Raw title (leave empty to skip)")}">
       <label>${T("影片文案（口播台詞）· 填了片名就必填","Script (spoken lines) · required once a title is filled")}</label>
       <input id="bv${i}" autocomplete="off" placeholder="${T("這支要講什麼","What this clip should say")}">
-      <label>${T("毛片雲端連結","Raw footage cloud link")}</label>
-      <input id="bl${i}" placeholder="${T("存檔資料夾網址（選填，拍完再補也可以）","Drive folder URL (optional, can be added later)")}">
+      <label>${T("存檔資料夾 · 填了片名就必填","Drive folder · required once a title is filled")}</label>
+      <input id="bl${i}" placeholder="${T("Google 雲端硬碟資料夾網址","Google Drive folder URL")}">
+      ${/* v184：日期與時間也必填 —— 跟單支新增同一條規矩 */''}
+      <div class="grid cols2">
+        <div><label>${T("預排上片日期 · 必填","Scheduled date · required")}</label>
+          <div class="dateField"><span class="dateIco">🗓</span><input id="bd${i}" type="date" value=""></div></div>
+        <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
+          <select id="bt${i}" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
+      </div>
       ${productRows("b"+i, [])}
     </fieldset>`;
   }
@@ -5304,7 +5376,14 @@ function batchNewFootage(){ if(dbBlocked()) return;
       const vcopy=zhTW((val("bv"+i)||"").trim());
       if(!vcopy){ toast(T("第 "+(i+1)+" 支有片名但沒填文案，請補上（或把片名清空跳過這支）",
                           "Clip "+(i+1)+" has a title but no script — fill it in, or clear the title to skip"),true); return false; }
-      items.push({name, videoCopy:vcopy, driveFolder:(val("bl"+i)||"").trim(), products:collectProducts("b"+i)}); }
+      const link=(val("bl"+i)||"").trim();
+      if(!link){ toast(T("第 "+(i+1)+" 支還沒填存檔資料夾","Clip "+(i+1)+" has no drive folder"),true); return false; }
+      const d=String(val("bd"+i)||"").slice(0,10);
+      if(!d){ toast(T("第 "+(i+1)+" 支還沒選預排上片日期","Clip "+(i+1)+" has no scheduled date"),true); return false; }
+      const tm=String(val("bt"+i)||"").trim();
+      if(!tm){ toast(T("第 "+(i+1)+" 支還沒選上片時間","Clip "+(i+1)+" has no upload time"),true); return false; }
+      items.push({name, videoCopy:vcopy, driveFolder:link, scheduledDate:d, publishTime:tm,
+                  products:collectProducts("b"+i)}); }
     if(!items.length){ toast(T("請至少輸入一支片名","Enter at least one title"),true); return false; }
     // ID 與編號都由 newVideoRecord 產生（ID 跨裝置不撞號；編號含本批已產生的一起算，避免同批重覆）
     // 編號要先全部算完再寫：nextVideoCode(made) 得看著已產生的那幾支才不會撞號，
@@ -5313,7 +5392,8 @@ function batchNewFootage(){ if(dbBlocked()) return;
     for(let i=0;i<items.length;i++){
       made.push(newVideoRecord({code:nextVideoCode(made), name:items[i].name, rawName:items[i].name,
         videoCopy:items[i].videoCopy,
-        driveFolder:items[i].driveFolder, products:items[i].products, origLang:bLang,
+        driveFolder:items[i].driveFolder, scheduledDate:items[i].scheduledDate,
+        publishTime:items[i].publishTime, products:items[i].products, origLang:bLang,
         tags:(items[i].products||[]).some(p=>p&&p.name)?["寵粉"]:[]}));   // 有銷售商品 → 自動帶「寵粉」
     }
     BULK_BUSY=true; let r={done:0,failed:0};
@@ -5372,12 +5452,19 @@ function newSimpleVideo(){
     <label>${T("原本語言（這支影片是什麼語言拍的）","Original language (what language was it shot in)")}</label>
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <label>${T("原始片名","Raw title")}</label><input id="sv_name" placeholder="${T("毛片名稱","Raw footage name")}">
-    <label>${T("存檔資料夾（毛片跟之後所有版本都放這裡）","Drive folder (the raw footage and every later version live here)")}</label>
-    <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址（拍完再補也可以）","Google Drive folder URL (can be added after shooting)")}">
+    ${/* v184（老闆指定）：「在新增影片時，預排日期和時間和儲存位置是必填，沒有寫，不給存檔」。
+          正式資料的月排程清單上一整排「—」就是這樣來的：建檔時可以先跳過，
+          結果沒有人回頭補。改成當場擋下來。 */''}
+    <label>${T("存檔資料夾 · 必填（毛片跟之後所有版本都放這裡）","Drive folder · required (the raw footage and every later version live here)")}</label>
+    <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址","Google Drive folder URL")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
-    <label>${T("預排上片日期（可以先不填，之後在編輯視窗補）","Scheduled upload date (optional — can be set later)")}</label>
-    <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value=""></div>
+    <div class="grid cols2">
+      <div><label>${T("預排上片日期 · 必填","Scheduled upload date · required")}</label>
+        <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value=""></div></div>
+      <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
+        <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
+    </div>
     ${productRows("sv", [])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
@@ -5385,12 +5472,19 @@ function newSimpleVideo(){
     // 文案必填：片名只是代號，文案才說得出要拍什麼。留空的話這支到了拍片那邊等於空殼。
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
+    // v184：三個必填，缺一個就不給存 —— 沒有日期時間的片排不進月排程，
+    // 沒有存檔位置的片剪完不知道要放哪、之後也找不回來。
+    const svLink=val("sv_link").trim();
+    if(!svLink){ toast(T("請填存檔資料夾 —— 剪好的片要放哪裡，現在就要說清楚","Enter the drive folder — where the finished file goes"),true); return false; }
+    const svDate=String(val("sv_date")||"").slice(0,10);
+    if(!svDate){ toast(T("請選預排上片日期","Pick the scheduled upload date"),true); return false; }
+    const svTime=String(val("sv_time")||"").trim();
+    if(!svTime){ toast(T("請選上片時間（整點就好）","Pick the upload time"),true); return false; }
     const svProducts=collectProducts("sv");
     // 預排上片日期：新增時就填得起來（以前只能先存、再點開編輯視窗補一次）。
     // 沒填就是 null —— 跟 newVideoRecord 的預設一致，不要塞空字串（月曆是用 null 判斷「沒排」的）。
-    const sched=String(val("sv_date")||"").slice(0,10) || null;
-    const video={name, rawName:name, driveFolder:val("sv_link").trim(), videoCopy:vcopy, products:svProducts,
-      origLang:val("sv_lang")||"", scheduledDate:sched,
+    const video={name, rawName:name, driveFolder:svLink, videoCopy:vcopy, products:svProducts,
+      origLang:val("sv_lang")||"", scheduledDate:svDate, publishTime:svTime,
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
   });
@@ -5414,7 +5508,19 @@ function videoTags(){ const t=brandSetting("videoTags");
 // 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
 function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
 function tagChip(id,t,checked){ return `<label style="display:inline-flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:13px">
-  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"> ${esc(dataLabel(t))}</label>`; }
+  <input type="checkbox" class="${id}_tag" value="${esc(t)}" ${checked?"checked":""} style="width:auto;margin:0"
+    onchange="prodHintSync('${esc(jsEsc(id))}')"> ${esc(dataLabel(t))}</label>`; }
+// v184（老闆指定）：勾了「寵粉」或「銷售」，就當場把「商品與導購」打開、亮出提醒。
+// 提醒要在**他勾的當下**出現 —— 等到存檔才擋，他已經在想別的事了。
+function prodHintSync(prefix){
+  try{
+    const on=Array.from(document.querySelectorAll("."+prefix+"_tag:checked"))
+      .some(x=>PRODUCT_TAGS.includes(String(x.value)));
+    const hint=document.getElementById(prefix+"_prodhint");
+    if(hint) hint.style.display = on ? "" : "none";
+    if(on){ const f=document.getElementById(prefix+"_prodfold"); if(f) f.open=true; }
+  }catch(e){}
+}
 // 標籤：只留可複選的其他標籤（新舊片自動、不設選單）
 // 標籤越加越多，全部攤開在手機上佔掉一大塊。預設只露前兩個 ——
 // 已經勾起來的一定要露（不然看不出這支選了什麼），其餘收進「更多標籤」。
@@ -5471,6 +5577,27 @@ async function delVideoTag(t){ if(dbBlocked()) return;
 // ===================================================================
 // 是否剪好（可標新/舊片）：已完成上架，或手選過新/舊片
 function isPublished(v){ return !!(v && (v.published===true || ["已完成","已上片"].includes(v.stage))); }
+// ── v184（老闆指定）：產出的數字要「Regina 審片完成後才算」──────────────
+// 老闆：「這邊的數量需要以 Regina 審片完成後才算」
+//
+// ⚠️ 不能寫成 `reviewStatus==="通過"` 就好 —— 審核制度是 2026-07-27 才上路的
+//    （settings.reviewSince），在那之前的片沒有人審過、reviewStatus 一律是空的。
+//    只認「通過」的話，六月以前的產出會整片歸零。所以要問的是「還在等審嗎」，
+//    不是「有沒有審過」。
+// 正式資料實測：653 支算作完成的 → 587 支。被扣掉的 66 支**全部**是
+//    「剪完、還在等審」（reviewStatus 空白＋已完成），六月的舊片一支都沒被誤傷。
+function reviewOK(v){
+  const r=String((v&&v.reviewStatus)||"");
+  if(r==="通過") return true;
+  if(r==="退回") return false;    // 被退回＝還要修，當然不算完成
+  return !needsReview(v);         // 沒有審核紀錄：只有「還在等審」的不算
+}
+// 「這支算不算一支產出」—— 所有**成效統計**一律走這一個判斷，不要各自寫一份。
+// ⚠️ 只用在**月成效**那一層（熱圖、月統計表、長條圖、剪輯產出、KPI）。
+//    「今天完成幾支」故意不套：審片是 Regina 隔天才按的，套下去每天的數字
+//    幾乎永遠是 0，那個欄位就廢了。當日看的是「今天做完了什麼」，
+//    月成效看的是「真正過關的有幾支」——兩個問題不一樣。
+function countsAsDone(v){ return isPublished(v) && reviewOK(v); }
 // ── 指派鎖（v124）────────────────────────────────────────────────────
 // 主管把某支毛片指派給某位剪輯之後，其他剪輯**照樣看得到**它（數字才對得上、
 // 也才知道這支有人在做），但點不開、整列變灰 —— 直到「上片完成」才恢復正常。
@@ -5727,7 +5854,12 @@ function reviewCardHTML(v){
 // 已審過通知「知道了」：連結都補齊後，剪輯自己收起（reviewAck）；在那之前會一直亮在審片進度卡
 function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
 // 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
+// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
+// 以前剪輯可以自己按「Regina 審過了」——那等於審核制度形同虛設，而且
+// v184 起產出統計是以「審過」為準的，自己按等於自己給自己打分數。
+function canReview(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
 function editorMarkReviewed(id){ const v=vid(id)||{};
+  if(!canReview()){ toast(T("審片只有 Regina（或管理員）可以按","Only Regina can approve"),true); return; }
   if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
     `Has Regina approved "${vidTitle(v)}"?\nNext step: upload to the cloud & add the links.`))) return;
   write("PUT",`/api/videos/${id}`,{video:{reviewStatus:"通過",reviewedBy:currentUser(),reviewedAt:nowIso()}},
@@ -6209,7 +6341,7 @@ function origLangFixCard(){
     <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.7">${T(
       "泰文片、以及口播稿是英文的，系統已經自動移到海外區了。<br>剩下這幾支只有標題像英文、沒有口播稿可以佐證（也可能只是英文品牌名），要你看一眼再決定。",
       "Thai videos and ones with an English script have already been moved automatically.<br>These only look English by title with no script to confirm it — take a look before deciding.")}</div>
-    <div style="margin-top:8px${list.length>8?';max-height:320px;overflow-y:auto':''}">${rows}</div>
+    <div id="origlang_scroll" class="keepscroll" style="margin-top:8px${list.length>8?';max-height:320px;overflow-y:auto':''}">${rows}</div>
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn sm" onclick="saveOrigLangFixes()">${T("儲存","Save")}</button>
       <span class="muted" style="font-size:12px">${T("維持「中文」的那幾支不會被動到","Rows left on Chinese are not touched")}</span></div>
@@ -6595,9 +6727,30 @@ function vidImplied(){
 // （實際資料：610 支影片有 0 支填得起來）。拿一個填不了的欄位當缺漏，
 // 等於對所有人亮一個永遠熄不掉的紅字 —— 燈號就失去意義了，看到紅色也不會再有人當一回事。
 function needPostLink(v){ return isVersion(v); }
+// v184（老闆指定）：「是寵粉或銷售的我要有地方要提醒他們，輸入商品名稱
+// 還有這個商品的官網連結」。這兩種標籤就是要導購的片 —— 沒有商品名稱與
+// 官網連結，觀眾看完不知道去哪買，那支片等於白剪。
+const PRODUCT_TAGS=["寵粉","銷售"];
+function needsProduct(v){
+  const tags=(v&&Array.isArray(v.tags))?v.tags:[];
+  return tags.some(t=>PRODUCT_TAGS.includes(String(t)));
+}
+function prodMissing(v){
+  if(!needsProduct(v)) return null;
+  const hasName=(Array.isArray(v.products)?v.products:[]).some(p=>p&&String(p.name||"").trim());
+  const hasUrl=!!String((v&&v.productUrl)||"").trim();
+  if(hasName && hasUrl) return null;
+  return !hasName && !hasUrl ? {k:"prod", zh:"缺商品與連結", en:"needs product & link"}
+       : !hasName          ? {k:"prod", zh:"缺商品名稱",   en:"needs product name"}
+                           : {k:"prod", zh:"缺商品官網連結", en:"needs product URL"};
+}
 function vidMissing(v){
   if(!v) return [];
   const out=[];
+  // 商品那一項排在最後 —— 缺文案／缺毛片是「今天不能開工」，缺商品是「上片前補得完」。
+  // missingPill 只把第一項寫成字，順序等於優先順序。
+  const pm=prodMissing(v);
+  const done=()=>{ if(pm) out.push(pm); return out; };
   const sch=String(v.scheduledDate||"").slice(0,10);
   const pub=String(v.publishedLink||"").trim();
   if(isVersion(v)){                                   // 版本殼：沒有腳本／毛片這兩步
@@ -6607,20 +6760,20 @@ function vidMissing(v){
     // 存檔位置跟源片同一個資料夾（唯讀），版本殼不會有自己的 —— 所以問「這一家有沒有」，
     // 不是問「它自己有沒有」。問錯就是又一顆永遠熄不掉的燈號。
     if(isPublished(v) && !familyDrive(v)) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
-    return out;
+    return done();
   }
   if(isDF(v)){
     // 大流放的是成品：沒有毛片這一步（它本來就不用拍），所以不能標「缺毛片」——
     // 那會變成又一個永遠熄不掉的燈號。它只有兩件事真的可能缺：存檔連結與文案。
     if(!String(v.driveFolder||"").trim()) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     if(!String(v.videoCopy||"").trim())   out.push({k:"copy",  zh:"缺文案",     en:"needs script"});
-    return out;
+    return done();
   }
   if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
   if(!vidShot(v))                      out.push({k:"raw",  zh:"缺毛片",  en:"needs footage"});
   if(!sch)                             out.push({k:"date", zh:"沒排日期", en:"no date"});
   if(isPublished(v) && !ownDrive(v))   out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
-  return out;
+  return done();
 }
 // 小燈號：只寫最要緊的那一項，其餘掛在 title 裡（手機上點不到 hover，所以主要那項一定用文字寫出來）
 // implied＝這個畫面／分頁已經說明過的事，不用在每一列再寫一次。
@@ -6750,9 +6903,10 @@ function openVideoModal(id, edit, fromWork){
     ${tagPickerHTML("e", v.tags||(v.subTag?[v.subTag]:[]))}
     ${reviewCard}
     ${fold(T("商品與導購","Products & links"), prodList.length||null, `
+      ${prodHintHTML("e", needsProduct(v))}
       ${productRows("e", v.products)}
-      <label>${T("商品頁網址","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
-      <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd)}
+      <label>${T("商品官網連結","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
+      <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd || needsProduct(v), "e_prodfold")}
     ${fold(T("上片後","After publishing"), null, `
       ${metricsCard}
       ${usageCard}`, hasPost)}

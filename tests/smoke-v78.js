@@ -81,7 +81,10 @@ reset([task("F1",{title:"下週要做的事",date:NEXTWK}), task("K1",{title:"�
 as("小葵","editor");
 ok("未來的工作不會混進今天", !todayCard().includes("下週要做的事"));
 ok("今天的還在", todayCard().includes("今天的事"));
-ok("未來的工作在「之後要做」折疊裡", viewWork().includes("之後要做") && viewWork().includes("下週要做的事"));
+// v184：改叫「預排工作提醒」（老闆：「這個地方應該是『預排工作提醒』，這是給自己用的」）。
+// 輸入的地方跟清單同一個名字 —— 同一件事叫兩個名字，人會以為是兩個功能。
+ok("未來的工作在「預排工作提醒」折疊裡",
+   viewWork().includes("預排工作提醒") && viewWork().includes("下週要做的事"));
 ok("折疊裡顯示排定日期", viewWork().includes(NEXTWK.slice(5)));
 ok("可以改日期", viewWork().includes("taskSetDate('F1'"));
 ok("myFutureTasks 只抓未來的", myFutureTasks().length===1 && myFutureTasks()[0].id==="F1");
@@ -124,7 +127,7 @@ ok("而且標出來是拖過來的", todayCard().includes("昨天沒做完") && 
   as("小美","cs");
   { const h=viewWork();
     ok("員工也是一條今日清單", h.includes("今天要做的事") && h.includes("回覆客戶"));
-    ok("員工也有「之後要做」折疊", h.includes("之後要做") && h.includes("下週盤點"));
+    ok("員工也有「預排工作提醒」折疊", h.includes("預排工作提醒") && h.includes("下週盤點"));
     ok("員工畫面沒有毛片區", !h.includes("待認領")); }
 
   // ── 海外看到的是英文 ──

@@ -157,7 +157,9 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   newSimpleVideo();
   ok("新增視窗的那一格講的是資料夾", /存檔資料夾/.test(modalHTML));
   ok("新增視窗沒有另一格毛片連結", !/毛片雲端連結/.test(modalHTML));
+  // v184：預排日期與上片時間也變必填了
   fields.sv_name="新拍的一支"; fields.sv_vcopy="口播稿"; fields.sv_link=FAM; fields.sv_lang="";
+  fields.sv_date=new Date(Date.now()+288e5).toISOString().slice(0,10); fields.sv_time="15:00";
   await confirmBtn.onclick();
   const w=writes.find(x=>x[1]==="videos");
   const p=w&&w[3];

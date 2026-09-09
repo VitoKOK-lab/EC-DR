@@ -91,7 +91,9 @@ reset([vd({id:"R1",reviewStatus:"退回",reviewNote:"字太小"}), needLink("V1"
 reset([vd({id:"W1",reviewStatus:"",finishedAt:D(-1)+"T05:00:00"}), needLink("V1")]); as("小葵","editor");
 { const w=viewWork();
   ok("待審核那段照舊攤開", w.includes("待審核") && w.includes("片W1"));
-  ok("待審核的按鍵還在", w.includes("editorMarkReviewed('W1')")); }
+  // v184：只有 Regina 按得動，剪輯看到的是「等 Regina 審」
+  ok("待審核那一列還是點得到（片名可以開）", w.includes("片W1") && !w.includes("editorMarkReviewed('W1')"));
+  ok("而且寫著在等誰", w.includes("等 Regina 審")); }
 
 // ══ 卡片右上角的總數不變 ══
 reset([vd({id:"R1",reviewStatus:"退回"}), needLink("V1"), needLink("V2"),

@@ -379,7 +379,9 @@ function reset(tasks){
       assignedTo:"",scheduledDate:null,publishTime:"",finishedAt:T0+"T10:00:00",publishedLink:"",
       driveFolder:"",productUrl:"",note:"",mainType:"",source:"官方IP",refLink:"",reviewStatus:"",
       locale:"",channel:"",origLang:"",account:"",tags:[],products:[],usageHistory:[],metrics:[]});
-    reset(); STATE.videos=vs; LAST_RAW.videos=vs; STATE=decorate(LAST_RAW); as("小葵","editor");
+    // v184：審過鍵只有 Regina 有 —— 這一段驗的是「長清單收不收得起來」，
+    // 所以用她的身分看（剪輯那邊那一列是「等 Regina 審」，沒有鍵可以量）。
+    reset(); STATE.videos=vs; LAST_RAW.videos=vs; STATE=decorate(LAST_RAW); as("Regina","manager");
     return workReviewCard("小葵"); };
     const few=mk(3), many=mk(20);
     ok("**少少幾支就直接列出來**（不用點）", !few.includes("revfold") && few.includes("editorMarkReviewed('W0')"));
@@ -388,8 +390,8 @@ function reset(tasks){
     ok("**清單沒有被截斷**（收起來 ≠ 只留前幾支）",
        (many.match(/editorMarkReviewed/g)||[]).length===20, (many.match(/editorMarkReviewed/g)||[]).length);
     ok("**按鍵縮短了**（「已審過，下一步」在手機上會掉到自己一行，20 支就是 20 塊黑磚）",
-       many.includes("✓ 已審過<") && !many.includes("已審過，下一步"));
-    ok("按下去會怎樣還是講得出來（在 title 裡）", many.includes("標記通過，開始上傳雲端"));
+       many.includes("✓ 審過<") && !many.includes("已審過，下一步"));
+    ok("按下去會怎樣還是講得出來（在 title 裡）", many.includes("剪輯就能上傳雲端"));
     ok("**而且不是實心黑**（20 顆實心的比內容還搶眼）", many.includes('class="btn sec sm"'));
     ok("按鍵不換行，會留在右邊", many.includes("white-space:nowrap"));
     ok("折疊本身不長成一張新卡片（卡中有卡）", /details\.revfold\{[^}]*border:none/.test(HTML)); }

@@ -87,30 +87,39 @@ STATE.videos=[
   V("F","別人剪的",{finishedAt:D(0)+"T15:00:00",editor:"郁莚",claimedBy:"郁莚"}),
   V("G","還在剪的",{stage:"剪輯中",finishedAt:""}),
 ];
+// v184（老闆指定）：「目前的待審的片子，記錄七天，改成沒有上限，只要還沒審過的都會出現」。
+// 規矩變成：**還沒審過的一律留著**（不管多久），審過／退回的才只留最近七天。
 { const c=workRecent7Card("小葵");
   ok("列出七天內剪完的", c.includes("等三天還沒審") && c.includes("Regina 審過的") && c.includes("被退回的"));
-  ok("八天前的不列（就是七天）", !c.includes("八天前剪完的"));
+  ok("**八天前還沒審的照樣要出現**（以前七天一到就消失＝幫人忘記）",
+     c.includes("八天前剪完的"));
   ok("別人剪的不列", !c.includes("別人剪的"));
   ok("還沒剪完的不列（還沒到審片這一步）", !c.includes("還在剪的"));
-  ok("summary 的數字＝真的列出來的支數", c.includes('<span class="n">4</span>'));
-  ok("summary 標出還有幾支沒審", c.includes("1 支還沒審"));
+  ok("summary 的數字＝真的列出來的支數", c.includes('<span class="n">5</span>'), (c.match(/<span class="n">\d+<\/span>/)||[])[0]);
+  ok("summary 標出還有幾支沒審", c.includes("2 支還沒審"), (c.match(/\d+ 支還沒審/)||[])[0]);
   ok("預設是收起來的", !/^<details class="fold" open/.test(c) && !c.includes("<details class=\"fold\" open"));
   ok("看得出誰審的、誰是自己標的", c.includes("Regina") && c.includes("自己標的"));
   ok("看得出等了幾天", c.includes("等 3 天"));
   ok("點得進影片", c.includes("editVideo('A')"));
   ok("新的排在上面", c.indexOf("Regina 審過的")<c.indexOf("等三天還沒審")); }
-// 七天內什麼都沒剪完 → 整張卡不出現（不要硬擠一張空的）
+// v184：很久以前剪完、**還沒審**的照樣要出現（那正是老闆要看到的）
 reset(); as("小葵","editor");
-STATE.videos=[ V("Z","很久以前的",{finishedAt:D(-30)+"T15:00:00"}) ];
-ok("七天內沒東西就整張卡不出現", workRecent7Card("小葵")==="");
+STATE.videos=[ V("Z","很久以前還沒審的",{finishedAt:D(-30)+"T15:00:00"}) ];
+ok("**三十天前還沒審的也要出現**", workRecent7Card("小葵").includes("很久以前還沒審的"));
+// 真的什麼都沒有 → 整張卡不出現（不要硬擠一張空的）
+reset(); as("小葵","editor");
+STATE.videos=[ V("Z","很久以前審過的",{finishedAt:D(-30)+"T15:00:00",
+  reviewStatus:"通過",reviewedBy:"Regina",reviewedAt:D(-30)+"T16:00:00"}) ];
+ok("審過又超過七天的就不再佔位子", workRecent7Card("小葵")==="");
 
 // ══════════ ④ 真的掛在上班計畫上，而且在審片進度卡的下面 ══════════
 reset(); as("小葵","editor");
 STATE.videos=[ V("A","等審的片",{finishedAt:D(-2)+"T15:00:00"}) ];
 { const h=viewWork();
-  ok("上班計畫看得到這張卡", h.includes("最近 7 天剪完的片"));
-  ok("排在「審片進度」的下面", h.indexOf("審片進度")<h.indexOf("最近 7 天剪完的片"));
-  ok("排在「今天要做的事」的上面", h.indexOf("最近 7 天剪完的片")<h.indexOf("今天要做的事")); }
+  // v184：有還沒審的時候，卡片標題改成「剪完等審的片」（因為它不再只看七天）
+  ok("上班計畫看得到這張卡", h.includes("剪完等審的片"));
+  ok("排在「審片進度」的下面", h.indexOf("審片進度")<h.indexOf("剪完等審的片"));
+  ok("排在「今天要做的事」的上面", h.indexOf("剪完等審的片")<h.indexOf("今天要做的事")); }
 // 不剪片的職位沒有這張卡（他們沒有影片）
 reset(); as("小葵","editor");
 STATE.users.push({name:"江瑩",role:"mkt"});
