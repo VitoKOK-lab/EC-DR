@@ -22,6 +22,14 @@ Object.defineProperty(global,"navigator",{configurable:true,writable:true,
 global.confirm=()=>true; global.prompt=()=>null;
 let calls=[], toasts=[];
 eval(src);
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="members";
+// v188：這一支同時驗「基本」與「成員」兩個子頁的東西，所以把五頁串起來看
+// ——「設定頁裡有沒有這個控制項」問的本來就是整個設定區，不是某一頁。
+const settingsAll=()=>["basic","members","plat","tags","maint"]
+  .map(t=>{ SET_TAB=t; return viewSettings(); }).join("");
+
 toast=(m)=>{ toasts.push(String(m)); };
 
 const T0=new Date(Date.now()+288e5).toISOString().slice(0,10);
@@ -150,7 +158,7 @@ reset([]);
   // ── 設定頁：班表設定 ──
   reset([], {workStart:"10:00",workEnd:"19:00",lateGraceMin:5,officeGeo:{lat:25.03,lng:121.56}});
   as("管理員","boss");
-  { const st=viewSettings();
+  { const st=settingsAll();
     ok("設定頁有上下班時間", st.includes("上下班時間") && st.includes('id="set_wstart"') && st.includes('value="10:00"'));
     ok("設定頁有遲到寬限", st.includes('id="set_grace"') && st.includes('value="5"'));
     ok("設定頁有公司座標", st.includes('id="set_olat"') && st.includes('value="25.03"'));
