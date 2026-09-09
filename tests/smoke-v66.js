@@ -74,7 +74,8 @@ reset(); as("管理員","boss");
 
 // ── 員工的分頁與畫面 ──
 reset(); as("小美","cs");
-ok("員工分頁＝本日工作＋團隊看板", JSON.stringify(myTabs())===JSON.stringify([["work","本日工作"],["team","團隊看板"]]));
+// v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
+ok("員工分頁＝本日工作＋團隊看板", JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["work","本日工作"],["team","團隊看板"]]), myTabs());
 let w=viewWork();
 ok("員工畫面沒有毛片／影片區", !w.includes("待認領") && !w.includes("待剪") && !w.includes("我的剪輯工作") && !w.includes("建立二創"));
 ok("員工有今天要做的事清單", w.includes("今天要做的事") && !w.includes("剪輯以外"));
@@ -152,8 +153,8 @@ ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.incl
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
 // v152：多了「剪輯成效」（管理員與人資限定）
-ok("人資分頁＝團隊看板＋剪輯成效＋出勤", myTabs().length===3
-   && myTabs()[0][0]==="team" && myTabs()[1][0]==="output" && myTabs()[2][0]==="attend");
+ok("人資分頁＝溝通＋團隊看板＋剪輯成效＋出勤", myTabs().length===4
+   && myTabs()[0][0]==="chat" && myTabs()[1][0]==="team" && myTabs()[2][0]==="output" && myTabs()[3][0]==="attend", myTabs().map(t=>t[0]));
 let th=viewTeam();
 ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 

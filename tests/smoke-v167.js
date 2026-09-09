@@ -47,7 +47,9 @@ function reset(){
 { reset(); as("Regina","manager");
   const tabs=myTabs().map(t=>t[0]);
   ok("**經理人有儀表板了**", tabs.includes("dashboard"), tabs);
-  ok("而且排第一（她的落地頁）", tabs[0]==="dashboard", tabs);
+  // v178：「溝通」排到最前面了（每天最先要處理的是有沒有人找你），
+  //       儀表板變成第二個 —— 她的落地頁還是它，只是前面多了一個。
+  ok("儀表板緊接在「溝通」後面（還是她的落地頁）", tabs[0]==="chat" && tabs[1]==="dashboard", tabs);
   ok("原本的分頁一個都沒少",
      ["flow","team","videos","videosDF","cal"].every(t=>tabs.includes(t)), tabs);
   // v175：選品配對整頁移除，這一頁不該再冒出來

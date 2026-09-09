@@ -42,11 +42,12 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 // --- 分頁：二創區併入上班計畫 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let tabs=myTabs().map(t=>t[0]);
-ok("editor tabs = work/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","videosDF","cal"]));
+// v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
+ok("editor tabs = work/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["chat","work","team","videos","videosDF","cal"]), tabs);
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
-ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["work","team","videos","cal"]));
-ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Work Plan","Team Board","Library","Schedule"]));
+ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["chat","work","team","videos","cal"]), tabs);
+ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Messages","Work Plan","Team Board","Library","Schedule"]), myTabs().map(t=>t[1]));
 
 // --- 全角色渲染 ---
 for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]]){

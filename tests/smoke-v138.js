@@ -90,7 +90,8 @@ const scriptVid=(id,o)=>Object.assign({}, doneVid(id,o), {id,code:id,name:"腳�
 { reset(); as("Amy","pick");
   const tabs=myTabs().map(t=>t[0]);
   // v175：工作台拿掉之後，選品行銷的畫面就跟其他不剪片的職位一樣
-  ok("選品行銷分頁＝本日工作／團隊看板", JSON.stringify(tabs)===JSON.stringify(["work","team"]), tabs); }
+  // v178：最前面多了「溝通」
+  ok("選品行銷分頁＝溝通／本日工作／團隊看板", JSON.stringify(tabs)===JSON.stringify(["chat","work","team"]), tabs); }
 { reset(); ok("**選品配對那一頁真的沒有了**（不是只有藏起來）",
     !["boss","manager","pick","editor","cs"].some(r=>{ as("X",r); return myTabs().some(t=>t[0]==="match"); })); }
 // 只看真正的程式碼，不看註解 —— 移除的說明裡本來就會提到那些名字
