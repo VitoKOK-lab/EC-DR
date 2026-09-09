@@ -12,3 +12,7 @@ package.json
 package-lock.json
 firebase-debug.log
 firestore-debug.log
+
+# Python 執行時產生的暫存檔
+__pycache__/
+*.pyc
