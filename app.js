@@ -1110,7 +1110,7 @@ function render(){
   // 正在打字的那一格（同一頁重繪才接回去；換分頁本來就該重來）
   const foc=same?focusSnapshot(v):null;
   const viewAsBanner = VIEW_AS ? `<div class="card" style="border:1px solid var(--accent);background:var(--espresso);color:#F6ECDA;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-    <b>👁 員工視角：${esc(VIEW_AS)}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
+    <b>👁 員工視角：${esc(dispName(VIEW_AS))}　<span style="font-weight:400;opacity:.85;font-size:13px">（你是管理員，正在預覽他看到的畫面・唯讀）</span></b>
     <button class="btn sm" style="white-space:nowrap" onclick="exitViewAs()">離開員工視角</button></div>` : "";
   // 兩種狀況要講，而且要一直掛在畫面上（toast 會消失，這種事不能只講一次）：
   //   ① 連不上 —— 你現在做的任何事別人都看不到
@@ -2280,7 +2280,7 @@ function reviewByLabel(v, me){
   const by=String((v&&v.reviewedBy)||"");
   const when=(v&&v.reviewedAt)?("・"+esc(String(v.reviewedAt).slice(5,10))):"";
   if(by && by===me) return T("自己標的","self-marked")+when;
-  return T("由 ","approved by ")+esc(by||"Regina")+T(" 審過","")+when;
+  return T("由 ","approved by ")+esc(dispName(by||"Regina"))+T(" 審過","")+when;
 }
 // ── 審片狀態：一支片現在到底審了沒（v128）──────────────────────────
 // 這支等審等幾天了（剪完那天算第 1 天）。
@@ -2354,7 +2354,7 @@ function poolClearHTML(){ return POOL_Q?`<button class="btn sec sm" style="flex:
 function poolRowsHTML(poolShown){
   // 急件那一列整列變紅（class urg），一眼就看得到要先做哪一支
   return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
-        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
+        <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(dispName(v.createdBy))+" 建立","added by "+esc(dispName(v.createdBy)))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
       </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的每日工作）","Nothing to claim — anything assigned to you appears in My Day above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
@@ -2473,7 +2473,7 @@ function taskThread(t, canPost){
     const pic=picSafe(m.pic) ? `<a href="${esc(m.pic)}" target="_blank" rel="noopener noreferrer"
         title="${T("點一下看原圖","Open full size")}"><img class="tmsg-pic" src="${esc(m.pic)}" alt="${T("留言圖片","Attached image")}" loading="lazy"></a>` : "";
     return `<div class="tmsg${who===me?' me':''}">
-      <div class="tmsg-h"><b style="color:${c.fg}">${esc(who)}</b> ${esc(String(m.at||"").slice(5,16).replace("T"," "))}</div>
+      <div class="tmsg-h"><b style="color:${c.fg}">${esc(dispName(who))}</b> ${esc(String(m.at||"").slice(5,16).replace("T"," "))}</div>
       ${linkify(m.text)}${pic}</div>`;
   }).join("");
   const box=canPost?`<div class="tmsg-in">
@@ -2913,7 +2913,7 @@ function p2pWatchCard(){
   if(!list.length) return "";
   const open=list.filter(m=>!p2pReplied(m));
   const rows=list.slice(0,30).map(m=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
-      <div style="font-size:13.5px"><b>${esc(m.from||"")}</b> → <b>${esc(m.user||"")}</b>
+      <div style="font-size:13.5px"><b>${esc(dispName(m.from||""))}</b> → <b>${esc(dispName(m.user||""))}</b>
         <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}</span>
         <span class="pill ${p2pReplied(m)?'ok':(m.ack?'wa':'em')}" style="font-size:10px;margin-left:5px">${
           p2pReplied(m)?T("已回覆","Replied"):(m.ack?T("已收到","Opened"):T("未接收","Unopened"))}</span></div>
@@ -2933,14 +2933,14 @@ function msgInboxCard(){
       <b style="font-size:16px">📨 同仁來訊</b>
       <span class="pill ${open.length?'em':'ok'}">${open.length?open.length+" 則待回覆":"都回覆了"}</span></div>
     ${list.map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
-      <div style="font-size:13.5px"><b>${esc(m.user)}</b>
+      <div style="font-size:13.5px"><b>${esc(dispName(m.user))}</b>
         <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}${currentRole()==="boss"?"・"+label(m):""}</span></div>
       <div style="margin-top:3px">${esc(m.title)}</div>
       ${msgOpen(m)
         ? `<div class="row" style="gap:6px;margin-top:6px">
              <input id="mr_${m.id}" placeholder="回覆他…" style="flex:1;min-width:0" onkeydown="if(enterKey(event))msgReply('${m.id}')">
              <button class="btn sm" style="flex:none" onclick="msgReply('${m.id}')">回覆</button></div>`
-        : `<div style="margin-top:4px;font-size:13px"><span class="muted">${esc(m.replyBy||"")} 回覆：</span>${esc(m.reply)}
+        : `<div style="margin-top:4px;font-size:13px"><span class="muted">${esc(dispName(m.replyBy||""))} 回覆：</span>${esc(m.reply)}
              <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span></div>`}
     </div>`).join("")}
   </div>`;
@@ -3529,7 +3529,7 @@ function attManualPill(sh){
   const by=String((sh&&sh.manualBy)||"").trim(); if(!by) return "";
   const note=String((sh&&sh.manualNote)||"").trim();
   const at=String((sh&&sh.manualAt)||"").slice(0,16).replace("T"," ");
-  return ` <span class="pill em" style="font-size:10px" title="${esc(by+" 補登"+(at?("／"+at):"")+(note?("："+note):""))}">人工補登</span>`;
+  return ` <span class="pill em" style="font-size:10px" title="${esc(dispName(by)+" 補登"+(at?("／"+at):"")+(note?("："+note):""))}">人工補登</span>`;
 }
 function attFixBtn(name, date){
   if(!canFixAttend()) return "";
@@ -4278,7 +4278,7 @@ function asgTrackRow(t){
       ${st}
       ${late>0?`<span class="pill em" style="font-size:10px">${T("拖了 "+late+" 天", late+"d late")}</span>`:''}
       ${arch?`<span class="pill" style="font-size:10px">${T("已封存","Archived")} ${String(t.archivedAt||"").slice(5,10)}</span>`:''}
-      ${(ASG_SCOPE==="all"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} ${T("派的","assigned")}</span>`:''}
+      ${(ASG_SCOPE==="all"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(dispName(t.assignedBy))} ${T("派的","assigned")}</span>`:''}
       <span style="flex:1"></span>${okBtn}
     </div>
     <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere">${linkify(t.title)}</div>
@@ -4741,8 +4741,8 @@ function teamNoticeCompose(staff){
         <span class="pill ${got.length===g.length?'ok':'wa'}" style="font-size:10px;flex:none">已收到 ${got.length}/${g.length}</span>
         <button class="btn sec sm" style="flex:none;padding:3px 9px" onclick="hrNotifyDel('${t.id}')" title="收回這則通知">✕</button>
       </div>
-      <div class="muted" style="font-size:11px;margin-top:2px">${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}・${g.map(x=>esc(x.user)+(x.ack?"✓":"")).join("、")}</div>
-      ${replies.map(x=>`<div style="font-size:12px;margin-top:3px"><b>${esc(x.user)}</b> <span class="muted">回覆：</span>${esc(x.report)}</div>`).join("")}
+      <div class="muted" style="font-size:11px;margin-top:2px">${esc(String(t.date||"").slice(5))} ${String(t.createdAt||"").slice(11,16)}・${g.map(x=>esc(dispName(x.user))+(x.ack?"✓":"")).join("、")}</div>
+      ${replies.map(x=>`<div style="font-size:12px;margin-top:3px"><b>${esc(dispName(x.user))}</b> <span class="muted">回覆：</span>${esc(x.report)}</div>`).join("")}
     </div>`; }).join("");
   return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">📣 發出 HR 通知</b>
@@ -6322,7 +6322,7 @@ function viewLog(){
   const loaded=(window.DB&&window.DB.logsLimit)?window.DB.logsLimit():300;
   const rows=shown.map(l=>`<tr>
     <td data-label="時間">${esc((l.at||"").replace("T"," "))}</td>
-    <td data-label="誰"><b>${esc(l.user||"")}</b> <span class="muted" style="font-size:11px">${esc(ROLE_LABEL[l.role]||l.role||"")}</span></td>
+    <td data-label="誰"><b>${esc(dispName(l.user||""))}</b> <span class="muted" style="font-size:11px">${esc(ROLE_LABEL[l.role]||l.role||"")}</span></td>
     <td data-label="動作">${esc(l.action||"")}</td>
     <td data-label="對象">${esc(l.target||"")}</td></tr>`).join("");
   const empty = all.length ? "沒有符合條件的紀錄" : "目前沒有紀錄";
@@ -6655,7 +6655,7 @@ function vidViewModal(v, id, head, tags, prodList, localizedCard, metricsCard, r
       ${row(T("片源","Source"), esc(dataLabel(v.source||"")))}
       ${row(T("階段","Stage"), `<span class="pill ${dispStage(v)==='待審核'?'wa':(v.stage==='已上片'||v.stage==='已完成'?'ok':(v.stage==='剪輯中'?'wa':''))}">${esc(stageLabel(dispStage(v)))}</span>`)}
       ${row(T("剪輯人員","Editor"), esc(v.editor||""))}
-      ${row(T("建立者","Created by"), v.createdBy?`${esc(v.createdBy)}${v.createdAt?` <span class="muted" style="font-size:12px">${esc(String(v.createdAt).slice(0,10))}</span>`:''}`:'')}
+      ${row(T("建立者","Created by"), v.createdBy?`${esc(dispName(v.createdBy))}${v.createdAt?` <span class="muted" style="font-size:12px">${esc(String(v.createdAt).slice(0,10))}</span>`:''}`:'')}
       ${row(T("商品","Products"), prodList.length?prodList.map(p=>esc(p.name)+(p.price?`（NT$${esc(p.price)}${p.salePrice?T(`／寵粉價 NT$${esc(p.salePrice)}`,` / Fan price NT$${esc(p.salePrice)}`):''}）`:"")).join("、"):'')}
       ${row(T("商品頁網址","Product page"), v.productUrl?`<a href="${esc(v.productUrl)}" target="_blank">${esc(v.productUrl)}</a>`:'')}
       ${row(T("預排上片日","Scheduled"), esc(v.scheduledDate||""))}

@@ -335,7 +335,43 @@ function reset(tasks){
      viewChat().includes("收到，明天處理"));
   ok("**不再產生新的 kind:\"msg\"**（sendMsg 整個移除了）", typeof sendMsg==="undefined");
 
-  // ══════════ ⑬ 審片進度：長清單收起來、按鍵不要變成整條黑磚 ══════════
+  // ══════════ ⑬ 管理員＝Vito：員工要找得到他，而且每一處都寫 Vito ══════════
+  // 老闆：「管理員就是vito 讓員工也可以發訊息給我 我就是vito管理員」
+  { const ROLES=[["小葵","editor"],["小美","cs"],["Anna","intl"],["HR小姐","hr"],["Regina","manager"]];
+    let miss=[];
+    ROLES.forEach(([u,r])=>{ reset(); as(u,r);
+      const c=dashAssignTaskCard();
+      if(!c.includes('value="管理員"') || !c.includes(">Vito<")) miss.push(r); });
+    ok("**每一種職位都傳得到管理員，而且名字寫 Vito**", !miss.length, miss); }
+  // 真的送得到、真的收得到、真的回得了
+  { reset(); as("小美","cs");
+    asgPicked=()=>["管理員"]; fields.asg_txt="老闆，這個要問你一下";
+    await assignTaskSel(); await wait();
+    const rec=writes.find(w=>w[0]==="set");
+    ok("**員工發給老闆 → 是訊息，不會變成他的工作**",
+       !!rec && rec[3].kind==="p2p" && rec[3].user==="管理員" && rec[3].from==="小美", rec&&rec[3]);
+    // 把它放進 STATE，換老闆的身分看
+    LAST_RAW.tasks[rec[2]]=rec[3]; STATE=decorate(LAST_RAW);
+    as("管理員","boss"); COMM_TAB="open";
+    const c=viewChat();
+    ok("**老闆在「傳訊息」看得到**", c.includes("老闆，這個要問你一下"));
+    ok("**而且會亮紅點**", commUnread()>=1, commUnread());
+    ok("**有「收到」可以按**", c.includes(`ackTask('${rec[2]}')`));
+    ok("**回得了**", c.includes(`postTaskMsg('${rec[2]}')`)); }
+  // 畫面上凡是印「人」的地方都要寫 Vito，不能一半 Vito 一半管理員
+  { reset([t_("T1",{assignedBy:"管理員",ack:true,user:"小葵",
+      msgs:[{at:T0+"T09:10:00",by:"管理員",text:"這個先做"}]})]);
+    as("小葵","editor");
+    const c=viewChat(), w=viewWork();
+    ok("聊天室的留言署名是 Vito", c.includes(">Vito<") && !/tmsg-h"><b[^>]*>管理員</.test(c));
+    ok("每日工作那一條寫「交辦 Vito」", w.includes("交辦 Vito") && !w.includes("交辦 管理員")); }
+  { reset(); as("管理員","boss");
+    LAST_RAW.logs=[{id:"L1",at:T0+"T09:00:00",user:"管理員",role:"boss",action:"改了一件事",target:"x"}];
+    STATE=decorate(LAST_RAW); CUR_TAB="log";
+    ok("**操作紀錄裡也寫 Vito**", viewLog().includes(">Vito<") && !/誰"><b>管理員</.test(viewLog()),
+       (viewLog().match(/data-label="誰"[^<]*<b>[^<]*</)||[])[0]); }
+
+  // ══════════ ⑭ 審片進度：長清單收起來、按鍵不要變成整條黑磚 ══════════
   // 正式資料實測有人待審 20 支 —— 攤開來把「今天要做的事」推到三個螢幕以下，
   // 那正是老闆說的「不可以切壓迫到彼此的區塊」。
   { const mk=(n)=>{ const vs=[]; for(let i=0;i<n;i++) vs.push({id:"W"+i,code:"26W"+i,name:"片"+i,
@@ -358,7 +394,7 @@ function reset(tasks){
     ok("按鍵不換行，會留在右邊", many.includes("white-space:nowrap"));
     ok("折疊本身不長成一張新卡片（卡中有卡）", /details\.revfold\{[^}]*border:none/.test(HTML)); }
 
-  // ══════════ ⑭ 每個身分每一頁都畫得出來 ══════════
+  // ══════════ ⑮ 每個身分每一頁都畫得出來 ══════════
   { let bad=null;
     [["管理員","boss"],["Regina","manager"],["HR小姐","hr"],["小葵","editor"],["小美","cs"],["Anna","intl"]]
       .forEach(([w,r])=>{ reset([t_("T1",{ack:true}), p_("P1"), m_("M1")]); as(w,r);
