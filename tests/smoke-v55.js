@@ -127,8 +127,15 @@ ok("沒有連結", !h.includes("<a "));
 // v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項，沒有別的輸入
 // v150：多了一個「看哪一個月」的下拉。它跟現有的篩選同一類 —— 換的是「看什麼」，
 // 不是動資料，所以照樣走下拉、不是按鍵（這一頁全公司都看得到，規矩是純檢視）。
-ok("只有篩選用的下拉與搜尋框，外加月份下拉", (h.match(/<select|<input/g)||[]).length===3
-   && h.includes("teamSetGroup(") && h.includes("teamSetQ(") && h.includes("teamSetYM("));
+// v182：篩選 25 個人的下拉與搜尋框是**主管的工具**（老闆指定）——
+// 員工只看得到自己那張卡，擺著它只是佔位子。所以這條改用主管的畫面問，
+// 員工那邊剩下的就只有「看哪一個月」那一個下拉。
+ok("主管：只有篩選用的下拉與搜尋框，外加月份下拉", (hAll.match(/<select|<input/g)||[]).length===3
+   && hAll.includes("teamSetGroup(") && hAll.includes("teamSetQ(") && hAll.includes("teamSetYM("));
+ok("**員工那邊沒有主管的篩選工具**",
+   !h.includes("teamSetGroup(") && !h.includes("teamSetQ("), (h.match(/teamSet\w+\(/g)||[]));
+ok("員工那邊只剩「看哪一個月」一個下拉", (h.match(/<select|<input/g)||[]).length===1
+   && h.includes("teamSetYM("), (h.match(/<select|<input/g)||[]).length);
 ok("沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
    "assignTaskSel(","hrNotify(","ackTask(","editVideo(","noticeReply(","msgReply("].every(f=>!h.includes(f)));
 ok("沒有審核／交辦／檢查的動作", !h.includes("reviewVid(") && !h.includes("flowAssign(") && !h.includes("hrCheckVideo"));

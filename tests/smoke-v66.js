@@ -150,8 +150,13 @@ ok("純檢視：沒有按鈕", !t.includes("<button"));
 ok("純檢視：沒有 onclick", !t.includes("onclick"));
 // v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項
 // v150：多了一個「看哪一個月」的下拉（跟篩選同一類，不動資料）
-ok("純檢視：只有篩選用的下拉與搜尋框，外加月份下拉", (t.match(/<select|<input/g)||[]).length===3
-   && t.includes("teamSetGroup(") && t.includes("teamSetQ(") && t.includes("teamSetYM("));
+// v182：篩選是主管的工具（老闆指定），員工那邊只剩月份下拉
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("主管：只有篩選用的下拉與搜尋框，外加月份下拉", (tt.match(/<select|<input/g)||[]).length===3
+     && tt.includes("teamSetGroup(") && tt.includes("teamSetQ(") && tt.includes("teamSetYM(")); }
+ok("**員工那邊沒有主管的篩選工具，也還是純檢視**",
+   !t.includes("teamSetGroup(") && !t.includes("teamSetQ(")
+   && (t.match(/<select|<input/g)||[]).length===1, (t.match(/<select|<input/g)||[]).length);
 ok("純檢視：沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
    "assignTaskSel(","hrNotify(","ackTask(","editVideo("].every(f=>!t.includes(f)));
 

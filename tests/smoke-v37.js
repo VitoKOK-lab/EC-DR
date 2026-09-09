@@ -82,7 +82,9 @@ localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","ed
 // --- intl 全英文 spot checks ---
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 WORK_ZONE="shopee"; h=viewWork();
-ok("intl work: English headings, no Chinese UI labels", h.includes("Today's Work") && h.includes("To claim (raw + versions)") && h.includes("Create a version") && !h.includes("上班計畫") && !h.includes("認領開始剪") && !h.includes("建立二創版本"));
+// v182：大標題跟分頁名對齊 —— 上班計畫／本日工作／Today's Work 三種說法統一成
+//       每日工作／My Day（分頁上寫什麼，進去就寫什麼）。
+ok("intl work: English headings, no Chinese UI labels", h.includes("My Day") && h.includes("To claim (raw + versions)") && h.includes("Create a version") && !h.includes("上班計畫") && !h.includes("認領開始剪") && !h.includes("建立二創版本"));
 ok("intl work: task card English + translate icon", h.includes("Got it") && h.includes("文<span>A</span>"));
 h=viewVideos();
 // v146：海外的影片庫跟台灣同一份（只是介面英文）—— 舊的「來源清單」那一份跟
@@ -99,7 +101,7 @@ ok("intl shopee modal English", modalHTML.includes("Shopee version") && modalHTM
 // --- editor 仍是中文 ---
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 h=viewWork();
-ok("editor work stays Chinese", h.includes("本日工作") && h.includes("認領開始剪"));
+ok("editor work stays Chinese", h.includes("每日工作") && h.includes("認領開始剪"));
 h=viewVideos();
 ok("editor library stays Chinese", h.includes("影片庫") && h.includes("原本語言"));
 

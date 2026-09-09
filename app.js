@@ -1827,9 +1827,17 @@ function asgToggleAll(btn){
 }
 // 勾了幾個人即時顯示在送出鈕上 —— 一次發給 12 個人跟發給 1 個人差很多，要看得到
 function asgCount(){
-  const n=asgPicked().length;
+  const names=asgPicked(), n=names.length;
   const b=document.getElementById("asg_go");
-  if(b) b.textContent = n ? ("送出交辦給 "+n+" 人") : "送出交辦";
+  if(b) b.textContent = n ? T("送出給 "+n+" 人","Send to "+n) : T("送出","Send");
+  // 收合的時候標題就要說「現在要發給誰」—— 不然點開之前完全看不出勾了什麼
+  const who=document.getElementById("asg_who");
+  if(who){
+    who.textContent = n
+      ? T("已選 "+n+" 人：","To ("+n+"): ") + names.slice(0,4).join("、") + (n>4?T(" 等","…"):"")
+      : T("選擇員工…","Pick people…");
+    who.className = n ? "asgwho on" : "asgwho";
+  }
 }
 // 交辦時附的圖。送出之前還沒有交辦 id，Storage 沒有地方可以放，
 // 所以先在瀏覽器壓好放在記憶體，等 assignTaskSel 拿到 groupId 再上傳一次。
@@ -2324,7 +2332,7 @@ function poolRowsHTML(poolShown){
   return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
         <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的本日工作）","Nothing to claim — anything assigned to you appears in Today's Work above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的每日工作）","Nothing to claim — anything assigned to you appears in My Day above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
 // 上班計畫：待認領卡（快選列＋搜尋＋清單＋認領/退回鍵）
 function workPoolCard(pool, poolShown, poolCnt, me){
@@ -2488,11 +2496,19 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     // 維持原本那一格「處理狀況」就好 —— 給自己開一個聊天室很奇怪。
     // 兩邊都還是靠 report 滿 12 字才能打勾完成；交辦的 report 由留言自動帶出來
     // （見 msgBecomesReport），所以不必打兩次字。
-    const note = needAck ? ""
-      : assigned ? mateChips(t)+taskThread(t, true)
-      : `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+    // v182（老闆指定「文字太多的點開再展開」）：回報框改成點了才展開。
+    // 一天四件事就是四個輸入框攤在畫面上，佔掉大半個手機螢幕，而真正要打字的
+    // 通常只有一件。**已經寫過的預設展開** —— 收起來會讓人以為自己沒寫。
+    const rep=String(t.report||"").trim();
+    const repInput=`<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
+    const note = needAck ? ""
+      : assigned ? mateChips(t)+taskThread(t, true)
+      : `<details class="fold repfold"${rep?" open":""}><summary>${
+           rep ? T("處理狀況","Progress")+"：<span class=\"muted\">"+esc(rep.slice(0,16))+(rep.length>16?"…":"")+"</span>"
+               : `<span class="muted">${T("寫處理狀況…","Add a progress note…")}</span>`
+         }</summary><div class="foldbody">${repInput}</div></details>`;
     // 交辦內容本身也可能是一條網址（老闆貼給你看的東西），要點得開
     const ttl=linkify(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
     rows.push(todoRow(assigned?"📌":"•", ttl+taskLatePill(t), sub+note, act, t.done));
@@ -2794,7 +2810,9 @@ function commRow(t){
         ? `<div style="margin-top:6px"><button class="btn sm" onclick="ackTask('${esc(jsEsc(t.id))}')">${T("收到","Got it")}</button></div>` : ""}
       ${taskThread(t, true)}
     </div>`;
-  return `<details class="commrow${arch?" arch":""}"><summary>${head}</summary>${body}</details>`;
+  // 手機上狀態藥丸會被藏起來（塞不下），改用左邊一條色帶表示 —— 資訊沒有消失
+  const stCls = !tracked ? "" : arch ? "" : t.done ? " st-done" : !t.ack ? " st-new" : " st-doing";
+  return `<details class="commrow${arch?" arch":""}${stCls}"><summary>${head}</summary>${body}</details>`;
 }
 let COMM_TAB="open";                 // open＝進行中｜arch＝已收起｜all
 function setCommTab(v){ COMM_TAB=v; render(); }
@@ -3033,7 +3051,7 @@ function viewWorkCS(me){
   const nNoReport=tasks.filter(t=>!t.done&&!(t.report||"").trim()).length;
   const nFuture=myFutureTasks().length;
   return `
-  <h2>本日工作（${esc(me)}）</h2>
+  <h2>${T("每日工作","My Day")}（${esc(me)}）</h2>
   <div class="focusbar">
     <div><span class="fn ${tasks.length&&nDone<tasks.length?'warn':''}">${nDone}<i>/${tasks.length}</i></span><span class="fl">交辦完成</span></div>
     <div><span class="fn ${nAck?'warn':''}">${nAck}</span><span class="fl">待接收</span></div>
@@ -3137,7 +3155,7 @@ function viewWork(){
   </div>`;
   const nFuture=myFutureTasks().length;
   return `
-  <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
+  <h2>${T("每日工作","My Day")}${paren(esc(me))}</h2>
   ${focusBar}
   ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
         再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
@@ -4287,13 +4305,18 @@ function dashAssignTaskCard(opts){
       <b style="font-size:16px">${esc(title)}</b>
     </div>
     ${o.hint?`<div class="muted" style="font-size:12px;margin-top:4px">${esc(o.hint)}</div>`:""}
-    <div style="margin-top:12px">
-      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
-        <label style="margin:0">${T("選擇員工（可複選）","Pick people (multiple)")}</label>
-        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
+    ${/* v182（老闆指定）：「選擇員工不要一直開在那裡佔這麼大畫面，點開再展開」。
+          27 個人的勾選清單攤開就是大半個螢幕，而且大部分時候只勾一兩個人。
+          收合時標題上寫「已選：小美、泓儒」—— 不點開也知道現在要發給誰。 */''}
+    <details class="fold asgfold" id="asg_fold" style="margin-top:12px">
+      <summary><span id="asg_who">${T("選擇員工…","Pick people…")}</span></summary>
+      <div class="foldbody">
+        <div class="row" style="justify-content:flex-end;margin-bottom:4px">
+          <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
+        </div>
+        ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
       </div>
-      ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
-    </div>
+    </details>
     <div style="margin-top:10px"><label>${T("交辦內容","What needs doing")}</label>
       <input id="asg_txt" placeholder="${T("要交辦的工作內容…（可以直接貼網址）","What needs doing… (URLs become links)")}" onkeydown="if(enterKey(event))assignTaskSel()">
       <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
@@ -4763,7 +4786,9 @@ function teamBoardBody(){
   ${p2pWatchCard()}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
   ${currentRole()==="hr"?myMsgFold():''}
-  ${teamFilterBar(everyone, staff)}
+  ${/* v182：篩選 25 個人的下拉與搜尋框是**主管的工具** —— 員工只看得到
+        自己那一張卡，擺著它只是佔位子還讓人以為可以看別人。 */''}
+  ${seesLeadBoard()?teamFilterBar(everyone, staff):''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     ${vidOK?`<div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>`:''}
