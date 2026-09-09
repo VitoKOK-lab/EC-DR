@@ -4695,14 +4695,17 @@ function teamMonthPicker(ym){
       return `<option value="${x}" ${x===ym?"selected":""}>${T(y+" 年 "+m+" 月", x)}${x===today.slice(0,7)?T("（本月）"," (current)"):""}</option>`;
     }).join("")}</select>`;
 }
-function viewTeam(){
+// v180：這一段（團隊今天在做什麼＋月成效）現在是「看板」的下半部，
+// 兩個進入點共用同一份 —— 複製一份出去，兩邊遲早會各自演化成不一樣。
+function viewTeam(){ return `<h2>${T("團隊看板","Team Board")}</h2>${teamBoardBody()}`; }
+function teamBoardBody(){
   const everyone=teamStaff();
   const staff=teamFilter(everyone);
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const ym=teamYM(), minLabel=dashMin;
   const curYM=today.slice(0,7);
-  if(!everyone.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
-  if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2>${teamFilterBar(everyone, staff)}
+  if(!everyone.length) return `<div class="card muted">${T("還沒有成員","No members yet")}</div>`;
+  if(!staff.length) return `${teamFilterBar(everyone, staff)}
     <div class="card muted">${T("沒有符合的人","Nobody matches")}</div>`;
   // v152：不下載影片資料的職位（行銷／客服／出貨）算不出剪輯的產量 ——
   // 以前那幾欄跟兩張圖照畫，全部是 0。那不是「還沒有資料」，是**假數字**：
@@ -4727,7 +4730,7 @@ function viewTeam(){
     <td data-label="${T("帶商品","With product")}">${noEdit(u)?"—":m.sales}</td>`:''}
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
-  return `<h2>${T("團隊看板","Team Board")}</h2>
+  return `
   ${currentRole()==="hr"?msgInboxCard():''}
   ${p2pWatchCard()}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
@@ -4752,6 +4755,65 @@ function viewTeam(){
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th>${vidOK?`<th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th>`:''}<th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
   </div>`;
+}
+// ===================================================================
+// 看板（v180）：儀表板 ＋ 流程中控 ＋ 團隊看板 → 併成一頁、分兩層
+//
+// 老闆：「看版（看板再分，給老闆、hr、主管看的，和員工互相看到團隊工作的）」
+//
+// 為什麼非併不可（正式資料實測，手機 390×844）：
+//   儀表板 11.1 個螢幕・流程中控 14.3・團隊看板 19.9  ＝ 三頁 45 個螢幕
+//   而且**同一個人的卡片同時出現在三頁**：流程中控 21 張員工卡、
+//   團隊看板 25 張、儀表板 9 張剪輯卡。三頁各自演化，就變成老闆說的「超級混亂」。
+//
+// 併法 —— 一頁兩層：
+//   **下層**（大家都看得到）＝ teamBoardBody()：團隊今天在做什麼＋月成效。
+//                             這一份跟原本的團隊看板是**同一份程式碼**，
+//                             所以「員工看到的是純檢視、不能操作」那條保證原封不動。
+//   **上層**（只有主管／人資）＝ 要做決定用的：備片存量、毛片庫存、指派毛片、
+//                              待審片、當日進度、未來排程、員工視角。
+//
+// 丟掉的：流程中控的員工卡、儀表板的剪輯卡 —— 跟下層那一份是同一件事。
+function viewBoard(){
+  const lead=seesLeadBoard();
+  if(!lead) return `<h2>${T("看板","Board")}</h2>${teamBoardBody()}`;   // 員工版＝原本的團隊看板，一模一樣
+
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const editors=staffNamesSorted(["editor"]);
+  const shifts=Object.values((STATE&&STATE.shifts)||{});
+  const staff=teamFilter(teamStaff());
+  const D=SHIFT_DATE, isToday=(D===today);
+  const perEditor=dashEditorRows(editors, shifts, allTasks, D, isToday);
+  const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
+  const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
+  const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
+  const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
+  const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
+  const {g, poolN, unassignedPool, assignCount, noSchedN, wipN, stripHTML, runwayEnd, gapN}=dashSchedule();
+  const okRunway=g.runway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+  const pool=rawStock();
+  const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const daily=Math.max(1,+daySum(today)||4);
+  const dd=daysBetween(D,today);
+  const dayLabel=D===today?T("今天","today"):(D===yesterday?T("昨天","yesterday"):T(dd+" 天前", dd+"d ago"));
+  // 順序＝主管早上打開來的動作順序：
+  //   還有片可以出嗎 → 還有毛片可以剪嗎 → 派給誰 → 有沒有片等我審 → 誰在做什麼 → 排到哪了
+  return `<h2>${T("看板","Board")}</h2>
+  <div class="muted" style="font-size:12px;margin:-6px 0 12px">${T(
+    "上半部是主管在用的（要不要去拍片、派誰剪、誰卡住了）；下半部全公司都看得到。",
+    "The top half is for managers; everything below is what everyone sees.")}</div>
+  ${flowRunwayCard(g, okRunway, pct)}
+  ${flowStockCard(staff.filter(u=>!NO_EDIT_ROLES.includes(u.role)), pool, unassigned, Math.floor(pool.length/daily))}
+  ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
+      dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
+  ${flowReviewQueueCard()}
+  ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
+  ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
+  ${currentRole()==="boss"?dashViewAsCard():""}
+  <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
+    <span class="muted" style="font-size:13px;font-weight:400">${T("（下面這一段全公司都看得到）","(everyone sees this part)")}</span></h3>
+  ${teamBoardBody()}`;
 }
 // ===================================================================
 // 剪輯成效（v152）—— 只有管理員與人資看得到
