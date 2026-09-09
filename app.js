@@ -1255,15 +1255,16 @@ function calTWBody(){
     const filled = b.full;
     const empty = (b.total||0)===0;                 // 一支都還沒排
     const cls = filled ? "filled" : (empty ? "empty" : (within10 ? "bad urgent" : "blank"));
-    cells += `<div class="day ${cls} ${isToday?'today':''}" onclick="openDay('${ds}')">
+    // v187：有來不及的片就把整格描一圈色邊 —— 角標一個小數字太容易被略過
+    const dw = calDayWarn(ds);
+    cells += `<div class="day ${cls} ${isToday?'today':''}${dw.n?(" haswarn"+(dw.late?" late":"")):""}" onclick="openDay('${ds}')">
       ${tmk}<div class="dnum">${d}</div>
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
       ${dayIsMine(ds)?`<span class="mymk" title="${T("這天有你剪的片","You have work this day")}">✦</span>`:''}
       ${/* v185（老闆指定）：來不及的那幾天，在月曆上就要看得到 ——
             點進去才知道等於沒提醒。數字＝這天有幾支還沒好。 */''}
-      ${(()=>{ const w=calDayWarn(ds); return w.n
-          ? `<span class="calwarn${w.late?" late":""}" title="${esc(w.tip)}">${w.n}</span>` : ""; })()}
+      ${dw.n?`<span class="calwarn${dw.late?" late":""}" title="${esc(dw.tip)}">⚠ ${dw.n}</span>`:""}
     </div>`;
   }
   return `
@@ -1342,7 +1343,15 @@ function calListBody(cfg){
       continue;
     }
     list.forEach((r,i)=>{
-      body+=`<tr class="${isToday?'cl-today':''}">
+      // v187（老闆指定）：「這個還沒審或是還沒剪好，沒有商品連結，要明顯，
+      // 一看就知道」。原本只在片名後面掛一顆小藥丸 —— 一個月 98 列滑下來，
+      // 那顆藥丸跟其他字長得一樣重，等於沒有。改成**整列**標出來：
+      // 左邊一條粗色帶＋整列淡底色，掃過去就看得到是哪幾列有問題。
+      const w=r.v?calWarn(r.v):null;
+      const miss=r.v?(prodMissing(r.v)?"prod":""):"";
+      const rowCls=[isToday?"cl-today":"",
+        w?("cl-warn"+(w.late?" late":"")):(miss?"cl-warn miss":"")].filter(Boolean).join(" ");
+      body+=`<tr class="${rowCls}">
         <td>${i===0?dcell:""}</td>
         <td style="white-space:nowrap">${esc(r.time)||'<span class="muted">—</span>'}</td>
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
