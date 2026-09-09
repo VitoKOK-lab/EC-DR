@@ -606,7 +606,8 @@ function exitViewAs(){ VIEW_AS=null; CUR_TAB=null; buildNav(); applyState(LAST_R
 
 // ---------- 登入 / 導覽 ----------
 function buildNav(){
-  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = currentRole()==="intl" ? "E-Commerce Workspace" : "電商部協作系統";   // 海外看英文標題
+  const bz=document.getElementById("brandZh"); if(bz) bz.textContent = APP_TITLE();   // 海外看英文標題
+  syncDocTitle();
   const nav = document.getElementById("nav"); nav.innerHTML="";
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
@@ -621,6 +622,27 @@ function buildNav(){
     b.onclick = ()=>{ if(id==='cal'){ CAL_YM=null; INTL_CAL_YM=null; CH_CAL.shopee.ym=null; CH_CAL.ms.ym=null; } CUR_TAB = id; buildNav(); render(); };
     nav.appendChild(b);
   });
+}
+// ── v186：分頁標題掛數字 ────────────────────────────────────────────
+// 老闆：「Regina 晚上九點派一件急事…小葵要自己打開系統才會看到那顆紅點」——
+// 導覽列的紅點要**已經在看這一頁**才看得到。全公司都用桌機、整天開著這個分頁，
+// 所以把數字寫進分頁標題：去別的分頁繞一圈切回來，一眼就看到有幾件事等他。
+//
+// 為什麼先做這個而不是瀏覽器通知：這一招不用問任何人權限、不裝任何東西、
+// 不經過任何外部服務，而且**不會打斷任何人**。先看一週夠不夠，不夠再加通知。
+//
+// ⚠️ 數字跟導覽列那顆紅點是**同一個** commUnread() —— 兩個地方講不同的數字，
+//    人就不知道該信哪一個。
+function APP_TITLE(){ return currentRole()==="intl" ? "E-Commerce Workspace" : "電商部協作系統"; }
+function syncDocTitle(){
+  try{
+    const base=APP_TITLE();
+    // 還沒登入（或還沒載到資料）就不要掛數字
+    const app=document.getElementById("app");
+    const inApp=!!(app && app.classList && !app.classList.contains("hidden"));
+    const n=inApp?commUnread():0;
+    document.title = n ? "("+n+") "+base : base;
+  }catch(e){}
 }
 // 頂列齒輪選單（收納新手教學／改密碼）：點齒輪開關、點外面自動關閉
 function toggleHeaderMenu(e){ if(e) e.stopPropagation();
@@ -953,6 +975,7 @@ function applyState(raw, changed){
     document.getElementById("app").classList.add("hidden");
     document.getElementById("login").classList.remove("hidden");
     bootLogin();
+    syncDocTitle();          // 登出之後標題要把數字拿掉（不然上一個人的數字會留著）
   }
 }
 window.__onState = applyState;
