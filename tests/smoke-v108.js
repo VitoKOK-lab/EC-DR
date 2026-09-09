@@ -100,7 +100,7 @@ as("管理員","boss");
 reset([v_("A")]); as("Anna","intl");
 { const h=viewVideos();
 // v146：海外的影片庫跟台灣同一份（只是介面英文）
-  ok("海外看到的是英文", h.includes("Library A")
+  ok("海外看到的是英文", h.includes("Library")
      && ["Not shot","To edit","Done","Old"].every(x=>h.includes("<span>"+x+"</span>")));
   ok("海外沒有中文洩漏", !h.includes("未拍")); }
 

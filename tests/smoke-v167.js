@@ -46,12 +46,14 @@ function reset(){
 // ══════════ ① 經理人拿得到儀表板 ══════════
 { reset(); as("Regina","manager");
   const tabs=myTabs().map(t=>t[0]);
-  ok("**經理人有儀表板了**", tabs.includes("dashboard"), tabs);
-  // v178：「溝通」排到最前面了（每天最先要處理的是有沒有人找你），
-  //       儀表板變成第二個 —— 她的落地頁還是它，只是前面多了一個。
-  ok("儀表板緊接在「溝通」後面（還是她的落地頁）", tabs[0]==="chat" && tabs[1]==="dashboard", tabs);
-  ok("原本的分頁一個都沒少",
-     ["flow","team","videos","videosDF","cal"].every(t=>tabs.includes(t)), tabs);
+  // v181：儀表板併進「看板」了 —— 她要的多選交辦卡在 v178 之後搬到「溝通」，
+  //       看板上是備片存量／指派毛片／每個人在做什麼。
+  ok("**經理人有看板**", tabs.includes("board"), tabs);
+  ok("看板緊接在「溝通」後面（還是她的落地頁）", tabs[0]==="chat" && tabs[1]==="board", tabs);
+  // v181：flow 與 team 併進 board 了，能力沒有消失（備片存量、毛片庫存、
+  //       待審片、每個人在做什麼都在看板上），所以改問影片那幾頁還在不在。
+  ok("影片相關的分頁一個都沒少",
+     ["videos","videosDF","cal"].every(t=>tabs.includes(t)), tabs);
   // v175：選品配對整頁移除，這一頁不該再冒出來
   ok("選品配對那一頁已經不在了", !tabs.includes("match"), tabs); }
 { reset(); as("小葵","editor");

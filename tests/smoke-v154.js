@@ -94,9 +94,11 @@ function fixture(){
       exchangeRates:{}, contacts:["窗口A"], reviewSince:"2020-01-01", ownerName:"Vito"} };
 }
 const COLLS=["videos","tasks","shifts","schedule","products","matches","logs"];   // users/settings 是全域，不進表
-const VIEWS={dashboard:()=>viewDashboard(), flow:()=>viewFlow(), team:()=>viewTeam(), output:()=>viewOutput(),
+// v181：儀表板／流程中控／團隊看板併成 board；v178 多了 chat。
+// 這張表要跟導覽列上真的有的分頁對得起來 —— 少一個就等於那一頁沒被量到。
+const VIEWS={board:()=>viewBoard(), chat:()=>viewChat(), output:()=>viewOutput(),
   attend:()=>viewAttend(), cal:()=>viewCal(), work:()=>viewWork(), videos:()=>viewVideos(),
-  videosDF:()=>viewVideosDF(), perf:()=>viewPerf(), match:()=>viewMatch(), log:()=>viewLog(),
+  videosDF:()=>viewVideosDF(), perf:()=>viewPerf(), log:()=>viewLog(),
   trash:()=>viewTrash(), settings:()=>viewSettings()};
 function setup(raw, who, role){
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{},
@@ -158,9 +160,11 @@ const ROLES=[["管理員","boss"],["小葵","editor"],["HR小姐","hr"],["麗君
   ok("出勤：有人改交辦 → 不用畫", tabNeedsRender("attend", ["tasks"])===false);
   ok("影片庫：有人打卡 → 不用畫", tabNeedsRender("videos", ["shifts"])===false);
   ok("影片庫：有人存影片 → 要畫", tabNeedsRender("videos", ["videos"])===true);
-  ok("團隊看板：打卡／交辦／影片都要畫",
-     ["shifts","tasks","videos"].every(c=>tabNeedsRender("team",[c])===true));
-  ok("團隊看板：排程變了 → 不用畫", tabNeedsRender("team", ["schedule"])===false);
+  // v181：看板＝儀表板＋流程中控＋團隊看板，所以連排程也要盯（備片存量在上面）
+  ok("看板：打卡／交辦／影片／排程都要畫",
+     ["shifts","tasks","videos","schedule"].every(c=>tabNeedsRender("board",[c])===true));
+  ok("溝通：交辦與訊息變了要畫", tabNeedsRender("chat", ["tasks"])===true);
+  ok("溝通：影片變了不用畫（那一頁不碰影片）", tabNeedsRender("chat", ["videos"])===false);
   ok("一次變好幾個，只要有一個相關就畫", tabNeedsRender("attend", ["videos","tasks","shifts"])===true);
   ok("一次變好幾個，全都不相關就不畫", tabNeedsRender("attend", ["videos","tasks","schedule"])===false);
   LAST_RENDER_TAB=null;

@@ -126,7 +126,7 @@ function fin(){
 { reset([v_("S1",{stage:"已上片",published:true,publishedLink:"http://x",driveFolder:FAM}),
          v_("E1",{locale:"en",sourceVideoId:"S1",account:"tiktok-EN"})]);
   const h=viewVideos();
-  ok("海外看到的是同一份影片庫", h.includes("Library A"));
+  ok("海外看到的是同一份影片庫", h.includes("Library"));
   ok("有那四個管線分頁", h.includes('id="vid_tabs"') && h.includes("<span>Not shot</span>"));
   ok("有新增一支／批次新增", h.includes("Add one") && h.includes("Batch add"));
   ok("有清單／圖片切換", h.includes("vidSetMode('grid')"));

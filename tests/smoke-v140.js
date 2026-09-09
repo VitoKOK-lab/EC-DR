@@ -67,8 +67,10 @@ async function errOf(fn){ try{ await fn(); return null; }catch(e){ return e.mess
   ok("fb.js 自己判斷得出職位（不必等 app.js）", /function needVideosByRole\(\)/.test(FB));
   ok("讀不到職位時一律下載（寧可多下載，不能少）",
      /catch \(e\) \{ return true; \}/.test(FB));
-  ok("沒登入過的職位也會下載", (()=>{ const m=FB.match(/const NO_VIDEO_ROLES = \[([^\]]*)\]/);
-       return !!m && !/\bpick\b|\beditor\b|\bintl\b|\bmanager\b|\bboss\b/.test(m[1]); })()); }
+  // v181：pick 加進「不用影片」清單了（老闆決定），所以不再列在這條裡。
+  // 真正要釘的是：**會剪片與管理層絕對不能被關掉** —— 關掉他們就整個系統空白。
+  ok("會剪片與管理層絕對不在「不用影片」清單裡", (()=>{ const m=FB.match(/const NO_VIDEO_ROLES = \[([^\]]*)\]/);
+       return !!m && !/\beditor\b|\bintl\b|\bmanager\b|\bboss\b|\bhr\b/.test(m[1]); })()); }
 // 兩邊的清單必須一致，不然一邊訂了另一邊以為沒訂
 { const a=(APP.match(/const NO_VIDEO_ROLES=\[([^\]]*)\]/)||[])[1]||"";
   const f=(FB.match(/const NO_VIDEO_ROLES = \[([^\]]*)\]/)||[])[1]||"";

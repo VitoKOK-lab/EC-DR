@@ -36,7 +36,11 @@ const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 //      ① 人資要查剪輯的完成狀況（v152 的新分頁），所以他真的需要影片資料 → 移出這份清單。
 //      ② 其他不剪片的職位照舊不下載，但團隊看板上那幾個算不出來的欄位與圖表
 //         直接**不顯示**（見 viewTeam 的 needVideos() 判斷），不再假裝是 0。
-const NO_VIDEO_ROLES=["mkt","svc","ship","cs"];
+// 不需要影片資料的職位 —— 他們的畫面（每日工作／看板／溝通）算不出剪輯產量，
+// 硬載 986 支影片只是讓手機開得慢。
+// v181：選品行銷（pick）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
+// 那幾欄對她們永遠是「—」，卻要付整包影片的下載成本。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick"];
 function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
@@ -51,17 +55,20 @@ function videosLoading(){
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
+  //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
+  //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片流量"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
-  intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
-  cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
+  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],
+  intl:    [["work","My Day"],["board","Board"],["videos","Library"],["cal","Schedule"]],
+  cs:      [["work","每日工作"],["board","看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
-  hr:      [["team","團隊看板"],["output","剪輯成效"],["attend","出勤"]],
+  hr:      [["board","看板"],["output","剪輯產出"],["attend","出勤"]],
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
@@ -876,15 +883,15 @@ function decorate(raw){
 const GLOBAL_COLLS=["users","settings"];
 const TAB_DEPS={
   attend:   ["shifts"],
-  team:     ["videos","tasks","shifts"],
   // v180：每日工作多了「我的出勤」→ 也要盯 shifts，不然打完卡不會更新
   work:     ["videos","tasks","shifts"],
   videos:   ["videos"],
   videosDF: ["videos"],
   output:   ["videos"],
   cal:      ["videos","schedule"],
-  dashboard:["videos","tasks","schedule"],
-  flow:     ["videos","tasks","shifts","schedule"],
+  // v181：看板＝儀表板＋流程中控＋團隊看板合起來，四個集合都要盯
+  board:    ["videos","tasks","shifts","schedule"],
+  chat:     ["tasks"],
 };
 function tabNeedsRender(tab, changed){
   if(!Array.isArray(changed) || !changed.length) return true;   // 不知道改了什麼 → 照畫
@@ -1112,7 +1119,7 @@ function render(){
   // （人資 v152 移出去了 —— 他有「剪輯成效」要查，真的用得到。）
   // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
-  const fn = { chat:viewChat, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -5102,6 +5109,15 @@ function workAssignFold(){
     dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount));
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
+// v181：儀表板與流程中控已經併進 viewBoard()（導覽列上沒有這兩頁了）。
+// 名字留著當**別名**，不是留兩套實作 —— 全站與十幾支既有測試在叫它們，
+// 指向同一份才不會有「兩個頁面各自演化」的老問題。
+// ⚠️ v181：導覽列上已經沒有「儀表板」與「流程中控」了 —— 它們的內容
+//    整批搬進 viewBoard()（看板的上半部）。下面這兩支函式**不再有任何分頁指向它們**，
+//    留著只是因為十幾支既有測試仍在直接呼叫，用來驗那些卡片本身的行為。
+//    ⚠️ 要改看板的內容請改 viewBoard()，不要改這兩支 —— 改了使用者也看不到。
+//    （試過把它們做成 viewBoard 的別名，會連帶弄壞 18 支測試裡對
+//      「這一頁應該有／不應該有什麼」的假設，那是另一件事，不混在這一版做。）
 function viewDashboard(){
   const editors=staffNamesSorted(["editor"]);
   const shifts=Object.values((STATE&&STATE.shifts)||{});
@@ -6116,7 +6132,7 @@ function viewVideosLib(){
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
-  return `<h2>${T("影片庫A","Library A")}</h2>
+  return `<h2>${T("影片庫","Library")}</h2>
   ${origLangFixCard()}
   <div class="card">
     ${zoneSwitchHTML()}
@@ -7794,6 +7810,16 @@ function viewSettings(){
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>設定</h2>
+  ${/* v181：操作紀錄與回收桶從導覽列收進這裡（兩個都是偶爾才用的維護工具）。
+        ⚠️ 一定要有入口 —— 把分頁拿掉卻沒補入口，等於整個功能消失。 */''}
+  <div class="card">
+    <b style="font-size:16px">維護工具</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">偶爾才用的東西收在這裡，不佔上面的分頁。</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn sec" onclick="CUR_TAB='log';buildNav();render()">📜 操作紀錄</button>
+      <button class="btn sec" onclick="CUR_TAB='trash';buildNav();render()">🗑 回收桶</button>
+    </div>
+  </div>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">

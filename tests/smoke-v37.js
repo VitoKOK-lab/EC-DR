@@ -43,11 +43,11 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let tabs=myTabs().map(t=>t[0]);
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
-ok("editor tabs = work/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["chat","work","team","videos","videosDF","cal"]), tabs);
+ok("editor tabs = work/team/videos/videosDF/cal", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","videosDF","cal"]), tabs);
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
-ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["chat","work","team","videos","cal"]), tabs);
-ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Messages","Work Plan","Team Board","Library","Schedule"]), myTabs().map(t=>t[1]));
+ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","cal"]), tabs);
+ok("intl tab labels English", JSON.stringify(myTabs().map(t=>t[1]))===JSON.stringify(["Messages","My Day","Board","Library","Schedule"]), myTabs().map(t=>t[1]));
 
 // --- 全角色渲染 ---
 for(const [name,role] of [["管理員","boss"],["Regina","manager"],["小葵","editor"],["Anna","intl"]]){
@@ -87,7 +87,7 @@ ok("intl work: task card English + translate icon", h.includes("Got it") && h.in
 h=viewVideos();
 // v146：海外的影片庫跟台灣同一份（只是介面英文）—— 舊的「來源清單」那一份跟
 //      「上班計畫」的建立二創版本卡重複，已經拿掉。
-ok("intl library English (chrome)", h.includes("Library A") && h.includes("Original language")
+ok("intl library English (chrome)", h.includes("Library") && h.includes("Original language")
    && h.includes("Add one") && h.includes('id="vid_tabs"') && !h.includes("影片庫") && !h.includes("原本語言"));
 CAL_PLAT="tw"; CAL_YM=null; h=viewCal();
 ok("intl schedule English (hub + tw body)", h.includes("Schedule") && h.includes("Platform") && h.includes("Full") && h.includes("Sun") && !h.includes("月排程") && !h.includes("已排滿"));

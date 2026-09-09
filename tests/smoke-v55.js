@@ -70,7 +70,7 @@ reset();
 
 // ── 分頁：人資（v152 多了「剪輯成效」—— 他要查誰做完幾支、審過沒、檔案在哪）──
 ok("HR 分頁＝團隊看板＋剪輯成效＋出勤",
-   JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"]]), myTabs());
+   JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["board","看板"],["output","剪輯產出"],["attend","出勤"]]), myTabs());
 
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let h=viewTeam();   // 一般員工看到的看板（人資多一張發通知卡，另外測）
