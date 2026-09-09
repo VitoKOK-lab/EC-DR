@@ -161,7 +161,10 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
 { reset([], "管理員","boss");
   newSimpleVideo();
   ok("新增視窗有預排上片日期欄", /id="sv_date"[^>]*type="date"/.test(modalHTML)||/type="date"[^>]*id="sv_date"/.test(modalHTML), modalHTML.slice(0,700));
-  ok("預設留空（不要幫老闆亂填一個日期）", /id="sv_date" type="date" value=""/.test(modalHTML), modalHTML.slice(0,700)); }
+  ok("預設留空（不要幫老闆亂填一個日期）", /id="sv_date" type="date" value=""/.test(modalHTML), modalHTML.slice(0,700));
+  // v184（老闆：「預排日期和時間和儲存位置是必填，沒有寫，不給存檔」）
+  ok("**也有上片時間欄，而且只選整點**", /id="sv_time"/.test(modalHTML) && modalHTML.includes(">15:00<"), modalHTML.slice(0,900));
+  ok("三個欄位都標了必填", (modalHTML.match(/· 必填/g)||[]).length>=3, (modalHTML.match(/· 必填/g)||[]).length); }
 
 (async()=>{
 // 操作紀錄是在 dbWrite 的 .then() 裡寫的（非同步），要等一個 tick 才看得到
@@ -179,24 +182,29 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
 
 { reset([], "管理員","boss");
   newSimpleVideo();
-  fields.sv_name="新片"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_lang="";
-  fields.sv_date=D(3);
+  fields.sv_name="新片"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_lang="";
+  fields.sv_date=D(3); fields.sv_time="15:00";
   await MODAL_OK();
   const w=WRITES.find(x=>x[0]==="set"&&x[1]==="videos");
-  ok("填了日期就存得進去", w && w[3].scheduledDate===D(3), w&&w[3].scheduledDate); }
+  ok("填了日期就存得進去", w && w[3].scheduledDate===D(3), w&&w[3].scheduledDate);
+  ok("時間也一起存進去", w && w[3].publishTime==="15:00", w&&w[3].publishTime); }
 
 { reset([], "管理員","boss");
   newSimpleVideo();
-  fields.sv_name="新片"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_lang="";
-  fields.sv_date="";
-  await MODAL_OK();
+  // v184：日期從「選填」變必填 —— 老闆看到月排程清單一整排「—」之後決定的。
+  // 以前這裡驗的是「沒填要存成 null」；現在根本存不進去。
+  fields.sv_name="新片"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_lang="";
+  fields.sv_date=""; fields.sv_time="15:00";
+  const r=await MODAL_OK();
   const w=WRITES.find(x=>x[0]==="set"&&x[1]==="videos");
-  ok("**沒填就是 null，不是空字串**（月曆是用 null 判斷「沒排」的）",
-     w && w[3].scheduledDate===null, w&&JSON.stringify(w[3].scheduledDate)); }
+  ok("**沒填日期就不給存**", r===false && !w, w&&JSON.stringify(w[3].scheduledDate)); }
 
 { reset([], "管理員","boss");
   newSimpleVideo();
-  fields.sv_name="新片"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_lang="";
+  fields.sv_name="新片"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_lang=""; fields.sv_time="15:00";
   fields.sv_date=D(3)+"T00:00:00";
   await MODAL_OK();
   const w=WRITES.find(x=>x[0]==="set"&&x[1]==="videos");

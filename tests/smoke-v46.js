@@ -50,16 +50,21 @@ ok("審過的片顯示剪輯完成", h.includes("剪輯完成") && !h.includes("
 WORK_ZONE="shopee"; POOL_FILTER="all";
 h=viewWork();
 ok("我的今日工作：待審核琥珀鍵", h.includes(">待審核</button>") || h.includes("待審核</button>"));
-// v183：鍵上的字縮短成「已審過」（手機上「已審過，下一步」塞不下會掉到自己一行，
-// 20 支待審就是 20 塊黑磚）。完整說明搬到 title，還是講得出按下去會怎樣。
-ok("等審列有「已審過」鍵", h.includes("editorMarkReviewed('W1')") && h.includes("✓ 已審過"));
-ok("按下去會怎樣還是講得出來（在 title 裡）", h.includes("標記通過，開始上傳雲端"));
+// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
+// 剪輯這邊只寫「等 Regina 審」，不留一顆按不動的鍵。
+ok("**剪輯這邊沒有審過鍵**", !h.includes("editorMarkReviewed('W1')"));
+ok("**改成寫著「待審」**", h.includes(">待審<"));
+{ localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+  const hr=workReviewCard("小葵");
+  localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
+  ok("Regina 那邊才有鍵", hr.includes("editorMarkReviewed('W1')") && hr.includes("✓ 審過")); }
 
-// editorMarkReviewed 寫入通過
+// 審過鍵寫入通過（v184：只有 Regina 按得動，所以用她的身分驗）
 { const calls=[]; global.window.DB={ set:async()=>{}, update:async(c,id,p)=>{calls.push([c,id,p]);}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
+  localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
   (async()=>{ await editorMarkReviewed("W1");
     const hit=calls.find(([c,id,p])=>c==="videos"&&id==="W1"&&p.reviewStatus==="通過");
-    ok("已審過鍵寫入 reviewStatus=通過＋審核人", !!hit && hit[2].reviewedBy==="小葵");
+    ok("審過鍵寫入 reviewStatus=通過＋審核人", !!hit && hit[2].reviewedBy==="Regina");
 
     // 完成確認文案提到待審核
     let msg=""; global.confirm=(m)=>{msg=m; return false;};
