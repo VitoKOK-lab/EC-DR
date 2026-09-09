@@ -98,6 +98,19 @@ def _post(url, body, token=None):
     return _open(req)
 
 
+def _patch(url, body, token):
+    """
+    PATCH 一份文件。搭配網址上的 updateMask.fieldPaths 只改指定欄位，
+    其他欄位一個都不碰 —— meta/settings 裝的是整個系統的設定，
+    整份覆寫會把使用者的設定洗掉。
+    """
+    headers = {"Content-Type": "application/json",
+               "Authorization": "Bearer " + token}
+    req = urllib.request.Request(url, json.dumps(body).encode("utf-8"),
+                                 headers, method="PATCH")
+    return _open(req)
+
+
 def _get(url, token):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
     return _open(req)
@@ -197,6 +210,38 @@ def fetch_collection(cfg, token, name, page_size=300, progress=None):
         page_token = data.get("nextPageToken")
         if not page_token:
             return out
+
+
+def taipei_now():
+    """台灣時間（UTC+8）的 ISO 字串，格式與前端 app.js 的 nowIso() 一致。"""
+    import datetime
+    t = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    return t.isoformat(timespec="seconds")
+
+
+def report_backup_status(cfg, token, status):
+    """
+    把備份結果回報到 meta/settings 的 backupStatus 欄位。
+
+    為什麼寫在 meta/settings 裡而不是另開一份文件：前端只訂閱了
+    meta/settings 這一份（見 fb.js），寫在這裡系統就自動收得到，
+    不必動同步層。
+
+    ⚠️ 一定要用 updateMask 只寫 backupStatus 這一個欄位。
+       meta/settings 裝的是整個系統的設定，整份覆寫會把設定洗掉。
+    """
+    url = ("%s/meta/settings?updateMask.fieldPaths=backupStatus"
+           % docs_base(cfg))
+    fields = {}
+    for k, v in status.items():
+        if isinstance(v, bool):
+            fields[k] = {"booleanValue": v}
+        elif isinstance(v, int):
+            fields[k] = {"integerValue": str(v)}
+        else:
+            fields[k] = {"stringValue": str(v)}
+    _patch(url, {"fields": {"backupStatus": {"mapValue": {"fields": fields}}}},
+           token)
 
 
 def doc_id(doc):

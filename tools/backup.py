@@ -367,6 +367,26 @@ def main():
     kept = rotate(dest_root, args.keep)
     size = sum(v["bytes"] for v in files.values())
 
+    # --- 把結果回報到系統畫面 ---------------------------------------------
+    # 使用者不會為了確認備份有沒有跑而去開終端機。回報到 meta/settings，
+    # 系統的「設定」頁就看得到。只寫 backupStatus 這一個欄位（updateMask）。
+    #
+    # ⚠️ 這一步失敗不能讓備份算失敗 —— 備份檔已經好好地在硬碟上了，
+    #    回報只是錦上添花。
+    if not _fs.emulator_host():
+        try:
+            _fs.report_backup_status(cfg, token, {
+                "at": _fs.taipei_now(),
+                "docs": total_docs,
+                "covers": int(covers.get("count", 0)),
+                "sizeMB": "%.1f" % (size / 1024.0 / 1024.0),
+                "host": manifest.get("host", ""),
+                "ok": True,
+            })
+            ok("已回報到系統「設定」頁")
+        except Exception as e:
+            warn("回報系統畫面失敗（備份本身沒問題）：%s" % str(e)[:120])
+
     print("")
     print("=" * 56)
     print("✅ 備份完成並通過回驗")
