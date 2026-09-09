@@ -299,9 +299,13 @@ function reset(tasks){
        {外框:(allPart.match(/class="tdclamp"/g)||[]).length, 卡片:(allPart.match(/class="card"/g)||[]).length});
     ok("**自己那一張不套**（它就是要完整看到的）",
        !b.slice(i1,i2).includes("tdclamp"), b.slice(i1,i2).slice(0,150)); }
-  ok("CSS 有寫死高度（不寫死就不會一樣高）",
-     /\.tdclamp\{[^}]*max-height:\d+px/.test(HTML), (HTML.match(/\.tdclamp\{[^}]*\}/)||[])[0]);
-  ok("**點一下展開、再點收回去**", /\.tdclamp\.open\{[^}]*max-height:none/.test(HTML)
+  // ⚠️ 一定要是 height，不能是 max-height —— max-height 只擋高的，矮的還是矮，
+  //    排出來一格高一格矮，那就不是「統一大小」了。
+  ok("**CSS 用固定 height（不是 max-height）**",
+     /\.tdclamp\{[^}]*[^-]height:\d+px/.test(HTML) && !/\.tdclamp\{[^}]*max-height/.test(HTML),
+     (HTML.match(/\.tdclamp\{[^}]*\}/)||[])[0]);
+  ok("裡面那張卡也撐滿（不然矮的會露出一塊空白）", /\.tdclamp>\.card\{[^}]*height:100%/.test(HTML));
+  ok("**點一下展開、再點收回去**", /\.tdclamp\.open\{[^}]*height:auto/.test(HTML)
      && /classList\.toggle\("open"\)/.test(APP));
   ok("**滿出來的才畫漸層，不寫文字說明**（老闆：不需要文字說明）",
      /\.tdclamp\.over::after\{/.test(HTML) && typeof tdClampScan==="function"
@@ -331,7 +335,30 @@ function reset(tasks){
      viewChat().includes("收到，明天處理"));
   ok("**不再產生新的 kind:\"msg\"**（sendMsg 整個移除了）", typeof sendMsg==="undefined");
 
-  // ══════════ ⑬ 每個身分每一頁都畫得出來 ══════════
+  // ══════════ ⑬ 審片進度：長清單收起來、按鍵不要變成整條黑磚 ══════════
+  // 正式資料實測有人待審 20 支 —— 攤開來把「今天要做的事」推到三個螢幕以下，
+  // 那正是老闆說的「不可以切壓迫到彼此的區塊」。
+  { const mk=(n)=>{ const vs=[]; for(let i=0;i<n;i++) vs.push({id:"W"+i,code:"26W"+i,name:"片"+i,
+      rawName:"",videoCopy:"",rawLink:"",cover:"",stage:"已完成",editor:"小葵",claimedBy:"小葵",
+      assignedTo:"",scheduledDate:null,publishTime:"",finishedAt:T0+"T10:00:00",publishedLink:"",
+      driveFolder:"",productUrl:"",note:"",mainType:"",source:"官方IP",refLink:"",reviewStatus:"",
+      locale:"",channel:"",origLang:"",account:"",tags:[],products:[],usageHistory:[],metrics:[]});
+    reset(); STATE.videos=vs; LAST_RAW.videos=vs; STATE=decorate(LAST_RAW); as("小葵","editor");
+    return workReviewCard("小葵"); };
+    const few=mk(3), many=mk(20);
+    ok("**少少幾支就直接列出來**（不用點）", !few.includes("revfold") && few.includes("editorMarkReviewed('W0')"));
+    ok("**超過 6 支就收起來**", many.includes('class="fold revfold"'));
+    ok("**收起來也看得出還欠幾支**", many.includes("（20）"), (many.match(/待審核[^（]*（\d+）/)||[])[0]);
+    ok("**清單沒有被截斷**（收起來 ≠ 只留前幾支）",
+       (many.match(/editorMarkReviewed/g)||[]).length===20, (many.match(/editorMarkReviewed/g)||[]).length);
+    ok("**按鍵縮短了**（「已審過，下一步」在手機上會掉到自己一行，20 支就是 20 塊黑磚）",
+       many.includes("✓ 已審過<") && !many.includes("已審過，下一步"));
+    ok("按下去會怎樣還是講得出來（在 title 裡）", many.includes("標記通過，開始上傳雲端"));
+    ok("**而且不是實心黑**（20 顆實心的比內容還搶眼）", many.includes('class="btn sec sm"'));
+    ok("按鍵不換行，會留在右邊", many.includes("white-space:nowrap"));
+    ok("折疊本身不長成一張新卡片（卡中有卡）", /details\.revfold\{[^}]*border:none/.test(HTML)); }
+
+  // ══════════ ⑭ 每個身分每一頁都畫得出來 ══════════
   { let bad=null;
     [["管理員","boss"],["Regina","manager"],["HR小姐","hr"],["小葵","editor"],["小美","cs"],["Anna","intl"]]
       .forEach(([w,r])=>{ reset([t_("T1",{ack:true}), p_("P1"), m_("M1")]); as(w,r);

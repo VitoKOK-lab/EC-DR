@@ -2246,10 +2246,16 @@ function workReviewCard(me){
     ${/* 順序＝該處理的先來：被退回（要動手）→ 還在等（要追）→ 已審過（做完了，收起來）。
           v128 之前「已審過」排在「待審核」上面，7 支通過的把該追的擠到最下面，
           使用者的說法是「審片還是在最下面」。 */''}
-    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
-      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
+    ${/* v183：超過 6 支就收起來。正式資料實測有人待審 20 支，攤開來是 20 列，
+          把「今天要做的事」推到三個螢幕以下 —— 老闆說的「不可以切壓迫到彼此的區塊」。
+          支數寫在標題上，收起來也知道還欠幾支，不是把它藏掉。 */''}
+    ${waitingReview.length?`<div style="margin-top:10px">${waitingReview.length>6?`<details class="fold revfold" ${foldState("work.waitrev", false)}><summary>`:""}<b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>${waitingReview.length>6?`</summary><div class="foldbody">`:""}
+      ${/* v183：手機上這一列本來是 flex-wrap:wrap ——「已審過，下一步」那顆鍵塞不下就
+            掉到自己一行，變成整條黑磚。20 支待審就是 20 塊，整張卡把「今天要做什麼」
+            擠到三個螢幕以下。改成不換行、鍵縮短成「已審過」，完整說明留在 title。 */''}
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <span style="flex:1;min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
+        <button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過","Approved")}</button></div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
     ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
@@ -4378,7 +4384,7 @@ function dashAssignTaskCard(opts){
       </div>
       <span id="asg_pic_box"></span></div>
     <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出交辦","Send")}</button>
+      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出","Send")}</button>
       ${/* 還沒決定要發給誰的，先存起來 —— 存草稿不需要勾任何人 */''}
       <button class="btn sec" id="asg_draft" style="flex:1" onclick="saveDraft()"
         title="${T("還沒決定要發給誰？先存下來，只有你看得到","Not sure who to send it to yet? Save it — only you can see it")}">${
