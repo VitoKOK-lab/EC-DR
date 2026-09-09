@@ -147,7 +147,12 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   STATE.videos[0].totalUsed=1;
   STATE.schedule={[T0]:{slots:[{videoId:"V001",reused:true,by:"小葵"}]}};
   server.schedule={[T0]:{slots:[{videoId:"V001",reused:true,by:"小葵"}]}};
-  await moveReuse("V001", T0, "2026-09-09"); await new Promise(r=>setTimeout(r,30));
+  // ⚠️ 目標日期一定要**從 T0 算出來**，不可以寫死。
+  //    以前這裡寫死 2026-09-09，到了那一天它就等於 T0，
+  //    moveReuse 開頭的 `newDate===oldDate` 直接 return，整條就永遠測不到了
+  //    （2026-09-09 當天才爆出來）。
+  const T1=new Date(Date.now()+288e5+864e5).toISOString().slice(0,10);   // 隔天
+  await moveReuse("V001", T0, T1); await new Promise(r=>setTimeout(r,30));
   ok("重播改期：舊那筆原子刪掉、新那筆原子加上",
      calls.some(c=>c[0]==="arrayDel"&&c[3]==="usageHistory") && calls.some(c=>c[0]==="arrayAdd"&&c[3]==="usageHistory"));
   ok("重播改期不會整份改寫使用紀錄", !calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[3]&&c[3].usageHistory));
