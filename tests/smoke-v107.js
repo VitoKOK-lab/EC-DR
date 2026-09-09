@@ -76,10 +76,11 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok(`${ROLE_LABEL[r]}的分頁跟員工一樣`, JSON.stringify(ROLE_TABS[r])===JSON.stringify(ROLE_TABS.cs)); }
   as("阿華","mkt");
   { const tabs=myTabs().map(t=>t[0]);
-    ok("行銷只看得到本日工作與團隊看板", JSON.stringify(tabs)===JSON.stringify(["work","team"]));
+    // v178：每個人最前面都多了「溝通」分頁
+    ok("行銷只看得到溝通、本日工作與團隊看板", JSON.stringify(tabs)===JSON.stringify(["chat","work","team"]), tabs);
     ok("行銷看不到影片庫與月排程", !tabs.includes("videos") && !tabs.includes("cal")); }
   as("茂泉","ship");
-  ok("出貨也是一樣兩個分頁", JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["work","team"]));
+  ok("出貨也是一樣的分頁", JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","team"]), myTabs().map(t=>t[0]));
 
   // ══ ③ 排序：台灣（剪輯→行銷→客服→出貨→員工→人資）→ 巴基斯坦 ══
   reset();
