@@ -43,8 +43,9 @@ localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","ma
 const tabs=myTabs().map(t=>t[0]);
 // v138：manager（Regina）多了「選品配對」分頁（見 tests/smoke-v138.js）
 // v167：也給了她「儀表板」，而且排第一 —— 她整天在用的多選交辦卡就在那上面。
-ok("manager 分頁＝dashboard/flow/team/videos/videosDF/cal/match",
-   JSON.stringify(tabs)===JSON.stringify(["dashboard","flow","team","videos","videosDF","cal","match"]));
+// v175：選品配對整頁移除（老闆要重新設計），經理人的分頁跟著少一個
+ok("manager 分頁＝dashboard/flow/team/videos/videosDF/cal",
+   JSON.stringify(tabs)===JSON.stringify(["dashboard","flow","team","videos","videosDF","cal"]), tabs);
 ok("儀表板排第一（那是她的落地頁）", tabs[0]==="dashboard");
 let h=viewFlow();
 ok("備片警報卡（未達60天→紅色警示）", h.includes("備片存量") && h.includes("要拍片了") && h.includes("準備腳本"));

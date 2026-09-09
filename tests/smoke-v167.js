@@ -49,7 +49,9 @@ function reset(){
   ok("**經理人有儀表板了**", tabs.includes("dashboard"), tabs);
   ok("而且排第一（她的落地頁）", tabs[0]==="dashboard", tabs);
   ok("原本的分頁一個都沒少",
-     ["flow","team","videos","videosDF","cal","match"].every(t=>tabs.includes(t)), tabs); }
+     ["flow","team","videos","videosDF","cal"].every(t=>tabs.includes(t)), tabs);
+  // v175：選品配對整頁移除，這一頁不該再冒出來
+  ok("選品配對那一頁已經不在了", !tabs.includes("match"), tabs); }
 { reset(); as("小葵","editor");
   ok("剪輯沒有被順手加到儀表板", !myTabs().map(t=>t[0]).includes("dashboard"), myTabs().map(t=>t[0]));
   reset(); as("小美","cs");
@@ -103,9 +105,9 @@ function reset(){
 // ══════════ ⑤ 整頁不會炸 ══════════
 { reset(); as("Regina","manager");
   let bad=null;
-  ["dashboard","flow","team","videos","videosDF","cal","match"].forEach(t=>{
+  ["dashboard","flow","team","videos","videosDF","cal"].forEach(t=>{
     CUR_TAB=t; CAL_YM=null; try{ render(); }catch(e){ bad=t+": "+e.message; } });
-  ok("經理人七個分頁都畫得出來", !bad, bad); }
+  ok("經理人六個分頁都畫得出來", !bad, bad); }
 
 console.log(`\nv167（經理人也能多選交辦・也給儀表板）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
