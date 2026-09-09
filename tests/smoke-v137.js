@@ -134,7 +134,8 @@ function lastSlot(){
   reset([a_("1"), d_("8")]); as("管理員","boss"); VID_VIEW="raw";
   const lib=viewVideos();
   ok("影片庫A 看不到大流的片", !lib.includes("大流片8"));
-  ok("影片庫A 標題改成「影片庫A」", lib.includes("影片庫A")); }
+  // v181：標題改成「影片庫」（本來就沒有 B，「A」對誰都沒有意義）
+  ok("影片庫的標題是「影片庫」", lib.includes("影片庫") && !lib.includes("影片庫A"), (lib.match(/<h2>[^<]*<\/h2>/)||[])[0]); }
 
 // ══════════ ③ 出片面：月排程要看得到大流 ══════════
 { reset([a_("1",{scheduledDate:D(2),stage:"已完成",published:true}),

@@ -84,7 +84,11 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   // 這台裝置上次登入的職位要不要下載影片。
   // 這份清單必須跟 app.js 的 NO_VIDEO_ROLES 一致 —— tests/smoke-v140.js 會比對兩邊。
   // v152：人資移出去了 —— 他要查剪輯的完成狀況（「剪輯成效」分頁），真的用得到影片資料。
-  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs"];
+  // ⚠️ 這一份要跟 app.js 的 NO_VIDEO_ROLES 一模一樣 —— 兩邊不同步的話，
+  //    app 以為不用載、fb 照樣訂閱（或反過來），smoke-v140／v152 會抓。
+  // v181：pick（選品行銷）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
+  //       永遠是「—」，卻要付整包 986 支影片的下載成本。
+  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "pick"];
   function needVideosByRole() {
     let r = "";
     try { r = localStorage.getItem("ecdr_role") || ""; } catch (e) { return true; }

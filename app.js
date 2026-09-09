@@ -36,7 +36,11 @@ const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 //      ① 人資要查剪輯的完成狀況（v152 的新分頁），所以他真的需要影片資料 → 移出這份清單。
 //      ② 其他不剪片的職位照舊不下載，但團隊看板上那幾個算不出來的欄位與圖表
 //         直接**不顯示**（見 viewTeam 的 needVideos() 判斷），不再假裝是 0。
-const NO_VIDEO_ROLES=["mkt","svc","ship","cs"];
+// 不需要影片資料的職位 —— 他們的畫面（每日工作／看板／溝通）算不出剪輯產量，
+// 硬載 986 支影片只是讓手機開得慢。
+// v181：選品行銷（pick）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
+// 那幾欄對她們永遠是「—」，卻要付整包影片的下載成本。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick"];
 function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
@@ -51,17 +55,20 @@ function videosLoading(){
 const ROLE_TABS = {
   // 月排程合一：一個「月排程」分頁，裡面用平台選單切換（社群媒體／海外 TikTok／蝦皮／馬來）
   // 「團隊看板」全員都看得到：誰被交辦了什麼、處理到哪、今日與本月成效（純檢視、不能操作）
-  boss:    [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["output","剪輯成效"],["attend","出勤"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"],["perf","平台成效"],["log","操作紀錄"],["trash","回收桶"]],
+  // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
+  //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
+  //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片流量"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["dashboard","儀表板"],["flow","流程中控"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","上班計畫"],["team","團隊看板"],["videos","影片庫A"],["videosDF","影片庫大流"],["cal","月排程"]],
-  intl:    [["work","Work Plan"],["team","Team Board"],["videos","Library"],["cal","Schedule"]],
-  cs:      [["work","本日工作"],["team","團隊看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
+  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],
+  intl:    [["work","My Day"],["board","Board"],["videos","Library"],["cal","Schedule"]],
+  cs:      [["work","每日工作"],["board","看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
-  hr:      [["team","團隊看板"],["output","剪輯成效"],["attend","出勤"]],
+  hr:      [["board","看板"],["output","剪輯產出"],["attend","出勤"]],
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
@@ -876,14 +883,15 @@ function decorate(raw){
 const GLOBAL_COLLS=["users","settings"];
 const TAB_DEPS={
   attend:   ["shifts"],
-  team:     ["videos","tasks","shifts"],
-  work:     ["videos","tasks"],
+  // v180：每日工作多了「我的出勤」→ 也要盯 shifts，不然打完卡不會更新
+  work:     ["videos","tasks","shifts"],
   videos:   ["videos"],
   videosDF: ["videos"],
   output:   ["videos"],
   cal:      ["videos","schedule"],
-  dashboard:["videos","tasks","schedule"],
-  flow:     ["videos","tasks","shifts","schedule"],
+  // v181：看板＝儀表板＋流程中控＋團隊看板合起來，四個集合都要盯
+  board:    ["videos","tasks","shifts","schedule"],
+  chat:     ["tasks"],
 };
 function tabNeedsRender(tab, changed){
   if(!Array.isArray(changed) || !changed.length) return true;   // 不知道改了什麼 → 照畫
@@ -1111,7 +1119,7 @@ function render(){
   // （人資 v152 移出去了 —— 他有「剪輯成效」要查，真的用得到。）
   // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
-  const fn = { chat:viewChat, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -1819,9 +1827,17 @@ function asgToggleAll(btn){
 }
 // 勾了幾個人即時顯示在送出鈕上 —— 一次發給 12 個人跟發給 1 個人差很多，要看得到
 function asgCount(){
-  const n=asgPicked().length;
+  const names=asgPicked(), n=names.length;
   const b=document.getElementById("asg_go");
-  if(b) b.textContent = n ? ("送出交辦給 "+n+" 人") : "送出交辦";
+  if(b) b.textContent = n ? T("送出給 "+n+" 人","Send to "+n) : T("送出","Send");
+  // 收合的時候標題就要說「現在要發給誰」—— 不然點開之前完全看不出勾了什麼
+  const who=document.getElementById("asg_who");
+  if(who){
+    who.textContent = n
+      ? T("已選 "+n+" 人：","To ("+n+"): ") + names.slice(0,4).join("、") + (n>4?T(" 等","…"):"")
+      : T("選擇員工…","Pick people…");
+    who.className = n ? "asgwho on" : "asgwho";
+  }
 }
 // 交辦時附的圖。送出之前還沒有交辦 id，Storage 沒有地方可以放，
 // 所以先在瀏覽器壓好放在記憶體，等 assignTaskSel 拿到 groupId 再上傳一次。
@@ -2316,7 +2332,7 @@ function poolRowsHTML(poolShown){
   return (poolShown||[]).map(v=>`<tr${isUrgent(v)?' class="urg"':''}>
         <td data-label="${T("影片","Video")}">${urgentPill(v)}<a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${missingPill(v,["raw"])} <span class="muted" style="font-size:12px">${esc(dataLabel(v.source||""))}</span>${isVersion(v)&&v.createdBy?`<span class="muted" style="font-size:12px"> · ${T("由 "+esc(v.createdBy)+" 建立","added by "+esc(v.createdBy))}</span>`:''}${enSubLine(v)}</td>
         <td data-label="${T("動作","Action")}"><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="claimVid('${v.id}')" title="${T('按一下＝認領並開始剪（變剪輯中、進我的工作、開始計時）','Claim & start (timer begins)')}">${T('認領開始剪','Claim & start')}</button>${poolDiscardBtn(v)}</div></td>
-      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的本日工作）","Nothing to claim — anything assigned to you appears in Today's Work above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
+      </tr>`).join("")||`<tr><td colspan="2" class="muted">${POOL_Q?T("找不到符合「"+esc(POOL_Q)+"」的項目","Nothing matches “"+esc(POOL_Q)+"”"):(POOL_FILTER==="all"?T("目前沒有可以認領的項目（主管指派給你的會直接出現在上面的每日工作）","Nothing to claim — anything assigned to you appears in My Day above"):T("這一類目前沒有可認領的項目（點「全部」看其他）","Nothing to claim in this group — tap All to see the rest"))}</td></tr>`;
 }
 // 上班計畫：待認領卡（快選列＋搜尋＋清單＋認領/退回鍵）
 function workPoolCard(pool, poolShown, poolCnt, me){
@@ -2480,11 +2496,19 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     // 維持原本那一格「處理狀況」就好 —— 給自己開一個聊天室很奇怪。
     // 兩邊都還是靠 report 滿 12 字才能打勾完成；交辦的 report 由留言自動帶出來
     // （見 msgBecomesReport），所以不必打兩次字。
-    const note = needAck ? ""
-      : assigned ? mateChips(t)+taskThread(t, true)
-      : `<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
+    // v182（老闆指定「文字太多的點開再展開」）：回報框改成點了才展開。
+    // 一天四件事就是四個輸入框攤在畫面上，佔掉大半個手機螢幕，而真正要打字的
+    // 通常只有一件。**已經寫過的預設展開** —— 收起來會讓人以為自己沒寫。
+    const rep=String(t.report||"").trim();
+    const repInput=`<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
+    const note = needAck ? ""
+      : assigned ? mateChips(t)+taskThread(t, true)
+      : `<details class="fold repfold"${rep?" open":""}><summary>${
+           rep ? T("處理狀況","Progress")+"：<span class=\"muted\">"+esc(rep.slice(0,16))+(rep.length>16?"…":"")+"</span>"
+               : `<span class="muted">${T("寫處理狀況…","Add a progress note…")}</span>`
+         }</summary><div class="foldbody">${repInput}</div></details>`;
     // 交辦內容本身也可能是一條網址（老闆貼給你看的東西），要點得開
     const ttl=linkify(t.title)+((assigned&&currentRole()==="intl")?` <a class="tricon" href="${gtranslate(t.title,'en')}" target="_blank" title="Translate">文<span>A</span></a>`:"");
     rows.push(todoRow(assigned?"📌":"•", ttl+taskLatePill(t), sub+note, act, t.done));
@@ -2786,7 +2810,9 @@ function commRow(t){
         ? `<div style="margin-top:6px"><button class="btn sm" onclick="ackTask('${esc(jsEsc(t.id))}')">${T("收到","Got it")}</button></div>` : ""}
       ${taskThread(t, true)}
     </div>`;
-  return `<details class="commrow${arch?" arch":""}"><summary>${head}</summary>${body}</details>`;
+  // 手機上狀態藥丸會被藏起來（塞不下），改用左邊一條色帶表示 —— 資訊沒有消失
+  const stCls = !tracked ? "" : arch ? "" : t.done ? " st-done" : !t.ack ? " st-new" : " st-doing";
+  return `<details class="commrow${arch?" arch":""}${stCls}"><summary>${head}</summary>${body}</details>`;
 }
 let COMM_TAB="open";                 // open＝進行中｜arch＝已收起｜all
 function setCommTab(v){ COMM_TAB=v; render(); }
@@ -3025,7 +3051,7 @@ function viewWorkCS(me){
   const nNoReport=tasks.filter(t=>!t.done&&!(t.report||"").trim()).length;
   const nFuture=myFutureTasks().length;
   return `
-  <h2>本日工作（${esc(me)}）</h2>
+  <h2>${T("每日工作","My Day")}（${esc(me)}）</h2>
   <div class="focusbar">
     <div><span class="fn ${tasks.length&&nDone<tasks.length?'warn':''}">${nDone}<i>/${tasks.length}</i></span><span class="fl">交辦完成</span></div>
     <div><span class="fn ${nAck?'warn':''}">${nAck}</span><span class="fl">待接收</span></div>
@@ -3034,6 +3060,10 @@ function viewWorkCS(me){
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${/* v180（老闆指定）：員工看得到**自己的**出勤。
+        以前只有老闆跟人資看得到，員工連自己遲到幾次、這個月上了幾天班都查不到。
+        只有自己那一份，別人的還是看不到。 */''}
+  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
   ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
   ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
   ${dashAssignTrackCard()}
@@ -3125,7 +3155,7 @@ function viewWork(){
   </div>`;
   const nFuture=myFutureTasks().length;
   return `
-  <h2>${T("本日工作","Today's Work")}${paren(esc(me))}</h2>
+  <h2>${T("每日工作","My Day")}${paren(esc(me))}</h2>
   ${focusBar}
   ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
         再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
@@ -3142,6 +3172,8 @@ function viewWork(){
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
+  ${/* v180（老闆指定）：剪輯也看得到自己的出勤 */''}
+  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
   ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
   ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
   ${dashAssignTrackCard()}
@@ -3614,40 +3646,54 @@ function myAttendCard(){
   const a=attendOf((STATE.shifts||{})[shiftId(me,today)]||null);
   const s=attSum(me, ym);
   const cell=(v,l,muted)=>`<div><div class="n ${muted?'muted':''}">${v}</div><div class="l">${l}</div></div>`;
+  // v180：這張卡從「只有人資看得到」變成**每個人都看得到自己的**（老闆指定），
+  // 所以連海外同仁也會看到 —— 每一句都要走 T()，不然英文介面會整張漏中文。
   return `<div class="card" style="border-color:var(--gold)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">我的出勤 <span class="muted" style="font-size:12px;font-weight:400">${esc(me)}</span></b>
-      <span class="muted" style="font-size:12px">${w.flex?"變動工時（不判遲到早退，只記工時）":"正常班 "+esc(w.start)+"–"+esc(w.end)}</span></div>
+      <b style="font-size:16px">${T("我的出勤","My attendance")} <span class="muted" style="font-size:12px;font-weight:400">${esc(me)}</span></b>
+      <span class="muted" style="font-size:12px">${w.flex
+        ?T("變動工時（不判遲到早退，只記工時）","Flexible hours — hours logged, no late/early check")
+        :T("正常班 "+esc(w.start)+"–"+esc(w.end), "Shift "+esc(w.start)+"–"+esc(w.end))}</span></div>
     <div class="mstat" style="margin-top:10px">
-      ${cell(a.in?esc(String(a.in).slice(11,16)):"—","今天上班",!a.in)}
-      ${cell(a.out?esc(String(a.out).slice(11,16)):(a.in?"上班中":"—"),"今天下班",!a.out)}
-      ${cell(minToHm(a.work),"今天工時",a.work==null)}
-      ${cell(minToHm(s.work),`${m+1} 月累計工時`,!s.work)}
+      ${cell(a.in?esc(String(a.in).slice(11,16)):"—",T("今天上班","Clock in"),!a.in)}
+      ${cell(a.out?esc(String(a.out).slice(11,16)):(a.in?T("上班中","On shift"):"—"),T("今天下班","Clock out"),!a.out)}
+      ${cell(minToHm(a.work),T("今天工時","Hours today"),a.work==null)}
+      ${cell(minToHm(s.work),T((m+1)+" 月累計工時","Hours this month"),!s.work)}
     </div>
     <div class="muted" style="font-size:12px;margin-top:8px">
-      ${m+1} 月出勤 ${s.days} 天${w.flex?"":`・遲到 ${s.late} 次・早退 ${s.early} 次`}${s.noOut?`・${s.noOut} 天沒打下班`:""}
-      ${st?`　<span style="opacity:.75">出勤自 ${esc(st)} 起算</span>`:'　<span style="opacity:.75">還沒開始起算（設定密碼後才開始）</span>'}</div>
-    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
+      ${T((m+1)+" 月出勤 "+s.days+" 天", s.days+" days on this month")}${w.flex?"":T(
+        "・遲到 "+s.late+" 次・早退 "+s.early+" 次", " · late "+s.late+" · left early "+s.early)}${
+        s.noOut?T("・"+s.noOut+" 天沒打下班", " · "+s.noOut+" days without clock-out"):""}
+      ${/* ⚠️ 這裡以前是一個全形空白（U+3000）當間距 —— 那也算中文標點，
+             海外介面的語言檢查會抓到（smoke-v94）。改用 CSS 的 margin。 */''}
+      ${st?`<span style="opacity:.75;margin-left:10px">${T("出勤自 "+esc(st)+" 起算","Counted from "+esc(st))}</span>`
+          :`<span style="opacity:.75;margin-left:10px">${T("還沒開始起算（設定密碼後才開始）","Not counted yet — set your password first")}</span>`}</div>
+    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>${T("我這個月的每日紀錄","My daily records")}<span class="n">${attRows(me,ym).length}</span></summary>
       <div class="foldbody">${attDetailTable(me, ym)}</div></details>`:""}
   </div>`;
 }
 // 一個人某個月的每日出勤明細表（個人明細與「我的出勤」共用）
+// v180：這張表現在也長在每個人的「我的出勤」裡（老闆指定），海外同仁看得到，
+// 所以每一格都要走 T() —— 以前它只出現在中文的出勤頁，寫死中文沒事。
+const WD_EN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function attDetailTable(name, ym){
   const list=attRows(name, ym);
   const fix=canFixAttend();
+  const wd=(ds)=>T("（"+weekdayZh(ds)+"）"," "+WD_EN[new Date((ds||today)+"T00:00:00").getDay()]);
   return `<table class="responsive" style="margin-top:8px">
-    <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th>${fix?"<th>補登</th>":""}</tr></thead>
+    <thead><tr><th>${T("日期","Date")}</th><th>${T("上班","In")}</th><th>${T("下班","Out")}</th><th>${T("工時","Hours")}</th><th>${T("狀況","Status")}</th>${fix?`<th>${T("補登","Fix")}</th>`:""}</tr></thead>
     <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
-      const f=!a.counted ? "未列入計算"
-        : [a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
-           (d!=null&&d>500)?`離公司 ${d} 公尺`:''].filter(Boolean).join("・");
+      const f=!a.counted ? T("未列入計算","Not counted")
+        : [a.late>0?T(`遲到 ${a.late} 分`,`late ${a.late}m`):'', a.early>0?T(`早退 ${a.early} 分`,`left early ${a.early}m`):'',
+           a.auto?T('系統補下班','auto clock-out'):'',
+           (d!=null&&d>500)?T(`離公司 ${d} 公尺`,`${d}m from office`):''].filter(Boolean).join(T("・"," · "));
       const normal=a.counted&&!f;
-      return `<tr><td data-label="日期">${esc(String(sh.date).slice(5))}（${weekdayZh(sh.date)}）</td>
-        <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
-        <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
-        <td data-label="工時">${minToHm(a.work)}</td>
-        <td data-label="狀況" class="${normal?'':'muted'}">${normal?'正常':esc(f)}${attManualPill(sh)}</td>
-        ${fix?`<td data-label="補登">${attFixBtn(name, sh.date)}</td>`:""}</tr>`; }).join("")}</tbody></table>`;
+      return `<tr><td data-label="${T("日期","Date")}">${esc(String(sh.date).slice(5))}${wd(sh.date)}</td>
+        <td data-label="${T("上班","In")}">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
+        <td data-label="${T("下班","Out")}">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
+        <td data-label="${T("工時","Hours")}">${minToHm(a.work)}</td>
+        <td data-label="${T("狀況","Status")}" class="${normal?'':'muted'}">${normal?T('正常','OK'):esc(f)}${attManualPill(sh)}</td>
+        ${fix?`<td data-label="${T("補登","Fix")}">${attFixBtn(name, sh.date)}</td>`:""}</tr>`; }).join("")}</tbody></table>`;
 }
 function viewAttend(){
   const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
@@ -4259,13 +4305,18 @@ function dashAssignTaskCard(opts){
       <b style="font-size:16px">${esc(title)}</b>
     </div>
     ${o.hint?`<div class="muted" style="font-size:12px;margin-top:4px">${esc(o.hint)}</div>`:""}
-    <div style="margin-top:12px">
-      <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
-        <label style="margin:0">${T("選擇員工（可複選）","Pick people (multiple)")}</label>
-        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
+    ${/* v182（老闆指定）：「選擇員工不要一直開在那裡佔這麼大畫面，點開再展開」。
+          27 個人的勾選清單攤開就是大半個螢幕，而且大部分時候只勾一兩個人。
+          收合時標題上寫「已選：小美、泓儒」—— 不點開也知道現在要發給誰。 */''}
+    <details class="fold asgfold" id="asg_fold" style="margin-top:12px">
+      <summary><span id="asg_who">${T("選擇員工…","Pick people…")}</span></summary>
+      <div class="foldbody">
+        <div class="row" style="justify-content:flex-end;margin-bottom:4px">
+          <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
+        </div>
+        ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
       </div>
-      ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
-    </div>
+    </details>
     <div style="margin-top:10px"><label>${T("交辦內容","What needs doing")}</label>
       <input id="asg_txt" placeholder="${T("要交辦的工作內容…（可以直接貼網址）","What needs doing… (URLs become links)")}" onkeydown="if(enterKey(event))assignTaskSel()">
       <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
@@ -4695,14 +4746,17 @@ function teamMonthPicker(ym){
       return `<option value="${x}" ${x===ym?"selected":""}>${T(y+" 年 "+m+" 月", x)}${x===today.slice(0,7)?T("（本月）"," (current)"):""}</option>`;
     }).join("")}</select>`;
 }
-function viewTeam(){
+// v180：這一段（團隊今天在做什麼＋月成效）現在是「看板」的下半部，
+// 兩個進入點共用同一份 —— 複製一份出去，兩邊遲早會各自演化成不一樣。
+function viewTeam(){ return `<h2>${T("團隊看板","Team Board")}</h2>${teamBoardBody()}`; }
+function teamBoardBody(){
   const everyone=teamStaff();
   const staff=teamFilter(everyone);
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const ym=teamYM(), minLabel=dashMin;
   const curYM=today.slice(0,7);
-  if(!everyone.length) return `<h2>${T("團隊看板","Team Board")}</h2><div class="card muted">${T("還沒有成員","No members yet")}</div>`;
-  if(!staff.length) return `<h2>${T("團隊看板","Team Board")}</h2>${teamFilterBar(everyone, staff)}
+  if(!everyone.length) return `<div class="card muted">${T("還沒有成員","No members yet")}</div>`;
+  if(!staff.length) return `${teamFilterBar(everyone, staff)}
     <div class="card muted">${T("沒有符合的人","Nobody matches")}</div>`;
   // v152：不下載影片資料的職位（行銷／客服／出貨）算不出剪輯的產量 ——
   // 以前那幾欄跟兩張圖照畫，全部是 0。那不是「還沒有資料」，是**假數字**：
@@ -4727,22 +4781,37 @@ function viewTeam(){
     <td data-label="${T("帶商品","With product")}">${noEdit(u)?"—":m.sales}</td>`:''}
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
-  return `<h2>${T("團隊看板","Team Board")}</h2>
+  return `
   ${currentRole()==="hr"?msgInboxCard():''}
   ${p2pWatchCard()}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
   ${currentRole()==="hr"?myMsgFold():''}
-  ${teamFilterBar(everyone, staff)}
+  ${/* v182：篩選 25 個人的下拉與搜尋框是**主管的工具** —— 員工只看得到
+        自己那一張卡，擺著它只是佔位子還讓人以為可以看別人。 */''}
+  ${seesLeadBoard()?teamFilterBar(everyone, staff):''}
   <div class="focusbar">
     <div><span class="fn">${dayOn}<i>/${staff.length}</i></span><span class="fl">${T("今日出勤","On today")}</span></div>
     ${vidOK?`<div><span class="fn">${dayDone}</span><span class="fl">${T("今日完成","Done today")}</span></div>`:''}
     <div><span class="fn ${dayTaskAll&&dayTaskDone<dayTaskAll?'warn':''}">${dayTaskDone}<i>/${dayTaskAll}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     ${vidOK?`<div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>`:''}
   </div>
-  <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
-  ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
-    <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
+  ${/* v180（老闆指定）：**員工只看到自己那張卡＋全隊總數**。
+        以前是 28 張別人的卡、要滑 19.9 個螢幕；掃別人的交辦內容對他自己的工作
+        沒有幫助，上面那排總數才是他要知道的「今天全隊做得怎樣」。
+        主管／人資照舊看得到每一個人 —— 那是他們的工作。 */''}
+  <h3 style="margin:18px 0 10px">${seesLeadBoard()?T("今日成效","Today"):T("我今天","My day")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
+  ${seesLeadBoard()
+    ? staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
+        <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")
+    : (()=>{ const me=(staff.find(u=>u.name===currentUser())
+               || (STATE.users||[]).find(u=>u.name===currentUser()));
+        return me ? `<div class="teamgrid">${teamDayCard(me, allTasks)}</div>`
+                  : `<p class="muted" style="font-size:13px">${T("上面那排數字就是今天全隊的狀況。","The numbers above are the whole team's day.")}</p>`; })()}
+  ${/* v180：月成效整段收進折疊。熱圖在手機上是 6827px（8 個螢幕）——
+        那是月底才看的東西，不該擋在「今天大家在做什麼」後面每天滑過去。
+        標題那一行（含換月）留在外面，不點開也知道在看哪個月。 */''}
   <h3 style="margin:24px 0 10px;display:flex;align-items:center;flex-wrap:wrap">${ym===curYM?T("本月成效","This month"):T("月成效","Monthly")}${teamMonthPicker(ym)}</h3>
+  ${fold(T("看圖表與逐人統計","Charts & per-person stats"), staff.length, `
   ${vidOK?teamHeatCard(staff, ym):''}
   ${vidOK?teamBarCard(months, ym):''}
   ${(vidOK&&staff.some(noEdit))?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
@@ -4751,7 +4820,66 @@ function viewTeam(){
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th>${vidOK?`<th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th>`:''}<th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
-  </div>`;
+  </div>`)}`;
+}
+// ===================================================================
+// 看板（v180）：儀表板 ＋ 流程中控 ＋ 團隊看板 → 併成一頁、分兩層
+//
+// 老闆：「看版（看板再分，給老闆、hr、主管看的，和員工互相看到團隊工作的）」
+//
+// 為什麼非併不可（正式資料實測，手機 390×844）：
+//   儀表板 11.1 個螢幕・流程中控 14.3・團隊看板 19.9  ＝ 三頁 45 個螢幕
+//   而且**同一個人的卡片同時出現在三頁**：流程中控 21 張員工卡、
+//   團隊看板 25 張、儀表板 9 張剪輯卡。三頁各自演化，就變成老闆說的「超級混亂」。
+//
+// 併法 —— 一頁兩層：
+//   **下層**（大家都看得到）＝ teamBoardBody()：團隊今天在做什麼＋月成效。
+//                             這一份跟原本的團隊看板是**同一份程式碼**，
+//                             所以「員工看到的是純檢視、不能操作」那條保證原封不動。
+//   **上層**（只有主管／人資）＝ 要做決定用的：備片存量、毛片庫存、指派毛片、
+//                              待審片、當日進度、未來排程、員工視角。
+//
+// 丟掉的：流程中控的員工卡、儀表板的剪輯卡 —— 跟下層那一份是同一件事。
+function viewBoard(){
+  const lead=seesLeadBoard();
+  if(!lead) return `<h2>${T("看板","Board")}</h2>${teamBoardBody()}`;   // 員工版＝原本的團隊看板，一模一樣
+
+  const allTasks=Object.values((STATE&&STATE.tasks)||{});
+  const editors=staffNamesSorted(["editor"]);
+  const shifts=Object.values((STATE&&STATE.shifts)||{});
+  const staff=teamFilter(teamStaff());
+  const D=SHIFT_DATE, isToday=(D===today);
+  const perEditor=dashEditorRows(editors, shifts, allTasks, D, isToday);
+  const present=perEditor.filter(e=>e.s&&e.s.clockIn).length;
+  const teamDone=perEditor.reduce((a,e)=>a+e.done.length,0);
+  const teamTasksDone=perEditor.reduce((a,e)=>a+e.tasks.filter(t=>t.done).length,0);
+  const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
+  const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
+  const {g, poolN, unassignedPool, assignCount, noSchedN, wipN, stripHTML, runwayEnd, gapN}=dashSchedule();
+  const okRunway=g.runway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+  const pool=rawStock();
+  const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+  const daily=Math.max(1,+daySum(today)||4);
+  const dd=daysBetween(D,today);
+  const dayLabel=D===today?T("今天","today"):(D===yesterday?T("昨天","yesterday"):T(dd+" 天前", dd+"d ago"));
+  // 順序＝主管早上打開來的動作順序：
+  //   還有片可以出嗎 → 還有毛片可以剪嗎 → 派給誰 → 有沒有片等我審 → 誰在做什麼 → 排到哪了
+  return `<h2>${T("看板","Board")}</h2>
+  <div class="muted" style="font-size:12px;margin:-6px 0 12px">${T(
+    "上半部是主管在用的（要不要去拍片、派誰剪、誰卡住了）；下半部全公司都看得到。",
+    "The top half is for managers; everything below is what everyone sees.")}</div>
+  ${flowRunwayCard(g, okRunway, pct)}
+  ${flowStockCard(staff.filter(u=>!NO_EDIT_ROLES.includes(u.role)), pool, unassigned, Math.floor(pool.length/daily))}
+  ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
+      dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
+  ${flowReviewQueueCard()}
+  ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
+  ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
+  ${currentRole()==="boss"?dashViewAsCard():""}
+  <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
+    <span class="muted" style="font-size:13px;font-weight:400">${T("（下面這一段全公司都看得到）","(everyone sees this part)")}</span></h3>
+  ${teamBoardBody()}`;
 }
 // ===================================================================
 // 剪輯成效（v152）—— 只有管理員與人資看得到
@@ -5006,6 +5134,15 @@ function workAssignFold(){
     dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount));
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
+// v181：儀表板與流程中控已經併進 viewBoard()（導覽列上沒有這兩頁了）。
+// 名字留著當**別名**，不是留兩套實作 —— 全站與十幾支既有測試在叫它們，
+// 指向同一份才不會有「兩個頁面各自演化」的老問題。
+// ⚠️ v181：導覽列上已經沒有「儀表板」與「流程中控」了 —— 它們的內容
+//    整批搬進 viewBoard()（看板的上半部）。下面這兩支函式**不再有任何分頁指向它們**，
+//    留著只是因為十幾支既有測試仍在直接呼叫，用來驗那些卡片本身的行為。
+//    ⚠️ 要改看板的內容請改 viewBoard()，不要改這兩支 —— 改了使用者也看不到。
+//    （試過把它們做成 viewBoard 的別名，會連帶弄壞 18 支測試裡對
+//      「這一頁應該有／不應該有什麼」的假設，那是另一件事，不混在這一版做。）
 function viewDashboard(){
   const editors=staffNamesSorted(["editor"]);
   const shifts=Object.values((STATE&&STATE.shifts)||{});
@@ -6020,7 +6157,7 @@ function viewVideosLib(){
     <select onchange="vidSetLang(this.value)" style="width:auto;min-width:150px">
       ${langs.map(([k,zh,en])=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(zh,en)}${paren(langCount[k]||0)}</option>`).join("")}
     </select></div>`;
-  return `<h2>${T("影片庫A","Library A")}</h2>
+  return `<h2>${T("影片庫","Library")}</h2>
   ${origLangFixCard()}
   <div class="card">
     ${zoneSwitchHTML()}
@@ -7698,6 +7835,16 @@ function viewSettings(){
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
   return `<h2>設定</h2>
+  ${/* v181：操作紀錄與回收桶從導覽列收進這裡（兩個都是偶爾才用的維護工具）。
+        ⚠️ 一定要有入口 —— 把分頁拿掉卻沒補入口，等於整個功能消失。 */''}
+  <div class="card">
+    <b style="font-size:16px">維護工具</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">偶爾才用的東西收在這裡，不佔上面的分頁。</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn sec" onclick="CUR_TAB='log';buildNav();render()">📜 操作紀錄</button>
+      <button class="btn sec" onclick="CUR_TAB='trash';buildNav();render()">🗑 回收桶</button>
+    </div>
+  </div>
   <div class="card"><b>每天上片目標</b>
     <label style="margin-top:6px">每日應上片數</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">

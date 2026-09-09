@@ -199,7 +199,7 @@ reset(LIB); as("Anna","intl");
 // v146：海外的影片庫跟台灣同一份（只是介面英文）
   ok("海外也有那四個分頁（英文）",
      ["Not shot","To edit","Done","Old"].every(x=>h.includes("<span>"+x+"</span>")));
-  ok("海外的影片庫也是英文", h.includes("Library A") && h.includes("Original language"));
+  ok("海外的影片庫也是英文", h.includes("Library") && h.includes("Original language"));
   ok("海外沒有中文分頁名洩漏", !h.includes("未拍") && !h.includes("待剪") && !h.includes("剪完")); }
 
 // ══ ⑩ render 不炸 ══

@@ -114,7 +114,7 @@ ok("待認領清單維持原樣（沒被順手改掉）", viewWork().includes("2
 // v146：海外的影片庫跟台灣同一份（只是介面英文）
 reset([v_("7122",{name:"翡翠開箱"})]); as("Anna","intl");
 ok("海外的影片庫是同一份表格（英文）",
-   viewVideos().includes("Library A") && viewVideos().includes("Add one"));
+   viewVideos().includes("Library") && viewVideos().includes("Add one"));
 reset([v_("A",{name:"",rawName:""})]); as("Anna","intl");
 ok("海外看到的未命名是英文", vidName(v_("A",{name:"",rawName:""}))==="(untitled)");
 

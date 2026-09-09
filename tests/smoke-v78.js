@@ -42,7 +42,14 @@ const task=(id,o)=>Object.assign({id,user:"小葵",date:T0,title:"工作"+id,rep
 const vid_=(id,o)=>Object.assign({id,code:"",name:"片"+id,rawName:"片"+id,rawLink:"http://raw",stage:"待處理",locale:"",channel:"",
   tags:[],products:[],usageHistory:[],metrics:[],scheduledDate:null},o||{});
 // 只看「今天要做的事」那張卡（折疊區塊不算）
-const todayCard=()=> (viewWork().split("今天要做的事")[1]||"").split("<details")[0];
+// ⚠️ 不能切到「第一個 <details>」為止 —— v182 之後每一件事底下的「處理狀況」
+//    本身就是一個 <details>，那樣會在第一件事就把字串切斷，後面的影片全被切掉。
+//    改成切到**下一張卡片**開始為止，那才是這張卡真正的範圍。
+const todayCard=()=>{ const h=viewWork();
+  const i=h.indexOf("今天要做的事"); if(i<0) return "";
+  const rest=h.slice(i);
+  const j=rest.indexOf('<div class="card"');
+  return j<0?rest:rest.slice(0,j); };
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
@@ -125,7 +132,9 @@ ok("而且標出來是拖過來的", todayCard().includes("昨天沒做完") && 
         [{name:"Anna",role:"intl",pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA==",pwSet:true}]);
   as("Anna","intl");
   { const h=viewWork();
-    ok("海外的清單標題是英文", h.includes("Today's Work") && h.includes(">Today<"));
+    // v182：大標題跟分頁名對齊成 My Day；卡片標題仍是 Today（那是「今天要做的事」）
+    ok("海外的清單標題是英文", h.includes("My Day") && h.includes(">Today<"),
+       (h.match(/<h2>[^<]*</)||[])[0]);
     ok("海外的折疊標題是英文", h.includes("To claim") && h.includes("Scheduled later")===false || h.includes("Scheduled later")); }
 
   // ══ 登入頁記住這台裝置上次是誰 ══

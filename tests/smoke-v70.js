@@ -82,10 +82,12 @@ const h4=(zh,n)=>`>${zh}（${n}）</h4>`;
 ok("看板有三個小標", [h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)].every(x=>t.includes(x)));
 ok("看板小標順序一致", ascending(order(t,[h4("台灣・剪輯行銷",2),h4("台灣・其他",3),h4("巴基斯坦",2)])));
 ok("每一組各自一個方框排列", (t.match(/class="teamgrid"/g)||[]).length===3);
-{ // 台灣剪輯只看得到台灣那兩組
+// v180（老闆指定）：員工只看到自己那張卡，所以「分幾組」是主管畫面上的事。
+{ as("Regina","manager"); const mg=viewTeam();
+  ok("主管看得到三組（含巴基斯坦）", mg.includes(h4("台灣・剪輯行銷",2)) && mg.includes(h4("台灣・其他",3)) && mg.includes("巴基斯坦（"));
   as("小葵","editor"); const tw=viewTeam();
-  // v142 拆掉分區：團隊看板三組都看得到
-  ok("台灣剪輯看得到三組（含巴基斯坦）", tw.includes(h4("台灣・剪輯行銷",2)) && tw.includes(h4("台灣・其他",3)) && tw.includes("巴基斯坦（"));
+  ok("**員工不再看到一整排別人的分組**", (tw.match(/class="teamgrid"/g)||[]).length===1,
+     (tw.match(/class="teamgrid"/g)||[]).length);
   as("Regina","manager"); }
 ok("看板仍然沒有按鍵", !t.includes("<button") && !t.includes("onclick"));
 
