@@ -181,6 +181,9 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // 有人找你、或你派出去的有回音，是每天最先要處理的事。
   // v183 改名：本來叫「溝通」，老闆說「把『溝通』名字改成『傳訊息』」。
   t.unshift(["chat", currentRole()==="intl"?"Messages":"傳訊息"]);
+  // v185（老闆指定）：外包人員看不到月排程 —— 那是全公司的上片計畫，
+  // 他只做被指派的片。（看板與成效那一層在 teamBoardBody 擋。）
+  if(isOutsourced()) return t.filter(x=>x[0]!=="cal");
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -1917,6 +1920,10 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   // v183：對接窗口整欄拿掉（老闆：「對接窗口先移除，都不用了」）。
   // 舊資料上的 contact 還在、畫面上照樣看得到，只是不再有地方新增。
   const names=asgPicked(); const t=val("asg_txt").trim(); const contact="";
+  // v185：外包人員只能傳給管理層。名單上本來就只列管理層，但只縮小名單不算防護 ——
+  // 名字是從畫面上的勾選盒讀回來的，改一下就送得出去。
+  if(isOutsourced() && names.some(n=>!isMgmtName(n))){
+    toast(T("外包人員只能傳訊息給主管或管理員","External contractors can only message management"),true); return; }
   // v184：可以預排 —— 挑未來的日期，那天才會出現在對方畫面上。
   // 過去的日期不收（打錯的話對方永遠看不到，而且會一直卡在「拖了 N 天」）。
   const when=String(val("asg_date")||today).slice(0,10) || today;
@@ -3143,6 +3150,13 @@ function seesPerson(name){ const z=zoneOfUser(name); return z==="both" || seesZo
 // 他照樣有自己的每日工作、自己那張卡、自己的出勤 —— 看不到的是**別人的**。
 // 用 users 上的旗標，不是把名字寫死在程式裡：外包換人、多一個人，
 // 在設定的成員管理勾一下就好，不用改程式重新部署。
+// 這個名字是不是管理層（主管／人資／管理員）
+function isMgmtName(n){
+  const name=String(n||"");
+  if(name===ADMIN_NAME) return true;                 // 管理員沒有 users 文件
+  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===name);
+  return !!(u && ["boss","manager","hr"].includes(u.role));
+}
 function isOutsourced(name){
   const n=String(name==null?currentUser():name);
   const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===n);
@@ -4483,6 +4497,14 @@ function asgPickerHTML(roles){
   const groups=staffRoleGroups(roles)        // 跟交辦下拉同一套分組，不要自己再分一次
     .map(g=>({label:g.label, people:g.people.filter(u=>u.name!==me)}))
     .filter(g=>g.people.length);
+  // v185（老闆指定）：外包人員「不能傳訊息給所有同事」—— 名單上只留管理層。
+  // 他有事情要問就找主管，不必也不該一個一個問同事。
+  const soloSend=isOutsourced(me);
+  if(soloSend){
+    groups.length=0;
+    const mgmt=staffSorted((STATE.users||[]).filter(u=>["manager","hr"].includes(u.role)&&u.name!==me));
+    if(mgmt.length) groups.push({label:T("主管","Management"), people:mgmt});
+  }
   // v183：管理員沒有 users 文件（他不是「員工」），所以永遠不會出現在上面那份名單裡。
   // 但老闆說「找主管，找hr也是一種溝通呀，全部移到溝通去」—— 要能在這裡選得到他，
   // 舊的「找主管／人資說一件事」才真的被取代掉，而不是換個地方再開一條路。

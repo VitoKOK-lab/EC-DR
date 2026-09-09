@@ -238,7 +238,46 @@ function reset(vids, users){
     ok("移出排程的確認視窗照樣寫編號（純文字場合，一行講完是哪一支）",
        /^\d/.test(vidTitle(STATE.videos[0])) && vidTitle(STATE.videos[0]).includes("2609241")); }
 
-  // ══════════ ⑦ 沒有把別的弄壞 ══════════
+  // ══════════ ⑦ 外包還差兩件事（老闆補的）══════════
+  // 老闆：「陳鋒 要增加一個外包的，他的權限不一樣。」→ 選了「剪輯身上的標記」，
+  //        另外兩條：看不到月排程、不能傳訊息給所有同事。
+  { reset(); as("陳鋒","editor");
+    const ids=myTabs().map(t=>t[0]);
+    ok("**外包看不到月排程**", !ids.includes("cal"), ids);
+    ok("但該有的都還在（他還是要剪片）",
+       ["chat","work","board","videos"].every(k=>ids.includes(k)), ids);
+    as("小葵","editor");
+    ok("（對照）一般剪輯照樣有月排程", myTabs().map(t=>t[0]).includes("cal")); }
+  { reset(); as("陳鋒","editor");
+    const c=dashAssignTaskCard();
+    ok("**外包的名單上只有管理層**",
+       c.includes('value="Regina"') && c.includes('value="HR小姐"') && c.includes('value="管理員"'),
+       (c.match(/value="[^"]+"/g)||[]));
+    ok("**名單上沒有其他同事**", !c.includes('value="小葵"') && !c.includes('value="小美"'),
+       (c.match(/value="[^"]+"/g)||[]));
+    as("小葵","editor");
+    ok("（對照）一般同仁照樣傳得到所有人",
+       dashAssignTaskCard().includes('value="小美"')); }
+  // 只縮小名單不算防護 —— 硬送也要擋
+  { reset(); as("陳鋒","editor");
+    const W=[]; global.window.DB.set=async(c,id,o)=>{ if(c==="tasks") W.push(o); };
+    asgPicked=()=>["小葵"]; fields.asg_txt="繞過名單直接送"; fields.asg_date=T0;
+    await assignTaskSel(); await wait(20);
+    ok("**外包硬送給同事也擋下來**", W.length===0, W);
+    ok("而且有講原因", TOASTS.some(t=>t.includes("只能傳訊息給主管")), TOASTS);
+    asgPicked=()=>["Regina"]; fields.asg_txt="找主管"; fields.asg_date=T0;
+    await assignTaskSel(); await wait(20);
+    ok("**傳給主管照樣送得出去**", W.length===1 && W[0].user==="Regina", W.map(x=>x.user)); }
+  { reset(); as("Regina","manager");
+    const W=[]; global.window.DB.set=async(c,id,o)=>{ if(c==="tasks") W.push(o); };
+    asgPicked=()=>["陳鋒"]; fields.asg_txt="這支給你剪"; fields.asg_date=T0;
+    await assignTaskSel(); await wait(20);
+    ok("**主管照樣派得動外包**（限制是他能傳給誰，不是誰能傳給他）",
+       W.length===1 && W[0].user==="陳鋒", W.map(x=>x.user)); }
+  { ok("誰算管理層問一次就好", isMgmtName("Regina")===true && isMgmtName("管理員")===true
+       && isMgmtName("HR小姐")===true && isMgmtName("小葵")===false); }
+
+  // ══════════ ⑧ 沒有把別的弄壞 ══════════
   { let bad=null;
     [["管理員","boss"],["Regina","manager"],["HR小姐","hr"],["小葵","editor"],["陳鋒","editor"],["小美","cs"]]
       .forEach(([w,r])=>{ reset([ v_("A",{editor:"小葵",reviewStatus:"通過"}) ]); as(w,r);
