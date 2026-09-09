@@ -291,7 +291,7 @@ function reset(vids, tasks){
   as("小葵","editor");
   const c=workReviewCard("小葵");
   ok("**剪輯這邊沒有審過鍵**", !c.includes("editorMarkReviewed('W1')"), (c.match(/editorMarkReviewed[^)]*\)/g)||[]));
-  ok("**改成寫著在等誰**（不要留一顆按不動的鍵）", c.includes("等 Regina 審"));
+  ok("**改成寫著「待審」**（不要留一顆按不動的鍵）", c.includes(">待審<"));
   as("Regina","manager");
   ok("Regina 才有鍵", workReviewCard("小葵").includes("editorMarkReviewed('W1')"));
   as("管理員","boss");

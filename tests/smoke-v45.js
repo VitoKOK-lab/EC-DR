@@ -52,7 +52,7 @@ ok("通過待補段：列出通過但缺連結的片", h.includes("已審過（�
 // v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
 ok("待審核段：列出等審的片", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片"));
 ok("**剪輯這邊沒有「審過」鍵，只寫著在等 Regina**",
-   !h.includes("editorMarkReviewed('W1')") && h.includes("等 Regina 審"));
+   !h.includes("editorMarkReviewed('W1')") && h.includes("待審"));
 { const seg=h.split("審片進度")[1].split("剪完等審的片")[0].split("最近 7 天剪完的片")[0];   // v184：還沒審的那張卡標題會變
   ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片"));
   // v136：源片填不了上片連結，所以有存檔連結就算補齊 —— 不能讓它永遠掛在卡上叫

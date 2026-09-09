@@ -466,6 +466,10 @@ async function route(method, path, body){
       // 可以指派剪輯工作（不含標急件）。⚠️ 這一格是白名單，沒列進來的欄位會被默默丟掉 ——
       // 加新欄位時很容易忘記這裡，忘了就是「勾了沒反應」而且不會有任何錯誤訊息。
       if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
+      // v185：外包人員（老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到
+      // 公司其他人的看板，和成效」）。用旗標不是把名字寫死 —— 換人、多一個人
+      // 在設定裡勾一下就好。
+      if(body.outsourced!=null) patch.outsourced=!!body.outsourced;
       if(body.workStart!=null) patch.workStart=String(body.workStart);
       if(body.workEnd!=null) patch.workEnd=String(body.workEnd);
       await window.DB.update("users", seg[1], patch); return; }
@@ -1230,6 +1234,10 @@ function calTWBody(){
       <div class="big">${b.total||"·"}<span style="font-size:14px;color:var(--muted);font-weight:600">${b.target?("/"+b.target):""}</span></div>
       ${filled?`<div class="pmk" style="color:var(--green)">${T("已排滿","Full")}</div>`:(empty?`<div class="pmk" style="color:${within10?'#F0A89E':'#C9BFB4'}">${T("未排","None")}${within10?T('（近期）',' (soon)'):''}</div>`:`<div class="pmk" style="color:var(--red)">${T("缺","Need ")}${b.short}</div>`)}
       ${dayIsMine(ds)?`<span class="mymk" title="${T("這天有你剪的片","You have work this day")}">✦</span>`:''}
+      ${/* v185（老闆指定）：來不及的那幾天，在月曆上就要看得到 ——
+            點進去才知道等於沒提醒。數字＝這天有幾支還沒好。 */''}
+      ${(()=>{ const w=calDayWarn(ds); return w.n
+          ? `<span class="calwarn${w.late?" late":""}" title="${esc(w.tip)}">${w.n}</span>` : ""; })()}
     </div>`;
   }
   return `
@@ -1314,7 +1322,7 @@ function calListBody(cfg){
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
-        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}${r.v?missingPill(r.v):""}</td></tr>`;
+        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
   return `<div class="card">
@@ -1413,7 +1421,7 @@ function openDay(ds){
     const lk=v&&assignLocked(v);
     const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -2272,7 +2280,7 @@ function workReviewCard(me){
               不要留一顆按不動的鍵（那比沒有還糟：會以為系統壞了）。 */''}
         ${canReview()
           ? `<button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`
-          : `<span class="pill wa" style="font-size:10px;flex:none">${T("等 Regina 審","Waiting on Regina")}</span>`}</div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
+          : `<span class="pill wa" style="font-size:10px;flex:none">${T("待審","In review")}</span>`}</div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
     ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
@@ -3126,6 +3134,16 @@ function zoneOfUser(name){
 function myZone(){ return zoneOfUser(currentUser()); }
 // 看不看得到「這個人」：管理層（zone 是 both）永遠看得到，其餘只看同區
 function seesPerson(name){ const z=zoneOfUser(name); return z==="both" || seesZone(z); }
+// ── 外包人員（v185，老闆指定）────────────────────────────────────────
+// 老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到公司其他人的看板，和成效」
+// 他照樣有自己的每日工作、自己那張卡、自己的出勤 —— 看不到的是**別人的**。
+// 用 users 上的旗標，不是把名字寫死在程式裡：外包換人、多一個人，
+// 在設定的成員管理勾一下就好，不用改程式重新部署。
+function isOutsourced(name){
+  const n=String(name==null?currentUser():name);
+  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===n);
+  return !!(u && u.outsourced);
+}
 function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
@@ -4897,6 +4915,9 @@ function teamMonthPicker(ym){
 // 兩個進入點共用同一份 —— 複製一份出去，兩邊遲早會各自演化成不一樣。
 function viewTeam(){ return `<h2>${T("團隊看板","Team Board")}</h2>${teamBoardBody()}`; }
 function teamBoardBody(){
+  // v185（老闆指定）：外包人員只看得到自己 —— 全員卡片、月成效圖表、
+  // 逐人統計表全部不畫。他自己那一張卡與自己的出勤照舊看得到。
+  const solo=isOutsourced();
   const everyone=teamStaff();
   const staff=teamFilter(everyone);
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
@@ -4954,14 +4975,17 @@ function teamBoardBody(){
        ${/* v183：我的出勤從「每日工作」搬過來 —— 老闆：「員工的『我的出勤』
              應該和看板放在一起吧」。的確：出勤是看板的東西，不是今天要做的事。 */''}
        <div style="margin-top:12px">${fold(T("我的出勤","My attendance"), null, myAttendCard())}</div>`; })()}
+  ${solo?"":`
   <h3 style="margin:18px 0 10px">${seesLeadBoard()?T("今日成效","Today"):T("大家今天","The team today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
   ${seesLeadBoard()
     ? staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
         <div class="teamgrid">${g.people.map(u=>tdClamp(teamDayCard(u, allTasks))).join("")}</div>`).join("")
-    : `<div class="teamgrid">${everyone.map(u=>tdClamp(teamDayCard(u, allTasks))).join("")}</div>`}
+    : `<div class="teamgrid">${everyone.map(u=>tdClamp(teamDayCard(u, allTasks))).join("")}</div>`}`}
   ${/* v180：月成效整段收進折疊。熱圖在手機上是 6827px（8 個螢幕）——
         那是月底才看的東西，不該擋在「今天大家在做什麼」後面每天滑過去。
         標題那一行（含換月）留在外面，不點開也知道在看哪個月。 */''}
+  ${solo?`<div class="muted" style="font-size:12px;margin-top:18px">${T(
+      "你是外包人員，這裡只看得到自己的部分。","You're an external contractor — you only see your own view.")}</div>`:`
   <h3 style="margin:24px 0 10px;display:flex;align-items:center;flex-wrap:wrap">${ym===curYM?T("本月成效","This month"):T("月成效","Monthly")}${teamMonthPicker(ym)}</h3>
   ${fold(T("看圖表與逐人統計","Charts & per-person stats"), staff.length, `
   ${vidOK?teamHeatCard(staff, ym):''}
@@ -4972,7 +4996,7 @@ function teamBoardBody(){
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th>${vidOK?`<th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th>`:''}<th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
-  </div>`)}`;
+  </div>`)}`}`;
 }
 // ===================================================================
 // 看板（v180）：儀表板 ＋ 流程中控 ＋ 團隊看板 → 併成一頁、分兩層
@@ -7524,6 +7548,67 @@ function intlDiscard(id){ const v0=vid(id)||{}; const k=INTL_LOCALES.includes(v0
     ask:(v)=>T(`把「${title(v)}」退回資料庫？\n不會刪除任何影片，源片會回到清單可以重選。`,`Return "${title(v)}" to the library?\nNothing is deleted — the original video stays and can be picked again.`),
     ok:(v)=>T(`已退回資料庫：「${title(v)}」（沒有刪除任何影片）`,`Returned to the library: "${title(v)}" — no video was deleted`) }); }
 
+// ── v185（老闆指定）：「審核過關，他是必要的，要審完才算完成，才能上架」──
+// 還沒審過就不給填上片連結。以前只是靠一句提示文字在勸，勸不動就照樣上了 ——
+// 而 v184 起產出成效是以審過為準的，先上架後補審等於把關卡繞過去。
+// 已經有連結的舊資料不擋（那是既成事實，擋了只會讓人連存檔都存不了）。
+// ── v185（老闆指定）：月排程上的倒數提示 ──────────────────────────────
+// 老闆：「審完才能上架，會在月排程出現提示，他依然能夠先排程，但沒有審在前一天
+//         在月排程會出現提示（還沒剪好，要在二天前提示，還沒審要在一天前）」
+//
+// 排程照排 —— 這裡只是提早叫人，不擋任何動作。兩種狀況、兩個提前量：
+//   還沒剪好 → 上片日的 **2 天前**開始提示（剪一支要時間，兩天才來得及）
+//   剪好沒審 → 上片日的 **1 天前**開始提示（審一支是幾分鐘的事）
+// 過了上片日還沒好的一律紅字（那已經是遲到，不是提醒）。
+const CAL_WARN_CUT=2, CAL_WARN_REVIEW=1;
+function calWarn(v){
+  if(!v) return null;
+  const ds=String(v.scheduledDate||"").slice(0,10); if(!ds) return null;
+  if(String(v.publishedLink||"").trim() || v.stage==="已上片") return null;   // 已經上了
+  const left=daysBetween(today, ds);          // 還有幾天（負數＝已經過了）
+  if(!isPublished(v)){
+    if(left>CAL_WARN_CUT) return null;
+    return {k:"cut", late:left<0,
+      zh:left<0?"過期還沒剪好":"還沒剪好", en:left<0?"overdue — not cut":"not cut yet"};
+  }
+  if(needsReview(v)){
+    if(left>CAL_WARN_REVIEW) return null;
+    return {k:"rev", late:left<0,
+      zh:left<0?"過期還沒審":"還沒審", en:left<0?"overdue — not reviewed":"not reviewed"};
+  }
+  return null;
+}
+// 某一天有幾支「來不及」—— 月曆格子上那顆角標
+function calDayWarn(ds){
+  let n=0, late=false; const kinds={};
+  try{
+    dayVideoList(ds).forEach(it=>{
+      const v=vid(it.videoId); if(!v) return;
+      if(it.slot && it.slot.reused) return;          // 重播用的是排程格上的連結，不走這條
+      const w=calWarn(v); if(!w) return;
+      n++; if(w.late) late=true; kinds[w.zh]=(kinds[w.zh]||0)+1;
+    });
+  }catch(e){ return {n:0}; }
+  const tip=Object.keys(kinds).map(k=>k+" "+kinds[k]+T(" 支"," ")).join("・");
+  return {n, late, tip};
+}
+function calWarnPill(v){
+  const w=calWarn(v); if(!w) return "";
+  return ` <span class="pill ${w.late?"em":"wa"}" style="font-size:10px"
+    title="${esc(T("預排上片 "+String((v&&v.scheduledDate)||"").slice(0,10),"scheduled "+String((v&&v.scheduledDate)||"").slice(0,10)))}">${T(w.zh,w.en)}</span>`;
+}
+function publishBlocked(v, newLink){
+  const link=String(newLink||"").trim();
+  if(!link) return false;                                  // 沒要填連結，不關這條的事
+  if(String((v&&v.publishedLink)||"").trim()) return false; // 本來就有，不是現在才上架
+  // 「審過關了嗎」跟成效算不算是同一個判斷（reviewOK）—— 兩邊各寫一份的話，
+  // 遲早會變成「被退回的不算成效、卻上得了架」這種對不起來的狀態。
+  return !reviewOK(v);
+}
+function publishBlockMsg(){
+  return T("這支還沒審過 —— Regina 審過才能上架。先請她審，審完再回來補連結。",
+           "Not approved yet — Regina has to approve before it goes live.");
+}
 // ---- 在地化版本編輯視窗（全英文；語言隨版本）----
 // 完成不強制先填上傳連結：實務上是先排日期、到日子上傳後才有連結，之後再回來補
 function intlFinish(id){ const v=vid(id)||{}; const t=v.name||v.rawName||T("這支影片","this video");
@@ -7533,6 +7618,7 @@ function intlFinish(id){ const v=vid(id)||{}; const t=v.name||v.rawName||T("這�
 }
 async function intlSaveVideo(id){
   const v=vid(id)||{};   // 存檔位置由家族決定，要先把這一筆撈出來
+  if(publishBlocked(v, val("i_pub"))){ toast(publishBlockMsg(), true); return false; }
   const video={ name:val("i_name").trim(), videoCopy:val("i_vcopy").trim(),
     driveFolder:familyDrive(v), publishedLink:val("i_pub").trim(), scheduledDate:val("i_date")||null };
   if(document.getElementById("i_acct")) video.account=val("i_acct");
@@ -7668,6 +7754,7 @@ function chDiscard(ch,id){ const C=CHANNELS[ch];
 }
 async function chSaveVideo(ch,id){ const p=CHANNELS[ch].pfx;
   const v=vid(id)||{};   // 存檔位置由家族決定，要先把這一筆撈出來
+  if(publishBlocked(v, val(p+"_pub"))){ toast(publishBlockMsg(), true); return false; }
   const video={ name:val(p+"_name").trim(), videoCopy:val(p+"_vcopy").trim(),
     driveFolder:familyDrive(v), publishedLink:val(p+"_pub").trim(), scheduledDate:val(p+"_date")||null };
   return await write("PUT",`/api/videos/${id}`,{video},T("已儲存","Saved"));
@@ -7938,7 +8025,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -8063,12 +8150,22 @@ function viewSettings(){
       <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
         onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)">可指派</label>`;
   };
+  // v185：外包人員 —— 看不到別人的看板與成效（管理層本來就不會是外包）
+  const outSel=(u)=>{
+    if(["boss","manager","hr"].includes(u.role||"editor"))
+      return '<span class="muted" style="font-size:12px">—</span>';
+    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
+      <input type="checkbox" ${u.outsourced?"checked":""} style="width:auto;margin:0"
+        onchange="setMemberOutsourced('${esc(jsEsc(u.name))}',this.checked)"
+        title="外包人員：看不到其他同事的看板與成效">外包</label>`;
+  };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="區域">${zoneCell(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
     <td data-label="可指派">${asgSel(u)}</td>
+    <td data-label="外包">${outSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -8277,6 +8374,10 @@ function setMemberFlex(name, on){
 function setMemberAssign(name, on){
   writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
     on?("「"+name+"」現在可以指派剪輯工作給同事"):("已收回「"+name+"」指派剪輯工作的權限")); }
+// v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
+function setMemberOutsourced(name, on){
+  writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},
+    on?("「"+name+"」設為外包人員（看不到其他同事的看板與成效）"):("「"+name+"」改回一般同仁")); }
 function setMemberRole(name, role){ if(!STAFF_ROLES.concat("manager").includes(role)) return;
   writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;

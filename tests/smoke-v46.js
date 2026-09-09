@@ -53,7 +53,7 @@ ok("我的今日工作：待審核琥珀鍵", h.includes(">待審核</button>") 
 // v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
 // 剪輯這邊只寫「等 Regina 審」，不留一顆按不動的鍵。
 ok("**剪輯這邊沒有審過鍵**", !h.includes("editorMarkReviewed('W1')"));
-ok("**改成寫著在等誰**", h.includes("等 Regina 審"));
+ok("**改成寫著「待審」**", h.includes(">待審<"));
 { localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
   const hr=workReviewCard("小葵");
   localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
