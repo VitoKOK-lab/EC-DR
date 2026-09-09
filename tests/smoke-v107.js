@@ -77,10 +77,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   as("阿華","mkt");
   { const tabs=myTabs().map(t=>t[0]);
     // v178：每個人最前面都多了「溝通」分頁
-    ok("行銷只看得到溝通、本日工作與團隊看板", JSON.stringify(tabs)===JSON.stringify(["chat","work","team"]), tabs);
+    ok("行銷只看得到溝通、每日工作與看板", JSON.stringify(tabs)===JSON.stringify(["chat","work","board"]), tabs);
     ok("行銷看不到影片庫與月排程", !tabs.includes("videos") && !tabs.includes("cal")); }
   as("茂泉","ship");
-  ok("出貨也是一樣的分頁", JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","team"]), myTabs().map(t=>t[0]));
+  ok("出貨也是一樣的分頁", JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","board"]), myTabs().map(t=>t[0]));
 
   // ══ ③ 排序：台灣（剪輯→行銷→客服→出貨→員工→人資）→ 巴基斯坦 ══
   reset();
@@ -111,11 +111,15 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("看板小標順序正確", ascending(order(t,[h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)])));
     ok("篩選下拉列得出新職位", t.includes(">行銷（1）") && t.includes(">客服（1）") && t.includes(">出貨（1）"));
     ok("篩選下拉用巴基斯坦", t.includes(">巴基斯坦（1）") && !t.includes(">海外剪輯（")); }
+  // v180（老闆指定）：員工只看到自己那張卡，分組是主管畫面上的事
+  reset(); as("Regina","manager"); CUR_TAB="team";
+  { const t=viewTeam();
+    ok("主管看得到三組（含巴基斯坦）",
+       t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && t.includes("巴基斯坦（")); }
   reset(); as("小葵","editor"); CUR_TAB="team";
   { const t=viewTeam();
-    // v142 拆掉分區：團隊看板不再只看同區，台灣剪輯也看得到巴基斯坦那一組
-    ok("台灣剪輯看得到三組（含巴基斯坦）",
-       t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && t.includes("巴基斯坦（")); }
+    ok("**員工只有一格（自己那張）**", (t.match(/class="teamgrid"/g)||[]).length===1,
+       (t.match(/class="teamgrid"/g)||[]).length); }
   reset(); as("Regina","manager"); CUR_TAB="flow";
   { const f=viewFlow();
     ok("流程中控三個小標都在", [h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)].every(x=>f.includes(x)));

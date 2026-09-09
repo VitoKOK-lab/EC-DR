@@ -75,7 +75,8 @@ reset(); as("管理員","boss");
 // ── 員工的分頁與畫面 ──
 reset(); as("小美","cs");
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
-ok("員工分頁＝本日工作＋團隊看板", JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["work","本日工作"],["team","團隊看板"]]), myTabs());
+// v181：儀表板＋流程中控＋團隊看板併成一個「看板」（board）
+ok("員工分頁＝溝通／每日工作／看板", JSON.stringify(myTabs())===JSON.stringify([["chat","溝通"],["work","每日工作"],["board","看板"]]), myTabs());
 let w=viewWork();
 ok("員工畫面沒有毛片／影片區", !w.includes("待認領") && !w.includes("待剪") && !w.includes("我的剪輯工作") && !w.includes("建立二創"));
 ok("員工有今天要做的事清單", w.includes("今天要做的事") && !w.includes("剪輯以外"));
@@ -115,31 +116,47 @@ ok("剪輯卡照樣有影片數字", (()=>{ const seg=cardOf(f,"小葵"); return
 // ── 團隊看板：全員都有這一頁 ──
 reset();
 [["管理員","boss"],["Regina","manager"],["小葵","editor"],["小美","cs"],["HR小姐","hr"]].forEach(([u,r])=>{
-  as(u,r); ok(`[${r}] 分頁有團隊看板`, myTabs().some(t=>t[0]==="team")); });
+  // v181：團隊看板併進「看板」了
+  as(u,r); ok(`[${r}] 分頁有看板`, myTabs().some(t=>t[0]==="board"), myTabs().map(t=>t[0])); });
 as("Anna","intl");
-ok("[intl] 分頁有 Team Board", myTabs().some(t=>t[0]==="team"&&t[1]==="Team Board"));
+ok("[intl] 分頁有 Board", myTabs().some(t=>t[0]==="board"&&t[1]==="Board"), myTabs());
 
 // ── 團隊看板內容 ──
 reset(); as("小葵","editor");
 let t=viewTeam();
 // v119 分區：看板卡片會寫出片名，所以只列同區的人 —— 台灣看不到 Anna（海外）
-ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>t.includes(n)));
-ok("台灣現在看得到海外同事（v142 不分區）", t.includes("Anna"));
+// v180：這兩條問的是「名單完不完整」，主管才看得到完整名單
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>tt.includes(n)));
+  ok("台灣現在看得到海外同事（v142 不分區）", tt.includes("Anna")); }
+// 員工那一邊：今日區塊只有自己
+{ const dayPart=t.split("我今天")[1]?t.split("我今天")[1].split("本月成效")[0]:"";
+  ok("**員工的今日區塊只有自己那一張**",
+     dayPart.includes("小葵") && !dayPart.includes("小美") && !dayPart.includes("阿凱"),
+     {自己:dayPart.includes("小葵"), 小美:dayPart.includes("小美"), 阿凱:dayPart.includes("阿凱")}); }
 { as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
   ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));
-ok("交辦標示為主管交辦（不寫誰）", t.includes("主管交辦") && !t.includes("Regina 交辦"));
-ok("看得到處理狀況", t.includes("處理狀況") && t.includes("已回覆 12 則"));
-ok("看得到還沒接收的", t.includes("還沒接收"));
-ok("看得到自己安排的項目", t.includes("自己安排") && t.includes("出貨對單"));
+// v180（老闆指定）：員工只看到自己那張卡，所以「卡片上寫了什麼」這幾條
+// 一律改用主管的畫面來問 —— 那是這些欄位真正要服務的人。
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("交辦標示為主管交辦（不寫誰）", tt.includes("主管交辦") && !tt.includes("Regina 交辦"));
+  ok("看得到處理狀況", tt.includes("處理狀況") && tt.includes("已回覆 12 則"));
+  ok("看得到還沒接收的", tt.includes("還沒接收"));
+  ok("看得到自己安排的項目", tt.includes("自己安排") && tt.includes("出貨對單")); }
 ok("不剪片的員工那欄影片數字用 — 帶過", t.includes('data-label="完成上架">—<'));
 ok("頂部摘要有交辦完成", t.includes("交辦完成"));
 ok("純檢視：沒有按鈕", !t.includes("<button"));
 ok("純檢視：沒有 onclick", !t.includes("onclick"));
 // v85 加了篩選（換個看法而已）：整頁只有那兩個篩選控制項
 // v150：多了一個「看哪一個月」的下拉（跟篩選同一類，不動資料）
-ok("純檢視：只有篩選用的下拉與搜尋框，外加月份下拉", (t.match(/<select|<input/g)||[]).length===3
-   && t.includes("teamSetGroup(") && t.includes("teamSetQ(") && t.includes("teamSetYM("));
+// v182：篩選是主管的工具（老闆指定），員工那邊只剩月份下拉
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("主管：只有篩選用的下拉與搜尋框，外加月份下拉", (tt.match(/<select|<input/g)||[]).length===3
+     && tt.includes("teamSetGroup(") && tt.includes("teamSetQ(") && tt.includes("teamSetYM(")); }
+ok("**員工那邊沒有主管的篩選工具，也還是純檢視**",
+   !t.includes("teamSetGroup(") && !t.includes("teamSetQ(")
+   && (t.match(/<select|<input/g)||[]).length===1, (t.match(/<select|<input/g)||[]).length);
 ok("純檢視：沒有任何會改到資料的動作", ["reviewVid(","flowAssign(","delTask(","taskDone(",
    "assignTaskSel(","hrNotify(","ackTask(","editVideo("].every(f=>!t.includes(f)));
 
@@ -153,8 +170,8 @@ ok("海外看板沒有中文介面字", !te.includes("今日成效") && !te.incl
 // ── 人資只有看板，且看得到所有交辦 ──
 reset(); as("HR小姐","hr");
 // v152：多了「剪輯成效」（管理員與人資限定）
-ok("人資分頁＝溝通＋團隊看板＋剪輯成效＋出勤", myTabs().length===4
-   && myTabs()[0][0]==="chat" && myTabs()[1][0]==="team" && myTabs()[2][0]==="output" && myTabs()[3][0]==="attend", myTabs().map(t=>t[0]));
+ok("人資分頁＝溝通＋看板＋剪輯產出＋出勤", myTabs().length===4
+   && myTabs()[0][0]==="chat" && myTabs()[1][0]==="board" && myTabs()[2][0]==="output" && myTabs()[3][0]==="attend", myTabs().map(t=>t[0]));
 let th=viewTeam();
 ok("人資看得到主管交辦與處理狀況", th.includes("主管交辦") && th.includes("已回覆 12 則"));
 

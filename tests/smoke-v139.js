@@ -58,8 +58,11 @@ function reset(nOld){
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 // 把目前分頁的畫面內容拿出來（不走 render 的 DOM 副作用，比較穩定）
+// ⚠️ 這張表要跟 app.js 的路由對得起來 —— 少寫一個分頁，那一頁就會被當成空字串，
+//    「這個職位需不需要影片資料」就會量成 false（v181 併頁時就是這樣漏掉 board／
+//    chat／output，害人資被判成不需要影片）。
 function renderHTML(){
-  const fn={dashboard:viewDashboard, flow:viewFlow, team:viewTeam, attend:viewAttend, cal:viewCal,
+  const fn={board:viewBoard, chat:viewChat, output:viewOutput, attend:viewAttend, cal:viewCal,
     work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings,
     log:viewLog, trash:viewTrash, perf:viewPerf}[CUR_TAB];
   return fn?fn():"";
@@ -195,7 +198,7 @@ reset(60);
   ok("經理人的畫面需要影片資料", needsIt("manager")===true);
   ok("管理員的畫面需要影片資料", needsIt("boss")===true); }
 // needVideos() 要跟上面的實測結果一致
-{ ["mkt","svc","ship","cs"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
+{ ["mkt","svc","ship","cs","pick"].forEach(r=>ok("needVideos('"+r+"')＝不用下載", needVideos(r)===false));
   ["boss","manager","editor","intl","hr"].forEach(r=>ok("needVideos('"+r+"')＝要下載", needVideos(r)===true)); }
 // v152：不下載影片的職位，團隊看板上那幾個算不出來的欄位不准畫出來（不能拿 0 充數）
 { reset(60);
@@ -217,13 +220,20 @@ reset(60);
 // ⚠️ 「選品行銷」是這條規則最容易踩到的例外：他**不剪片**（在 NO_EDIT_ROLES 裡），
 //    但仍然需要影片資料。這兩個清單必須分開，不能拿「不剪片」當「不用影片」。
 //
-// v175：選品配對工作台整頁移除之後，pick 目前的分頁跟 cs 一樣（本日工作＋團隊看板），
-//    所以「他到底還需不需要整份影片庫」要等新設計定案才知道。
-//    在那之前**維持現狀**（needVideos("pick")===true）—— 順手把它關掉是行為變更，
-//    而且新設計八成又要用到，關了再開只是白繞一圈。
+// v175：選品配對工作台整頁移除之後，pick 的分頁跟 cs 一樣，所以當時「維持現狀」，
+//    留著整份影片庫等新設計定案。
+// v181：老闆決定關掉 —— 她們不剪片，看板上「剪片速度／平均工時」那幾欄永遠是「—」，
+//    卻要付整包 986 支影片的下載成本。
+//    ⚠️ 新的選品配對設計如果真的要用到影片，翻回來就是 NO_VIDEO_ROLES 拿掉 "pick"
+//       一行（app.js 與 fb.js 兩邊都要，見下面那條同步檢查）。
 { ok("選品行銷不剪片", NO_EDIT_ROLES.includes("pick"));
-  ok("選品行銷仍然拿得到影片資料（新設計要用；不剪片≠不用影片）", needVideos("pick")===true);
-  ok("兩個清單是分開的，不是同一份", NO_EDIT_ROLES!==NO_VIDEO_ROLES && !NO_VIDEO_ROLES.includes("pick"));
+  ok("**選品行銷不再下載整份影片庫**（老闆決定）", needVideos("pick")===false);
+  // 兩個清單是不同的東西：「不剪片」不等於「不用影片」——
+  // 人資不剪片，但他要查剪輯產出，所以照樣要下載。
+  ok("兩個清單是分開的，不是同一份",
+     NO_EDIT_ROLES!==NO_VIDEO_ROLES
+     && NO_EDIT_ROLES.includes("hr") && !NO_VIDEO_ROLES.includes("hr"),
+     {不剪片:NO_EDIT_ROLES, 不用影片:NO_VIDEO_ROLES});
   const APPCODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
   ok("needVideos 不是拿 NO_EDIT_ROLES 在判斷",
      /NO_VIDEO_ROLES\.includes\(r\)/.test(APPCODE) && !/needVideos[\s\S]{0,120}NO_EDIT_ROLES/.test(APPCODE)); }

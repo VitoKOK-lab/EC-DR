@@ -134,19 +134,25 @@ ok("會說明只顯示一部分", viewLog().includes("只顯示最近 400 筆"))
 
 // ══════════ ② 團隊看板篩選 ══════════
 // v119 分區：看板只列同區的人，台灣剪輯的名單裡沒有 Anna（海外）→ 6 人變 5 人
-reset(); as("小葵","editor");
+// v182：篩選是**主管的工具**（老闆指定）—— 員工只看自己那張卡，不需要篩別人。
+reset(); as("Regina","manager");
 { const t=viewTeam();
   ok("看板有分組下拉", t.includes("teamSetGroup("));
   ok("看板有找人的搜尋框", t.includes("teamSetQ("));
-  // v142 不分區：台灣剪輯的名單也包含 Anna，所以是 6 人
+  // v142 不分區：名單包含 Anna，所以是 6 人
   ok("下拉寫出每一組幾個人", t.includes("全部（6）") && t.includes("剪輯（2）") && t.includes("員工（2）"));
-  ok("同區的人預設都看得到", ["小葵","阿明","小美","阿凱","HR小姐"].every(n=>t.includes(n)));
-  ok("台灣現在看得到海外同事（v142 不分區）", t.includes("Anna"));
+  ok("預設每一個人都看得到", ["小葵","阿明","小美","阿凱","HR小姐"].every(n=>t.includes(n)));
+  ok("海外同事也在（v142 不分區）", t.includes("Anna"));
   ok("沒篩選時不顯示「顯示 N / M 人」", !t.includes("顯示 5 / 5 人")); }
+reset(); as("小葵","editor");
+{ const t=viewTeam();
+  ok("**員工那邊完全沒有篩選工具**",
+     !t.includes("teamSetGroup(") && !t.includes("teamSetQ("), (t.match(/teamSet\w+\(/g)||[])); }
 reset(); as("Regina","manager");
 { const t=viewTeam();
   ok("主管的名單是兩區合計 6 人", t.includes("全部（6）") && t.includes("Anna")); }
-reset(); as("小葵","editor"); teamSetGroup("cs");
+// v182：篩選是主管的工具，所以「篩了會怎樣」也要用主管的身分驗
+reset(); as("Regina","manager"); teamSetGroup("cs");
 { const t=viewTeam();
   ok("只看員工那一組", t.includes("小美") && t.includes("阿凱") && !t.includes("阿明") && !t.includes("Anna"));
   ok("有篩選時寫出剩幾人", t.includes("顯示 2 / 6 人")); }
@@ -169,10 +175,11 @@ ok("篩選之後看板仍然沒有任何會改資料的動作",
 reset(); as("小葵","editor"); calls.length=0; teamSetGroup("cs"); teamSetQ("小");
 ok("篩選不會寫入資料庫", !calls.length);
 // 海外看到的是英文
+// v182：海外同仁是一般員工，看不到篩選 —— 那一串英文要改用「看得到篩選的人」來驗。
+// 這支測試沒有英文介面的主管，所以直接量產生器本身（teamFilterBar 走 T()）。
 reset(); as("Anna","intl");
-{ const t=viewTeam();
-  // v119 分區：下拉只列名單裡真的有人的組，海外看不到剪輯 → 改用他名單上有的組驗
-  ok("海外的篩選是英文", t.includes("Everyone") && t.includes("Pakistan") && t.includes("Find someone"));
+{ const t=teamFilterBar(teamStaff(), teamStaff());
+  ok("海外的篩選是英文", t.includes("Everyone") && t.includes("Pakistan") && t.includes("Find someone"), t.slice(0,200));
   ok("海外的篩選沒有中文", !t.includes("找人…")); }
 
 // ══════════ ③ 每日固定工作範本 ══════════

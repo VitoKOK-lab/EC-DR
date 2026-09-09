@@ -368,7 +368,21 @@
   /* 人名色標：同時被交辦的人一眼分得出誰是誰（配色由 app.js 的 groupColors 算） */
   .pchip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
   /* 交辦對象的勾選清單 */
-  .asgbox{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--panel2);max-height:260px;overflow:auto}
+  /* v182：交辦的員工清單改成折疊。收合時標題寫「已選 N 人：…」 */
+  /* v182：每日工作的「處理狀況」改成點開再寫 —— 一天四件事＝四個輸入框攤著，
+     佔掉大半個手機螢幕，而真正要打字的通常只有一件。 */
+  /* ⚠️ 要寫 details.repfold（0,1,1）才蓋得過上面的 details.fold —— 
+     只寫 .repfold（0,1,0）會輸，結果折疊框反而比原本的輸入框更佔位子。 */
+  details.repfold{border:none;background:transparent;box-shadow:none;margin:2px 0 0;overflow:visible}
+  details.repfold>summary{padding:3px 0;font-weight:400;font-size:12.5px;color:var(--muted)}
+  details.repfold>summary:hover{background:transparent;color:var(--txt)}
+  details.repfold>.foldbody{padding:0}
+  .asgfold>summary{font-weight:600}
+  .asgwho{color:var(--muted);font-weight:400}
+  .asgwho.on{color:var(--gold-dk);font-weight:700}
+  .asgbox{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;background:var(--panel2);max-height:none}
+  /* ⚠️ 原本有 max-height:260px + overflow:auto，會在**一排的中間**切斷，
+     看起來像壞掉。現在整個清單本來就收在折疊裡，不需要再限高。 */
   .asggrp+.asggrp{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
   .asggrp-t{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em}
   .asggrp-p{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
@@ -728,12 +742,25 @@
   .commtxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
   .commwhen{flex:none;font-size:11px;white-space:nowrap}
   .commdot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--red)}
-  .commok{flex:none;padding:2px 9px;font-size:11px;font-weight:800;min-height:0}
+  /* v182：OK 改小、改淡。原本是全黑實心，在一行裡比人名和內容都重，
+     眼睛會先看到按鈕而不是「誰說了什麼」。平常是淡的，滑過去／按下去才變深。 */
+  .commok{flex:none;padding:2px 8px;font-size:11px;font-weight:700;min-height:0;line-height:1.5;
+    background:transparent;color:var(--muted);border:1px solid var(--line);box-shadow:none}
+  .commok:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .commok:active{transform:scale(.96)}
   .commbody{padding:2px 2px 12px}
   @media(max-width:600px){
-    /* 手機上先保住「誰＋內容」，時間可以不看 —— 一行就是一行，不要換行 */
+    /* 手機上先保住「誰＋內容」—— 一行就是一行，不要換行。
+       v182：390px 塞不下五個元素（↗／人名／內容／狀態／紅點／OK），
+       內容被擠到只剩幾個字。時間與狀態藥丸讓位：狀態用左邊那條色帶表示，
+       真正要判斷的時候點開就看得到。 */
     .commwhen{display:none}
     .commrow>summary{padding:11px 2px}     /* 點擊區高一點，達到 44px */
+    .commhead>.pill{display:none}
+    .commrow{border-left:3px solid transparent;padding-left:7px}
+    .commrow.st-new{border-left-color:var(--red)}      /* 還沒看 */
+    .commrow.st-doing{border-left-color:var(--amber)}  /* 進行中 */
+    .commrow.st-done{border-left-color:var(--green)}   /* 對方回報完成 */
   }
   table.vtable{margin-top:4px;table-layout:fixed}
   /* 月排程「清單」檢視：整個月一張表（日期／時間／貼文文案）。
@@ -825,7 +852,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=ab917e4e4e7c"></script>
-<script type="module" src="fb.js?v=ab917e4e4e7c"></script>
+<script src="app.js?v=b8ffb091d47e"></script>
+<script type="module" src="fb.js?v=b8ffb091d47e"></script>
 </body>
 </html>

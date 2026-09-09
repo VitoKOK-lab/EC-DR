@@ -121,7 +121,7 @@ reset(); as("管理員","boss"); ZONE_VIEW="tw";
   ok("台灣庫的標籤鈕用中文原名", h.includes(">寵粉")); }
 reset(); as("Anna","intl"); ZONE_VIEW=null;   // v146：null＝預設落在同一份（不再依職位分）
 { const h=viewVideos();
-  ok("海外的影片庫是同一份（英文）", h.includes("Library A") && h.includes("Add one")); }
+  ok("海外的影片庫是同一份（英文）", h.includes("Library") && h.includes("Add one")); }
 reset(); as("Anna","intl");
 modalHTML=""; openVideoModal("S1", false);
 { const m=modalHTML;

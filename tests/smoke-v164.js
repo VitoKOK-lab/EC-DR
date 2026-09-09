@@ -112,7 +112,8 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
 // 池子空了要講清楚東西去哪了，不然會以為片不見了
 { reset([ v_("派給我",{assignedTo:"小葵"}) ], "小葵","editor");
   const h=viewWork();
-  ok("待認領空了的提示要指路到本日工作", h.includes("本日工作"), (h.match(/目前沒有可以認領[^<]*/)||[])[0]); }
+  // v182：三種說法（上班計畫／本日工作／Today's Work）統一成「每日工作／My Day」
+  ok("待認領空了的提示要指路到每日工作", h.includes("每日工作"), (h.match(/目前沒有可以認領[^<]*/)||[])[0]); }
 
 // ══════════ ② 影片庫每一列也有急件鈕 ══════════
 { reset([ v_("A") ], "管理員","boss");

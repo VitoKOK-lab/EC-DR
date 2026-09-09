@@ -157,7 +157,7 @@ reset(MERGED.map(v=>Object.assign({},v)));
 as("Anna","intl"); ZONE_VIEW=null; VID_LANG=""; VID_Q=""; VID_TAGS=new Set();
 VID_VIEW="old";   // 黃金源片是已上片的 → 在「舊片」那一頁
 { const h=viewVideos();
-  ok("海外看到的是同一份影片庫（英文）", h.includes("Library A") && h.includes("Add one"));
+  ok("海外看到的是同一份影片庫（英文）", h.includes("Library") && h.includes("Add one"));
   ok("海外也有那四個管線分頁", h.includes("<span>Not shot</span>") && h.includes('id="vid_tabs"'));
   ok("預設落在台灣那一頁，列得出台灣的源片", h.includes("黃金源片"));
   ok("源片的英文小字在", h.includes("vt-en") && h.includes("Golden source")); }
@@ -202,8 +202,9 @@ as("管理員","boss");
      h.includes('<span>海外</span> <span class="vtab-n">2<')); }
 setZoneView("intl");
 { const h=viewVideos();
-  ok("boss 切到海外看得到同一份影片庫", h.includes("影片庫A") && h.includes("新增一支"));
-  ok("boss 在海外區看的是中文（他不是海外員工）", !h.includes("Library A")); }
+  // v181：標題改成「影片庫」
+  ok("boss 切到海外看得到同一份影片庫", h.includes("影片庫") && h.includes("新增一支"), (h.match(/<h2>[^<]*<\/h2>/)||[])[0]);
+  ok("boss 在海外區看的是中文（他不是海外員工）", !h.includes("Library")); }
 setZoneView("tw");
 reset(MERGED.map(v=>Object.assign({},v)));
 as("小葵","editor");

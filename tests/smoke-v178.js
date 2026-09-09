@@ -246,7 +246,7 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("也沒有出勤／設定／操作紀錄",
      !["attend","settings","log","trash"].some(t=>myTabs().map(x=>x[0]).includes(t)), myTabs().map(t=>t[0]));
   ok("他的分頁跟一般剪輯一模一樣（差別只在權限，不在畫面數量）",
-     JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","team","videos","videosDF","cal"]),
+     JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","board","videos","videosDF","cal"]),
      myTabs().map(t=>t[0])); }
 { reset([]); as("小葵","editor");
   ok("一般剪輯不是小主管", isSubLead()===false && canAssignWork()===false && seesLeadBoard()===false); }

@@ -45,11 +45,12 @@ const tabs=myTabs().map(t=>t[0]);
 // v167：也給了她「儀表板」，而且排第一 —— 她整天在用的多選交辦卡就在那上面。
 // v175：選品配對整頁移除（老闆要重新設計），經理人的分頁跟著少一個
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一）
-ok("manager 分頁＝chat/dashboard/flow/team/videos/videosDF/cal",
-   JSON.stringify(tabs)===JSON.stringify(["chat","dashboard","flow","team","videos","videosDF","cal"]), tabs);
+// v181：儀表板＋流程中控＋團隊看板併成一個「看板」（board）
+ok("manager 分頁＝chat/board/videos/videosDF/cal",
+   JSON.stringify(tabs)===JSON.stringify(["chat","board","videos","videosDF","cal"]), tabs);
 // v178：「溝通」排到最前面（每天最先要處理的是有沒有人找你），
 // 儀表板變成第二個。她的落地頁還是儀表板，只是前面多了一個。
-ok("溝通排第一、儀表板緊接著（她的落地頁）", tabs[0]==="chat" && tabs[1]==="dashboard", tabs);
+ok("溝通排第一、看板緊接著（她的落地頁）", tabs[0]==="chat" && tabs[1]==="board", tabs);
 let h=viewFlow();
 ok("備片警報卡（未達60天→紅色警示）", h.includes("備片存量") && h.includes("要拍片了") && h.includes("準備腳本"));
 ok("排程存量數字與目標", h.includes(`/${60}`)||h.includes("60"));
@@ -90,7 +91,7 @@ ok("批次新增毛片 CTA", h.includes("batchNewFootage()"));
 // ---- boss 也看得到同一頁 ----
 localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss");
 const btabs=myTabs().map(t=>t[0]);
-ok("boss 分頁含 flow", btabs.includes("flow") && btabs.includes("dashboard"));
+ok("boss 分頁含看板（原本的儀表板／中控／看板都在裡面）", btabs.includes("board"));
 CUR_TAB="flow"; let ex=null; try{ render(); }catch(e){ ex=e; }
 ok("boss 開流程中控不炸", !ex && viewEl.innerHTML.includes("流程中控"));
 
