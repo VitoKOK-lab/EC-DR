@@ -375,6 +375,13 @@
      只寫 .repfold（0,1,0）會輸，結果折疊框反而比原本的輸入框更佔位子。 */
   /* v183：審片卡裡面的「待審核」折疊 —— 它在卡片**裡面**，不能長得像一張新卡片
      （details.fold 有底色、外框、陰影，套上去會變成卡中有卡）。 */
+  /* v184：勾了寵粉／銷售才亮的提醒條 —— 不是錯誤，是「這裡還要填」，所以用金色不用紅色 */
+  /* v185：月曆格子右上角的「來不及」角標。點進去才知道等於沒提醒，所以直接畫在格子上。 */
+  .calwarn{position:absolute;top:4px;right:4px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;
+    background:var(--amber);color:#fff;font-size:10px;font-weight:800;line-height:17px;text-align:center}
+  .calwarn.late{background:var(--red)}
+  .prodhint{background:var(--amberbg);border:1px solid var(--gold);border-radius:var(--rs);
+    padding:8px 10px;font-size:13px;line-height:1.6;margin-bottom:8px}
   details.revfold{background:transparent;border:none;box-shadow:none;margin:0;overflow:visible}
   details.revfold>summary{padding:0;font-weight:400;font-size:13px;flex-wrap:nowrap;align-items:baseline}
   details.revfold>summary>b{min-width:0}
@@ -888,7 +895,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=dd4996bea398"></script>
-<script type="module" src="fb.js?v=dd4996bea398"></script>
+<script src="app.js?v=8e7a23d382b6"></script>
+<script type="module" src="fb.js?v=8e7a23d382b6"></script>
 </body>
 </html>

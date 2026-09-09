@@ -141,7 +141,14 @@ let t=viewTeam();
      {小美:allPart.includes("小美"), 阿凱:allPart.includes("阿凱")}); }
 { as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
   ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
-ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));
+// v183：員工那一頁的標題是「大家今天」；老闆要「把全員的都帶進來」，
+// 而人資本來就是員工之一（他也有出勤、也有交辦），所以他會在名單上。
+// 真正不該出現在看板上的是**經理人與管理員** —— 他們不在 STAFF_ROLES 裡。
+// ⚠️ 只能看「今天的卡片」那一段 —— 月成效那一段的說明文字裡有「Regina 審過的才算」
+//    （v184），拿整頁去比會把說明文字誤判成名單上有她。
+ok("看板不列經理人與管理員", (()=>{
+   const seg=(t.split("大家今天")[1]||t.split("今日成效")[1]||"").split("本月成效")[0];
+   return !seg.includes("Regina") && !seg.includes("管理員"); })());
 // v180（老闆指定）：員工只看到自己那張卡，所以「卡片上寫了什麼」這幾條
 // 一律改用主管的畫面來問 —— 那是這些欄位真正要服務的人。
 { as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");

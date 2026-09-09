@@ -161,9 +161,14 @@ reset(); hookDB(); CUR_TAB="team"; render();
 ok("渲染人資頁不會寫入任何資料", calls.length===0);
 
 // ── 剪輯流程完全不受人資影響 ──
+// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
 reset(); hookDB(); localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 editorMarkReviewed("D1");
-ok("剪輯按已審過不受影響", calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"&&c[3].reviewStatus==="通過"));
+ok("**剪輯自己按審過 → 擋下來，什麼都不寫**",
+   !calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"), calls.map(c=>c.slice(0,3)));
+reset(); hookDB(); localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+editorMarkReviewed("D1");
+ok("Regina 按得動", calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"&&c[3].reviewStatus==="通過"));
 reset(); hookDB(); localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
 reviewVid("D2","通過");
 ok("Regina 照樣能審核", calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D2"&&c[3].reviewStatus==="通過"));

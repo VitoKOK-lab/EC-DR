@@ -67,20 +67,39 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   { const r=await modalOK(); await wait(20);
     ok("沒片名照樣先擋片名", r===false && !made().length && toasts.some(t=>t.includes("片名"))); }
 
+  // v184：存檔資料夾、預排日期、上片時間都變必填了（老闆：「沒有寫，不給存檔」）
+  const D0=new Date(Date.now()+288e5).toISOString().slice(0,10);
   reset(); newSimpleVideo();
-  fields.sv_name="農曆七月串珠"; fields.sv_vcopy="這串珠可以避邪擋煞"; fields.sv_link=""; fields.sv_lang="";
+  fields.sv_name="農曆七月串珠"; fields.sv_vcopy="這串珠可以避邪擋煞";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time="15:00"; fields.sv_lang="";
   await modalOK(); await wait(20);
   { const v=made()[0]||{};
-    ok("兩個都填才存得進去", made().length===1);
+    ok("該填的都填了才存得進去", made().length===1);
     ok("文案有寫進資料庫", v.videoCopy==="這串珠可以避邪擋煞");
     ok("片名也對", v.name==="農曆七月串珠" && v.rawName==="農曆七月串珠"); }
 
-  // 毛片連結仍然是選填（還沒拍就先開片）
+  // v184：存檔資料夾從「選填」變必填 —— 老闆：「沒有寫，不給存檔」。
+  // 「還沒拍」照樣開得了片（那靠的是毛片連結 rawLink，不是存檔資料夾）。
   reset(); newSimpleVideo();
-  fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_lang="";
+  fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_date=D0; fields.sv_time="15:00"; fields.sv_lang="";
+  { const r=await modalOK(); await wait(20);
+    ok("**沒填存檔資料夾 → 擋下不存**", r===false && !made().length);
+    ok("有講原因", toasts.some(t=>t.includes("存檔資料夾"))); }
+  reset(); newSimpleVideo();
+  fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=""; fields.sv_time="15:00"; fields.sv_lang="";
+  { const r=await modalOK(); await wait(20);
+    ok("**沒選預排日期 → 擋下不存**", r===false && !made().length); }
+  reset(); newSimpleVideo();
+  fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time=""; fields.sv_lang="";
+  { const r=await modalOK(); await wait(20);
+    ok("**沒選上片時間 → 擋下不存**", r===false && !made().length); }
+  reset(); newSimpleVideo();
+  fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
+  fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time="15:00"; fields.sv_lang="";
   await modalOK(); await wait(20);
-  ok("毛片連結留空照樣存得起來（還沒拍）", made().length===1 && !made()[0].rawLink);
-  ok("存進去之後落在未拍・未排程", vidSegment(made()[0])==="scriptNoSched");
+  ok("填齊了就存得起來（毛片還沒拍也可以先開片）", made().length===1 && !made()[0].rawLink);
 
   // ══ ② 批次新增：每一支各自檢查 ══
   reset(); batchNewFootage();
@@ -88,7 +107,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   ok("批次也標示必填", modalHTML.includes("填了片名就必填"));
 
   reset(); batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]=""; fields["bl"+i]=""; }
+  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]="";
+    fields["bl"+i]="https://drive.google.com/drive/folders/F"+i; fields["bd"+i]=D0; fields["bt"+i]="15:00"; }
   fields.b_lang="";
   fields.bn0="第一支"; fields.bv0="口播一";
   fields.bn1="第二支"; fields.bv1="";           // ← 有片名沒文案
@@ -97,7 +117,8 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("講清楚是第幾支", toasts.some(t=>t.includes("第 2 支"))); }
 
   reset(); batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]=""; fields["bl"+i]=""; }
+  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]="";
+    fields["bl"+i]="https://drive.google.com/drive/folders/F"+i; fields["bd"+i]=D0; fields["bt"+i]="15:00"; }
   fields.b_lang="";
   fields.bn0="第一支"; fields.bv0="口播一";
   fields.bn2="第三支"; fields.bv2="口播三";
@@ -108,13 +129,15 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("沒填片名的那幾支不會被檢查（直接跳過）", !toasts.some(t=>t.includes("沒填文案"))); }
 
   reset(); batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]=""; fields["bl"+i]=""; }
+  for(let i=0;i<5;i++){ fields["bn"+i]=""; fields["bv"+i]="";
+    fields["bl"+i]="https://drive.google.com/drive/folders/F"+i; fields["bd"+i]=D0; fields["bt"+i]="15:00"; }
   fields.b_lang="";
   { const r=await modalOK(); await wait(20);
     ok("五支全空 → 還是提示至少要一支", r===false && toasts.some(t=>t.includes("至少"))); }
 
   reset(); batchNewFootage();
-  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bv"+i]="口播"+(i+1); fields["bl"+i]=""; }
+  for(let i=0;i<5;i++){ fields["bn"+i]="毛片"+(i+1); fields["bv"+i]="口播"+(i+1);
+    fields["bl"+i]="https://drive.google.com/drive/folders/F"+i; fields["bd"+i]=D0; fields["bt"+i]="15:00"; }
   fields.b_lang="";
   await modalOK(); await wait(60);
   { const m=made();

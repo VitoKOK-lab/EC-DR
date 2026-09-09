@@ -49,8 +49,11 @@ let h=viewWork();
 ok("審片進度卡出現且計數=3", h.includes("審片進度") && h.includes('">3</span>'));
 ok("退回段：紅色＋原因", h.includes("被退回，要修") && h.includes("字卡打錯"));
 ok("通過待補段：列出通過但缺連結的片", h.includes("已審過（通過）") && h.includes("通過待補連結"));
-ok("待審核段：列出等審的片＋已審過鍵", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片") && h.includes("editorMarkReviewed('W1')"));
-{ const seg=h.split("審片進度")[1].split("最近 7 天剪完的片")[0];   // v128 起下面多一張七天盤點卡，切在它之前
+// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
+ok("待審核段：列出等審的片", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片"));
+ok("**剪輯這邊沒有「審過」鍵，只寫著在等 Regina**",
+   !h.includes("editorMarkReviewed('W1')") && h.includes("待審"));
+{ const seg=h.split("審片進度")[1].split("剪完等審的片")[0].split("最近 7 天剪完的片")[0];   // v184：還沒審的那張卡標題會變
   ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片"));
   // v136：源片填不了上片連結，所以有存檔連結就算補齊 —— 不能讓它永遠掛在卡上叫
   ok("源片有存檔連結就算補齊，不會再一直掛在審片卡上", !seg.includes("有存檔沒上片連結")); }
