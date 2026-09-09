@@ -17,7 +17,9 @@ EC-DR 一鍵完整備份 —— 把整套系統抓回本機。
 打包完會**立刻自我回驗**：重讀每個檔案、比對 SHA256 與筆數。
 對不上就整份標記失敗——不留「看起來有備份、真要用才發現是壞的」檔案。
 
-只用 Python 3 標準函式庫。Mac 內建 python3 即可，不必安裝任何東西。
+只用 Python 3 標準函式庫，不需要 npm、Firebase CLI 或 service account。
+macOS 的 python3 由 Xcode 命令列工具提供；第一次執行若跳出安裝提示，
+按下安裝等幾分鐘即可，之後不必再裝。
 """
 
 import argparse

@@ -12,8 +12,11 @@ cd ~/EC-DR
 python3 tools/backup.py
 ```
 
-備份會放在 `~/EC-DR-Backups/ecdr-年月日-時分秒/`。Mac 內建 python3，
-**不需要安裝任何東西**——不用 npm、不用 Firebase CLI、不用 service account。
+備份會放在 `~/EC-DR-Backups/ecdr-年月日-時分秒/`。**不用 npm、不用 Firebase CLI、
+不用 service account。**
+
+> macOS 的 `python3` 由 Xcode 命令列工具提供。第一次執行若跳出「需要安裝命令列工具」
+> 的視窗，按下安裝等幾分鐘就好，之後都不必再裝。
 
 ### 一份備份裡有什麼
 
