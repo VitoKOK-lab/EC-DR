@@ -2697,9 +2697,10 @@ function p2pFold(){
 const MGMT_ASSIGN_ROLES=["boss","manager","hr"];
 function commTracks(){
   if(VIEW_AS) return false;
-  if(MGMT_ASSIGN_ROLES.includes(currentRole())) return true;
-  const u=(STATE.users||[]).find(x=>x && x.name===currentUser());
-  return !!(u && u.canAssign);          // 小主管（老闆指定泓儒）也算
+  // ⚠️ 只有主管／經理人／人資。**小主管不算** —— 老闆更正：
+  //    「他只能是剪輯部的小主管，只能指派影片」。指派影片跟「派事情給人做」
+  //    是兩回事：前者是排剪輯工作，後者會變成對方的待辦、還要追蹤完成。
+  return MGMT_ASSIGN_ROLES.includes(currentRole());
 }
 // 一則「溝通」＝交辦、同事訊息、找主管說一件事、HR 通知，四種都算
 function isComm(t){
@@ -5357,17 +5358,21 @@ function canAssignWork(){
 // ROLE_TABS、ROLE_LABEL、STAFF_GROUPS、登入頁分組、交辦名單…（v138 那次就是
 // 漏了其中幾處，選品行銷的人整個從登入頁消失）。
 //
-// 小主管拿得到的：主管版看板（含指派毛片）、他派出去的會變成對方的工作。
-// 拿不到的：儀表板、出勤、設定、操作紀錄、回收桶 —— 那些是管理員的東西。
+// 老闆更正（v179）：「他只能是**剪輯部的**小主管，**只能指派影片**，看不到主管看板」
+// 所以小主管拿到的就只有一件事：**把毛片指派給剪輯**。
+//   ・他派出去的訊息**不會**變成對方的工作（那是主管才有的，見 commTracks）
+//   ・他**看不到**主管版看板
+//   ・當然也沒有儀表板、出勤、設定、操作紀錄、回收桶
 function isSubLead(){
   if(VIEW_AS) return false;
   if(["boss","manager"].includes(currentRole())) return false;   // 主管本來就是主管，不叫小主管
   const u=(STATE.users||[]).find(x=>x && x.name===currentUser());
   return !!(u && u.canAssign);
 }
-// 誰看得到「主管版」的團隊看板（多出：交辦追蹤全隊、指派毛片、備片存量）
+// 誰看得到「主管版」的團隊看板（多出：交辦追蹤全隊、備片存量、成效）
+// ⚠️ 小主管不在裡面 —— 他只管指派影片，不看管理面的東西。
 function seesLeadBoard(){
-  return !VIEW_AS && (["boss","manager","hr"].includes(currentRole()) || isSubLead());
+  return !VIEW_AS && ["boss","manager","hr"].includes(currentRole());
 }
 function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
 const isUrgent=(v)=> !!(v && v.urgent);

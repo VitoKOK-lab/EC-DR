@@ -91,8 +91,10 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("**自己排給自己的工作不算溝通**（那是每日工作的東西）", !h.includes("自己排的工作")); }
 
 // ══════════ ③ 誰發的決定它會不會變成對方的工作 ══════════
+// v179 老闆更正：小主管「只能是剪輯部的小主管，只能指派影片」——
+// 所以他發出去的**不會**變成對方的工作，那是主管／人資才有的。
 { [["管理員","boss",true],["Regina","manager",true],["HR","hr",true],
-   ["泓儒","editor",true],                      // 小主管（canAssign）
+   ["泓儒","editor",false],                     // 小主管：只能指派影片，不能派事情
    ["小葵","editor",false],["小美","cs",false],["Anna","intl",false]].forEach(([w,r,want])=>{
     reset([]); as(w,r);
     ok(`${w}（${r}）發出去${want?"會":"不會"}變成對方的工作`, commTracks()===want, commTracks());
@@ -234,15 +236,25 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("我派出去的也看得到", viewChat().includes("我派給小美的")); }
 
 // ══════════ ⑧ 小主管（老闆指定泓儒）══════════
+// v179 老闆更正：「他只能是剪輯部的小主管，只能指派影片，看不到主管看板」
 { reset([]); as("泓儒","editor");
   ok("**泓儒是小主管**", isSubLead()===true);
-  ok("小主管派得動工作", canAssignWork()===true);
-  ok("小主管看得到主管版看板", seesLeadBoard()===true);
-  ok("**但沒有儀表板那一頁**（老闆指定）", !myTabs().map(t=>t[0]).includes("dashboard"), myTabs().map(t=>t[0]));
+  ok("**小主管能做的就一件事：把毛片指派給剪輯**", canAssignWork()===true);
+  ok("**小主管看不到主管版看板**（老闆更正）", seesLeadBoard()===false);
+  ok("**小主管發出去的不會變成對方的工作**（指派影片 ≠ 派事情）", commTracks()===false);
+  ok("**沒有儀表板那一頁**（老闆指定）", !myTabs().map(t=>t[0]).includes("dashboard"), myTabs().map(t=>t[0]));
   ok("也沒有出勤／設定／操作紀錄",
-     !["attend","settings","log","trash"].some(t=>myTabs().map(x=>x[0]).includes(t)), myTabs().map(t=>t[0])); }
+     !["attend","settings","log","trash"].some(t=>myTabs().map(x=>x[0]).includes(t)), myTabs().map(t=>t[0]));
+  ok("他的分頁跟一般剪輯一模一樣（差別只在權限，不在畫面數量）",
+     JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","team","videos","videosDF","cal"]),
+     myTabs().map(t=>t[0])); }
 { reset([]); as("小葵","editor");
   ok("一般剪輯不是小主管", isSubLead()===false && canAssignWork()===false && seesLeadBoard()===false); }
+// 「指派影片」這個能力真的還在（不能因為收緊了就把他原本有的也砍掉）
+{ reset([]); as("泓儒","editor");
+  ok("小主管的上班計畫上還有「指派毛片給同事」", /assignFootage\(\)/.test(viewWork()), viewWork().slice(0,120)); }
+{ reset([]); as("小葵","editor");
+  ok("（對照）一般剪輯沒有那張卡", !/assignFootage\(\)/.test(viewWork())); }
 { reset([]); as("Regina","manager");
   ok("經理人本來就是主管，不叫小主管", isSubLead()===false);
   ok("但她當然看得到主管版看板", seesLeadBoard()===true); }
