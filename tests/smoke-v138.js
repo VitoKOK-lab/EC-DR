@@ -278,11 +278,16 @@ const dfVid=(id,o)=>Object.assign(doneVid(id,o), {lib:"大流"});
 { reset([]); as("Amy","pick"); as("管理員","boss");
   const h = dashViewAsCard();
   ok("儀表板「員工視角」選得到選品行銷（這次回報的原始 bug）", h.includes('label="選品行銷"') && h.includes(">Amy<")); }
-{ reset([]); as("Amy","pick");
+// v174：交辦卡的名單會把「自己」拿掉（自己派給自己是假的一筆），
+// 所以這裡要用**別人**的身分來看，才問得到「選品行銷勾不勾得到」這件事。
+{ reset([]); as("管理員","boss");
   const h = dashAssignTaskCard();
   // v162：交辦對象改成勾選清單。要求不變 —— 選品行銷必須勾得到。
   ok("「指派交辦給員工」勾得到選品行銷（選品行銷跟員工一樣走交辦流程）",
      h.includes(">選品行銷</div>") && /<input type="checkbox" class="asg_p" value="Amy"/.test(h), h.slice(0,300)); }
+{ reset([]); as("Amy","pick");
+  ok("自己不會出現在自己的交辦名單上（自己派給自己是假的一筆）",
+     !/<input type="checkbox" class="asg_p" value="Amy"/.test(dashAssignTaskCard())); }
 { ok("STAFF_GROUPS（登入頁分組）含 pick，選品行銷的登入按鈕才畫得出來",
      STAFF_GROUPS.some(([,,,roles])=>roles.includes("pick"))); }
 { ok("noticeTargetRoles(\"__twmake__\") 含 pick，HR 發整區通知才發得到選品行銷",

@@ -1883,7 +1883,9 @@ function asgCount(){
 // 交辦時附的圖。送出之前還沒有交辦 id，Storage 沒有地方可以放，
 // 所以先在瀏覽器壓好放在記憶體，等 assignTaskSel 拿到 groupId 再上傳一次。
 // 一次交辦給 N 個人＝N 筆 task，但圖只上傳一次、N 筆共用同一個網址。
-let ASG_PIC=null;
+// ASG_PIC＝剛選好、還沒上傳的圖（Blob）；ASG_PIC_URL＝已經在 Storage 上的圖（從草稿載回來的）。
+// 兩個要分開：草稿裡的圖早就傳上去了，送出時再傳一次等於同一張圖在 Storage 裡存兩份。
+let ASG_PIC=null, ASG_PIC_URL="", ASG_FROM_DRAFT="";
 async function pickAsgPic(input){
   const file=input && input.files && input.files[0];
   if(input) input.value="";
@@ -1893,17 +1895,19 @@ async function pickAsgPic(input){
   if(file.size>TASKPIC_SRC_MAX){ toast(T("這個檔案太大了（超過 12MB），確認一下是不是選到影片檔","That file is over 12MB — did you pick a video by mistake?"),true); return; }
   try{
     ASG_PIC=await coverCompress(file);
+    ASG_PIC_URL="";                       // 自己選了新的圖 → 草稿帶回來的那張就不算數了
     asgPicShow(String(file.name||""));
   }catch(e){ ASG_PIC=null; toast(coverErrMsg(e), true); }
 }
 function asgPicShow(name){
   const box=document.getElementById("asg_pic_box"); if(!box) return;
-  box.innerHTML = ASG_PIC
+  const has=!!ASG_PIC || !!ASG_PIC_URL;
+  box.innerHTML = has
     ? `<span class="pill ok" style="font-size:11px">${T("已選一張圖","1 image")}${name?"："+esc(String(name).slice(0,20)):""}</span>
        <a href="javascript:void(0)" class="muted" style="font-size:11px;margin-left:6px" onclick="asgPicClear()">${T("取消","remove")}</a>`
     : "";
 }
-function asgPicClear(){ ASG_PIC=null; asgPicShow(""); }
+function asgPicClear(){ ASG_PIC=null; ASG_PIC_URL=""; asgPicShow(""); }
 async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
   if(!names.length){ toast("請先勾選要指派的員工",true); return; }
@@ -1915,7 +1919,8 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   const stamp=nowIso();
   // 附的圖只上傳一次（路徑用 groupId），N 筆共用同一個網址 ——
   // 一人上傳一次的話，同一張圖會在 Storage 裡存 N 份。
-  let picUrl="";
+  // 從草稿載回來的圖早就在 Storage 上了 → 直接用那個網址，不要再傳一次
+  let picUrl=ASG_PIC_URL||"";
   if(ASG_PIC){
     const DB=(typeof window!=="undefined")&&window.DB;
     if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再送","Not connected yet — try again in a moment"),true); return; }
@@ -1941,10 +1946,79 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
     const c=document.getElementById('asg_contact'); if(c) c.value='';
     document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
     asgPicClear();
+    // 「等發送出去才會離開草稿」—— 真的送出去了才刪，送失敗的話草稿要留著
+    if(ASG_FROM_DRAFT){ const d=ASG_FROM_DRAFT; ASG_FROM_DRAFT="";
+      window.DB.del("tasks", d).catch(()=>{}); }
   }
   // 部分失敗要講清楚是誰沒收到，不然老闆以為全都發出去了
   if(r.failed) toast("有 "+r.failed+" 人沒送出："+(r.bad||[]).map(x=>x.name).join("、")+"，請重試",true);
   else toast(r.done>1?("已交辦給 "+r.done+" 位同仁"):("已指派給 "+names[0]));
+}
+// ── 草稿（v174）：先寫下來，還沒決定要發給誰 ─────────────────────
+// 老闆：「我要加一個草稿，可以先預寫訊息，讓自己可以先記錄，然後還沒有決定要發給誰
+//        （包含可以用照片的訊息），等發送出去才會離開草稿。」
+//
+// 草稿是**只有自己看得到**的東西：kind:"draft"，沒有收件人（user 留空）。
+// 用 kind 分流，isTask() 只認沒有 kind 的那些 —— 草稿不會混進交辦成效、
+// 不會出現在任何人的待辦、也不會被算成「派出去了」。
+function isDraft(t){ return !!(t && t.kind==="draft"); }
+function myDrafts(){
+  const me=currentUser();
+  return Object.values((STATE&&STATE.tasks)||{})
+    .filter(t=>isDraft(t) && String(t.by||"")===me)
+    .sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+}
+const DRAFT_MAX=60;                  // 一個人最多存幾則（草稿是暫存區，不是資料庫）
+async function saveDraft(){ refreshToday();
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
+  if(dbBlocked()) return;
+  const text=(val("asg_txt")||"").trim();
+  const contact=(val("asg_contact")||"").trim();
+  if(!text && !ASG_PIC && !ASG_PIC_URL){ toast(T("先寫點東西或選一張圖再存草稿","Write something or attach an image first"),true); return; }
+  const mine=myDrafts();
+  // 改的是既有草稿就不算新增一則，所以只有「真的要新增」時才擋
+  if(!ASG_FROM_DRAFT && mine.length>=DRAFT_MAX){ toast(T("草稿太多了（上限 "+DRAFT_MAX+" 則），先送出或刪掉幾則","Too many drafts"),true); return; }
+  const id=ASG_FROM_DRAFT||uid("D");
+  let pic=ASG_PIC_URL||"";
+  if(ASG_PIC){
+    const DB=(typeof window!=="undefined")&&window.DB;
+    if(!DB||!DB.uploadTaskPic){ toast(T("連線還沒就緒，稍等一下再存","Not connected yet — try again in a moment"),true); return; }
+    try{ pic=await DB.uploadTaskPic(id, uid("P"), ASG_PIC); }
+    catch(err){ toast(coverErrMsg(err), true); return; }
+  }
+  const stamp=nowIso();
+  const old=taskById(id);
+  try{
+    await window.DB.set("tasks", id, {id, kind:"draft", by:currentUser(), user:"",
+      text:text.slice(0,TASK_MSG_MAX), pic, contact,
+      createdAt:(old&&old.createdAt)||stamp, updatedAt:stamp});
+    const a=document.getElementById('asg_txt'); if(a) a.value='';
+    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    asgPicClear(); ASG_FROM_DRAFT="";
+    logA(old?"改草稿":"存草稿", text.slice(0,40)||"（只有圖）");
+    toast(T("已存成草稿（只有你看得到）","Saved as a draft — only you can see it"));
+    render();
+  }catch(e){ toast(T("草稿存不起來，請稍後再試","Could not save the draft — try again"),true); }
+}
+// 把草稿載回上面那張交辦卡：這時候還沒送出去，所以草稿**還留著**
+function loadDraft(id){
+  const d=taskById(id); if(!d || !isDraft(d)) return;
+  if(String(d.by||"")!==currentUser()){ toast(T("只能用自己的草稿","That draft isn't yours"),true); return; }
+  ASG_FROM_DRAFT=id;
+  ASG_PIC=null;
+  ASG_PIC_URL=picSafe(d.pic)?String(d.pic):"";
+  render();
+  const a=document.getElementById('asg_txt'); if(a){ a.value=String(d.text||""); try{ a.focus(); }catch(e){} }
+  const c=document.getElementById('asg_contact'); if(c) c.value=String(d.contact||"");
+  asgPicShow("");
+  toast(T("草稿帶上來了，勾好人就可以送出","Draft loaded — pick who to send it to"));
+}
+function delDraft(id){
+  const d=taskById(id); if(!d) return;
+  if(String(d.by||"")!==currentUser()){ toast(T("只能刪自己的草稿","That draft isn't yours"),true); return; }
+  if(!confirm(T("刪掉這則草稿？","Delete this draft?"))) return;
+  if(ASG_FROM_DRAFT===id){ ASG_FROM_DRAFT=""; ASG_PIC_URL=""; }
+  dbDel("tasks", id, {action:"刪草稿", target:String(d.text||"").slice(0,40)||"（只有圖）"});
 }
 // 人資發 HR 通知：可以指定一個人或全體；對方畫面會跳出來，按小小的「收到」即可（不用回報、不算交辦）
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
@@ -2721,16 +2795,18 @@ function staffRoleGroups(roles){
   const rs = roles || ["editor","intl"];
   const pool = staffSorted((STATE.users||[]).filter(u=>rs.includes(u.role||"editor")));
   const isEd=(u)=>(u.role||"editor")==="editor";
+  // v174：這份分組現在也出現在員工自己的畫面上（交辦卡不再是主管專用），
+  // 海外同仁看的是英文介面 —— 標題寫死中文會直接漏出去，所以一律走 T()。
   const groups=[
-    ["剪輯",     isEd],
-    ["行銷",     u=>u.role==="mkt"],
-    ["選品行銷", u=>u.role==="pick"],
-    ["客服",     u=>u.role==="svc"],
-    ["出貨",     u=>u.role==="ship"],
-    ["員工",     u=>u.role==="cs"],
-    ["巴基斯坦", u=>u.role==="intl"],
-    ["經理人",   u=>u.role==="manager"],
-    ["人資",     u=>u.role==="hr"],
+    [T("剪輯","Editing"),         isEd],
+    [T("行銷","Marketing"),       u=>u.role==="mkt"],
+    [T("選品行銷","Curation"),    u=>u.role==="pick"],
+    [T("客服","Customer service"),u=>u.role==="svc"],
+    [T("出貨","Shipping"),        u=>u.role==="ship"],
+    [T("員工","Staff"),           u=>u.role==="cs"],
+    [T("巴基斯坦","Pakistan"),    u=>u.role==="intl"],
+    [T("經理人","Manager"),       u=>u.role==="manager"],
+    [T("人資","HR"),              u=>u.role==="hr"],
   ];
   const used=new Set();
   return groups.map(([label,test])=>{
@@ -2855,6 +2931,9 @@ function viewWorkCS(me){
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
+  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
+  ${dashAssignTrackCard()}
   ${fold("之後要做", nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
@@ -2960,6 +3039,9 @@ function viewWork(){
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
+  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
+  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
+  ${dashAssignTrackCard()}
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
   ${myMsgFold()}
   ${p2pFold()}
@@ -3931,85 +4013,180 @@ function dashViewAsCard(){
 //
 // 這張卡刻意**不看日期**：未完成的一律列出來（拖幾天都跑不掉），
 // 已完成的照完成時間由新到舊，看得到是誰、什麼時候做完的。
-let ASG_TRACK="open";                    // open｜done｜all
+// ── 交辦追蹤（v174 改成「留在發訊方，按 OK 才封存」）───────────────
+// 老闆：「就是看誰發出去的（包含員工）對方有回或是沒有回，都會留在發訊方，
+//        直到發訊方按下『OK』才會封存起來，不然可以一直互動，互傳。」
+//
+// 兩個關鍵字：
+//   ① **發訊方**：這張卡問的是「我派出去的」，不是「派給我的」。誰派的就留在誰那裡。
+//      所以它不再是主管專用 —— 員工派給員工的，也留在那個員工自己的畫面上。
+//   ② **按 OK 才收**：收掉的條件不是「對方打勾完成」，是**發訊的人自己認可**。
+//      對方說做完了但做得不對，一樣留著；沒按 OK 就可以一直在留言串裡來回。
+let ASG_TRACK="open";                    // open＝還沒收（未封存）｜arch＝已封存｜all
+let ASG_SCOPE="mine";                    // mine＝我派的｜all＝全公司（只有主管切得動）
 function setAsgTrack(v){ ASG_TRACK=v; render(); }
-// 我派出去的交辦。主管看得到全部（含 Regina 派的），經理人只看自己派的 ——
-// 老闆要的是「整間公司交辦了什麼、做完沒」，經理人要的是「我派的那些」。
+function setAsgScope(v){ ASG_SCOPE=(v==="all")?"all":"mine"; render(); }
+const canSeeAllAssigned=()=>!VIEW_AS && currentRole()==="boss";
+// 我派出去的交辦。主管可以切成「全公司」（含 Regina 與同事之間派的）——
+// 老闆要看得到整間公司交辦了什麼，但預設仍然是「我派的」，不然自己派的會被淹掉。
 function myAssignedOut(){
-  const me=currentUser(), boss=currentRole()==="boss";
+  const me=currentUser();
+  const all=canSeeAllAssigned() && ASG_SCOPE==="all";
   return Object.values((STATE&&STATE.tasks)||{})
-    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (boss || t.assignedBy===me));
+    .filter(t=>isTask(t) && String(t.assignedBy||"").trim() && (all || t.assignedBy===me));
+}
+const taskArchived=(t)=>!!(t && t.archived);
+// 誰可以按 OK：派這件事的人本人。主管另外有一把萬能鑰匙（他要能清掉離職同事留下的）
+function canArchiveTask(t){
+  if(VIEW_AS || !t) return false;
+  return String(t.assignedBy||"")===currentUser() || currentRole()==="boss";
+}
+function archiveTask(id, on){
+  const t=taskById(id);
+  if(!canArchiveTask(t)){ toast(T("只有交辦的人可以收起來","Only the person who assigned it can archive it"),true); return; }
+  dbUpdate("tasks", id,
+    on ? {archived:true, archivedAt:nowIso(), archivedBy:currentUser()}
+       : {archived:false, archivedAt:"", archivedBy:""},
+    {action: on?"交辦封存（按 OK）":"交辦取消封存", target:(t&&t.title)||id});
 }
 function asgTrackRow(t){
-  const st = t.done ? `<span class="pill ok" style="font-size:10px">完成 ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
-           : !t.ack ? `<span class="pill em" style="font-size:10px">還沒看</span>`
-           : `<span class="pill wa" style="font-size:10px">進行中</span>`;
-  // 拖了幾天：只對還沒做完的算，做完的講天數沒有意義
-  const late = (!t.done && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
+  const arch=taskArchived(t);
+  const st = t.done ? `<span class="pill ok" style="font-size:10px">${T("對方回報完成","Marked done")} ${String(t.doneAt||"").slice(5,16).replace("T"," ")}</span>`
+           : !t.ack ? `<span class="pill em" style="font-size:10px">${T("還沒看","Unopened")}</span>`
+           : `<span class="pill wa" style="font-size:10px">${T("進行中","In progress")}</span>`;
+  // 拖了幾天：只對還沒做完、也還沒收起來的算。做完的、封存的講天數沒有意義
+  const late = (!t.done && !arch && String(t.date||"")<today) ? daysBetween(String(t.date).slice(0,10), today) : 0;
   const mates=taskMates(t);
-  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+  const okBtn = canArchiveTask(t)
+    ? (arch ? `<button class="btn sec sm" style="flex:none;padding:3px 10px;font-size:11px"
+                 onclick="archiveTask('${esc(jsEsc(t.id))}',false)"
+                 title="${T("放回還沒收的清單","Put it back on the open list")}">${T("重新打開","Reopen")}</button>`
+            : `<button class="btn sm" style="flex:none;padding:3px 14px;font-size:12px;font-weight:800"
+                 onclick="archiveTask('${esc(jsEsc(t.id))}',true)"
+                 title="${T("這件事我認可了，收起來","I'm happy with this — archive it")}">OK</button>`)
+    : "";
+  return `<div style="padding:9px 0;border-bottom:1px solid var(--line)${arch?';opacity:.62':''}">
     <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
       <span class="muted" style="font-size:11px;flex:none">${esc(String(t.date||"").slice(5))}</span>
       ${personChip(String(t.user||""), "", mates.length>1?groupColors(mates):null)}
       ${st}
-      ${late>0?`<span class="pill em" style="font-size:10px">拖了 ${late} 天</span>`:''}
-      ${(currentRole()==="boss"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} 派的</span>`:''}
+      ${late>0?`<span class="pill em" style="font-size:10px">${T("拖了 "+late+" 天", late+"d late")}</span>`:''}
+      ${arch?`<span class="pill" style="font-size:10px">${T("已封存","Archived")} ${String(t.archivedAt||"").slice(5,10)}</span>`:''}
+      ${(ASG_SCOPE==="all"&&t.assignedBy&&t.assignedBy!==currentUser())?`<span class="muted" style="font-size:11px">${esc(t.assignedBy)} ${T("派的","assigned")}</span>`:''}
+      <span style="flex:1"></span>${okBtn}
     </div>
     <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere">${linkify(t.title)}</div>
     ${(t.report||"").trim()
-      ? `<div class="muted" style="font-size:12px;margin-top:2px">處理狀況：${linkify(t.report)}</div>`
-      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">還沒回報</div>`)}
-    ${fold("留言與圖片", taskMsgs(t).length||null, taskThread(t, true))}
+      ? `<div class="muted" style="font-size:12px;margin-top:2px">${T("處理狀況","Progress")}：${linkify(t.report)}</div>`
+      : (t.done?'':`<div style="font-size:12px;margin-top:2px;color:var(--red)">${T("還沒回報","No progress note yet")}</div>`)}
+    ${fold(T("留言與圖片","Messages & images"), taskMsgs(t).length||null, taskThread(t, true))}
   </div>`;
 }
-function dashAssignTrackCard(){
-  if(!["boss","manager"].includes(currentRole())) return "";
-  const all=myAssignedOut();
-  const open=all.filter(t=>!t.done)
-    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")));      // 拖最久的排最前面
-  const done=all.filter(t=>t.done)
-    .sort((a,b)=>String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||"")));
-  const list = ASG_TRACK==="open" ? open : ASG_TRACK==="done" ? done : open.concat(done);
-  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
-  const body=`
-    <div class="muted" style="font-size:12px;margin-top:4px">不分日期，全部列在這裡 —— 隔天不會消失。</div>
-    <div class="vtabs" style="margin-top:8px">${tab("open","還沒做完",open.length)}${tab("done","已完成",done.length)}${tab("all","全部",all.length)}</div>
-    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
-      ${list.map(asgTrackRow).join("")||'<p class="muted" style="font-size:13px;margin:10px 0 0">這一類目前沒有東西</p>'}</div>`;
-  // 沒做完的件數放在標題上 —— 收起來的時候也看得到還欠幾件
-  return fold("📋 交辦追蹤（回看做完沒）", open.length||null, body, ASG_TRACK!=="open");
+// 草稿那一折（就在交辦追蹤裡面）：只有自己看得到
+function asgDraftFold(){
+  const list=myDrafts();
+  const rows=list.map(d=>{
+    const pic=picSafe(d.pic)?`<a href="${esc(d.pic)}" target="_blank" rel="noopener noreferrer"><img class="tmsg-pic" src="${esc(d.pic)}" alt="${T("草稿圖片","Draft image")}" loading="lazy"></a>`:"";
+    const on=ASG_FROM_DRAFT===d.id;
+    return `<div style="padding:9px 0;border-bottom:1px solid var(--line)${on?';background:var(--amberbg)':''}">
+      <div class="row" style="gap:6px;align-items:baseline;flex-wrap:wrap">
+        <span class="muted" style="font-size:11px">${esc(String(d.updatedAt||d.createdAt||"").slice(5,16).replace("T"," "))}</span>
+        ${on?`<span class="pill wa" style="font-size:10px">${T("正在上面編輯","Loaded above")}</span>`:''}
+        <span style="flex:1"></span>
+        <button class="btn sm" style="flex:none;padding:3px 12px;font-size:11px" onclick="loadDraft('${esc(jsEsc(d.id))}')">${T("拿上去用","Use it")}</button>
+        <button class="btn sec sm" style="flex:none;padding:3px 10px;font-size:11px" onclick="delDraft('${esc(jsEsc(d.id))}')">${T("刪除","Delete")}</button>
+      </div>
+      <div style="font-size:13.5px;margin-top:3px;overflow-wrap:anywhere;white-space:pre-wrap">${linkify(d.text||"")}</div>${pic}
+    </div>`;
+  }).join("");
+  const body=`<div class="muted" style="font-size:12px;margin-top:4px">${T(
+    "先寫下來、還沒決定要發給誰的都放這裡。只有你看得到；按「拿上去用」帶回上面那張卡，勾好人送出去它才會離開草稿。",
+    "Things you've written but haven't decided who to send to. Only you can see these.")}</div>
+    <div style="margin-top:4px">${rows||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("還沒有草稿","No drafts yet")}</p>`}</div>`;
+  return fold(T("📝 我的草稿","📝 My drafts"), list.length||null, body, false);
 }
-// 儀表板①：指派交辦給員工
-function dashAssignTaskCard(){
+function dashAssignTrackCard(){
+  if(VIEW_AS) return "";
+  const all=myAssignedOut();
+  // 「還沒收」＝沒封存的，不管對方做完沒 —— 收掉的條件是我按 OK，不是他打勾
+  const open=all.filter(t=>!taskArchived(t))
+    .sort((a,b)=>{
+      // 沒做完的排前面（拖最久的最上面），對方回報完成的排後面（等我按 OK）
+      if(!!a.done!==!!b.done) return a.done?1:-1;
+      return a.done ? String(b.doneAt||b.date||"").localeCompare(String(a.doneAt||a.date||""))
+                    : String(a.date||"").localeCompare(String(b.date||""));
+    });
+  const arch=all.filter(taskArchived)
+    .sort((a,b)=>String(b.archivedAt||b.date||"").localeCompare(String(a.archivedAt||a.date||"")));
+  const list = ASG_TRACK==="arch" ? arch : ASG_TRACK==="all" ? open.concat(arch) : open;
+  const tab=(k,label,n)=>`<button class="vtab ${ASG_TRACK===k?'on':''}" onclick="setAsgTrack('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
+  const scope=canSeeAllAssigned()
+    ? `<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn ${ASG_SCOPE==="mine"?"":"sec"} sm" style="padding:3px 12px;font-size:11px" onclick="setAsgScope('mine')">${T("我派的","Mine")}</button>
+        <button class="btn ${ASG_SCOPE==="all"?"":"sec"} sm" style="padding:3px 12px;font-size:11px" onclick="setAsgScope('all')">${T("全公司","Everyone's")}</button>
+       </div>` : "";
+  const body=`
+    <div class="muted" style="font-size:12px;margin-top:4px">${T(
+      "你派出去的都留在這裡，不分日期、隔天不會消失。對方有沒有回都一樣 —— 你按下「OK」才會收起來。",
+      "Everything you assigned stays here regardless of date. It only goes away when you press OK.")}</div>
+    ${scope}
+    <div class="vtabs" style="margin-top:8px">${tab("open",T("還沒收","Open"),open.length)}${tab("arch",T("已封存","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
+    <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
+      ${list.map(asgTrackRow).join("")||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>
+    ${asgDraftFold()}`;
+  // 還沒收的件數放在標題上 —— 收起來的時候也看得到還欠幾件
+  return fold(T("📋 交辦追蹤（我派出去的）","📋 What I assigned"), open.length||null, body, ASG_TRACK!=="open");
+}
+// 交辦卡（v174 起全公司共用一張）。
+// 老闆問「不然他們平日怎麼互動?」—— 以前這張卡只有儀表板有，而儀表板只有
+// 主管跟經理人看得到，所以同事之間根本派不了事情給對方。現在人人都有，
+// 卡片本身完全一樣（多選、附圖、網址自動變連結、留言串），差別只有標題那一行。
+//
+// ⚠️ 收件清單要拿掉自己 —— 自己排給自己的工作走「＋新增工作」那條，
+//    從交辦進來會變成「我交辦給我自己」，交辦成效跟追蹤都會多一筆假的。
+function dashAssignTaskCard(opts){
+  const o=opts||{};
+  const title=o.title || T("① 指派交辦給員工","① Assign work");
   return `<div class="card" style="border-color:var(--gold)">
     <div class="row" style="align-items:baseline;gap:8px">
-      <b style="font-size:16px">① 指派交辦給員工</b>
+      <b style="font-size:16px">${esc(title)}</b>
     </div>
     <div style="margin-top:12px">
       <div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">
-        <label style="margin:0">選擇員工（可複選）</label>
-        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">全選</button>
+        <label style="margin:0">${T("選擇員工（可複選）","Pick people (multiple)")}</label>
+        <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
       </div>
       ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
     </div>
-    <div style="margin-top:10px"><label>交辦內容</label>
-      <input id="asg_txt" placeholder="要交辦的工作內容…（可以直接貼網址）" onkeydown="if(enterKey(event))assignTaskSel()">
+    <div style="margin-top:10px"><label>${T("交辦內容","What needs doing")}</label>
+      <input id="asg_txt" placeholder="${T("要交辦的工作內容…（可以直接貼網址）","What needs doing… (URLs become links)")}" onkeydown="if(enterKey(event))assignTaskSel()">
       <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
         <label class="btn sec sm" id="asg_pic_btn" style="flex:none;padding:5px 10px;font-size:12px;cursor:pointer;margin:0"
-          title="附一張圖（會自動壓縮）">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
+          title="${T("附一張圖（會自動壓縮）","Attach an image (auto-compressed)")}">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
           style="display:none" onchange="pickAsgPic(this)"></label>
         <span id="asg_pic_box"></span>
       </div></div>
-    <div style="margin-top:10px"><label>對接窗口（選填）</label>
-      <input id="asg_contact" list="asg_contact_dl" placeholder="選用過的窗口或輸入新的（沒有可留空）" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
-    <button class="btn" id="asg_go" style="width:100%;margin-top:10px" onclick="assignTaskSel()">送出交辦</button>
+    <div style="margin-top:10px"><label>${T("對接窗口（選填）","Contact person (optional)")}</label>
+      <input id="asg_contact" list="asg_contact_dl" placeholder="${T("選用過的窗口或輸入新的（沒有可留空）","Pick or type a contact (optional)")}" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出交辦","Send")}</button>
+      ${/* 還沒決定要發給誰的，先存起來 —— 存草稿不需要勾任何人 */''}
+      <button class="btn sec" id="asg_draft" style="flex:1" onclick="saveDraft()"
+        title="${T("還沒決定要發給誰？先存下來，只有你看得到","Not sure who to send it to yet? Save it — only you can see it")}">${
+        ASG_FROM_DRAFT?T("更新草稿","Update draft"):T("存成草稿","Save draft")}</button>
+    </div>
   </div>`;
 }
 // 交辦對象的勾選清單。用勾選盒不用 <select multiple>：
 // 手機上的多選下拉要長按、看不到已選了誰，老闆主要是在手機上交辦的。
 function asgPickerHTML(roles){
-  const groups=staffRoleGroups(roles);       // 跟交辦下拉同一套分組，不要自己再分一次
-  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">還沒有可以交辦的同仁</p>`;
+  // 自己不出現在名單上 —— 「我交辦給我自己」在追蹤與交辦成效裡都是一筆假的。
+  // 要記自己的事走「＋新增工作」那條。（主管沒有 users 文件，本來就不在名單裡）
+  const me=currentUser();
+  const groups=staffRoleGroups(roles)        // 跟交辦下拉同一套分組，不要自己再分一次
+    .map(g=>({label:g.label, people:g.people.filter(u=>u.name!==me)}))
+    .filter(g=>g.people.length);
+  if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">${T("還沒有可以交辦的同仁","No colleagues to assign to yet")}</p>`;
   return `<div class="asgbox">${groups.map(g=>`
     <div class="asggrp"><div class="asggrp-t">${esc(g.label)}</div>
       <div class="asggrp-p">${g.people.map(u=>{
