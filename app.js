@@ -1419,7 +1419,11 @@ function openDay(ds){
     // 指派給別人的照樣列出來（不然月曆上的「排了幾支」會跟看得到的列數對不上），
     // 但片名不是連結、點不開；改日期與移出排程照舊 —— 排程跟剪輯是兩條獨立的線
     const lk=v&&assignLocked(v);
-    const titleTxt=esc(v?vidTitle(v):(it.videoId||""));
+    // v185（老闆指定）：「這些片名，不要出現『編號』」。編號是系統流水號，
+    // 每一列開頭都長得差不多，會把真正要看的片名擠掉 —— 月排程的清單檢視
+    // v173 就拿掉了，這裡（當日影片、排一支影片到這天）當時漏掉。
+    // 搜尋照樣打得到編號（那是比對資料，不是顯示）。
+    const titleTxt=esc(v?vidName(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
       <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
@@ -1518,7 +1522,7 @@ function odSelectHTML(ds){
     <select id="od_vid" onchange="odPickVid()">${list.map(v=>{
       const tail=vidIsOld(v) ? T("・舊片・已用 "+usageList(v).length+" 次"," · old · used "+usageList(v).length+"x")
                              : "・"+stageLabel(v.stage);
-      return `<option value="${v.id}">${esc(vidTitle(v))}${esc(tail)}</option>`; }).join("")}</select>`;
+      return `<option value="${v.id}">${esc(vidName(v))}${esc(tail)}</option>`; }).join("")}</select>`;
 }
 function odFilter(){
   const c=document.getElementById("od_cats"); if(c) c.innerHTML=odCatTabs(OD_DS);   // 數字會跟著「只看還沒排的」變

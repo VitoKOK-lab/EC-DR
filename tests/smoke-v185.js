@@ -210,7 +210,35 @@ function reset(vids, users){
     ok("（對照）審過的那天不會亮角標", !/class="calwarn/.test(viewCal()));
     CAL_MODE="grid"; }
 
-  // ══════════ ⑥ 沒有把別的弄壞 ══════════
+  // ══════════ ⑥ 月排程上不出現編號 ══════════
+  // 老闆：「這些片名，不要出現『編號』」（v173 清單檢視已經拿掉，當日影片與
+  // 「排一支影片到這天」的下拉當時漏掉了）。編號是系統流水號，每一列開頭都
+  // 長得差不多，會把真正要看的片名擠掉。
+  { const D=(n)=>new Date(new Date(T0+"T12:00:00Z").getTime()+n*864e5).toISOString().slice(0,10);
+    reset([ v_("P1",{code:"2609241",name:"30歲以後的面向為什麼會變",editor:"小葵",claimedBy:"小葵",
+                     scheduledDate:D(1),stage:"已完成",reviewStatus:"通過"}),
+            v_("P2",{code:"1150731005",name:"人生這麼苦，為什麼放不下",editor:"小葵",claimedBy:"小葵",
+                     scheduledDate:null,stage:"已完成",reviewStatus:"通過"}) ]);
+    as("Regina","manager"); CAL_YM=null; CAL_PLAT="tw"; OD_Q=""; OD_UNSCHED=false;
+    openDay(D(1));
+    ok("（前提）當日影片列得出這一支", modalHTML.includes("30歲以後的面向為什麼會變"));
+    ok("**當日影片那幾列不出現編號**", !modalHTML.includes("2609241"),
+       (modalHTML.match(/.{0,30}2609241.{0,30}/)||[])[0]);
+    const sel=odSelectHTML(D(1));
+    ok("（前提）下拉挑得到影片", sel.includes("人生這麼苦，為什麼放不下"));
+    ok("**「排一支影片到這天」的下拉也不出現編號**", !sel.includes("1150731005"),
+       (sel.match(/.{0,30}1150731005.{0,30}/)||[])[0]);
+    ok("清單檢視本來就沒有（v173 拿掉的，不要被改回去）", (()=>{
+       CAL_MODE="list"; const li=viewCal(); CAL_MODE="grid";
+       return !li.includes("2609241"); })());
+    // 編號還是查得到 —— 只是不擺在片名前面
+    ok("**搜尋框照樣打得到編號**", (()=>{
+       OD_Q="2609241"; const n=odCandidates(D(2)).length; OD_Q="";
+       return n>=1; })());
+    ok("移出排程的確認視窗照樣寫編號（純文字場合，一行講完是哪一支）",
+       /^\d/.test(vidTitle(STATE.videos[0])) && vidTitle(STATE.videos[0]).includes("2609241")); }
+
+  // ══════════ ⑦ 沒有把別的弄壞 ══════════
   { let bad=null;
     [["管理員","boss"],["Regina","manager"],["HR小姐","hr"],["小葵","editor"],["陳鋒","editor"],["小美","cs"]]
       .forEach(([w,r])=>{ reset([ v_("A",{editor:"小葵",reviewStatus:"通過"}) ]); as(w,r);
