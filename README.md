@@ -78,6 +78,7 @@ node tests/check-cache-stamp.js --fix   # 更新 index.html 的 ?v=
 | `firebase/rules.test.mjs` | 安全規則測試（42 項，需模擬器） |
 | `tools/backup.py` | 一鍵完整備份（程式碼＋資料＋封面圖） |
 | `tools/restore.py` | 資料還原（預設試跑，需 `--confirm` 才寫入） |
+| `tools/install-schedule.sh` | 安裝每日自動備份與健康檢查（macOS launchd） |
 | `BACKUP.md` | 備份與災難復原操作手冊 |
 | `SCHEMA.md` | Firestore 資料結構 |
 | `UX-PLAN-v2.md` | UX 規劃（參考） |

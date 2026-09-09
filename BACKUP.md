@@ -63,13 +63,52 @@ python3 tools/backup.py --keep 60
 python3 tools/backup.py --no-covers
 ```
 
+### 讓它每天自動跑（建議）
+
+手動備份最常見的失敗方式不是備份壞掉，是**人忘記跑**。設一次就好：
+
+```bash
+bash tools/install-schedule.sh
+```
+
+裝好兩個排程：
+
+| 排程 | 時間 | 做什麼 |
+|---|---|---|
+| `com.ecdr.backup` | 每天 03:00 | 跑備份。網路不通會重試 3 次（間隔 5 分鐘），還是失敗就跳 macOS 通知 |
+| `com.ecdr.healthcheck` | 每天 09:00 | 只確認一件事：最新備份是不是超過 3 天沒更新 |
+
+**為什麼需要第二個排程**：自動備份最陰險的死法是它某天停了而沒人發現
+（電腦搬走、資料夾改名、分支切掉），等真的要用才知道最後一份是三個月前的。
+備份排程本身失敗會叫你，但如果它**根本沒被觸發**就不會有任何聲音——
+健康檢查就是補這個洞。它獨立運作，只看備份資料夾的日期。
+
+常用指令：
+
+```bash
+bash tools/install-schedule.sh --status
+```
+
+```bash
+bash tools/install-schedule.sh --hour 5
+```
+
+```bash
+bash tools/install-schedule.sh --uninstall
+```
+
+排程保留 60 份（約兩個月歷史），紀錄在 `~/EC-DR-Backups/_logs/`。
+
+> **電腦關機的話那次會跳過**；只是睡著的話 launchd 會在喚醒後補跑。
+> 這也是健康檢查存在的理由——連續幾天關機它會提醒你。
+
 ### 建議節奏
 
 | 頻率 | 做什麼 | 為什麼 |
 |---|---|---|
-| 每天 | `python3 tools/backup.py` | 本機一份 |
-| 每週 | `python3 tools/backup.py --to <外接硬碟或 Drive 同步夾>` | Mac mini 整台掛掉時的第二份 |
+| 每天 | （自動）`tools/install-schedule.sh` 裝好就不用管 | 本機一份，最多只丟一天 |
 | 每月 | 照第四節做一次還原演練 | 沒演練過的還原＝沒有還原能力 |
+| 有空時 | `python3 tools/backup.py --to <外接硬碟或 Drive 同步夾>` | 第二份放別的地方，非必要但有比較好 |
 
 ### 佔多少空間、花多少錢
 
