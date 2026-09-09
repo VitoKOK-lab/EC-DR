@@ -138,7 +138,7 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   reset([ t_("T1",{title:LONG,assignedBy:"Regina",user:"小葵"}) ]);
   as("小葵","editor");
   const h=viewChat();
-  ok("收合時是 <details>，點了才展開", /<details class="commrow/.test(h));
+  ok("收合時是 <details>，點了才展開", /<details id="comm_T1" class="commrow/.test(h));
   const snip=(h.match(/class="commtxt"[^>]*>([^<]*)</)||[])[1]||"";
   ok("**收合時只有 12 個字＋…**", snip.length===13 && snip.endsWith("…"), {snip, len:snip.length});
   ok("展開之後看得到全文", h.includes(LONG.slice(0,20)));
@@ -162,14 +162,24 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
 { reset([ t_("T1",{assignedBy:"Regina",user:"小葵",done:true,doneAt:D(0)+"T10:00:00"}) ]);
   as("Regina","manager");
   const h=viewChat();
-  ok("**派的人看得到 OK**", /class="btn sm commok"/.test(h) && />OK</.test(h), (h.match(/commok[^>]*/g)||[]));
+  // v183：對方回報完成、正等我按的那一顆改成實心＋寫「完成」——
+  // 老闆：「regina的對話，如果完成要有 完成可以按，沒有看見」。
+  ok("**派的人看得到那顆鍵**", /class="btn sm commok on"/.test(h) && />完成</.test(h), (h.match(/commok[^>]*/g)||[]));
+  ok("點開之後也有一顆（不用回頭去那一行的最右邊找）", /archiveTask\('T1',true\)/.test(h)
+     && h.includes("完成，收起來"));
   ok("OK 是小的（有自己的 class，不是整排大按鈕）", HTML.includes(".commok{")); }
 { reset([ t_("T1",{assignedBy:"Regina",user:"小葵",done:true,doneAt:D(0)+"T10:00:00"}) ]);
   as("小葵","editor");
   ok("**收到的人沒有 OK**（不能自己把別人派的事收掉）", !/commok/.test(viewChat())); }
+// v183：同事訊息也要收得起來 —— 老闆訂的規矩是「都會留在發訊方，直到發訊方
+// 按下「ok」才會封存起來」，那條沒有分交辦還是訊息。
 { reset([ p_("P1",{from:"小葵",user:"小美"}) ]);
   as("小葵","editor");
-  ok("同事之間的訊息沒有 OK（本來就不用追蹤完成）", !/commok/.test(viewChat())); }
+  ok("**同事訊息，發訊方也有 OK 可以收起來**", /commok/.test(viewChat()));
+  ok("但它是淡的（還沒有人回，不是等我處理的狀態）", !/commok on/.test(viewChat())); }
+{ reset([ p_("P1",{from:"小葵",user:"小美"}) ]);
+  as("小美","cs");
+  ok("**收訊方沒有 OK**（那顆是發訊方的）", !/commok/.test(viewChat())); }
 // 主管有「萬能鑰匙」（canArchiveTask 對 boss 一律放行），但那是給他清別人留下的爛攤子用的。
 // 在自己的溝通清單裡，**別人派給他的**那幾條不該冒出 OK —— 那是對方的事。
 { reset([ t_("T1",{assignedBy:"Regina",user:"管理員",title:"Regina 派給老闆的",done:true,doneAt:D(0)+"T10:00:00"}) ]);
@@ -188,7 +198,7 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   as("小葵","editor");
   ok("點開過就不再催我", commWaitingMe(taskById("P1"))===false); }
 { reset([ t_("T1",{assignedBy:"Regina",user:"小葵",archived:true,archivedAt:D(0)+"T11:00:00"}) ]);
-  as("Regina","manager"); COMM_TAB="arch";
+  as("Regina","manager"); COMM_TAB="done";
   const h=viewChat();
   ok("封存的可以重新打開", /archiveTask\('T1',false\)/.test(h));
   ok("封存的列有標出來", /commrow arch/.test(h)); }

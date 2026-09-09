@@ -139,8 +139,13 @@ const t_=(id,o)=>Object.assign({id,user:"小美",date:D(0),title:"做一件事",
 // 交辦來的那種還是留言串，不要被順手改成回報框
 { reset([ t_("A1",{title:"主管派的",assignedBy:"Regina",user:"小美",ack:true}) ]); as("小美","cs");
   const h=viewWork();
-  ok("主管交辦的還是用留言串（要跟老闆來回）", /postTaskMsg\('A1'\)/.test(h));
-  ok("不會同時冒出回報框", !/id="tr_A1"/.test(h)); }
+  // v183（老闆指定）：「如果是 regina 和 hr 傳的會出現一條在每日工作現在的地方，
+  // 但要回覆，溝通還是要跳回聊天室」。所以這一頁只留一顆跳過去的鍵，
+  // 留言串整串在「傳訊息」那一頁 —— 兩邊都畫一次就是他說的重複。
+  ok("交辦來的那條有回覆鍵可以跳到聊天室", /gotoComm\('A1'\)/.test(h));
+  ok("留言串不畫在每日工作", !/postTaskMsg\('A1'\)/.test(h));
+  ok("不會同時冒出回報框", !/id="tr_A1"/.test(h));
+  ok("聊天室那一頭才有留言串", /postTaskMsg\('A1'\)/.test(viewChat())); }
 
 // ══════════ ⑦ 標題一致 ══════════
 { reset(); as("小美","cs");

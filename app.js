@@ -169,11 +169,18 @@ function dataLabel(x){
   return custom[t] || DATA_EN[t] || t;
 }
 const ADMIN_NAME = "管理員"; // 管理員登入（設定／成員管理）
+// v183（老闆指定「要改成 vito」）：畫面上顯示「Vito」，**資料庫照舊寫「管理員」**。
+// 為什麼不直接改 ADMIN_NAME：正式資料裡已經有幾百筆 createdBy／assignedBy／logs
+// 寫著「管理員」，改掉識別字串等於讓那些紀錄變成另一個人的。所以只換顯示的那一層。
+// 職稱那一欄仍是「管理員」（老闆：「管理員就好」），頂列會是「Vito・管理員」。
+const ADMIN_DISPLAY = "Vito";
+function dispName(n){ const s=String(n==null?"":n); return s===ADMIN_NAME ? ADMIN_DISPLAY : s; }
 function isOwner(){ return currentUser()===ADMIN_NAME; }
 function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
-  // v178：「溝通」是每個人都有的（老闆的三塊之一）。放在最前面 ——
+  // v178：「傳訊息」是每個人都有的（老闆的三塊之一）。放在最前面 ——
   // 有人找你、或你派出去的有回音，是每天最先要處理的事。
-  t.unshift(["chat", currentRole()==="intl"?"Messages":"溝通"]);
+  // v183 改名：本來叫「溝通」，老闆說「把『溝通』名字改成『傳訊息』」。
+  t.unshift(["chat", currentRole()==="intl"?"Messages":"傳訊息"]);
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -597,6 +604,12 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
+    // v183（老闆指定）：「有人傳訊給你，『傳訊息』會有小紅點提醒」。
+    // 數字直接印出來 —— 只有一個點的話，看到了也不知道是一則還是十則。
+    if(id==="chat"){ const n=commUnread();
+      if(n){ const d=document.createElement("span"); d.className="navdot";
+        d.textContent = n>9 ? "9+" : String(n);
+        b.title = T(n+" 則等你處理", n+" waiting for you"); b.appendChild(d); } }
     // 進月排程一律回到當月（hub 內各平台月曆各自的年月也一起重設）
     b.onclick = ()=>{ if(id==='cal'){ CAL_YM=null; INTL_CAL_YM=null; CH_CAL.shopee.ym=null; CH_CAL.ms.ym=null; } CUR_TAB = id; buildNav(); render(); };
     nav.appendChild(b);
@@ -883,8 +896,9 @@ function decorate(raw){
 const GLOBAL_COLLS=["users","settings"];
 const TAB_DEPS={
   attend:   ["shifts"],
-  // v180：每日工作多了「我的出勤」→ 也要盯 shifts，不然打完卡不會更新
-  work:     ["videos","tasks","shifts"],
+  // v183：「我的出勤」搬到看板了（老闆：「員工的『我的出勤』應該和看板放在
+  //       一起吧」），所以每日工作不用再盯 shifts。
+  work:     ["videos","tasks"],
   videos:   ["videos"],
   videosDF: ["videos"],
   output:   ["videos"],
@@ -910,7 +924,7 @@ function applyState(raw, changed){
   if(currentUser() && (has||isBoss)){
     document.getElementById("login").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-    document.getElementById("whoName").textContent=currentUser();
+    document.getElementById("whoName").textContent=dispName(currentUser());
     const isIntl=currentRole()==="intl";
     document.getElementById("whoRole").textContent="・"+(isIntl?"Intl Editor":(ROLE_LABEL[currentRole()]||""));
     { const pb=document.getElementById("pwBtn"); if(pb){ pb.style.display=(currentRole()!=="boss")?"":"none"; pb.textContent=isIntl?"🔒 Change password":"🔒 改密碼"; } }
@@ -1002,7 +1016,7 @@ function groupColors(names){
 // 沒傳就用名字自己的顏色。
 function personChip(name, extra, colors){
   const c=(colors && colors[String(name||"")]) || personColor(name);
-  return `<span class="pchip" style="color:${c.fg};background:${c.bg};border:1px solid ${c.fg}33">${esc(name)}${extra||""}</span>`;
+  return `<span class="pchip" style="color:${c.fg};background:${c.bg};border:1px solid ${c.fg}33">${esc(dispName(name))}${extra||""}</span>`;
 }
 // 注音／拼音選字的時候按 Enter 只是「挑這個字」，不是要送出。
 // 那一下的 keydown 照樣會跑進來、event.key 也還是 'Enter' ——
@@ -1130,6 +1144,7 @@ function render(){
   const vsNew=v.querySelector(".vidscroll"); if(vsNew && vst) vsNew.scrollTop=vst;
   keepScrollRestore(v, keep);
   focusRestore(v, foc);
+  tdClampScan(v);          // 全員卡片：內容滿出來的才畫下緣漸層
   if(same && sy) requestAnimationFrame(()=>window.scrollTo(0,sy));
 }
 // 帶 class="keepscroll" 且有 id 的區塊，重繪前後把捲動位置接回去
@@ -1867,8 +1882,21 @@ function asgPicShow(name){
     : "";
 }
 function asgPicClear(){ ASG_PIC=null; ASG_PIC_URL=""; asgPicShow(""); }
+// 訊息框：平常一行，打到第二行自己長高（老闆：「訊息這個是多行訊息，平常只顯示
+// 一行，多行要自動打開」）。上限 10 行，再多就自己捲 —— 不然貼一篇長文會把
+// 送出鍵推到螢幕外面。
+function asgGrow(el){
+  if(!el) return;
+  try{ el.style.height="auto";
+    const max=10*21+16;                       // 10 行 × 行高 ＋ 上下 padding
+    el.style.height=Math.min(el.scrollHeight, max)+"px";
+    el.style.overflowY = el.scrollHeight>max ? "auto" : "hidden";
+  }catch(e){}
+}
 async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
-  const names=asgPicked(); const t=val("asg_txt").trim(); const contact=(val("asg_contact")||"").trim();
+  // v183：對接窗口整欄拿掉（老闆：「對接窗口先移除，都不用了」）。
+  // 舊資料上的 contact 還在、畫面上照樣看得到，只是不再有地方新增。
+  const names=asgPicked(); const t=val("asg_txt").trim(); const contact="";
   if(!names.length){ toast("請先勾選要指派的員工",true); return; }
   if(!t){ toast("請輸入要指派的工作內容",true); return; }
   // 一次發給很多人是不小心手滑全選就送出去的高風險動作，先問一聲
@@ -1912,8 +1940,7 @@ async function assignTaskSel(){ refreshToday(); if(dbBlocked()) return;
   if(contact && r.done) rememberContact(contact);
   if(r.done){
     logA(tracks?("交辦工作（"+r.done+" 人）"):("傳訊息給同事（"+r.done+" 人）"), t);
-    const a=document.getElementById('asg_txt'); if(a) a.value='';
-    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    const a=document.getElementById('asg_txt'); if(a){ a.value=''; asgGrow(a); }
     document.querySelectorAll(".asg_p").forEach(x=>{ x.checked=false; }); asgCount();
     asgPicClear();
     // 「等發送出去才會離開草稿」—— 真的送出去了才刪，送失敗的話草稿要留著
@@ -1944,7 +1971,7 @@ async function saveDraft(){ refreshToday();
   if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
   if(dbBlocked()) return;
   const text=(val("asg_txt")||"").trim();
-  const contact=(val("asg_contact")||"").trim();
+  const contact="";                    // v183：對接窗口整欄拿掉
   if(!text && !ASG_PIC && !ASG_PIC_URL){ toast(T("先寫點東西或選一張圖再存草稿","Write something or attach an image first"),true); return; }
   const mine=myDrafts();
   // 改的是既有草稿就不算新增一則，所以只有「真的要新增」時才擋
@@ -1963,8 +1990,7 @@ async function saveDraft(){ refreshToday();
     await window.DB.set("tasks", id, {id, kind:"draft", by:currentUser(), user:"",
       text:text.slice(0,TASK_MSG_MAX), pic, contact,
       createdAt:(old&&old.createdAt)||stamp, updatedAt:stamp});
-    const a=document.getElementById('asg_txt'); if(a) a.value='';
-    const c=document.getElementById('asg_contact'); if(c) c.value='';
+    const a=document.getElementById('asg_txt'); if(a){ a.value=''; asgGrow(a); }
     asgPicClear(); ASG_FROM_DRAFT="";
     logA(old?"改草稿":"存草稿", text.slice(0,40)||"（只有圖）");
     toast(T("已存成草稿（只有你看得到）","Saved as a draft — only you can see it"));
@@ -1979,8 +2005,7 @@ function loadDraft(id){
   ASG_PIC=null;
   ASG_PIC_URL=picSafe(d.pic)?String(d.pic):"";
   render();
-  const a=document.getElementById('asg_txt'); if(a){ a.value=String(d.text||""); try{ a.focus(); }catch(e){} }
-  const c=document.getElementById('asg_contact'); if(c) c.value=String(d.contact||"");
+  const a=document.getElementById('asg_txt'); if(a){ a.value=String(d.text||""); asgGrow(a); try{ a.focus(); }catch(e){} }
   asgPicShow("");
   toast(T("草稿帶上來了，勾好人就可以送出","Draft loaded — pick who to send it to"));
 }
@@ -2066,19 +2091,12 @@ function msgsForMe(){
   return allMsgs().filter(m=>want.includes(m.to||"boss")).sort(msgSort);
 }
 const msgOpen=(m)=>!String((m&&m.reply)||"").trim();      // 還沒被回覆
-async function sendMsg(){ refreshToday();
-  if(VIEW_AS){ toast(T("員工視角為唯讀預覽","Read-only preview"),true); return; }
-  const to=(val("msg_to")||"hr")==="boss"?"boss":"hr";
-  const t=(val("msg_txt")||"").trim();
-  if(!t){ toast(T("請先寫下你想說的事","Write your message first"),true); return; }
-  const id=uid("M");
-  try{ await window.DB.set("tasks", id, {id, kind:"msg", user:currentUser(), to, date:today,
-        title:t, reply:"", replyBy:"", replyAt:"", seen:false, createdAt:nowIso()});
-    const i=document.getElementById("msg_txt"); if(i) i.value="";
-    toast(to==="hr"?T("已送出給人資，等他回覆","Sent to HR"):T("已送出給主管，等他回覆","Sent to your manager"));
-    logA("發訊息給"+(to==="hr"?"人資":"主管"), t.slice(0,40));
-  }catch(e){ toast(T("送出失敗，請稍後再試","Failed to send, try again"),true); }
-}
+// ⚠️ sendMsg()（舊的「找主管／人資說一件事」送出鍵）v183 移除了。
+//    老闆：「找主管，找hr也是一種溝通呀，全部移到溝通去…這不是說好要整合在一起嗎?」
+//    要找主管或人資，現在就是在「傳訊息」那張卡上把他勾起來（見 asgPickerHTML
+//    多帶的 manager／hr／boss）—— 跟傳給任何一個同事完全一樣的動作。
+//    已經存在的 kind:"msg" 舊資料照樣看得到、回得了（見 commRow），
+//    只是不會再產生新的。
 // 人資／主管回覆
 function msgReply(id){
   const v=(val("mr_"+id)||"").trim();
@@ -2228,10 +2246,16 @@ function workReviewCard(me){
     ${/* 順序＝該處理的先來：被退回（要動手）→ 還在等（要追）→ 已審過（做完了，收起來）。
           v128 之前「已審過」排在「待審核」上面，7 支通過的把該追的擠到最下面，
           使用者的說法是「審片還是在最下面」。 */''}
-    ${waitingReview.length?`<div style="margin-top:10px"><b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>
-      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        <button class="btn sm" style="flex:none" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過，下一步","Approved — next")}</button></div>`).join("")}</div>`:''}
+    ${/* v183：超過 6 支就收起來。正式資料實測有人待審 20 支，攤開來是 20 列，
+          把「今天要做的事」推到三個螢幕以下 —— 老闆說的「不可以切壓迫到彼此的區塊」。
+          支數寫在標題上，收起來也知道還欠幾支，不是把它藏掉。 */''}
+    ${waitingReview.length?`<div style="margin-top:10px">${waitingReview.length>6?`<details class="fold revfold" ${foldState("work.waitrev", false)}><summary>`:""}<b class="muted" style="font-size:13px">⏳ ${T("待審核 — Regina 說 OK 後，自己按「已審過」進下一步","In review — once Regina says OK, tap “Approved” to move on")}（${waitingReview.length}）</b>${waitingReview.length>6?`</summary><div class="foldbody">`:""}
+      ${/* v183：手機上這一列本來是 flex-wrap:wrap ——「已審過，下一步」那顆鍵塞不下就
+            掉到自己一行，變成整條黑磚。20 支待審就是 20 塊，整張卡把「今天要做什麼」
+            擠到三個螢幕以下。改成不換行、鍵縮短成「已審過」，完整說明留在 title。 */''}
+      ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <span style="flex:1;min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
+        <button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("Regina 審過了 → 標記通過，開始上傳雲端＋補連結","Regina approved it — mark as passed and start the next step")}">✓ ${T("已審過","Approved")}</button></div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
     ${approvedTodo.length?`<details class="fold" ${foldState("work.approved", false)} style="margin-top:10px"><summary style="color:var(--gold-dk);font-size:13px">✓ ${T("已審過（通過）","Approved")}<span class="n">${approvedTodo.length}</span>${
       // 收起來也要看得出還有幾支要去補連結，不然收合等於忘記
       (()=>{ const n=approvedTodo.filter(v=>!linksDone(v)).length;
@@ -2469,6 +2493,19 @@ function todoRow(kind, title, sub, actions, doneCls, cls){
     <div class="tact">${actions||""}</div></div>`;
 }
 // ── 今天要做的事：把通知、交辦、自己排的工作、手上的影片合成一條清單 ──
+// 每日工作上，交辦那一列的第二行：誰派的 ＋ 一顆「回覆」跳到聊天室。
+// 有幾則留言直接印在鍵上 —— 不然不點開不知道對方有沒有回話。
+function commJump(t){
+  const n=taskMsgs(t).length;
+  const rep=String(t.report||"").trim();
+  return `<div class="row" style="gap:6px;margin-top:5px;align-items:center;flex-wrap:wrap">
+    <button class="btn sec sm" style="flex:none;padding:3px 11px;font-size:12px"
+      onclick="gotoComm('${esc(jsEsc(t.id))}')"
+      title="${T("到「傳訊息」跟他繼續講","Open the thread in Messages")}">${T("回覆","Reply")}${n?" 💬 "+n:""}</button>
+    ${rep?`<span class="muted" style="font-size:12px;overflow-wrap:anywhere">${T("處理狀況","Progress")}：${esc(rep.slice(0,24))}${rep.length>24?"…":""}</span>`:
+      `<span class="muted" style="font-size:12px">${T("回一句就會變成處理狀況","Your reply becomes the progress note")}</span>`}
+  </div>`;
+}
 function todayListCard(tasks, myWork, workBtn, undoBtn){
   const rows=[];
   // ① HR 通知（只要按收到）
@@ -2484,7 +2521,7 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
   tasks.forEach(t=>{
     const assigned=!!t.assignedBy, needAck=assigned&&!t.ack;
     const can=(t.report||'').trim().length>=12;
-    const sub=[assigned?T("主管交辦","Assigned"):T("自己排的","Self"),
+    const sub=[assigned?(T("交辦","From")+" "+esc(dispName(t.assignedBy))):T("自己排的","Self"),
                t.contact?T("窗口 ","Contact ")+esc(t.contact):""].filter(Boolean).join("・");
     const act = needAck
       ? `<button class="btn sm" style="padding:4px 14px" onclick="ackTask('${t.id}')">${T("收到","Got it")}</button>`
@@ -2503,8 +2540,11 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     const repInput=`<input id="tr_${t.id}" value="${esc(t.report||'')}" style="margin-top:6px;font-size:13px;padding:6px 10px"
          oninput="var c=document.getElementById('tc_${t.id}');if(c)c.disabled=this.value.trim().length<12"
          onchange="taskReport('${t.id}',this.value)" placeholder="${T("處理狀況及後續（滿 12 字才能打勾完成）…","Progress note (12+ chars to tick done)…")}">`;
+    // v183（老闆指定）：「如果是 regina 和 hr 傳的會出現一條在每日工作現在的地方，
+    // 但要回覆，溝通還是要跳回聊天室」。所以這裡只留**一條**（誰派的＋回覆鍵），
+    // 留言串整串留在「傳訊息」那一頁 —— 兩邊都畫一次就是老闆說的重複。
     const note = needAck ? ""
-      : assigned ? mateChips(t)+taskThread(t, true)
+      : assigned ? mateChips(t)+commJump(t)
       : `<details class="fold repfold"${rep?" open":""}><summary>${
            rep ? T("處理狀況","Progress")+"：<span class=\"muted\">"+esc(rep.slice(0,16))+(rep.length>16?"…":"")+"</span>"
                : `<span class="muted">${T("寫處理狀況…","Add a progress note…")}</span>`
@@ -2546,43 +2586,16 @@ function todayListCard(tasks, myWork, workBtn, undoBtn){
     ${presets}
     <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
       <input id="wp_newtask" placeholder="${T("新增一件事…","Add a task…")}" style="flex:2;min-width:140px" onkeydown="if(enterKey(event))createTask()">
-      <input id="wp_contact" list="wp_contact_dl" placeholder="${T("對接窗口（選填）","Contact (optional)")}" style="flex:1;min-width:110px" onkeydown="if(enterKey(event))createTask()">${contactDatalist('wp_contact_dl')}
+      ${/* v183：對接窗口拿掉（老闆：「對接窗口先移除，都不用了」）。
+            createTask() 讀不到這個欄位就會存空字串，舊資料上的窗口照樣看得到。 */''}
       <input id="wp_date" type="date" value="${today}" min="${today}" style="width:auto" title="${T("要哪一天做？預設今天","Which day? Defaults to today")}">
       <button class="btn sm" style="flex:none" onclick="createTask()">${PLUS()} ${T("加入","Add")}</button>
     </div>
     <div class="muted" style="font-size:12px;margin-top:6px">${T("排到未來的日期，那天才會出現在這裡。","Pick a future date and it shows up on that day.")}</div>
   </div>`;
 }
-// ── 找主管／人資說一件事（折疊成一行；有回覆沒看過才亮紅點）──
-function myMsgFold(){
-  const list=myMsgs();
-  const unseen=list.filter(m=>!msgOpen(m) && !m.seen).length;
-  const who=(m)=>m.to==="boss"?T("主管","Manager"):T("人資","HR");
-  const rows=list.map(m=>{
-    const answered=!msgOpen(m);
-    return `<div class="todo ${answered&&m.seen?'done':''}"><span class="tkind">${answered?"💬":"📨"}</span>
-      <div class="tmain"><div class="ttitle">${esc(m.title)}</div>
-        <div class="tsub">${T("給","To")} ${who(m)}・${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}
-          ${answered?`<div style="margin-top:4px"><b>${esc(m.replyBy||"")}</b> ${T("回覆","replied")}
-             <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span>：${esc(m.reply)}</div>`
-                    :`<div style="margin-top:4px" class="muted">${T("等對方回覆中…","Waiting for a reply…")}</div>`}</div></div>
-      <div class="tact">${answered
-        ? (m.seen?`<span class="pill ok" style="font-size:10px">${T("已回覆","Answered")}</span>`
-                 :`<button class="btn sm" style="padding:4px 12px" onclick="msgSeen('${m.id}')">${T("知道了","OK")}</button>`)
-        : `<button class="btn sec sm" style="padding:3px 9px" onclick="msgDel('${m.id}')">✕</button>`}</div></div>`;
-  }).join("");
-  // 人資自己也是員工，但他不能發給自己 → 只留「主管」
-  const toSel = currentRole()==="hr"
-    ? `<select id="msg_to" style="width:auto"><option value="boss">主管</option></select>`
-    : `<select id="msg_to" style="width:auto"><option value="hr">${T("人資","HR")}</option><option value="boss">${T("主管","Manager")}</option></select>`;
-  const body=`<div class="row" style="gap:6px;flex-wrap:wrap">
-      ${toSel}
-      <input id="msg_txt" placeholder="${T("想說的事（請假、反映問題、需要什麼…）","What's on your mind…")}" style="flex:2;min-width:150px"
-        onkeydown="if(enterKey(event))sendMsg()">
-      <button class="btn sm" style="flex:none" onclick="sendMsg()">${T("送出","Send")}</button>
-    </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`;
-  return fold(T("找主管／人資說一件事","Message HR / manager"), unseen||null, body, false);
-}
+// ⚠️ myMsgFold()（工作頁上那張「找主管／人資說一件事」）v183 移除了 ——
+//    整併進「傳訊息」。舊資料的回覆與「知道了」現在畫在 commRow 裡面。
 
 // ===================================================================
 // 同事之間傳訊息（v120）：kind:"p2p"，一次傳給一位同區同事。
@@ -2642,58 +2655,10 @@ function p2pReply(id){
 function p2pSeen(id){ const m=taskById(id)||{};
   dbUpdate("tasks", id, {fromSeen:true, fromSeenAt:nowIso()},
     {action:"看過同事回覆", target:(m.user||"")+"："+String(m.title||"").slice(0,30)}); }
-// ── 同事來訊（收件匣）：有訊息才出現，沒做完不會消失 ──
-function p2pInboxCard(){
-  const list=p2pInbox(); if(!list.length) return "";
-  const nNew=list.filter(m=>!m.ack).length;
-  const rows=list.map(m=>`<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">
-      <div style="font-size:13.5px"><b>${esc(m.from||"")}</b>
-        <span class="muted" style="font-size:11px">${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}</span></div>
-      <div style="font-size:13.5px;margin-top:3px;white-space:pre-wrap">${esc(m.title||"")}</div>
-      ${!m.ack
-        ? `<div style="margin-top:6px"><button class="btn sm" onclick="p2pAck('${m.id}')">${T("收到","Got it")}</button>
-             <span class="muted" style="font-size:12px;margin-left:8px">${T("按了他才知道你看到了","They'll see that you've read it")}</span></div>`
-        : `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
-             <span class="pill ok" style="font-size:10px;flex:none">${T("已收到","Got it")}</span>
-             <input id="p2pr_${m.id}" placeholder="${T("回覆他…","Reply…")}" style="flex:1;min-width:150px"
-               onkeydown="if(enterKey(event))p2pReply('${m.id}')">
-             <button class="btn sm" style="flex:none" onclick="p2pReply('${m.id}')">${T("回覆","Reply")}</button></div>`}
-    </div>`).join("");
-  return `<div class="card" style="border-color:var(--gold)">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">📬 ${T("同事來訊","From a colleague")}</b>
-      <span class="pill ${nNew?'em':'wa'}">${nNew?T(nNew+" 則待接收", nNew+" to open"):T("待回覆","Reply needed")}</span></div>
-    ${rows}</div>`;
-}
-// ── 傳訊息給同事（折疊）：發訊＋看對方回覆 ──
-function p2pFold(){
-  const targets=p2pTargets();
-  const sent=p2pSent();
-  const nBack=sent.filter(p2pReplied).length;          // 對方回了、等我按收到
-  const rows=sent.map(m=>{
-    const answered=p2pReplied(m);
-    return `<div class="todo"><span class="tkind">${answered?"💬":(m.ack?"👀":"📨")}</span>
-      <div class="tmain"><div class="ttitle">${esc(m.title||"")}</div>
-        <div class="tsub">${T("給","To")} ${esc(m.user||"")}・${esc(String(m.createdAt||"").slice(5,16).replace("T"," "))}
-          ${answered
-            ? `<div style="margin-top:4px"><b>${esc(m.user||"")}</b> ${T("回覆","replied")}
-                 <span class="muted" style="font-size:11px">${esc(String(m.replyAt||"").slice(5,16).replace("T"," "))}</span>：${esc(m.reply)}</div>`
-            : `<div style="margin-top:4px" class="muted">${m.ack?T("他已經按收到，等他回覆…","Read — waiting for a reply…"):T("等他按收到…","Waiting for them to open it…")}</div>`}
-        </div></div>
-      <div class="tact">${answered
-        ? `<button class="btn sm" style="padding:4px 12px" onclick="p2pSeen('${m.id}')">${T("收到","Got it")}</button>`
-        : ''}</div></div>`;
-  }).join("");
-  const body = targets.length
-    ? `<div class="row" style="gap:6px;flex-wrap:wrap">
-        <select id="p2p_to" style="width:auto;min-width:120px"><option value="">${T("傳給誰…","To…")}</option>${targets.map(u=>`<option>${esc(u.name)}</option>`).join("")}</select>
-        <input id="p2p_txt" placeholder="${T("想跟同事說的事…","Message a colleague…")}" style="flex:2;min-width:150px"
-          onkeydown="if(enterKey(event))sendP2P()">
-        <button class="btn sm" style="flex:none" onclick="sendP2P()">${T("送出","Send")}</button>
-      </div>${rows?`<div style="margin-top:8px">${rows}</div>`:""}`
-    : `<p class="muted" style="font-size:13px;margin:0">${T("目前沒有可以傳訊息的同事。","No colleagues to message yet.")}</p>`;
-  return fold(T("傳訊息給同事","Message a colleague"), nBack||null, body, false);
-}
+// ⚠️ p2pInboxCard()（工作頁上那張「同事來訊」）v183 移除了 —— 收到的訊息
+//    現在跟其他每一種訊息一起排在「傳訊息」的「我的對話」裡。
+// ⚠️ p2pFold()（工作頁上那張「傳訊息給同事」）v183 移除了 —— 發訊息只剩
+//    「傳訊息」頁上那一張卡，主管、人資、同事都在同一份勾選清單裡。
 // ── 同事之間的訊息（主管／管理員）：工作上的溝通要追蹤得到 ──
 // ===================================================================
 // 溝通（v178）：**一套**訊息，取代原本四套
@@ -2733,12 +2698,25 @@ function isComm(t){
   return isTask(t) && !!String(t.assignedBy||"").trim();   // 自己排給自己的工作不是溝通
 }
 // 這一則跟我有關嗎（我發的、或發給我的）
+// ⚠️ kind:"msg"（舊的「找主管／人資說一件事」）的欄位形狀跟其他三種相反：
+//    user 是**發訊的人**，收訊方寫在 to 裡（"boss" 或 "hr"，不是名字）。
+//    v183 之前這裡沒有分開處理，所以主管／人資在「傳訊息」裡**看不到**員工發給
+//    他們的那些 —— 那正是舊的 myMsgFold／msgInboxCard 還得留著的原因。
 function commMine(t){
   const me=currentUser();
+  if(isMsg(t)){
+    if(String(t.user||"")===me) return true;                        // 我發的
+    // 誰收得到照舊由 msgInboxFor() 決定（人資收 hr、經理人收 boss、
+    // 管理員兩種都收）—— 這裡不要自己再寫一份規則，兩份遲早會不一樣。
+    return msgInboxFor(currentRole()).includes(String(t.to||"boss"));
+  }
   return String(t.user||"")===me || String(t.from||"")===me || String(t.assignedBy||"")===me;
 }
 function commFrom(t){ return String(t.from || t.assignedBy || t.user || ""); }
-function commTo(t){ return String(t.user||""); }
+function commTo(t){
+  if(isMsg(t)) return String(t.to||"")==="hr" ? T("人資","HR") : T("主管","Manager");
+  return String(t.user||"");
+}
 // 對方是誰（畫面上要顯示的那個人）
 function commPeer(t){ const me=currentUser(); return commFrom(t)===me ? commTo(t) : commFrom(t); }
 // 最後一次有動靜是什麼時候 —— 排序用，新的在最上面
@@ -2751,9 +2729,17 @@ function commLastAt(t){
 // 這一則有沒有等我做的事（用來排序、標紅點）
 function commWaitingMe(t){
   const me=currentUser();
+  // 舊的「找主管／人資」：收訊方是角色不是名字，要另外問
+  if(isMsg(t)){
+    return String(t.user||"")===me ? (!msgOpen(t) && !t.seen)       // 對方回了，我還沒按知道了
+                                   : msgOpen(t);                    // 發給我這個角色的，我還沒回
+  }
   if(commTo(t)===me && !t.ack) return true;                         // 我還沒按收到
   if(isTracked(t) && commTo(t)===me && !t.done) return true;        // 派給我、還沒做完
   if(commFrom(t)===me && isTracked(t) && t.done && !taskArchived(t)) return true;  // 對方做完了，等我按 OK
+  // 同事訊息：對方接收了、或回了話，就換我看完按 OK 收起來
+  if(commFrom(t)===me && isP2P(t) && !taskArchived(t)
+     && (t.ack || p2pReplied(t) || taskMsgs(t).some(m=>String((m&&m.by)||"")!==me))) return true;
   return false;
 }
 const isTracked=(t)=>isTask(t) && !!String(t.assignedBy||"").trim();
@@ -2762,6 +2748,29 @@ const COMM_SNIP=12;
 function commSnip(s){
   const t=String(s||"").replace(/\s+/g," ").trim();
   return t.length>COMM_SNIP ? t.slice(0,COMM_SNIP)+"…" : (t||T("（沒有內容）","(empty)"));
+}
+// 導覽列小紅點的數字：沒收起來、而且**等我做點什麼**的有幾則。
+// 「有人傳訊給你」是最常見的一種，但等我按 OK 的、等我回的也一樣要提醒 ——
+// 標準就一條：commWaitingMe()，跟「傳訊息」頁最上面那個「等你處理」是同一個數字，
+// 兩邊對不起來的話使用者會不知道該信哪一個。
+function commUnread(){
+  try{
+    if(VIEW_AS || !STATE || !currentUser()) return 0;
+    return commList().filter(t=>!taskArchived(t) && commWaitingMe(t)).length;
+  }catch(e){ return 0; }
+}
+// 從「每日工作」點「回覆」跳過來時，要打開的是哪一則
+let COMM_OPEN="";
+function gotoComm(id){
+  COMM_OPEN=String(id||"");
+  // 跳到「那一則真的在的」分頁 —— 已經收起來的留在進行中頁會找不到，
+  // 按了會像沒反應
+  COMM_TAB = taskArchived(taskById(id)) ? "done" : "open";
+  CUR_TAB="chat"; buildNav(); render();
+  try{ requestAnimationFrame(()=>{
+    const el=document.getElementById("comm_"+COMM_OPEN);
+    if(el && el.scrollIntoView) el.scrollIntoView({block:"center"});
+  }); }catch(e){}
 }
 function commList(){
   return Object.values((STATE&&STATE.tasks)||{})
@@ -2787,13 +2796,23 @@ function commRow(t){
     : t.done ? `<span class="pill ok" style="font-size:10px">${T("回報完成","Done")}</span>`
     : !t.ack ? `<span class="pill em" style="font-size:10px">${T("還沒看","Unopened")}</span>`
     : `<span class="pill wa" style="font-size:10px">${T("進行中","In progress")}</span>`;
-  // 小小的 OK（老闆指定「要有小圖ok」）：只有派的人自己看得到、按得動
-  const okBtn = (tracked && out && canArchiveTask(t))
-    ? (arch ? `<button class="btn sec sm commok" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',false)"
-                 title="${T("放回還沒收的清單","Reopen")}">↩</button>`
-            : `<button class="btn sm commok" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',true)"
-                 title="${T("這件事我認可了，收起來","Archive — I'm happy with it")}">OK</button>`)
-    : "";
+  // 小小的 OK（老闆指定「要有小圖ok」）：只有派的人自己看得到、按得動。
+  // v183：對方回報完成、正等我按的那一顆要**看得出來是一顆鍵**（.on）——
+  // v182 把它做成透明線框，結果在一長串裡完全看不到（老闆：「如果完成要有
+  // 完成可以按，沒有看見」）。還沒回報完成的維持淡的，那時候它不是重點。
+  // 員工視角是唯讀預覽，按不動 —— 但要**畫出來**，不然預覽會看起來像功能不見了。
+  // 我發出去的都收得起來（交辦、同事訊息都算）—— 老闆：「都會留在發訊方，
+  // 直到發訊方按下「ok」才會封存起來」。收到的那一方沒有這顆鍵。
+  const mayArchive = out && !isNotice(t) && (canArchiveTask(t) ||
+    (VIEW_AS && (String(t.assignedBy||t.from||"")===currentUser())));
+  const okBtn = !mayArchive ? ""
+    : VIEW_AS
+      ? `<button class="btn sm commok" disabled title="${T("員工視角是唯讀預覽","Read-only preview")}">OK</button>`
+      : arch
+        ? `<button class="btn sec sm commok" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',false)"
+             title="${T("放回還沒收的清單","Reopen")}">↩</button>`
+        : `<button class="btn sm commok${t.done?" on":""}" onclick="event.stopPropagation();archiveTask('${esc(jsEsc(t.id))}',true)"
+             title="${T("這件事我認可了，收起來","Archive — I'm happy with it")}">${t.done?T("完成","Done"):"OK"}</button>`;
   const head=`<div class="commhead">
       <span class="commdir" title="${out?T("我發的","Sent"):T("收到的","Received")}">${out?"↗":"↘"}</span>
       ${personChip(peer||T("（全體）","(everyone)"), "", null)}
@@ -2806,30 +2825,69 @@ function commRow(t){
   const body=`<div class="commbody">
       <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap">${linkify(t.title)}</div>
       ${tracked&&(t.report||"").trim()?`<div class="muted" style="font-size:12px;margin-top:4px">${T("處理狀況","Progress")}：${linkify(t.report)}</div>`:""}
-      ${(commTo(t)===me && tracked && !t.ack)
+      ${(commTo(t)===me && (tracked||isP2P(t)||isNotice(t)) && !t.ack)
         ? `<div style="margin-top:6px"><button class="btn sm" onclick="ackTask('${esc(jsEsc(t.id))}')">${T("收到","Got it")}</button></div>` : ""}
+      ${/* v183：舊的「找主管／人資說一件事」整個收進這裡。那一種的回覆走 reply 欄位
+            （不是留言串），所以要各自畫 —— 但**畫在同一個地方**，使用者不會知道
+            底下有兩種資料形狀，那正是老闆要的「整合在一起」。 */''}
+      ${/* 舊的同事訊息（v120～v182）回在 reply 欄位，不是留言串 —— 不畫出來的話
+            那些回覆等於憑空消失。新的訊息一律走留言串。 */''}
+      ${(isP2P(t) && p2pReplied(t))
+        ? `<div style="margin-top:6px;font-size:13.5px"><b>${esc(dispName(t.user||""))}</b> ${T("回覆","replied")}
+             <span class="muted" style="font-size:11px">${esc(String(t.replyAt||"").slice(5,16).replace("T"," "))}</span>：${linkify(t.reply)}</div>`
+        : ""}
+      ${(isMsg(t) && String(t.user||"")!==me && msgOpen(t))
+        ? `<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+             <input id="mr_${esc(jsEsc(t.id))}" placeholder="${T("回覆他…","Reply…")}" style="flex:1;min-width:150px"
+               onkeydown="if(enterKey(event))msgReply('${esc(jsEsc(t.id))}')">
+             <button class="btn sm" style="flex:none" onclick="msgReply('${esc(jsEsc(t.id))}')">${T("回覆","Reply")}</button></div>`
+        : ""}
+      ${(isMsg(t) && String(t.user||"")===me && !msgOpen(t))
+        ? `<div style="margin-top:8px">
+             <div style="font-size:13.5px"><b>${esc(dispName(t.replyBy||""))}</b> ${T("回覆","replied")}：${linkify(t.reply)}</div>
+             ${t.seen?"":`<div style="margin-top:6px"><button class="btn sm" onclick="msgSeen('${esc(jsEsc(t.id))}')">${T("知道了","OK")}</button></div>`}</div>`
+        : ""}
+      ${(isMsg(t) && String(t.user||"")===me && msgOpen(t))
+        ? `<div class="row" style="gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
+             <span class="muted" style="font-size:12px">${T("等對方回覆中…","Waiting for a reply…")}</span>
+             <button class="btn sec sm" style="flex:none;padding:3px 9px" onclick="msgDel('${esc(jsEsc(t.id))}')">${T("收回","Withdraw")}</button></div>`
+        : ""}
+      ${/* v183：點開之後也要有得按。老闆說「沒有看見」—— 標題列那一顆很小，
+            展開之後看的是內容，眼睛不會再回到那一行的最右邊去找它。 */''}
+      ${(mayArchive && !arch && !VIEW_AS)
+        ? `<div style="margin-top:8px"><button class="btn sm" onclick="archiveTask('${esc(jsEsc(t.id))}',true)"
+             title="${T("這件事我認可了，收起來","Archive — I'm happy with it")}">${
+             t.done?T("完成，收起來","Done — archive it"):T("我認可了，收起來","Archive it")}</button></div>` : ""}
       ${taskThread(t, true)}
     </div>`;
   // 手機上狀態藥丸會被藏起來（塞不下），改用左邊一條色帶表示 —— 資訊沒有消失
   const stCls = !tracked ? "" : arch ? "" : t.done ? " st-done" : !t.ack ? " st-new" : " st-doing";
-  return `<details class="commrow${arch?" arch":""}${stCls}"><summary>${head}</summary>${body}</details>`;
+  // 從「每日工作」按「回覆」跳過來的那一則要直接是打開的（見 gotoComm）
+  const jumped = COMM_OPEN && COMM_OPEN===String(t.id||"");
+  return `<details id="comm_${esc(String(t.id||""))}" class="commrow${arch?" arch":""}${stCls}${jumped?" jumped":""}"${
+    jumped?" open":""}><summary>${head}</summary>${body}</details>`;
 }
-let COMM_TAB="open";                 // open＝進行中｜arch＝已收起｜all
+// v183（老闆指定）：「這裡的列表寫 今日新增、進行中、已完成」
+//   new  今日新增 —— 今天才進來的（不管做完沒），一天的開頭先看這個
+//   open 進行中   —— 還沒被按 OK 收起來的
+//   done 已完成   —— 按過 OK 收起來的
+let COMM_TAB="open";
 function setCommTab(v){ COMM_TAB=v; render(); }
+const commIsToday=(t)=>String(t.createdAt||t.date||"").slice(0,10)===today;
 function viewChat(){
   const all=commList();
   const open=all.filter(t=>!taskArchived(t));
   const arch=all.filter(taskArchived);
-  const list=COMM_TAB==="arch"?arch:COMM_TAB==="all"?all:open;
+  const fresh=all.filter(commIsToday);
+  const list=COMM_TAB==="done"?arch:COMM_TAB==="new"?fresh:open;
   const wait=open.filter(commWaitingMe).length;
   const tab=(k,label,n)=>`<button class="vtab ${COMM_TAB===k?'on':''}" onclick="setCommTab('${k}')"><span>${label}</span> <span class="vtab-n">${n}</span></button>`;
   const tracks=commTracks();
-  return `<h2>${T("溝通","Messages")}</h2>
+  return `<h2>${T("傳訊息","Messages")}</h2>
   ${wait?`<div class="focusbar"><div><span class="fn warn">${wait}</span><span class="fl">${T("等你處理","Needs you")}</span></div>
     <div><span class="fn">${open.length}</span><span class="fl">${T("進行中","Open")}</span></div>
     <div><span class="fn">${arch.length}</span><span class="fl">${T("已收起","Archived")}</span></div></div>`:""}
-  ${dashAssignTaskCard({title: tracks?T("交辦一件事（會進到對方的今日工作）","Assign work (lands in their daily work)")
-                                :T("傳訊息給同事","Message a colleague"),
+  ${dashAssignTaskCard({title: T("傳訊息","Send a message"),
                         hint: tracks?T("你是主管／人資，所以你發的會變成對方的工作，做完你要按 OK 才收起來。",
                                        "You're a manager — what you send becomes their work, and only closes when you press OK.")
                                    :T("同事之間的訊息：對方看得到、可以一直來回，但不會變成他的工作。",
@@ -2839,10 +2897,14 @@ function viewChat(){
     <div class="muted" style="font-size:12px;margin-top:4px">${T(
       "我發的和收到的都在這裡。收合時只看得到前 "+COMM_SNIP+" 個字 —— 點一下展開看全文、看圖、繼續回。",
       "Everything you sent and received. Tap a line to open the full thread.")}</div>
-    <div class="vtabs" style="margin-top:8px">${tab("open",T("進行中","Open"),open.length)}${tab("arch",T("已收起","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
+    <div class="vtabs" style="margin-top:8px">${tab("new",T("今日新增","New today"),fresh.length)}${tab("open",T("進行中","Open"),open.length)}${tab("done",T("已完成","Done"),arch.length)}</div>
     <div style="margin-top:6px">${list.map(commRow).join("")
       ||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>
   </div>
+  ${/* v183：這三張本來散在「每日工作」跟「看板」上 —— 老闆：「找主管，找hr也是一種
+        溝通呀，全部移到溝通去」。訊息相關的東西只留這一頁，其他頁一張都不留。 */''}
+  ${dashAssignTrackCard()}
+  ${p2pWatchCard()}
   ${asgDraftFold()}`;
 }
 function p2pWatchCard(){
@@ -3058,18 +3120,12 @@ function viewWorkCS(me){
     <div><span class="fn ${nNoReport?'warn':''}">${nNoReport}</span><span class="fl">未回報</span></div>
   </div>
   ${workIssueCard()}
-  ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
-  ${/* v180（老闆指定）：員工看得到**自己的**出勤。
-        以前只有老闆跟人資看得到，員工連自己遲到幾次、這個月上了幾天班都查不到。
-        只有自己那一份，別人的還是看不到。 */''}
-  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
-  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
-  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
-  ${dashAssignTrackCard()}
+  ${/* v183：交辦卡、交辦追蹤、同事來訊、找主管／人資、傳訊息給同事 —— 五張全部
+        搬到「傳訊息」了。老闆：「你就新增了溝通，為什麼每日工作裡又有溝通…
+        這不是說好要整合在一起嗎?」這一頁現在只留「今天要做什麼」。
+        我的出勤也搬走了（跟看板放在一起）。 */''}
   ${fold("之後要做", nFuture, futureTasksBody())}
-  ${myMsgFold()}
-  ${p2pFold()}
   <div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
   </div>`;
@@ -3160,7 +3216,6 @@ function viewWork(){
   ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
         再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
   ${workIssueCard()}
-  ${p2pInboxCard()}
   ${rejCard}
   ${/* 上面那張只講今天要處理的；這一張是最近七天的盤點，預設收起來 */''}
   ${workRecent7Card(me)}
@@ -3172,14 +3227,9 @@ function viewWork(){
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
-  ${/* v180（老闆指定）：剪輯也看得到自己的出勤 */''}
-  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
-  ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
-  ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
-  ${dashAssignTrackCard()}
+  ${/* v183：訊息相關的五張卡全部搬到「傳訊息」；我的出勤搬到「看板」。
+        這一頁只留「今天要做什麼」。 */''}
   ${fold(T("之後要做","Scheduled later"), nFuture, futureTasksBody())}
-  ${myMsgFold()}
-  ${p2pFold()}
   ${fold(T("今天已完成","Finished today"), doneToday.length, doneToday.length
       ? doneToday.map(v=>`<div class="todo done"><span class="tkind">✓</span><div class="tmain">
           <div class="ttitle">${esc(vidTitle(v))}</div>
@@ -4192,7 +4242,10 @@ const taskArchived=(t)=>!!(t && t.archived);
 // 誰可以按 OK：派這件事的人本人。主管另外有一把萬能鑰匙（他要能清掉離職同事留下的）
 function canArchiveTask(t){
   if(VIEW_AS || !t) return false;
-  return String(t.assignedBy||"")===currentUser() || currentRole()==="boss";
+  // v183：同事之間的訊息（kind:"p2p"）發訊人寫在 from、不是 assignedBy。
+  // 老闆訂的規矩是「都會留在發訊方，直到發訊方按下 OK 才會封存起來」——
+  // 那條規矩沒有分「交辦」還是「訊息」，所以兩種都要收得起來。
+  return String(t.assignedBy||t.from||"")===currentUser() || currentRole()==="boss";
 }
 function archiveTask(id, on){
   const t=taskById(id);
@@ -4285,8 +4338,9 @@ function dashAssignTrackCard(){
     ${scope}
     <div class="vtabs" style="margin-top:8px">${tab("open",T("還沒收","Open"),open.length)}${tab("arch",T("已封存","Archived"),arch.length)}${tab("all",T("全部","All"),all.length)}</div>
     <div style="margin-top:6px${list.length>8?';max-height:520px;overflow-y:auto':''}">
-      ${list.map(asgTrackRow).join("")||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>
-    ${asgDraftFold()}`;
+      ${list.map(asgTrackRow).join("")||`<p class="muted" style="font-size:13px;margin:10px 0 0">${T("這一類目前沒有東西","Nothing here")}</p>`}</div>`;
+    // ⚠️ 草稿夾**不放這裡** —— 這張卡跟草稿夾現在同在「傳訊息」頁上，
+    //    兩份的話 asg_draft_* 那些 id 會重複，點編輯會抓到上面那一份。
   // 還沒收的件數放在標題上 —— 收起來的時候也看得到還欠幾件
   return fold(T("📋 交辦追蹤（我派出去的）","📋 What I assigned"), open.length||null, body, ASG_TRACK!=="open");
 }
@@ -4314,21 +4368,23 @@ function dashAssignTaskCard(opts){
         <div class="row" style="justify-content:flex-end;margin-bottom:4px">
           <button class="btn sec sm" style="flex:none;padding:2px 10px;font-size:11px" onclick="asgToggleAll(this)">${T("全選","All")}</button>
         </div>
-        ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship"])}
+        ${/* v183：管理層也要選得到 —— 舊的「找主管／人資說一件事」就是被這一行取代的 */''}
+        ${asgPickerHTML(["editor","intl","cs","mkt","pick","svc","ship","manager","hr","boss"])}
       </div>
     </details>
-    <div style="margin-top:10px"><label>${T("交辦內容","What needs doing")}</label>
-      <input id="asg_txt" placeholder="${T("要交辦的工作內容…（可以直接貼網址）","What needs doing… (URLs become links)")}" onkeydown="if(enterKey(event))assignTaskSel()">
-      <div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
-        <label class="btn sec sm" id="asg_pic_btn" style="flex:none;padding:5px 10px;font-size:12px;cursor:pointer;margin:0"
-          title="${T("附一張圖（會自動壓縮）","Attach an image (auto-compressed)")}">📷 ${T("附圖片","Attach image")}<input type="file" accept="image/*"
+    ${/* v183（老闆指定）：訊息框跟附圖鍵同一行；訊息是多行的，平常只有一行高，
+          打到第二行自己長高（見 asgGrow）。對接窗口整個拿掉，「都不用了」。 */''}
+    <div style="margin-top:10px"><label>${T("訊息內容","Message")}</label>
+      <div class="asgmsg">
+        <textarea id="asg_txt" rows="1" oninput="asgGrow(this)"
+          placeholder="${T("想說的事…（可以直接貼網址）","What's on your mind… (URLs become links)")}"></textarea>
+        <label class="btn sec sm" id="asg_pic_btn"
+          title="${T("附一張圖（會自動壓縮）","Attach an image (auto-compressed)")}">📷<input type="file" accept="image/*"
           style="display:none" onchange="pickAsgPic(this)"></label>
-        <span id="asg_pic_box"></span>
-      </div></div>
-    <div style="margin-top:10px"><label>${T("對接窗口（選填）","Contact person (optional)")}</label>
-      <input id="asg_contact" list="asg_contact_dl" placeholder="${T("選用過的窗口或輸入新的（沒有可留空）","Pick or type a contact (optional)")}" onkeydown="if(enterKey(event))assignTaskSel()">${contactDatalist('asg_contact_dl')}</div>
+      </div>
+      <span id="asg_pic_box"></span></div>
     <div class="row" style="gap:8px;margin-top:10px">
-      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出交辦","Send")}</button>
+      <button class="btn" id="asg_go" style="flex:2" onclick="assignTaskSel()">${T("送出","Send")}</button>
       ${/* 還沒決定要發給誰的，先存起來 —— 存草稿不需要勾任何人 */''}
       <button class="btn sec" id="asg_draft" style="flex:1" onclick="saveDraft()"
         title="${T("還沒決定要發給誰？先存下來，只有你看得到","Not sure who to send it to yet? Save it — only you can see it")}">${
@@ -4345,6 +4401,12 @@ function asgPickerHTML(roles){
   const groups=staffRoleGroups(roles)        // 跟交辦下拉同一套分組，不要自己再分一次
     .map(g=>({label:g.label, people:g.people.filter(u=>u.name!==me)}))
     .filter(g=>g.people.length);
+  // v183：管理員沒有 users 文件（他不是「員工」），所以永遠不會出現在上面那份名單裡。
+  // 但老闆說「找主管，找hr也是一種溝通呀，全部移到溝通去」—— 要能在這裡選得到他，
+  // 舊的「找主管／人資說一件事」才真的被取代掉，而不是換個地方再開一條路。
+  if((roles||[]).includes("boss") && me!==ADMIN_NAME){
+    groups.push({label:T("管理員","Admin"), people:[{name:ADMIN_NAME}]});
+  }
   if(!groups.length) return `<p class="muted" style="font-size:12px;margin:6px 0 0">${T("還沒有可以交辦的同仁","No colleagues to assign to yet")}</p>`;
   return `<div class="asgbox">${groups.map(g=>`
     <div class="asggrp"><div class="asggrp-t">${esc(g.label)}</div>
@@ -4352,7 +4414,7 @@ function asgPickerHTML(roles){
         const c=personColor(u.name);
         return `<label class="asgp" style="border-color:${c.fg}55">
           <input type="checkbox" class="asg_p" value="${esc(u.name)}" onchange="asgCount()">
-          <span style="color:${c.fg}">${esc(u.name)}</span></label>`; }).join("")}</div>
+          <span style="color:${c.fg}">${esc(dispName(u.name))}</span></label>`; }).join("")}</div>
     </div>`).join("")}</div>`;
 }
 // 儀表板：指派毛片給員工（勾選＋收回未認領）
@@ -4609,6 +4671,30 @@ function teamTaskRow(t){
       <span style="flex:none">${st}</span></div></summary>${body}</details>`;
 }
 // 今日成效卡（一人一張）：純文字，沒有任何可以按的東西
+// v183（老闆指定）：「所有人預設統一大小，才會整齊，每人預設 4 行，如果有人太多，
+// 不需要文字說明，點擊會自動打開看全部，再點一次就縮回來」。
+// 高度寫死在 CSS（.tdclamp），不是逐張算 —— 逐張算就不會一樣高，那就白做了。
+// 沒有「展開／收合」四個字：卡片下緣的漸層就是那句話。
+// ⚠️ 展開收合**不寫 onclick**，改用下面那個委派監聽。
+//    「員工的看板是純檢視、按不動任何東西」這條保證，v55／v66／v67／v70／v83
+//    五支測試是靠「這一頁畫出來的 HTML 裡沒有 onclick」在釘的。
+//    在這裡加一個 onclick 會讓那五支變成永遠通不過 —— 而那條保證本身還是對的：
+//    展開看內容不是「操作」，它不會改到任何人的資料。
+function tdClamp(html){ return `<div class="tdclamp">${html}</div>`; }
+try{ document.addEventListener("click", (e)=>{
+  const t=e&&e.target; if(!t||!t.closest) return;
+  const box=t.closest(".tdclamp"); if(!box) return;
+  // 卡片裡的連結／按鈕照常運作，不要被展開收合吃掉
+  if(t.closest("a,button,input,select,textarea,label,details")) return;
+  box.classList.toggle("open");
+}); }catch(e){}
+// 內容真的滿出來的才畫漸層 —— 每張都畫的話，短的卡片會看起來像被切掉。
+// 重繪之後量一次（DOM 進去了才量得到）。
+function tdClampScan(root){
+  try{ (( root||document).querySelectorAll(".tdclamp")||[]).forEach(el=>{
+    el.classList.toggle("over", el.scrollHeight > el.clientHeight + 2);
+  }); }catch(e){}
+}
 function teamDayCard(u, allTasks){
   // isCS＝**被看的人**不剪片（那幾格對他沒意義）；needVideos()＝**看的人**手上有沒有影片資料。
   // 兩個都要問：行銷／客服／出貨沒下載影片，那幾格會全部算成 0 —— 那不是「他今天沒做」，
@@ -4782,10 +4868,10 @@ function teamBoardBody(){
     <td data-label="${T("出勤天數","Days on")}">${m.att}</td>
     <td data-label="${T("交辦完成","Tasks done")}">${m.tAll?`${m.tDone}/${m.tAll}`:"—"}</td></tr>`).join("");
   return `
-  ${currentRole()==="hr"?msgInboxCard():''}
-  ${p2pWatchCard()}
+  ${/* v183：人資的來訊匣、同事訊息監看、人資自己的「找主管」 —— 三張都搬到
+        「傳訊息」了（老闆：「全部移到溝通去」）。看板上只留看板的東西。
+        全體公告留著：那是**發布**，不是一對一的對話。 */''}
   ${["hr","boss"].includes(currentRole())?teamNoticeCompose(staff):''}
-  ${currentRole()==="hr"?myMsgFold():''}
   ${/* v182：篩選 25 個人的下拉與搜尋框是**主管的工具** —— 員工只看得到
         自己那一張卡，擺著它只是佔位子還讓人以為可以看別人。 */''}
   ${seesLeadBoard()?teamFilterBar(everyone, staff):''}
@@ -4795,18 +4881,23 @@ function teamBoardBody(){
     <div><span class="fn ${dayTaskAll&&dayTaskDone<dayTaskAll?'warn':''}">${dayTaskDone}<i>/${dayTaskAll}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     ${vidOK?`<div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>`:''}
   </div>
-  ${/* v180（老闆指定）：**員工只看到自己那張卡＋全隊總數**。
-        以前是 28 張別人的卡、要滑 19.9 個螢幕；掃別人的交辦內容對他自己的工作
-        沒有幫助，上面那排總數才是他要知道的「今天全隊做得怎樣」。
-        主管／人資照舊看得到每一個人 —— 那是他們的工作。 */''}
-  <h3 style="margin:18px 0 10px">${seesLeadBoard()?T("今日成效","Today"):T("我今天","My day")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
+  ${/* v183（老闆改的順序）：「先出現，我今天、我的出勤，然後下面還是把全員的
+        都帶進來」。v180 那版只給員工自己那一張、其他人全部藏起來 —— 他要的是
+        「自己的先出現」，不是「別人的看不到」。所以先自己、再出勤、再全員。
+        全員那一片每張卡**一樣高**（見 .tdclamp）：不一樣高排起來像壞掉的磁磚。 */''}
+  ${(()=>{ const me=(staff.find(u=>u.name===currentUser())
+             || (STATE.users||[]).find(u=>u.name===currentUser()));
+     if(seesLeadBoard() || !me) return "";
+     return `<h3 style="margin:18px 0 10px">${T("我今天","My day")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
+       <div class="teamgrid">${teamDayCard(me, allTasks)}</div>
+       ${/* v183：我的出勤從「每日工作」搬過來 —— 老闆：「員工的『我的出勤』
+             應該和看板放在一起吧」。的確：出勤是看板的東西，不是今天要做的事。 */''}
+       <div style="margin-top:12px">${fold(T("我的出勤","My attendance"), null, myAttendCard())}</div>`; })()}
+  <h3 style="margin:18px 0 10px">${seesLeadBoard()?T("今日成效","Today"):T("大家今天","The team today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
   ${seesLeadBoard()
     ? staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
-        <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")
-    : (()=>{ const me=(staff.find(u=>u.name===currentUser())
-               || (STATE.users||[]).find(u=>u.name===currentUser()));
-        return me ? `<div class="teamgrid">${teamDayCard(me, allTasks)}</div>`
-                  : `<p class="muted" style="font-size:13px">${T("上面那排數字就是今天全隊的狀況。","The numbers above are the whole team's day.")}</p>`; })()}
+        <div class="teamgrid">${g.people.map(u=>tdClamp(teamDayCard(u, allTasks))).join("")}</div>`).join("")
+    : `<div class="teamgrid">${everyone.map(u=>tdClamp(teamDayCard(u, allTasks))).join("")}</div>`}
   ${/* v180：月成效整段收進折疊。熱圖在手機上是 6827px（8 個螢幕）——
         那是月底才看的東西，不該擋在「今天大家在做什麼」後面每天滑過去。
         標題那一行（含換月）留在外面，不點開也知道在看哪個月。 */''}

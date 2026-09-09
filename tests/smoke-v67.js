@@ -72,9 +72,17 @@ ok("有未讀數提示", w.includes("2 則未讀"));
 ok("通知不會混進交辦卡", (()=>{ const seg=w.split("我的今日工作計畫")[1]||""; return !seg.includes("月底前補交健檢報告"); })());
 
 // ── 主管交辦：名稱改了、收到也是小按鈕 ──
-ok("交辦標籤是「主管交辦」", w.includes("主管交辦") && !w.includes("老闆指派"));
+// v183：標籤改成寫出**是誰**交辦的（老闆：「如果是 regina 和 hr 傳的會出現一條
+// 在每日工作」—— 那就要看得出來是誰，不能只寫「主管」）。
+ok("交辦標籤寫得出是誰交辦的", w.includes("交辦 Regina") && !w.includes("老闆指派"));
 ok("交辦的收到也是小按鍵", w.includes(`onclick="ackTask('K1')"`) && !w.includes('style="width:100%" onclick="ackTask('));
-ok("提示文字不寫交辦人名字", w.includes("主管交辦") && !w.includes("Regina 交辦"));
+// v183：留言串搬到「傳訊息」了，這一頁只留一顆「回覆」跳過去
+// （老闆：「但要回覆，溝通還是要跳回聊天室」）。
+{ STATE.tasks.K1.ack=true;                 // 按過「收到」之後才輪到回覆
+  const w2=viewWork();
+  ok("有回覆鍵可以跳到聊天室", w2.includes("gotoComm('K1')"), (w2.match(/gotoComm\([^)]*\)/)||[])[0]);
+  ok("留言串本身不畫在這一頁", !w2.includes("postTaskMsg('K1')"));
+  STATE.tasks.K1.ack=false; }
 
 // ── 不剪片的員工也收得到通知 ──
 reset(); as("小美","cs");

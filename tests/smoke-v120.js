@@ -93,23 +93,32 @@ const MID=Object.keys(STATE.tasks)[0];
 // 第 0 步：收件人有一則待接收
 as("郁莚","editor");
 ok("收件人看得到這則", p2pInbox().map(m=>m.id).includes(MID));
-{ const w=viewWork();
-  ok("收件匣卡片出現", w.includes("同事來訊") && w.includes("明天的毛片我先剪哪一支？"));
-  ok("有「收到」按鈕", w.includes(`p2pAck('${MID}')`));
-  ok("還沒按收到就沒有回覆框", !w.includes(`p2pr_${MID}`)); }
+// v183：同事訊息不再有自己的收件匣／發件匣兩張卡 —— 全部跟交辦、HR 通知、
+// 找主管排在「傳訊息」的同一份清單裡（老闆：「這不是說好要整合在一起嗎?」）。
+// 資料層的三步流程完全沒變（上面與下面那些 p2pInbox／p2pSent 照舊在驗）。
+COMM_TAB="open";
+{ const c=viewChat();
+  ok("收件人在「傳訊息」看得到這則", c.includes("明天的毛片我先剪哪一支？"));
+  ok("有「收到」按鈕", c.includes(`ackTask('${MID}')`));
+  ok("**每日工作上不再有訊息**", (()=>{ const w=viewWork();
+     return !w.includes("同事來訊") && !w.includes("明天的毛片我先剪哪一支？"); })()); }
 as("小葵","editor");
-{ const w=viewWork();
-  ok("發訊人看得到自己發出去的", w.includes("傳訊息給同事") && w.includes("等他按收到"));
-  ok("對方還沒回，發訊人沒有「收到」鍵", !w.includes(`p2pSeen('${MID}')`)); }
+{ const c=viewChat();
+  ok("發訊人也在同一份清單裡看得到", c.includes("明天的毛片我先剪哪一支？"));
+  ok("發訊人有 OK 可以收起來（老闆訂的：留在發訊方直到他按 OK）",
+     c.includes(`archiveTask('${MID}',true)`));
+  ok("**收訊方沒有 OK**（那顆是發訊方的）", (()=>{ as("郁莚","editor");
+     const c2=viewChat(); as("小葵","editor"); return !c2.includes(`archiveTask('${MID}',true)`); })()); }
 
 // 第 ① 步：收件人按「收到」
 as("郁莚","editor"); p2pAck(MID); await wait();
 ok("按了收到會寫進資料庫", STATE.tasks[MID].ack===true && !!STATE.tasks[MID].ackAt);
 ok("按了收到還沒回覆 → 仍留在收件匣", p2pInbox().map(m=>m.id).includes(MID));
-{ const w=viewWork();
-  ok("按了收到之後出現回覆框", w.includes(`p2pr_${MID}`) && w.includes(`p2pReply('${MID}')`)); }
+{ const c=viewChat();
+  ok("按了收到之後可以在聊天室裡回話", c.includes(`postTaskMsg('${MID}')`)); }
 as("小葵","editor");
-ok("發訊人看得到對方已經接收", viewWork().includes("他已經按收到"));
+ok("發訊人這邊亮紅點（對方接收了，換我看）",
+   commUnread()>=1 && commWaitingMe(STATE.tasks[MID])===true);
 
 // 第 ② 步：收件人回覆
 as("郁莚","editor"); fields={["p2pr_"+MID]:"你"};
@@ -119,14 +128,14 @@ fields={["p2pr_"+MID]:"先剪 P271 那支，客戶在等"};
 p2pReply(MID); await wait();
 ok("回覆寫進資料庫", STATE.tasks[MID].reply==="先剪 P271 那支，客戶在等" && !!STATE.tasks[MID].replyAt);
 ok("回覆完就從收件匣消失", !p2pInbox().map(m=>m.id).includes(MID));
-ok("收件匣空了整張卡不出現", p2pInboxCard()==="");
 
 // 第 ③ 步：發訊人看完回覆按「收到」
 as("小葵","editor");
 ok("發訊人這邊還在（還沒按收到）", p2pSent().map(m=>m.id).includes(MID));
-{ const w=viewWork();
-  ok("看得到對方的回覆內容", w.includes("先剪 P271 那支，客戶在等"));
-  ok("出現「收到」鍵", w.includes(`p2pSeen('${MID}')`)); }
+{ const c=viewChat();
+  // 對方是用舊的 reply 欄位回的（不是留言串），這一則的內容在追蹤卡那一段看得到
+  ok("看得到對方的回覆內容", c.includes("先剪 P271 那支，客戶在等"));
+  ok("出現 OK（按了才收起來）", c.includes(`archiveTask('${MID}',true)`)); }
 p2pSeen(MID); await wait();
 ok("按了收到寫進資料庫", STATE.tasks[MID].fromSeen===true && !!STATE.tasks[MID].fromSeenAt);
 ok("三步做完就從發訊人畫面消失", !p2pSent().map(m=>m.id).includes(MID));
@@ -163,7 +172,10 @@ for(const [u,r,should] of [["Regina","manager",true],["管理員","boss",true],
   ok(`${r} ${should?"看得到":"看不到"}同事之間的訊息`, seen===should);
 }
 as("Regina","manager");
-ok("主管的看板上有這張卡", viewTeam().includes("同事之間的訊息"));
+// v183：同事訊息的監看也搬到「傳訊息」了（老闆：「全部移到溝通去」），
+// 看板上只留看板的東西。
+ok("主管在「傳訊息」看得到這張卡", viewChat().includes("同事之間的訊息"));
+ok("**看板上不再有它**", !viewTeam().includes("同事之間的訊息"));
 { const c=p2pWatchCard();
   ok("寫得出誰發給誰", c.includes("小葵") && c.includes("郁莚"));
   ok("寫得出狀態", c.includes("已回覆")); }

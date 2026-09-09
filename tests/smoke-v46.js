@@ -50,7 +50,10 @@ ok("審過的片顯示剪輯完成", h.includes("剪輯完成") && !h.includes("
 WORK_ZONE="shopee"; POOL_FILTER="all";
 h=viewWork();
 ok("我的今日工作：待審核琥珀鍵", h.includes(">待審核</button>") || h.includes("待審核</button>"));
-ok("等審列有「已審過」鍵", h.includes("editorMarkReviewed('W1')") && h.includes("已審過，下一步"));
+// v183：鍵上的字縮短成「已審過」（手機上「已審過，下一步」塞不下會掉到自己一行，
+// 20 支待審就是 20 塊黑磚）。完整說明搬到 title，還是講得出按下去會怎樣。
+ok("等審列有「已審過」鍵", h.includes("editorMarkReviewed('W1')") && h.includes("✓ 已審過"));
+ok("按下去會怎樣還是講得出來（在 title 裡）", h.includes("標記通過，開始上傳雲端"));
 
 // editorMarkReviewed 寫入通過
 { const calls=[]; global.window.DB={ set:async()=>{}, update:async(c,id,p)=>{calls.push([c,id,p]);}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
