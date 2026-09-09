@@ -15,6 +15,11 @@ python3 tools/backup.py
 備份會放在 `~/EC-DR-Backups/ecdr-年月日-時分秒/`。**不用 npm、不用 Firebase CLI、
 不用 service account。**
 
+> **複製指令時整行複製就好。** 這份文件裡的指令區塊刻意不放同行註解——
+> macOS 的 zsh 在終端機互動模式下**不把 `#` 當註解**，跟著複製會讓 `#`
+> 和後面的字被當成參數傳進去，指令就歪了（例如
+> `brew install --cask temurin  # 說明` 會變成去找一個叫 `#` 的套件而失敗）。
+
 > macOS 的 `python3` 由 Xcode 命令列工具提供。第一次執行若跳出「需要安裝命令列工具」
 > 的視窗，按下安裝等幾分鐘就好，之後都不必再裝。
 
@@ -40,10 +45,22 @@ ecdr-20260909-1430/
 
 ### 常用參數
 
+備到外接硬碟或雲端同步夾：
+
 ```bash
-python3 tools/backup.py --to /Volumes/隨身碟    # 備到外接硬碟或雲端同步夾
-python3 tools/backup.py --keep 60             # 保留份數（預設 30）
-python3 tools/backup.py --no-covers           # 跳過封面圖，快很多
+python3 tools/backup.py --to /Volumes/隨身碟
+```
+
+改保留份數（預設 30）：
+
+```bash
+python3 tools/backup.py --keep 60
+```
+
+跳過封面圖（快很多）：
+
+```bash
+python3 tools/backup.py --no-covers
 ```
 
 ### 建議節奏
@@ -82,11 +99,11 @@ python3 tools/backup.py --no-covers           # 跳過封面圖，快很多
 
 ### 還原怎麼跑
 
-```bash
-python3 tools/restore.py                        # 先看有哪些備份
-python3 tools/restore.py --from <備份資料夾>      # 試跑，不會寫入任何東西
-python3 tools/restore.py --from <…> --confirm    # 確定了才真的寫
-```
+| 指令 | 作用 |
+|---|---|
+| `python3 tools/restore.py` | 先看有哪些備份 |
+| `python3 tools/restore.py --from <備份資料夾>` | 試跑，不會寫入任何東西 |
+| `python3 tools/restore.py --from <…> --confirm` | 確定了才真的寫 |
 
 試跑會印出一張表，講清楚每個集合會發生什麼：
 
@@ -112,12 +129,15 @@ python3 tools/restore.py --from <…> --confirm    # 確定了才真的寫
 
 系統目前**沒有維護模式**，最保險的做法是暫時把寫入權限關掉：
 
-```bash
-# 1. 編輯 firebase/firestore.rules，把 signedIn() 暫時改成 false
-# 2. cd firebase && firebase deploy --only firestore:rules
-# 3. 跑還原
-# 4. 把規則改回來，再 deploy 一次
-```
+1. 編輯 `firebase/firestore.rules`，把 `signedIn()` 暫時改成 `false`
+2. 部署：
+
+   ```bash
+   cd ~/EC-DR/firebase && firebase deploy --only firestore:rules
+   ```
+
+3. 跑還原
+4. 把規則改回來，再部署一次
 
 規則生效大約要一分鐘。小團隊的話，口頭喊「大家先不要動」通常也夠用，
 但正式的做法是上面那個。
@@ -139,12 +159,16 @@ python3 tools/restore.py --from <…> --confirm    # 確定了才真的寫
 
 只要你手上有備份資料夾（外接硬碟或 Google Drive 那份）：
 
+先還原程式碼：
+
 ```bash
-# 程式碼
 cd ~ && git clone <備份>/repo.bundle EC-DR && cd EC-DR
 git checkout main
+```
 
-# 資料（Firestore 還在雲端的話這步不用做）
+再還原資料（Firestore 還在雲端的話這步不用做）：
+
+```bash
 python3 tools/restore.py --from <備份> --confirm
 ```
 
@@ -170,22 +194,34 @@ The operation couldn't be completed. Unable to locate a Java Runtime.
 
 裝一次就好，兩種方式擇一：
 
+有 Homebrew 的話：
+
 ```bash
-brew install --cask temurin        # 有 Homebrew 的話
+brew install --cask temurin
 ```
 
 沒有 Homebrew 就到 <https://adoptium.net> 下載 macOS 的 `.pkg`，
-點兩下照精靈裝完即可。裝完在終端機打 `java -version` 有印出版本就成功。
+點兩下照精靈裝完即可。
+
+裝完確認一下，有印出版本號就成功：
+
+```bash
+java -version
+```
 
 > **備份本身完全不需要 Java**，也不需要 npm。只有這個演練需要。
 
 ### 演練步驟
 
-```bash
-# 一次性安裝
-cd ~/EC-DR && npm install --no-save firebase-tools
+一次性安裝：
 
-# 開模擬器 —— 要在 firebase/ 目錄裡跑，才會讀到你的 firestore.rules
+```bash
+cd ~/EC-DR && npm install --no-save firebase-tools
+```
+
+開模擬器。**要在 `firebase/` 目錄裡跑**，才會讀到你的 `firestore.rules`：
+
+```bash
 cd ~/EC-DR/firebase
 npx firebase emulators:start --only firestore --project ec-dr-21416
 ```
