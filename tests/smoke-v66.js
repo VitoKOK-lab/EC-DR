@@ -123,15 +123,25 @@ ok("[intl] 分頁有 Team Board", myTabs().some(t=>t[0]==="team"&&t[1]==="Team B
 reset(); as("小葵","editor");
 let t=viewTeam();
 // v119 分區：看板卡片會寫出片名，所以只列同區的人 —— 台灣看不到 Anna（海外）
-ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>t.includes(n)));
-ok("台灣現在看得到海外同事（v142 不分區）", t.includes("Anna"));
+// v180：這兩條問的是「名單完不完整」，主管才看得到完整名單
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("看板列出同區的所有人（含不剪片的員工）", ["小葵","小美","阿凱"].every(n=>tt.includes(n)));
+  ok("台灣現在看得到海外同事（v142 不分區）", tt.includes("Anna")); }
+// 員工那一邊：今日區塊只有自己
+{ const dayPart=t.split("我今天")[1]?t.split("我今天")[1].split("本月成效")[0]:"";
+  ok("**員工的今日區塊只有自己那一張**",
+     dayPart.includes("小葵") && !dayPart.includes("小美") && !dayPart.includes("阿凱"),
+     {自己:dayPart.includes("小葵"), 小美:dayPart.includes("小美"), 阿凱:dayPart.includes("阿凱")}); }
 { as("Regina","manager"); const tAll=viewTeam(); as("小葵","editor");
   ok("主管兩區的人都看得到", ["小葵","Anna","小美","阿凱"].every(n=>tAll.includes(n))); }
 ok("看板不列管理層與人資", !t.includes("Regina") || !t.split("今日成效")[1].includes("HR小姐"));
-ok("交辦標示為主管交辦（不寫誰）", t.includes("主管交辦") && !t.includes("Regina 交辦"));
-ok("看得到處理狀況", t.includes("處理狀況") && t.includes("已回覆 12 則"));
-ok("看得到還沒接收的", t.includes("還沒接收"));
-ok("看得到自己安排的項目", t.includes("自己安排") && t.includes("出貨對單"));
+// v180（老闆指定）：員工只看到自己那張卡，所以「卡片上寫了什麼」這幾條
+// 一律改用主管的畫面來問 —— 那是這些欄位真正要服務的人。
+{ as("Regina","manager"); const tt=viewTeam(); as("小葵","editor");
+  ok("交辦標示為主管交辦（不寫誰）", tt.includes("主管交辦") && !tt.includes("Regina 交辦"));
+  ok("看得到處理狀況", tt.includes("處理狀況") && tt.includes("已回覆 12 則"));
+  ok("看得到還沒接收的", tt.includes("還沒接收"));
+  ok("看得到自己安排的項目", tt.includes("自己安排") && tt.includes("出貨對單")); }
 ok("不剪片的員工那欄影片數字用 — 帶過", t.includes('data-label="完成上架">—<'));
 ok("頂部摘要有交辦完成", t.includes("交辦完成"));
 ok("純檢視：沒有按鈕", !t.includes("<button"));

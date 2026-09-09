@@ -111,11 +111,15 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("看板小標順序正確", ascending(order(t,[h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)])));
     ok("篩選下拉列得出新職位", t.includes(">行銷（1）") && t.includes(">客服（1）") && t.includes(">出貨（1）"));
     ok("篩選下拉用巴基斯坦", t.includes(">巴基斯坦（1）") && !t.includes(">海外剪輯（")); }
+  // v180（老闆指定）：員工只看到自己那張卡，分組是主管畫面上的事
+  reset(); as("Regina","manager"); CUR_TAB="team";
+  { const t=viewTeam();
+    ok("主管看得到三組（含巴基斯坦）",
+       t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && t.includes("巴基斯坦（")); }
   reset(); as("小葵","editor"); CUR_TAB="team";
   { const t=viewTeam();
-    // v142 拆掉分區：團隊看板不再只看同區，台灣剪輯也看得到巴基斯坦那一組
-    ok("台灣剪輯看得到三組（含巴基斯坦）",
-       t.includes(h4("台灣・剪輯行銷",5)) && t.includes(h4("台灣・其他",4)) && t.includes("巴基斯坦（")); }
+    ok("**員工只有一格（自己那張）**", (t.match(/class="teamgrid"/g)||[]).length===1,
+       (t.match(/class="teamgrid"/g)||[]).length); }
   reset(); as("Regina","manager"); CUR_TAB="flow";
   { const f=viewFlow();
     ok("流程中控三個小標都在", [h4("台灣・剪輯行銷",5),h4("台灣・其他",4),h4("巴基斯坦",1)].every(x=>f.includes(x)));

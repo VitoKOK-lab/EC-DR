@@ -80,22 +80,37 @@ localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","ma
 const hAll=viewTeam();
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 // ── 兩塊：今日成效／本月成效 ──
-ok("有「今日成效」區", h.includes("今日成效") && h.includes(T0));
+// v180（老闆指定）：**員工只看到自己那張卡＋全隊總數**，主管／人資才看得到每一個人。
+// 所以「看得到誰」這幾條一律改用主管的畫面（hAll）來問；員工那邊改問新的規矩。
+ok("主管有「今日成效」區", hAll.includes("今日成效") && hAll.includes(T0));
 ok("有「本月成效」區", h.includes("本月成效") && h.includes(+M.slice(0,4)+" 年 "+(+M.slice(5,7))+" 月"));
 ok("主管看得到兩位剪輯", hAll.includes("小葵") && hAll.includes("Anna"));
-ok("台灣剪輯現在看得到海外同事（v142 不分區）", h.includes("小葵") && h.includes("Anna"));
-ok("人資自己也在名單上（他也要被記錄、由管理員考核）", h.includes("HR小姐"));
+ok("主管看得到海外同事（v142 不分區）", hAll.includes("小葵") && hAll.includes("Anna"));
+ok("人資自己也在主管的名單上（他也要被記錄、由管理員考核）", hAll.includes("HR小姐"));
+// 員工那一邊：只有自己
+ok("**員工看到的是「我今天」不是「今日成效」**", h.includes("我今天") && !h.includes("今日成效"), h.slice(0,160));
+ok("**員工看得到自己那張卡**", h.includes("小葵"));
+// ⚠️ 只能看「今日卡片」那一段 —— 月成效（熱圖／長條圖／月統計表）老闆決定維持公開，
+//    那裡本來就會列出每一個人的名字，拿整頁去比會誤判。
+{ const dayPart=h.split("我今天")[1].split("本月成效")[0]||"";
+  ok("**員工的今日區塊只有自己那一張卡**",
+     dayPart.includes("小葵") && !dayPart.includes("Anna") && !dayPart.includes("HR小姐"),
+     {自己:dayPart.includes("小葵"), Anna:dayPart.includes("Anna"), HR:dayPart.includes("HR小姐")});
+  ok("（對照）主管的今日區塊看得到每一個人",
+     ["小葵","Anna","HR小姐"].every(n=>(hAll.split("今日成效")[1].split("本月成效")[0]||"").includes(n))); }
+ok("但全隊總數還是看得到（那是他要知道的）",
+   h.includes("今日出勤") && h.includes("今日完成") && h.includes("交辦完成"));
 
 // ── 今日成效的數字 ──
 ok("小葵今日完成 2 支", (()=>{ const seg=hAll.split("小葵")[1].split("Anna")[0]; return seg.includes(">2</div><div class=\"l\">今日完成"); })());
-ok("進行中算得出來（1 支）", h.includes(">1</div><div class=\"l\">進行中"));
-ok("交辦完成 1/2", h.includes("1/2</div><div class=\"l\">交辦完成"));
-ok("有上班時間與工時", h.includes("09:00–18:00") && h.includes("工時 9h0m"));
-ok("沒上線的顯示今天還沒上線", h.includes("今天還沒上線"));
-ok("列出今天完成的片名", h.includes("今天完成A") && h.includes("今天完成B"));
+ok("進行中算得出來（1 支）", hAll.includes(">1</div><div class=\"l\">進行中"));
+ok("交辦完成 1/2", hAll.includes("1/2</div><div class=\"l\">交辦完成"));
+ok("有上班時間與工時", hAll.includes("09:00–18:00") && hAll.includes("工時 9h0m"));
+ok("沒上線的顯示今天還沒上線", hAll.includes("今天還沒上線"));
+ok("列出今天完成的片名", hAll.includes("今天完成A") && hAll.includes("今天完成B"));
 // v142 拆掉分區：台灣剪輯也看得到海外做完的片
-ok("海外的片名大家都看得到了", hAll.includes("海外完成片") && h.includes("海外完成片"));
-ok("列出交辦回報內容", h.includes("回覆廠商") && h.includes("已聯絡完成"));
+ok("海外的片名主管看得到（v142 不分區）", hAll.includes("海外完成片"));
+ok("列出交辦回報內容", hAll.includes("回覆廠商") && hAll.includes("已聯絡完成"));
 ok("頂部有今日／本月摘要", h.includes("今日出勤") && h.includes("今日完成") && h.includes("本月完成"));
 
 // ── 本月成效表 ──

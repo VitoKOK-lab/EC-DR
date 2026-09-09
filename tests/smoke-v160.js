@@ -85,8 +85,19 @@ const orderOf=(h, names)=>names.map(n=>h.indexOf(">"+n+"<")>=0?h.indexOf(">"+n+"
 // 天數是管理用的資訊，剪輯自己的頁面刻意不顯示（canSeeEditDays 那條規矩）
 { reset([ v_("久",{claimedAt:D(-12)+"T09:00:00"}) ], "小葵","editor");
   const h=viewWork();
+  // ⚠️ 原本第二個條件是 `!/\d+ 天/` —— 一網打盡整頁任何「N 天」。
+  //    v180 每日工作多了「我的出勤」（裡面有「9 月出勤 0 天」），那條就被誤傷了。
+  //    要釘的是**影片的接手天數**，所以改成直接問那兩個產生器的輸出：
+  //    daySmall() 的「第 N 天／今天領」與 dayBadge() 的天數藥丸。
+  //    另外補一條反面：主管**看得到**，證明這道防護不是因為根本沒資料才過。
   ok("剪輯自己看不到「第幾天」（那是刻意的，別繞過去）",
-     !/第 \d+ 天/.test(h) && !/\d+ 天/.test(h.replace(/[^>]*天氣[^<]*/g,"")), h.match(/\d+ 天/g)); }
+     !/第 \d+ 天/.test(h) && !/今天領/.test(h) && !/dayBadge/.test(h),
+     {第幾天:h.match(/第 \d+ 天/g), 今天領:/今天領/.test(h)});
+  ok("（前提）canSeeEditDays 對剪輯是 false", canSeeEditDays()===false); }
+{ reset([ v_("久",{claimedAt:D(-12)+"T09:00:00"}) ], "Regina","manager");
+  ok("（對照）主管看得到天數 —— 這道防護不是因為沒資料才過",
+     canSeeEditDays()===true && /第 \d+ 天|今天領/.test(daySmall(STATE.videos[0])),
+     daySmall(STATE.videos[0])); }
 
 // ══════════ ② 依接手日排序，新的在上面 ══════════
 { reset([ v_("舊",{claimedAt:D(-10)+"T09:00:00"}), v_("新",{claimedAt:D(0)+"T09:00:00"}),

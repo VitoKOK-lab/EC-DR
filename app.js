@@ -877,7 +877,8 @@ const GLOBAL_COLLS=["users","settings"];
 const TAB_DEPS={
   attend:   ["shifts"],
   team:     ["videos","tasks","shifts"],
-  work:     ["videos","tasks"],
+  // v180：每日工作多了「我的出勤」→ 也要盯 shifts，不然打完卡不會更新
+  work:     ["videos","tasks","shifts"],
   videos:   ["videos"],
   videosDF: ["videos"],
   output:   ["videos"],
@@ -3034,6 +3035,10 @@ function viewWorkCS(me){
   ${workIssueCard()}
   ${p2pInboxCard()}
   ${todayListCard(tasks, [], ()=>"", ()=>"")}
+  ${/* v180（老闆指定）：員工看得到**自己的**出勤。
+        以前只有老闆跟人資看得到，員工連自己遲到幾次、這個月上了幾天班都查不到。
+        只有自己那一份，別人的還是看不到。 */''}
+  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
   ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
   ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
   ${dashAssignTrackCard()}
@@ -3142,6 +3147,8 @@ function viewWork(){
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
+  ${/* v180（老闆指定）：剪輯也看得到自己的出勤 */''}
+  ${fold(T("我的出勤","My attendance"), null, myAttendCard())}
   ${/* v174：交辦不再是主管專用 —— 同事之間也要派得動、也要看得到自己派出去的做完沒 */''}
   ${dashAssignTaskCard({title:T("交辦一件事給同事","Assign something to a colleague")})}
   ${dashAssignTrackCard()}
@@ -3614,40 +3621,54 @@ function myAttendCard(){
   const a=attendOf((STATE.shifts||{})[shiftId(me,today)]||null);
   const s=attSum(me, ym);
   const cell=(v,l,muted)=>`<div><div class="n ${muted?'muted':''}">${v}</div><div class="l">${l}</div></div>`;
+  // v180：這張卡從「只有人資看得到」變成**每個人都看得到自己的**（老闆指定），
+  // 所以連海外同仁也會看到 —— 每一句都要走 T()，不然英文介面會整張漏中文。
   return `<div class="card" style="border-color:var(--gold)">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">我的出勤 <span class="muted" style="font-size:12px;font-weight:400">${esc(me)}</span></b>
-      <span class="muted" style="font-size:12px">${w.flex?"變動工時（不判遲到早退，只記工時）":"正常班 "+esc(w.start)+"–"+esc(w.end)}</span></div>
+      <b style="font-size:16px">${T("我的出勤","My attendance")} <span class="muted" style="font-size:12px;font-weight:400">${esc(me)}</span></b>
+      <span class="muted" style="font-size:12px">${w.flex
+        ?T("變動工時（不判遲到早退，只記工時）","Flexible hours — hours logged, no late/early check")
+        :T("正常班 "+esc(w.start)+"–"+esc(w.end), "Shift "+esc(w.start)+"–"+esc(w.end))}</span></div>
     <div class="mstat" style="margin-top:10px">
-      ${cell(a.in?esc(String(a.in).slice(11,16)):"—","今天上班",!a.in)}
-      ${cell(a.out?esc(String(a.out).slice(11,16)):(a.in?"上班中":"—"),"今天下班",!a.out)}
-      ${cell(minToHm(a.work),"今天工時",a.work==null)}
-      ${cell(minToHm(s.work),`${m+1} 月累計工時`,!s.work)}
+      ${cell(a.in?esc(String(a.in).slice(11,16)):"—",T("今天上班","Clock in"),!a.in)}
+      ${cell(a.out?esc(String(a.out).slice(11,16)):(a.in?T("上班中","On shift"):"—"),T("今天下班","Clock out"),!a.out)}
+      ${cell(minToHm(a.work),T("今天工時","Hours today"),a.work==null)}
+      ${cell(minToHm(s.work),T((m+1)+" 月累計工時","Hours this month"),!s.work)}
     </div>
     <div class="muted" style="font-size:12px;margin-top:8px">
-      ${m+1} 月出勤 ${s.days} 天${w.flex?"":`・遲到 ${s.late} 次・早退 ${s.early} 次`}${s.noOut?`・${s.noOut} 天沒打下班`:""}
-      ${st?`　<span style="opacity:.75">出勤自 ${esc(st)} 起算</span>`:'　<span style="opacity:.75">還沒開始起算（設定密碼後才開始）</span>'}</div>
-    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>我這個月的每日紀錄<span class="n">${attRows(me,ym).length}</span></summary>
+      ${T((m+1)+" 月出勤 "+s.days+" 天", s.days+" days on this month")}${w.flex?"":T(
+        "・遲到 "+s.late+" 次・早退 "+s.early+" 次", " · late "+s.late+" · left early "+s.early)}${
+        s.noOut?T("・"+s.noOut+" 天沒打下班", " · "+s.noOut+" days without clock-out"):""}
+      ${/* ⚠️ 這裡以前是一個全形空白（U+3000）當間距 —— 那也算中文標點，
+             海外介面的語言檢查會抓到（smoke-v94）。改用 CSS 的 margin。 */''}
+      ${st?`<span style="opacity:.75;margin-left:10px">${T("出勤自 "+esc(st)+" 起算","Counted from "+esc(st))}</span>`
+          :`<span style="opacity:.75;margin-left:10px">${T("還沒開始起算（設定密碼後才開始）","Not counted yet — set your password first")}</span>`}</div>
+    ${attRows(me,ym).length?`<details class="fold" ${foldState("work.attend", false)} style="margin-top:10px"><summary>${T("我這個月的每日紀錄","My daily records")}<span class="n">${attRows(me,ym).length}</span></summary>
       <div class="foldbody">${attDetailTable(me, ym)}</div></details>`:""}
   </div>`;
 }
 // 一個人某個月的每日出勤明細表（個人明細與「我的出勤」共用）
+// v180：這張表現在也長在每個人的「我的出勤」裡（老闆指定），海外同仁看得到，
+// 所以每一格都要走 T() —— 以前它只出現在中文的出勤頁，寫死中文沒事。
+const WD_EN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function attDetailTable(name, ym){
   const list=attRows(name, ym);
   const fix=canFixAttend();
+  const wd=(ds)=>T("（"+weekdayZh(ds)+"）"," "+WD_EN[new Date((ds||today)+"T00:00:00").getDay()]);
   return `<table class="responsive" style="margin-top:8px">
-    <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工時</th><th>狀況</th>${fix?"<th>補登</th>":""}</tr></thead>
+    <thead><tr><th>${T("日期","Date")}</th><th>${T("上班","In")}</th><th>${T("下班","Out")}</th><th>${T("工時","Hours")}</th><th>${T("狀況","Status")}</th>${fix?`<th>${T("補登","Fix")}</th>`:""}</tr></thead>
     <tbody>${list.map(sh=>{ const a=attendOf(sh); const d=a.geo?officeDist(a.geo):null;
-      const f=!a.counted ? "未列入計算"
-        : [a.late>0?`遲到 ${a.late} 分`:'', a.early>0?`早退 ${a.early} 分`:'', a.auto?'系統補下班':'',
-           (d!=null&&d>500)?`離公司 ${d} 公尺`:''].filter(Boolean).join("・");
+      const f=!a.counted ? T("未列入計算","Not counted")
+        : [a.late>0?T(`遲到 ${a.late} 分`,`late ${a.late}m`):'', a.early>0?T(`早退 ${a.early} 分`,`left early ${a.early}m`):'',
+           a.auto?T('系統補下班','auto clock-out'):'',
+           (d!=null&&d>500)?T(`離公司 ${d} 公尺`,`${d}m from office`):''].filter(Boolean).join(T("・"," · "));
       const normal=a.counted&&!f;
-      return `<tr><td data-label="日期">${esc(String(sh.date).slice(5))}（${weekdayZh(sh.date)}）</td>
-        <td data-label="上班">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
-        <td data-label="下班">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
-        <td data-label="工時">${minToHm(a.work)}</td>
-        <td data-label="狀況" class="${normal?'':'muted'}">${normal?'正常':esc(f)}${attManualPill(sh)}</td>
-        ${fix?`<td data-label="補登">${attFixBtn(name, sh.date)}</td>`:""}</tr>`; }).join("")}</tbody></table>`;
+      return `<tr><td data-label="${T("日期","Date")}">${esc(String(sh.date).slice(5))}${wd(sh.date)}</td>
+        <td data-label="${T("上班","In")}">${esc(String(sh.clockIn||"").slice(11,16))||"—"}</td>
+        <td data-label="${T("下班","Out")}">${esc(String(sh.clockOut||"").slice(11,16))||"—"}</td>
+        <td data-label="${T("工時","Hours")}">${minToHm(a.work)}</td>
+        <td data-label="${T("狀況","Status")}" class="${normal?'':'muted'}">${normal?T('正常','OK'):esc(f)}${attManualPill(sh)}</td>
+        ${fix?`<td data-label="${T("補登","Fix")}">${attFixBtn(name, sh.date)}</td>`:""}</tr>`; }).join("")}</tbody></table>`;
 }
 function viewAttend(){
   const [y,m]=attYM(); const ym=`${y}-${String(m+1).padStart(2,"0")}`;
@@ -4742,10 +4763,23 @@ function teamBoardBody(){
     <div><span class="fn ${dayTaskAll&&dayTaskDone<dayTaskAll?'warn':''}">${dayTaskDone}<i>/${dayTaskAll}</i></span><span class="fl">${T("交辦完成","Tasks done")}</span></div>
     ${vidOK?`<div><span class="fn">${monDone}</span><span class="fl">${T("本月完成","Done this month")}</span></div>`:''}
   </div>
-  <h3 style="margin:18px 0 10px">${T("今日成效","Today")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
-  ${staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
-    <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")}
+  ${/* v180（老闆指定）：**員工只看到自己那張卡＋全隊總數**。
+        以前是 28 張別人的卡、要滑 19.9 個螢幕；掃別人的交辦內容對他自己的工作
+        沒有幫助，上面那排總數才是他要知道的「今天全隊做得怎樣」。
+        主管／人資照舊看得到每一個人 —— 那是他們的工作。 */''}
+  <h3 style="margin:18px 0 10px">${seesLeadBoard()?T("今日成效","Today"):T("我今天","My day")} <span class="muted" style="font-size:13px;font-weight:400">${today}${T("（"+weekdayZh(today)+"）","")}</span></h3>
+  ${seesLeadBoard()
+    ? staffByGroup(staff).map(g=>`<h4 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.06em">${T(g.zh,g.en)}${paren(g.people.length)}</h4>
+        <div class="teamgrid">${g.people.map(u=>teamDayCard(u, allTasks)).join("")}</div>`).join("")
+    : (()=>{ const me=(staff.find(u=>u.name===currentUser())
+               || (STATE.users||[]).find(u=>u.name===currentUser()));
+        return me ? `<div class="teamgrid">${teamDayCard(me, allTasks)}</div>`
+                  : `<p class="muted" style="font-size:13px">${T("上面那排數字就是今天全隊的狀況。","The numbers above are the whole team's day.")}</p>`; })()}
+  ${/* v180：月成效整段收進折疊。熱圖在手機上是 6827px（8 個螢幕）——
+        那是月底才看的東西，不該擋在「今天大家在做什麼」後面每天滑過去。
+        標題那一行（含換月）留在外面，不點開也知道在看哪個月。 */''}
   <h3 style="margin:24px 0 10px;display:flex;align-items:center;flex-wrap:wrap">${ym===curYM?T("本月成效","This month"):T("月成效","Monthly")}${teamMonthPicker(ym)}</h3>
+  ${fold(T("看圖表與逐人統計","Charts & per-person stats"), staff.length, `
   ${vidOK?teamHeatCard(staff, ym):''}
   ${vidOK?teamBarCard(months, ym):''}
   ${(vidOK&&staff.some(noEdit))?`<div class="muted" style="font-size:12px;margin:-4px 0 10px">${T(
@@ -4754,7 +4788,7 @@ function teamBoardBody(){
   <div class="card">
     <table class="responsive"><thead><tr><th>${T("成員","Member")}</th>${vidOK?`<th>${T("完成上架","Published")}</th><th>${T("剪片速度","Days/clip")}</th><th>${T("平均工時","Avg time")}</th><th>${T("帶商品","With product")}</th>`:''}<th>${T("出勤天數","Days on")}</th><th>${T("交辦完成","Tasks done")}</th></tr></thead>
     <tbody>${rows}</tbody></table>
-  </div>`;
+  </div>`)}`;
 }
 // ===================================================================
 // 看板（v180）：儀表板 ＋ 流程中控 ＋ 團隊看板 → 併成一頁、分兩層
