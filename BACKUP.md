@@ -157,19 +157,51 @@ python3 tools/restore.py --from <備份> --confirm
 
 備份最大的風險不是沒做，是**做了但救不回來**。
 
-**演練絕對不要拿正式資料庫做。** 用 Firestore 模擬器，完全不會碰到線上資料：
+**演練絕對不要拿正式資料庫做。** 用 Firestore 模擬器，完全不會碰到線上資料。
+
+### 前置：模擬器需要 Java
+
+模擬器是 Java 程式，macOS 預設沒有裝。沒裝會看到：
+
+```
+Error: Process `java -version` has exited with code 1.
+The operation couldn't be completed. Unable to locate a Java Runtime.
+```
+
+裝一次就好，兩種方式擇一：
+
+```bash
+brew install --cask temurin        # 有 Homebrew 的話
+```
+
+沒有 Homebrew 就到 <https://adoptium.net> 下載 macOS 的 `.pkg`，
+點兩下照精靈裝完即可。裝完在終端機打 `java -version` 有印出版本就成功。
+
+> **備份本身完全不需要 Java**，也不需要 npm。只有這個演練需要。
+
+### 演練步驟
 
 ```bash
 # 一次性安裝
-npm install --no-save firebase-tools
+cd ~/EC-DR && npm install --no-save firebase-tools
 
-# 開模擬器（另一個終端機視窗）
+# 開模擬器 —— 要在 firebase/ 目錄裡跑，才會讀到你的 firestore.rules
+cd ~/EC-DR/firebase
 npx firebase emulators:start --only firestore --project ec-dr-21416
+```
 
-# 對模擬器跑完整還原
+看到 `firestore: Firestore Emulator logging to firestore-debug.log` 就是起來了。
+**這個視窗不要關**，另開一個終端機視窗跑還原：
+
+```bash
+cd ~/EC-DR
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
     python3 tools/restore.py --from ~/EC-DR-Backups/<最新那份> --confirm
 ```
+
+> 在 repo 根目錄跑模擬器會出現 `Could not find config (firebase.json) so using defaults`，
+> 那是因為 `firebase.json` 在 `firebase/` 子目錄裡。用預設值也能演練還原，
+> 但不會套用你的安全規則，所以建議照上面 `cd firebase` 再跑。
 
 只要設了 `FIRESTORE_EMULATOR_HOST`，腳本就只會打模擬器。畫面上會標示
 「🧪 模擬器模式（不會碰到正式資料庫）」——**沒看到這行就不要按下去**。

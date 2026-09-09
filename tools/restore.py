@@ -20,11 +20,13 @@ EC-DR 還原 —— 把備份寫回 Firestore。
 
 演練（強烈建議先做過一次，沒演練過的還原腳本等於沒有還原能力）：
 
-    npx firebase emulators:start --only firestore --project ec-dr-21416
+    cd firebase && npx firebase emulators:start --only firestore --project ec-dr-21416
     FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \\
         python3 tools/restore.py --from <備份> --confirm
 
     加了那個環境變數就只會打模擬器，完全不會碰到正式資料庫。
+    模擬器需要 Java（macOS 預設沒有，見 BACKUP.md）；備份本身則不需要。
+    要在 firebase/ 目錄裡啟動才會讀到 firestore.rules。
 """
 
 import argparse
