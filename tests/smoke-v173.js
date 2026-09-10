@@ -75,8 +75,12 @@ function reset(videos, schedule, who, role){
   const l=viewCal();
   ok("切到清單：畫的是表格", l.includes('class="vtable callist"'), l.slice(0,400));
   ok("切到清單：月曆就不畫了（不要兩個疊在一起）", !/<div class="cal">/.test(l));
-  ok("三個欄位：日期／時間／影片貼文文案",
-     l.includes(">日期<") && l.includes(">時間<") && l.includes(">影片貼文文案<"), (l.match(/<th>[^<]*<\/th>/g)||[]));
+  // v194（老闆指定）：「日期跟時間不需要佔到兩個格子，他在同一個就可以了」——
+  // 三欄併成兩欄。日期與時間都還在（下面「時間印出來了／日期印出來了」兩條在盯），
+  // 只是同一格；省下來的寬度給貼文文案。
+  ok("兩個欄位：日期・時間／影片貼文文案",
+     l.includes(">日期・時間<") && l.includes(">影片貼文文案<") && !l.includes(">時間</th>"),
+     (l.match(/<th>[^<]*<\/th>/g)||[]));
   calSetMode("grid"); ok("切得回月曆", CAL_MODE==="grid" && viewCal().includes('class="cal"')); }
 
 // ══════════ ② 印的是貼文文案，不是編號 ══════════
@@ -88,7 +92,14 @@ function reset(videos, schedule, who, role){
   ok("**沒有印編號**", !/>777[ <]/.test(l) && !l.includes("777 這才是"), (l.match(/777[^<]{0,20}/g)||[]));
   ok("貼文後面那一串 #標籤 不要塞進清單（會把每一列撐成三行）", !l.includes("#珠寶"));
   ok("時間印出來了", l.includes("12:00"));
-  ok("日期印出來了", l.includes(`${M}/3`)); }
+  ok("日期印出來了", l.includes(`${M}/3`));
+  // v194：兩者要在**同一個 <td>** 裡。分兩格也一樣「印出來了」，
+  // 所以上面兩條擋不住改回去 —— 這一條才是在盯老闆要的那件事。
+  { const row=l.slice(l.indexOf(`${M}/3`)); const end=row.indexOf("</td>");
+    ok("**日期跟時間在同一格**（不是又拆回兩格）",
+       end>0 && row.slice(0,end).includes('class="cl-tm"') && row.slice(0,end).includes("12:00"),
+       row.slice(0,end>0?end:200)); }
+  ok("時間是小字（空間讓給文案）", /\.cl-tm\{[^}]*font-size:1[01]/.test(HTML), (HTML.match(/\.cl-tm\{[^}]*\}/)||[])[0]); }
 // 沒填貼文文案 → 退回原始片名，不可以變成空白列
 { reset([v_("V2",{name:"", rawName:"編號32 生完老五 加斯坦奶爸餵奶戴娃上崗", scheduledDate:D(4)})]);
   calSetMode("list");

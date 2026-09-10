@@ -821,7 +821,7 @@
   }
   table.vtable{margin-top:4px;table-layout:fixed}
   /* 月排程「清單」檢視：整個月一張表（日期／時間／貼文文案）。
-     ⚠️ 這張表**不加** .responsive —— 只有三欄，手機上直接橫著看就好；
+     ⚠️ 這張表**不加** .responsive —— 只有兩欄（v194 把日期與時間併成一欄），手機上直接橫著看就好；
      套 .responsive 會被拆成一張一張的卡，反而失去「一路往下核對」的作用。
      文案要能整段換行，所以在這裡把 vtable 的 nowrap／overflow 收掉。 */
   table.callist{table-layout:fixed;min-width:340px}
@@ -845,10 +845,24 @@
      整個月要滑非常久，而真正要看的「還沒剪好／還沒審／缺商品」被埋在文字後面。
      手機上片名切成一行（超過就 …，點下去照樣打得開看全文），警示標籤自己一行 ——
      沒問題的那幾列就變成一行，有問題的才佔兩行，一眼掃得出哪幾天有事。 */
+  /* v194（老闆指定）：「日期跟時間不需要佔到兩個格子，他在同一個就可以了，然後時間
+     數字可以小一點，空間要留給文字」。兩欄併成一欄，時間縮成小字接在日期後面。
+     ⚠️ 欄寬寫在 CSS 不寫在 <col style>：inline style 蓋得過 media query，
+        寫在標籤上手機就縮不了。
+     ⚠️ 時間要跟日期**同一行**，不可以 display:block 排到下面去 ——
+     實測（正式資料、390px、九月 101 支）排到下面會讓每天的第一列多一行：
+     整頁 4,161px → 4,696px、一行就結束的列 84 → 61，等於比不改還糟。 */
+  table.callist col.cl-cw{width:108px}
+  table.callist td.cl-when{white-space:nowrap}
+  table.callist .cl-dt{white-space:nowrap}
+  table.callist .cl-tm{margin-left:5px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   @media(max-width:600px){
     table.callist td .cl-t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     table.callist td{padding:6px 8px}
     table.callist td .misspill,table.callist td>.pill{margin:3px 4px 0 0}
+    table.callist col.cl-cw{width:100px}
+    table.callist td.cl-when{padding-right:4px}
+    table.callist .cl-tm{margin-left:4px;font-size:10.5px}
   }
   table.callist tbody tr:hover{background:var(--panel2)}
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
@@ -932,7 +946,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=f0785407f206"></script>
-<script type="module" src="fb.js?v=f0785407f206"></script>
+<script src="app.js?v=5f396517db70"></script>
+<script type="module" src="fb.js?v=5f396517db70"></script>
 </body>
 </html>

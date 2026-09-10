@@ -94,19 +94,19 @@ const labels=()=>myTabs().map(t=>t[1]);
 // 看板真的畫得出來，而且分兩層
 { reset(); as("Regina","manager");
   const h=viewBoard();
-  ok("主管的看板有備片存量（原本在流程中控）", h.includes("備片存量"));
+  ok("主管的看板有新片存量（原本在流程中控）", h.includes("新片存量"));   // v194 改名
   ok("主管的看板有毛片庫存（原本在流程中控）", h.includes("毛片庫存"));
   ok("主管的看板有當日進度（原本在儀表板）", h.includes("工作進度與交辦回報"));
   ok("主管的看板也有下半部（團隊今天在做什麼）", h.includes("團隊今天在做什麼")); }
 { reset(); as("小葵","editor");
   const h=viewBoard();
   ok("**員工的看板沒有主管那一層**",
-     !h.includes("備片存量") && !h.includes("毛片庫存") && !h.includes("工作進度與交辦回報"), h.slice(0,200));
+     !h.includes("新片存量") && !h.includes("毛片庫存") && !h.includes("工作進度與交辦回報"), h.slice(0,200));
   ok("但員工的看板還是有東西（不是空白頁）", h.includes("我今天")); }
 { reset(); as("管理員","boss");
   ok("員工視角預覽也是員工版（預覽要像真的）", (()=>{
     VIEW_AS={name:"小葵",role:"editor"}; const h=viewBoard(); VIEW_AS=null;
-    return !h.includes("備片存量"); })()); }
+    return !h.includes("新片存量"); })()); }
 
 // ══════════ ③ 操作紀錄與回收桶收進設定 —— 但一定要有入口 ══════════
 { reset(); as("管理員","boss");
