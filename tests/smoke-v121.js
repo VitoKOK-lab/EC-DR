@@ -85,7 +85,9 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 // 這一條要守的事沒變 —— 數字與勾得到的列數必須一致，而且不准截斷。
 reset(); as("Regina","manager");
 { const d=viewDashboard();
-  const m=d.match(/未指派 <b>(\d+)<\/b> 支/);
+  // v189：那個數字加了 id（搜尋時只換這一塊，不整頁重畫），所以正規式要放行屬性。
+  // 要驗的事沒變：畫面上寫幾支，清單裡就要有幾個勾得到的框。
+  const m=d.match(/未指派 <b[^>]*>(\d+)<\/b> 支/);
   const boxes=count(d,/class="afp_vid"/g);
   ok("未指派的數字抓得到", !!m);
   ok(`未指派 ${m&&m[1]} 支 → 清單就有 ${boxes} 個勾選框`, !!m && boxes===+m[1]);

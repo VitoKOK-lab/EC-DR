@@ -156,15 +156,19 @@ const U=(o)=>Object.assign({name:"泓儒",role:"editor"},o||{});
   VIEW_AS="泓儒";
   ok("員工視角（唯讀預覽）底下一律不行", canAssignWork()===false); VIEW_AS=null; }
 
-// 入口：他沒有儀表板那一頁，卡片要出現在他自己的「上班計畫」
+// 入口：v190 起在**看板**上（跟 Regina 的同一個位置）。
+// 老闆回報「鴻儒要分配影片給別人剪輯那個畫面我找不到」—— 本來藏在「每日工作」
+// 往下 37% 而且是收起來的折疊；Regina 的同一張卡在看板上，小主管當然去看板找。
 { reset([ v_("F") ], "泓儒","editor", [{name:"泓儒",role:"editor",canAssign:true},{name:"小葵",role:"editor"}]);
-  const h=viewWork();
-  ok("**被授權的人在上班計畫看得到指派卡**", h.includes("指派毛片給同事") && /assignFootage\(\)/.test(h),
-     h.includes("指派毛片給同事"));
-  ok("裡面選得到別的剪輯", /afp_who/.test(h) && h.includes("小葵")); }
+  const b=viewBoard();
+  ok("**被授權的人在看板上看得到指派卡**", b.includes("指派毛片給員工") && /assignFootage\(\)/.test(b),
+     b.slice(0,160));
+  ok("裡面選得到別的剪輯", /afp_who/.test(b) && b.includes("小葵"));
+  ok("**每日工作上不再有一份**（同一件事不要兩個地方各一份）",
+     !/assignFootage\(\)/.test(viewWork())); }
 { reset([ v_("F") ], "小葵","editor");
-  const h=viewWork();
-  ok("沒被授權的人看不到那張卡", !h.includes("指派毛片給同事") && !/assignFootage\(\)/.test(h)); }
+  ok("沒被授權的人看不到那張卡（看板與每日工作都沒有）",
+     !/assignFootage\(\)/.test(viewBoard()) && !/assignFootage\(\)/.test(viewWork())); }
 
 // 真正的擋門在寫入那一支，不是只有畫面不畫
 (async()=>{
