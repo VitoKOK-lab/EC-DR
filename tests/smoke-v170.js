@@ -95,7 +95,9 @@ const pickPic=(f)=>{ const inp=el(); inp.files=[f]; return pickAsgPic(inp); };
   reset(vs); as("Regina","manager");
   const f=viewFlow(), d=viewDashboard();
   const fm=f.match(/還有 <b>(\d+)<\/b> 支沒有指派/);
-  const dm=d.match(/未指派 <b>(\d+)<\/b> 支/);
+  // v189：那個數字加了 id（搜尋時只換這一塊，不整頁重畫），所以正規式要放行屬性。
+  // 要驗的事沒變：畫面上寫幾支，清單裡就要有幾個勾得到的框。
+  const dm=d.match(/未指派 <b[^>]*>(\d+)<\/b> 支/);
   const n=(d.match(/class="afp_vid"/g)||[]).length;
   ok("中控／儀表板／實際勾選框三個數字一致",
      !!fm && !!dm && +fm[1]===+dm[1] && +dm[1]===n, {中控:fm&&fm[1], 儀表板:dm&&dm[1], 勾選框:n}); }

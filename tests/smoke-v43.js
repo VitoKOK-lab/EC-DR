@@ -75,7 +75,9 @@ ok("中控會告訴人去哪裡指派", h.includes("儀表板"));
   // v170：清單在儀表板上，不在中控
   const f=viewDashboard();
   const n=(f.match(/class="afp_vid"/g)||[]).length;
-  const m=f.match(/未指派 <b>(\d+)<\/b> 支/);
+  // v189：那個數字加了 id（搜尋時只換這一塊，不整頁重畫），所以正規式要放行屬性。
+  // 要驗的事沒變：畫面上寫幾支，清單裡就要有幾個勾得到的框。
+  const m=f.match(/未指派 <b[^>]*>(\d+)<\/b> 支/);
   ok("未指派的數字與清單列數一致", !!m && n===+m[1], {n, m:m&&m[1]});
   ok("超過 20 筆也全部列出來", n>20 && f.includes("大量毛片39"), n);
   { const fl=viewFlow(); const mm=fl.match(/還有 <b>(\d+)<\/b> 支沒有指派/);
