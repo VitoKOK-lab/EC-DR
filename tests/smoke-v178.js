@@ -261,10 +261,11 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
 { reset([]); as("小葵","editor");
   ok("一般剪輯不是小主管", isSubLead()===false && canAssignWork()===false && seesLeadBoard()===false); }
 // 「指派影片」這個能力真的還在（不能因為收緊了就把他原本有的也砍掉）
+// v190：那張卡搬到看板了（跟 Regina 的同一個位置）
 { reset([]); as("泓儒","editor");
-  ok("小主管的上班計畫上還有「指派毛片給同事」", /assignFootage\(\)/.test(viewWork()), viewWork().slice(0,120)); }
+  ok("小主管在看板上還有指派毛片這張卡", /assignFootage\(\)/.test(viewBoard()), viewBoard().slice(0,120)); }
 { reset([]); as("小葵","editor");
-  ok("（對照）一般剪輯沒有那張卡", !/assignFootage\(\)/.test(viewWork())); }
+  ok("（對照）一般剪輯沒有那張卡", !/assignFootage\(\)/.test(viewBoard()) && !/assignFootage\(\)/.test(viewWork())); }
 { reset([]); as("Regina","manager");
   ok("經理人本來就是主管，不叫小主管", isSubLead()===false);
   ok("但她當然看得到主管版看板", seesLeadBoard()===true); }

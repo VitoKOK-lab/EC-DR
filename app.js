@@ -3336,7 +3336,8 @@ function viewWork(){
   ${todayListCard(tasks, myWork, workBtn, undoBtn)}
 
   ${fold(T("待認領","To claim"), pool.length, workPoolCard(pool, poolShown, poolCnt, me), !!POOL_Q||POOL_FILTER!=="all")}
-  ${workAssignFold()}
+  ${/* v190：指派毛片搬到「看板」了（跟 Regina 的同一個位置）——
+        同一件事擺兩個地方，遲早會變成「我在哪一頁指派過？」 */''}
   ${lowStockCard()}
 
   ${fold(T("建立其他版本","Create a version"), null, createZoneCard())}
@@ -5113,7 +5114,16 @@ function teamBoardBody(){
 // 丟掉的：流程中控的員工卡、儀表板的剪輯卡 —— 跟下層那一份是同一件事。
 function viewBoard(){
   const lead=seesLeadBoard();
-  if(!lead) return `<h2>${T("看板","Board")}</h2>${teamBoardBody()}`;   // 員工版＝原本的團隊看板，一模一樣
+  if(!lead){
+    // v190（老闆回報）：「鴻儒要分配影片給別人剪輯那個畫面我找不到哪裡可以選擇要指定給誰剪」
+    //
+    // 功能一直都在，但藏在「每日工作」往下 37%（157,497 字元的頁面）而且是收起來的折疊。
+    // Regina 的同一張卡在**看板**上 —— 小主管當然也去看板找。搬過來，兩個人同一個位置。
+    // ⚠️ 這是**看板上唯一一個會動到資料的東西**，只有拿到指派權的人才畫得出來
+    //    （canAssignWork()）。一般同仁的看板照舊是純檢視、一顆按鍵都沒有 ——
+    //    那條保證有五支測試在釘，不能因為多了這張卡就破掉。
+    return `<h2>${T("看板","Board")}</h2>${workAssignFold()}${teamBoardBody()}`;
+  }
 
   const allTasks=Object.values((STATE&&STATE.tasks)||{});
   const editors=staffNamesSorted(["editor"]);
@@ -5405,8 +5415,10 @@ function viewOutput(){
 function workAssignFold(){
   if(!canAssignWork()) return "";
   const d=dashSchedule();
-  return fold(T("指派毛片給同事","Assign footage"), d.unassignedPool.length,
-    dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount));
+  // 標題跟主管那一張一字不差 —— 兩個人講的是同一件事，名字不一樣只會讓人以為是兩個功能。
+  // 預設**打開**：小主管上看板就是為了派片，不該再點一下才看得到。
+  return fold(T("🎬 指派毛片給員工","Assign footage"), d.unassignedPool.length,
+    dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount), true);
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 // v181：儀表板與流程中控已經併進 viewBoard()（導覽列上沒有這兩頁了）。
