@@ -1420,7 +1420,11 @@ function calListBody(cfg){
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
-        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
+        ${/* v193（老闆指定）：「在手機版面，名字留一排就好了，要畫面精簡然後讓我看得到
+              還沒剪好，還沒有審查或者是缺影片這些才是重點」。
+              片名包一層 .cl-t，手機上才切得成一行（超過就 …）；警示標籤自己一行。
+              沒問題的那些變成一列一行，101 支滑起來才看得完。 */''}
+        <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
   return `<div class="card">
