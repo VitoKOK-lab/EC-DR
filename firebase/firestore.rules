@@ -1,10 +1,85 @@
 rules_version = '2';
-// 內部小團隊用：只要通過匿名登入即可讀寫。
-// 之後要更嚴格（例如限定 Email 網域、區分角色寫入權限）可再加條件。
+
+// ===========================================================================
+// EC-DR Firestore 安全規則
+//
+// 【現況與範圍】
+// 這一版是「止血」：擋掉『資料被破壞』，但**還擋不住『資料被讀走』**。
+// 登入方式仍是匿名登入，而 repo 是公開的，代表任何人拿到
+// firebase-config.js 就能通過 request.auth != null 讀到全部資料。
+// 要真正擋住讀取，必須改成 Google 帳號登入 + 白名單（另案處理）。
+//
+// 【這一版擋掉什麼】
+//   1. 只開放程式實際使用的 9 個集合，其餘路徑一律拒絕
+//      → 不能被拿去當免費資料庫塞垃圾，也不能新建集合做破壞
+//   2. logs / schedule / shifts / meta 禁止刪除（程式從不刪這些）
+//      → 這四個集合佔全部資料的 75%（7,955 / 10,531 筆），現在刪不掉
+//   3. logs 額外禁止修改 → 稽核紀錄不可竄改，出事後查得到誰做的
+//   4. videos 只有「已在回收桶裡」的才能永久刪除
+//      → 與程式流程一致（軟刪除進回收桶 → 管理員才能永久刪除）
+//
+// 【刻意保留可刪除的集合】程式確實需要，擋掉會壞掉：
+//   users(2 處) / tasks(3 處) / products(1 處) / matches(1 處)
+//
+// 每一條都對照 app.js 的實際呼叫點確認過，不改變任何現有操作行為。
+// ===========================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // --- 影片主檔 -----------------------------------------------------------
+    // 一般刪除是軟刪除（寫 deleted:true 進回收桶），走 update。
+    // 硬刪除只有回收桶裡的「永久刪除」會用到，所以限定必須已軟刪除。
+    // 用 .get(...,false) 而非直接取值，舊資料沒有 deleted 欄位也不會出錯。
+    match /videos/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if signedIn() && resource.data.get('deleted', false) == true;
+    }
+
+    // --- 操作稽核紀錄 -------------------------------------------------------
+    // 程式只用 DB.set 寫入全新 id，從不修改也不刪除。
+    // 鎖成 append-only：出事時這份紀錄本身要是可信的。
+    match /logs/{id} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    // --- 系統設定（meta/settings）------------------------------------------
+    // 體積最小但最關鍵：掉了整個系統行為會亂掉。程式從不刪除。
+    match /meta/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if false;
+    }
+
+    // --- 上片排程 -----------------------------------------------------------
+    // 文件 id = 日期，反覆覆寫同一天是正常操作。程式從不刪除。
+    match /schedule/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if false;
+    }
+
+    // --- 出勤打卡 -----------------------------------------------------------
+    // 打卡建立、補上下班時間與定位是 update。程式從不刪除。
+    match /shifts/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if false;
+    }
+
+    // --- 以下四個集合程式需要刪除功能，維持原本權限 -------------------------
+    match /users/{id}    { allow read, write: if signedIn(); }
+    match /tasks/{id}    { allow read, write: if signedIn(); }
+    match /products/{id} { allow read, write: if signedIn(); }
+    match /matches/{id}  { allow read, write: if signedIn(); }
+
+    // --- 其餘一律拒絕 -------------------------------------------------------
+    // 沒有列在上面的集合名稱、以及任何子集合，都不開放。
+    // 新增集合時要記得回來這裡補一條，否則程式會寫不進去。
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

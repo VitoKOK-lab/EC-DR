@@ -50,11 +50,59 @@ Firebase 主控台 → **建構 → Storage → 規則** → 把 [`storage.rules
 
 ---
 
+## 四、規則測試（改規則前後都要跑）
+
+`firestore.rules` 一改錯，全公司立刻無法操作系統。所以有一組 42 項的規則測試，
+涵蓋 app 的每一種實際寫入（含 `arrayUnion`／`increment` 原子寫入與實際查詢），
+以及每一種破壞手法。
+
+需要 Java（Firestore 模擬器要用）：
+
+```bash
+cd EC-DR                       # repo 根目錄
+npm install --no-save @firebase/rules-unit-testing firebase firebase-tools
+npx firebase emulators:exec --only firestore --project demo-ecdr \
+    "node firebase/rules.test.mjs"
+```
+
+裝出來的 `node_modules/` 與 `package*.json` 已在 `.gitignore`，不會進版控——
+專案本身仍然是零依賴，只有跑規則測試時才需要這些套件。
+
+**A、B、C 三組任何一項失敗＝新規則會弄壞正在運作的系統，不要部署。**
+
+---
+
 ## 安全性備註
 
-目前規則是「通過匿名登入即可讀寫」，適合內部信任的小團隊。日後要更嚴，可改成：
+### 已處理：資料破壞（2026-09）
 
-- 改用 Email 登入，限定你們公司網域；
-- 在規則裡依角色限制寫入（例如只有管理員能改 `meta/settings`）。
+規則已從「一條 `/{document=**}` 全開」改成逐集合授權：
+
+- 只開放程式實際使用的 9 個集合，其餘路徑與所有子集合一律拒絕；
+- `logs`／`schedule`／`shifts`／`meta` **禁止刪除**（程式從不刪這些，
+  合計佔全部資料的 75%）；
+- `logs` 額外**禁止修改**，稽核紀錄不可竄改；
+- `videos` 只有「已在回收桶裡」（`deleted == true`）的才能永久刪除，
+  與程式流程一致。
+
+### ⚠️ 尚未處理：資料外洩
+
+**登入方式仍是匿名登入，而這個 repo 是公開的。** 代表任何人拿到
+`firebase-config.js`（就在 repo 根目錄）都能通過 `request.auth != null`，
+**讀走全部營運資料**——商品成本售價、每位成員的績效工時、所有操作紀錄。
+
+上面那組規則擋得住「被破壞」，擋不住「被看走」。要真正解決，必須改登入方式：
+
+- 改用 Google 帳號登入，規則限定公司網域或 `users` 白名單；
+- 或改用 Email 登入 + 白名單。
+
+兩者都需要同步改寫前端登入流程（`fb.js` 的匿名登入、`app.js` 的選名字進入），
+估一到兩天。**在那之前，請把這個資料庫視為公開可讀。**
+
+### 另外：Storage 封面圖
+
+`storage.rules` 目前允許任何匿名登入者刪除 `covers/` 下的圖片。
+程式的「移除封面」功能要用到 `deleteObject`，所以不能直接鎖死；
+改登入方式時一併收斂即可。影響有限（封面圖可重傳）。
 
 資料結構見上層 [`SCHEMA.md`](../SCHEMA.md)。

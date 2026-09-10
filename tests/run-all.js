@@ -31,6 +31,17 @@ for (const f of suites) {
   }
 }
 
+// 集合清單一致性：程式用到的集合，安全規則與備份清單都要涵蓋到
+try {
+  execFileSync(process.execPath, [path.join(dir, "audit-collections.js")], { stdio: "pipe" });
+  console.log("PASS  audit-collections.js（集合在規則與備份清單都有涵蓋）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  audit-collections.js");
+  out.split("\n").filter(l => l.startsWith("FAIL") || l.startsWith("        →")).forEach(l => console.log("        " + l));
+  failed.push("audit-collections.js");
+}
+
 // 介面語言洩漏掃描：輸出「(無洩漏)」才算過
 try {
   const out = execFileSync(process.execPath, [path.join(dir, "audit-lang.js")], { encoding: "utf8" });
@@ -50,5 +61,7 @@ try {
   failed.push("check-cache-stamp.js");
 }
 
-console.log(`\n${suites.length + 3 - failed.length} / ${suites.length + 3} 通過`);
+// suites 之外的獨立檢查：node --check、audit-collections、audit-lang、check-cache-stamp
+const EXTRA_CHECKS = 4;
+console.log(`\n${suites.length + EXTRA_CHECKS - failed.length} / ${suites.length + EXTRA_CHECKS} 通過`);
 if (failed.length) { console.log("失敗：" + failed.join(", ")); process.exit(1); }
