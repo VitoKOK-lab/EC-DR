@@ -221,10 +221,20 @@ const U=(o)=>Object.assign({name:"泓儒",role:"editor"},o||{});
 { ok("PUT /api/users 的白名單有放行 canAssign",
      /body\.canAssign!=null\) patch\.canAssign=!!body\.canAssign/.test(APP), "路由沒放行 canAssign"); }
 
-// 這個權限**只給指派**，不含標急件 —— 不要偷偷讓它變成半個管理員
+// v195（老闆指定）：這個權限現在給的是「派片」那一組事 —— 指派 ＋ 標急件。
+// 老闆問「鴻儒怎麼沒有急件的按鈕」，決定有「可指派」的人就能標：
+// 派片的人本來就在決定誰先剪什麼，為了插一支隊還要回頭找主管沒有意義。
+// ⚠️ 範圍**沒有**因此變大 —— 下面兩條在盯：一般剪輯照舊不能標，
+//    而且這個權限依然不含看薪資、改設定、主管看板那些。
 { reset([], "泓儒","editor", [{name:"泓儒",role:"editor",canAssign:true}]);
   ok("被授權的人可以指派", canAssignWork()===true);
-  ok("**但還是不能標急件**", canMarkUrgent()===false); }
+  ok("**而且標得了急件**（v195 老闆加的）", canMarkUrgent()===true);
+  ok("看得到「標急件」那顆鈕", /toggleUrgent/.test(urgentBtn({id:"A",urgent:false})), urgentBtn({id:"A"}));
+  ok("**但看不到主管看板**（權限沒有整包放大）", seesLeadBoard()===false); }
+// 沒被授權的一般剪輯照舊不能標 —— 誰都能標的話紅色就沒有意義了
+{ reset([], "小葵","editor", [{name:"小葵",role:"editor"}]);
+  ok("**一般剪輯還是不能標急件**", canMarkUrgent()===false);
+  ok("而且那顆鈕不會畫出來", urgentBtn({id:"A",urgent:false})==="", urgentBtn({id:"A"})); }
 
 console.log(`\nv164（指派的片進本日工作・影片庫的急件鈕・逐一授權指派）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
