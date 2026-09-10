@@ -23,6 +23,14 @@ Object.defineProperty(global,"navigator",{configurable:true,writable:true,
 global.confirm=()=>true; global.prompt=()=>null; global.alert=()=>{};
 let calls=[], toasts=[];
 eval(src);
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="members";
+// v188：這一支同時驗「基本」與「成員」兩個子頁的東西，所以把五頁串起來看
+// ——「設定頁裡有沒有這個控制項」問的本來就是整個設定區，不是某一頁。
+const settingsAll=()=>["basic","members","plat","tags","maint"]
+  .map(t=>{ SET_TAB=t; return viewSettings(); }).join("");
+
 toast=(m)=>{ toasts.push(String(m)); };
 
 const T0=new Date(Date.now()+288e5).toISOString().slice(0,10);
@@ -212,7 +220,7 @@ ok("管理員自己不打卡，沒有「我的出勤」", !viewAttend().includes
   // ══ 設定頁 ══
   reset([], Object.assign({attendStart:"2026-08-01"},WORK));
   as("管理員","boss");
-  { const st=viewSettings();
+  { const st=settingsAll();
     ok("設定頁有全公司起算日", st.includes('id="set_attstart"') && st.includes('value="2026-08-01"'));
     ok("成員清單有變動工時的勾選", st.includes("setMemberFlex("));
     ok("成員清單看得到每個人的起算日", st.includes("出勤自") || st.includes("尚未起算"));
@@ -236,8 +244,8 @@ ok("管理員自己不打卡，沒有「我的出勤」", !viewAttend().includes
   ok("沒設定時預設 09:00–18:00", workHoursOf("小葵").start==="09:00" && workHoursOf("小葵").end==="18:00");
   ok("預設寬限 10 分", workHoursOf("小葵").grace===10);
   as("管理員","boss");
-  ok("設定頁預設帶 09:00 / 18:00", viewSettings().includes('id="set_wstart" type="time" value="09:00"')
-     && viewSettings().includes('id="set_wend" type="time" value="18:00"'));
+  ok("設定頁預設帶 09:00 / 18:00", settingsAll().includes('id="set_wstart" type="time" value="09:00"')
+     && settingsAll().includes('id="set_wend" type="time" value="18:00"'));
 
   // ── render 不炸 ──
   reset([sh("HR小姐",T0,"09:00","18:00"), sh("小葵",T0,"09:00","18:00")], WORK);

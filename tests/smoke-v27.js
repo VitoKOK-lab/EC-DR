@@ -12,6 +12,10 @@ global.window = { addEventListener(){}, innerWidth:1200, innerHeight:800, scroll
 global.navigator = { onLine:true };
 eval(src);
 
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「平台」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="plat";
+
 STATE = { users:[{name:"小葵",role:"editor"}], settings:{exchangeRates:{en:{code:"USD",rate:0.032},th:{code:"THB",rate:1.15},ms:{code:"MYR",rate:0.14}}}, schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[], videos:[] };
 
 let pass=0, fail=0;

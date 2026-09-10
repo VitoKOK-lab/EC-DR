@@ -102,6 +102,19 @@ function withStatus(bs){
   reset(); as("管理員","boss");
   ok("管理員有設定分頁", myTabs().map(t=>t[0]).includes("settings")); }
 
+// ══════════ ⑥ v188 把設定分成五個子頁之後，五頁都要看得到這張卡 ══════════
+//
+// 這條是 v188 那次合併新長出來的風險：設定頁被切成 基本/成員/平台/分類/維護，
+// 若把卡片放進某一個子頁，其他四頁就看不到 —— 而「不會特地去查的人」正是
+// 這張卡要接住的對象。所以卡片放在子頁列上面，這裡逐頁釘住。
+{ for(const tab of ["basic","members","plat","tags","maint"]){
+    reset(); as("管理員","boss");
+    STATE.settings.backupStatus = {at:daysAgo(9), docs:10601, covers:241, sizeMB:"32.6", ok:true};
+    SET_TAB = tab;
+    const h = viewSettings();
+    ok("子頁「"+tab+"」也看得到備份警示", /資料備份可能停了/.test(h), h.slice(0,160));
+  } }
+
 console.log("");
 console.log(pass+" passed, "+fail+" failed");
 process.exit(fail?1:0);

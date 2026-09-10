@@ -34,6 +34,10 @@ global.window={addEventListener(){},innerWidth:390,innerHeight:844,scrollY:0,scr
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="members";
+
 const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
 todayTW=()=>FROZEN; ydayTW=()=>FROZEN.slice(0,8)+"14"; refreshToday();
 const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return d.toISOString().slice(0,10); };

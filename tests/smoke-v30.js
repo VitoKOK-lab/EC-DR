@@ -11,6 +11,10 @@ global.document = { getElementById:()=>el(), addEventListener(){}, createElement
 global.window = { addEventListener(){}, innerWidth:1200, innerHeight:800, scrollY:0, scrollTo(){}, DB:null, location:{reload(){}} };
 global.navigator = { onLine:true };
 eval(src);
+// v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「平台」那一頁，
+// 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
+SET_TAB="plat";
+
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
