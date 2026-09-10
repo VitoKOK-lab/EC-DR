@@ -35,6 +35,19 @@ global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,sc
   location:{reload(){}}, open:()=>({})};
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
+// ⚠️ 時鐘一定要凍住（v195 修）—— 看板上還沒下班的人印的是「工時 3h30m」，
+//    那個數字**每分鐘跳一次**。這支測試的做法是「清掉某個集合 → 比對畫面有沒有變」，
+//    兩次 render 之間只要跨過一分鐘，畫面就會變，於是被記成「這一頁吃到了那個集合」
+//    —— 量到一條根本不存在的相依，測試就紅了，而且下一次跑又是綠的。
+//    CI 上真的發生過：同一個 commit 兩個 run，07:59:39～07:59:52 那個紅、另一個綠。
+//    凍住不會讓這支測試變鬆 —— 它量的是「集合變了畫面會不會變」，跟現在幾點無關。
+//    時間點刻意選台灣時間 12:30（不是任何邊界），星期三（不落在假日目標上）。
+const FIXED_NOW=Date.parse("2026-06-17T04:30:00Z");
+{ const RealDate=Date;
+  global.Date=class extends RealDate{
+    constructor(...a){ super(...(a.length?a:[FIXED_NOW])); }
+    static now(){ return FIXED_NOW; }
+  }; }
 eval(src);
 
 let pass=0, fail=0;
