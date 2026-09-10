@@ -979,6 +979,69 @@ function applyState(raw, changed){
   }
 }
 window.__onState = applyState;
+
+// ═══════════════════════════════════════════════════════════════════
+// v192：上線了新版本，開著的分頁要知道
+//
+// 老闆：「我在手機版本還是看不到」「也沒有看到搜尋欄」—— 搜尋欄是更早兩版就
+// 上線的東西，他連那個都看不到，代表他手機上那個分頁至少落後三個版本。
+//
+// 為什麼會這樣：index.html 的 cache-control 只有 600 秒，但**分頁一直開著就
+// 不會重新抓**。手機把背景分頁凍起來、桌機整天開著同一個分頁工作，兩種都一樣。
+// 27 個人整天開著 —— 我每上線一次，等於每個人都要自己想到「關掉重開」。
+//
+// 做法：記住自己載入時的版本戳，之後定期跟線上的比。不一樣就掛一條橫幅讓他
+// 按一下更新 —— **不自動重整**：正在打字、正在勾選毛片的時候被強制重整，
+// 東西會不見。要不要現在更新是他的決定。
+// ═══════════════════════════════════════════════════════════════════
+const VER_NOW=(function(){
+  try{
+    const el=document.querySelector('script[src*="app.js?v="]');
+    const m=el && String(el.getAttribute("src")||"").match(/app\.js\?v=([0-9a-f]+)/);
+    return m?m[1]:"";
+  }catch(e){ return ""; }
+})();
+let VER_NEW="";                       // 線上的版本戳（跟自己不一樣才有值）
+const VER_EVERY=30*60*1000;           // 三十分鐘查一次；切回這個分頁也查一次
+let VER_LAST=0;
+async function verCheck(force){
+  if(!VER_NOW) return;                          // 讀不到自己的版本就不要瞎猜
+  if(VER_NEW) return;                           // 已經知道有新版了，不用再問
+  const t=Date.now();
+  if(!force && t-VER_LAST<VER_EVERY) return;
+  VER_LAST=t;
+  try{
+    const r=await fetch("index.html?cb="+t, {cache:"no-store"});
+    if(!r.ok) return;
+    const m=String(await r.text()).match(/app\.js\?v=([0-9a-f]+)/);
+    if(m && m[1] && m[1]!==VER_NOW){ VER_NEW=m[1]; verBanner(); }
+  }catch(e){}                                   // 連不上就算了，下次再說
+}
+function verBanner(){
+  if(document.getElementById("verBar")) return;
+  const d=document.createElement("div");
+  d.id="verBar"; d.className="verbar";
+  d.innerHTML=`<span>${T("系統已經更新了，你現在看到的是舊版。",
+                        "A new version is available — you're on an older one.")}</span>`;
+  const b=document.createElement("button");
+  b.className="btn sm"; b.textContent=T("重新整理","Reload");
+  // 用 window.location 不是裸的 location —— 裸的在瀏覽器裡沒問題，但測試是在
+  // node 裡跑的，那裡沒有全域 location，會被 catch 吞掉、等於這顆鍵沒測到。
+  b.onclick=()=>{ try{ window.location.reload(); }catch(e){} };
+  d.appendChild(b);
+  try{ document.body.appendChild(d); }catch(e){}
+}
+// ⚠️ 計時器要 unref() —— 瀏覽器裡 setInterval 回的是數字（沒有 unref，等於沒事），
+//    但測試是在 node 裡跑的，沒有 unref 的話事件迴圈永遠不結束、整套測試會卡在那裡。
+//    （第一版就是這樣，run-all 直接跑不完。）
+const verIdle=(t)=>{ try{ if(t && typeof t.unref==="function") t.unref(); }catch(e){} return t; };
+try{
+  verIdle(setInterval(()=>verCheck(false), VER_EVERY));
+  // 切回這個分頁的時候查一次 —— 手機把分頁凍在背景，計時器根本不會跑
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) verCheck(true); });
+  window.addEventListener("focus", ()=>verCheck(false));
+  verIdle(setTimeout(()=>verCheck(true), 5000));   // 開起來五秒後先查一次
+}catch(e){}
 window.__needSetup = function(){ document.getElementById("setup").classList.remove("hidden"); document.getElementById("login").classList.add("hidden"); };
 window.__authError = function(msg){ toast("登入失敗："+msg, true); };
 
@@ -1357,7 +1420,11 @@ function calListBody(cfg){
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
-        <td>${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
+        ${/* v193（老闆指定）：「在手機版面，名字留一排就好了，要畫面精簡然後讓我看得到
+              還沒剪好，還沒有審查或者是缺影片這些才是重點」。
+              片名包一層 .cl-t，手機上才切得成一行（超過就 …）；警示標籤自己一行。
+              沒問題的那些變成一列一行，101 支滑起來才看得完。 */''}
+        <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
   return `<div class="card">
