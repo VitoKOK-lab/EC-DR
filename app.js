@@ -386,7 +386,7 @@ function setBrand(id){
   BRAND=v;
   // 換家等於換一整份資料：重新切片再重畫（月曆／分頁的暫存狀態也一起歸零）
   CAL_YM=null; INTL_CAL_YM=null; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
-  VID_Q=""; POOL_Q=""; POOL_FILTER="all"; VID_TAGS=new Set(); CUR_TAB=null;
+  VID_Q=""; POOL_Q=""; AFP_Q=""; POOL_FILTER="all"; VID_TAGS=new Set(); CUR_TAB=null;
   applyState(LAST_RAW);
 }
 // 齒輪選單裡的「切換影音帳號」：忘掉這次的選擇，回到選擇畫面
@@ -4554,27 +4554,64 @@ function asgPickerHTML(roles){
     </div>`).join("")}</div>`;
 }
 // 儀表板：指派毛片給員工（勾選＋收回未認領）
+// ── v189（老闆指定）：指派毛片也要有搜尋欄 ──────────────────────────
+// 正式資料實測：未指派的毛片一次有一百多支，要指派某一支得在 240px 高的框裡
+// 慢慢捲。搜尋用的是**跟影片庫、待認領同一份欄位清單**（vidSearchText）——
+// 片名、編號、文案、網址、備註都找得到，不要另外再寫一份比對規則。
+let AFP_Q="";
+function afpMatch(v){
+  if(!AFP_Q) return true;
+  return vidSearchText(v).includes(String(AFP_Q).toLowerCase());
+}
+function afpShownOf(pool){ return (pool||[]).filter(afpMatch); }
+// 只換掉清單那一塊，不整頁重畫 —— 整頁重畫會把游標踢出搜尋框、
+// 而且已經勾好的那幾支會被清掉（勾選狀態只在 DOM 上）。
+function setAfpQ(v){
+  AFP_Q=String(v||"").trim();
+  const box=document.getElementById("afp_list");
+  if(!box){ render(); return; }
+  const pool=(typeof dashSchedule==="function") ? (dashSchedule().unassignedPool||[]) : [];
+  const shown=afpShownOf(pool);
+  box.innerHTML=afpRowsHTML(shown);
+  const n=document.getElementById("afp_n");
+  if(n) n.textContent = AFP_Q ? (shown.length+"/"+pool.length) : String(pool.length);
+  const clr=document.getElementById("afp_clear");
+  if(clr) clr.innerHTML = AFP_Q
+    ? `<button type="button" class="btn sec sm" style="flex:none" onclick="document.getElementById('afp_q').value='';setAfpQ('')">清除</button>` : "";
+}
+function afpRowsHTML(list){
+  if(!list.length) return `<span class="muted" style="font-size:13px">${AFP_Q?("找不到符合「"+esc(AFP_Q)+"」的毛片"):"目前沒有未指派的待剪毛片"}</span>`;
+  return list.map(v=>{
+    const d=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
+    // 上片日就是排序的依據，要看得到 —— 只印片名的話，老闆沒辦法確認順序對不對
+    const late=d && d<today;
+    const day=d?`<span style="font-size:11px;flex:none;color:${late?'var(--red)':'var(--gold-dk)'};font-weight:${late?800:600}"
+        title="${T("預排上片日"+(late?"（已經過期）":""),"Scheduled"+(late?" (overdue)":""))}">${esc(d.slice(5))}</span>`
+      :`<span class="muted" style="font-size:11px;flex:none" title="${T("還沒排上片日","No date yet")}">${T("沒排","—")}</span>`;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
+      <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none">
+      ${day}<span style="flex:1;min-width:0">${urgentPill(v)}${esc(vidTitle(v))}</span>${urgentBtn(v)}</label>`;
+  }).join("");
+}
 function dashAssignFootageCard(editors, poolN, unassignedPool, assignCount){
+  const shown=afpShownOf(unassignedPool);
   return `<div class="card" style="border-color:var(--gold)">
     <b style="font-size:16px">🎬 指派毛片給員工</b>
-    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b>${unassignedPool.length}</b> 支）</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">目前待剪毛片 <b>${poolN}</b> 支（未指派 <b id="afp_n">${AFP_Q?(shown.length+"/"+unassignedPool.length):unassignedPool.length}</b> 支）</div>
     <div class="grid cols2" style="margin-top:10px">
       <div><label>選擇員工</label>
         <select id="afp_who"><option value="">— 選擇員工 —</option>${editors.map(n=>`<option value="${esc(n)}">${esc(n)}${assignCount[n]?`（已指派 ${assignCount[n]}）`:""}</option>`).join("")}</select></div>
       <div><label>選擇毛片（勾選，可多選）</label>
-        ${unassignedPool.length?`<div style="margin-bottom:6px"><button type="button" class="btn sec sm" onclick="afpToggleAll(this)">全選</button></div>`:''}
+        ${/* v189：搜尋框。⚠️ 全選只會勾**目前列出來的**那些 —— 搜尋完按全選，
+              勾的是搜尋結果，不是全部一百多支。 */''}
+        <div class="row" style="gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <input id="afp_q" value="${esc(AFP_Q)}" placeholder="找毛片（片名、編號、文案、備註…）"
+            style="flex:1;min-width:140px" oninput="setAfpQ(this.value)">
+          <span id="afp_clear">${AFP_Q?`<button type="button" class="btn sec sm" style="flex:none" onclick="document.getElementById('afp_q').value='';setAfpQ('')">清除</button>`:""}</span>
+          ${unassignedPool.length?`<button type="button" class="btn sec sm" style="flex:none" onclick="afpToggleAll(this)">全選</button>`:''}
+        </div>
         <div id="afp_scroll" class="keepscroll" style="max-height:240px;overflow-y:auto;border:1.5px solid var(--line);border-radius:var(--rs);padding:6px 10px;background:#fff">
-        ${unassignedPool.map(v=>{
-          const d=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
-          // 上片日就是排序的依據，要看得到 —— 只印片名的話，老闆沒辦法確認順序對不對
-          const late=d && d<today;
-          const day=d?`<span style="font-size:11px;flex:none;color:${late?'var(--red)':'var(--gold-dk)'};font-weight:${late?800:600}"
-              title="${T("預排上片日"+(late?"（已經過期）":""),"Scheduled"+(late?" (overdue)":""))}">${esc(d.slice(5))}</span>`
-            :`<span class="muted" style="font-size:11px;flex:none" title="${T("還沒排上片日","No date yet")}">${T("沒排","—")}</span>`;
-          return `<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid var(--panel2)">
-          <input type="checkbox" class="afp_vid" value="${esc(v.id)}" style="width:auto;margin:0;flex:none">
-          ${day}<span style="flex:1;min-width:0">${urgentPill(v)}${esc(vidTitle(v))}</span>${urgentBtn(v)}</label>`;
-        }).join("")||'<span class="muted" style="font-size:13px">目前沒有未指派的待剪毛片</span>'}
+        <div id="afp_list">${afpRowsHTML(shown)}</div>
         </div></div>
     </div>
     <button class="btn" style="width:100%;margin-top:10px" onclick="assignFootage()">指派給該員工</button>
