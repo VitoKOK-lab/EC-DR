@@ -184,6 +184,10 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // v185（老闆指定）：外包人員看不到月排程 —— 那是全公司的上片計畫，
   // 他只做被指派的片。（看板與成效那一層在 teamBoardBody 擋。）
   if(isOutsourced()) return t.filter(x=>x[0]!=="cal");
+  // v196：「找影片」給拿到權限的人（老闆、經理人、或設定裡勾過的人）。
+  // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
+  //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
+  if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","找影片"]);
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -498,6 +502,8 @@ async function route(method, path, body){
       // 可以指派剪輯工作（v195 起也含標急件）。⚠️ 這一格是白名單，沒列進來的欄位會被默默丟掉 ——
       // 加新欄位時很容易忘記這裡，忘了就是「勾了沒反應」而且不會有任何錯誤訊息。
       if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
+      // v196：可以看「找影片」那一頁
+      if(body.canFindAssets!=null) patch.canFindAssets=!!body.canFindAssets;
       // v185：外包人員（老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到
       // 公司其他人的看板，和成效」）。用旗標不是把名字寫死 —— 換人、多一個人
       // 在設定裡勾一下就好。
@@ -964,6 +970,9 @@ const TAB_DEPS={
   // v181：看板＝儀表板＋流程中控＋團隊看板合起來，四個集合都要盯
   board:    ["videos","tasks","shifts","schedule"],
   chat:     ["tasks"],
+  // v196：找影片吃的是自己載入的 driveindex，不在 STATE 裡 ——
+  // 任何集合變動都不影響它（權限來自 users，那是全域、一律照畫）。
+  assets:   [],
 };
 function tabNeedsRender(tab, changed){
   if(!Array.isArray(changed) || !changed.length) return true;   // 不知道改了什麼 → 照畫
@@ -1255,7 +1264,9 @@ function render(){
   // （人資 v152 移出去了 —— 他有「剪輯成效」要查，真的用得到。）
   // watchVideos 自己有防重，呼叫幾次都只會訂閱一條。
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
-  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  // v196：素材索引 4.8 MB，只有真的打開「找影片」的人才下載，一次連線只下載一次。
+  try{ needAssets(); }catch(e){}
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -8184,6 +8195,500 @@ function shopeeAccounts(){ return chAccounts("shopee"); }
 function msAccounts(){ return chAccounts("ms"); }
 
 // ===================================================================
+// 找影片（v196）—— Google Drive 素材搜尋
+// ===================================================================
+// 老闆：「我要新增一個找影片引擎的頁面（要有權限，給權限的人才能讀），
+//        然後這個資料庫可以更新」
+//        「15 萬筆不要全進，你要先做功課，有意義的檔名或資料夾名，和不知名的
+//         大檔影片，要留，有很多是明確和影片腳本無關的不用進去」
+//
+// ── 為什麼搜尋單位是「資料夾」不是「檔案」──────────────────────────
+// 拿正式的 Drive 清單（153,211 筆）實測出來的事實：**名字看不懂的影片，
+// 100% 都住在名字看得懂的資料夾裡**。
+//     IMG_1618.MOV  186MB  ←  …/01待剪毛片區/[中文版] Three…
+//     CameraVideo92984E40…mov 186MB  ←  …/市價3折 拿下 祖母綠 選兩件再折1000
+// 意義在資料夾名字上。把 6,827 支 IMG_*.MOV 各自丟進搜尋索引沒有用 ——
+// 它們永遠只會透過「路徑」被命中，而那條路徑就是資料夾本身。
+//
+// 改成「資料夾＝候選卡、檔案掛在它底下當素材摘要」之後：
+//     153,211 筆 → 26,007 筆　　183.5 MB → 4.8 MB（gzip 1.55 MB）
+// **大檔影片一支都沒丟**（老闆特別交代要留），只是不佔搜尋索引 ——
+// 卡片上直接列出那個資料夾裡最大的三支影片，點下去就是 Drive。
+//
+// ⚠️ 掛檔案回資料夾一定要用**完整路徑**當鑰匙，不能用資料夾名字 ——
+//    實測有 1,111 組同名資料夾，用名字會掛到別人身上。
+//
+// ⚠️ 名字自己就看得懂的檔案（文案 .txt、.srt、有中文名的成片）另外進索引：
+//    實測 19,403 個裡有 13,125 個**光靠資料夾名字搜不到**
+//    （「片尾.mp4」「2025 排片流量表.xlsx」都直接掛在最上層）。
+// ===================================================================
+
+// 誰看得到這一頁。跟系統其他頁同一個標準：介面上擋。
+// ⚠️ 這**不是**真的擋得住讀取 —— 登入是匿名的、repo 是公開的，
+//    任何人拿到 firebase-config.js 就讀得到 Firestore（firestore.rules
+//    開頭寫得很清楚）。老闆知道且同意：「跟現在其他頁一樣就好」。
+//    要真的擋住得先把登入換成 Google 帳號＋白名單，那是另一件事。
+function canFindAssets(){
+  if(VIEW_AS){ const p=(STATE&&STATE.users||[]).find(x=>x&&x.name===VIEW_AS);
+    return !!(p && (p.canFindAssets || ["boss","manager"].includes(p.role))); }
+  if(["boss","manager"].includes(currentRole())) return true;
+  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===currentUser());
+  return !!(u && u.canFindAssets);
+}
+// 只有管理員能重建索引（那是整份換掉，不是改一筆）
+function canRebuildAssets(){ return !VIEW_AS && currentRole()==="boss"; }
+
+let ASSET_IDX=null;        // {folders:[], files:[], meta:{}}
+let ASSET_GROUPS={};       // 人工確認過的：{資料夾driveId: {...}}
+let ASSET_STATE="idle";    // idle | loading | ready | empty | error
+let ASSET_ERR="";
+let ASSET_Q="", ASSET_HITS=null, ASSET_LOOSE=false, ASSET_SEL="";
+let ASSET_BUSY="";         // 匯入中的進度字串
+
+const DRIVE_FOLDER_URL=(id)=>"https://drive.google.com/drive/folders/"+encodeURIComponent(String(id||""));
+const DRIVE_FILE_URL  =(id)=>"https://drive.google.com/file/d/"+encodeURIComponent(String(id||""))+"/view";
+
+// 素材類型代號（索引裡用單字母存，2.6 萬筆省下來的空間不少）
+const AK_LABEL={v:"影片",i:"圖",s:"字幕",d:"文件",a:"音訊",o:"其他"};
+const AK_ORDER=["v","i","s","d","a","o"];
+
+// ── 搜尋 ────────────────────────────────────────────────────────────
+// 用「整段字串比對」而不是切詞索引：中文沒有空格，切詞會漏掉詞中間的片段
+// （搜「寶溢」找不到「大牌珠寶溢價多可怕」），而 2.6 萬筆掃一遍只要幾毫秒。
+function assetNorm(s){ return String(s==null?"":s).toLowerCase()
+  .replace(/[\s._\-–—()（）\[\]【】「」『』《》,，、。!！?？:：;；#＃/／\\|]+/g," ").trim(); }
+function assetTerms(q){ return assetNorm(q).split(" ").filter(Boolean).slice(0,8); }
+
+// 每一列的可搜尋文字（第一次搜尋時才算，算完留著）
+function assetPrep(){
+  if(!ASSET_IDX || ASSET_IDX._prepped) return;
+  const F=ASSET_IDX.folders||[];
+  F.forEach(f=>{ f._n=assetNorm(f.n); f._p=assetNorm(f.p);
+    f._b=(f.b||[]).map(x=>assetNorm(x.n)).join(" "); });
+  (ASSET_IDX.files||[]).forEach(x=>{ x._n=assetNorm(x.n); });
+  ASSET_IDX._prepped=true;
+}
+// 一列命中幾分、為什麼命中。requireAll＝每個詞都要中；回 null＝不算候選。
+function assetScoreFolder(f, terms, kidHits, requireAll){
+  let s=0, any=false; const why=[];
+  for(const t of terms){
+    // 命中的地方按「詞」歸成一句，不要每個地方各印一行 ——
+    // 一列印成「資料夾名「祖母綠」、路徑「祖母綠」、影片檔名「祖母綠」、12 個檔案叫「祖母綠」」
+    // 掃過去只看得到同一個詞重複四次，等於沒講。
+    const at=[]; let hit=false;
+    if(f._n.includes(t)){ s+=30; hit=true; at.push("資料夾名"); }
+    if(f._p.includes(t)){ s+=15; hit=true; at.push("路徑"); }
+    if(f._b.includes(t)){ s+=25; hit=true; at.push("影片檔名"); }
+    const kid=(kidHits[t]||[]).length;
+    if(kid){ s+=20; hit=true; at.push(kid+" 個檔案"); }
+    if(String(f.i).toLowerCase()===t){ s+=100; hit=true; at.push("Drive ID 完全相符"); }
+    if(at.length) why.push("「"+t+"」在 "+at.join("、"));
+    if(hit) any=true; else if(requireAll) return null;
+  }
+  if(!any) return null;
+  if(ASSET_GROUPS[f.i]) s+=60;                       // 有人確認過的排前面（規格 +60）
+  s+=Math.min(12, (f.k&&f.k.v)||0);                  // 影片多的資料夾略優先
+  return {score:s, why};
+}
+// 搜尋。先用「每個詞都要命中」，一筆都沒有才自動放寬成「命中任一個」，
+// 並在畫面上講明白已經放寬 —— 規格要的是「不要漏可能性」，但預設不能洗版。
+function assetSearch(q){
+  assetPrep();
+  const terms=assetTerms(q);
+  ASSET_Q=String(q||""); ASSET_LOOSE=false; ASSET_SEL="";
+  if(!terms.length){ ASSET_HITS=null; return; }
+  const F=(ASSET_IDX&&ASSET_IDX.folders)||[], FI=(ASSET_IDX&&ASSET_IDX.files)||[];
+  function run(requireAll){
+    // 檔名命中的檔案，先歸到它所屬的資料夾底下（那是候選卡的「命中原因」之一）
+    const kids=new Map(), orphan=[];
+    FI.forEach(x=>{
+      const hit=terms.filter(t=>x._n.includes(t));
+      if(!hit.length) return;
+      if(requireAll && hit.length<terms.length && x.f<0) return;
+      if(x.f>=0){ let m=kids.get(x.f); if(!m){ m={}; kids.set(x.f,m); }
+        hit.forEach(t=>{ (m[t]=m[t]||[]).push(x); }); }
+      else orphan.push({x, hit});
+    });
+    const out=[];
+    F.forEach((f,idx)=>{
+      const r=assetScoreFolder(f, terms, kids.get(idx)||{}, requireAll);
+      if(r) out.push({t:"f", f, idx, score:r.score, why:r.why});
+    });
+    // 不屬於索引內資料夾的檔案（直接掛在最上層那些）自己當一張卡
+    orphan.forEach(o=>out.push({t:"x", x:o.x, score:25+5*o.hit.length,
+      why:["檔名「"+o.hit.join("、")+"」"]}));
+    out.sort((a,b)=>b.score-a.score || String(a.t).localeCompare(String(b.t)));
+    return out;
+  }
+  let hits=run(true);
+  if(!hits.length && terms.length>1){ ASSET_LOOSE=true; hits=run(false); }
+  ASSET_HITS=hits;
+}
+
+// ── 匯入：Google Drive 匯出的 CSV → 瘦身後的索引 ─────────────────────
+// CSV 欄位對照（跟老闆給的匯出檔一致）：
+//   檔案/資料夾名稱 → name｜類型 → mime｜建檔日期／最後修改日期｜檔案ID → drive_id
+//   大小 (Bytes)｜檔案網址。第三欄的表頭是匯出時被當成資料的檔名，內容其實是
+//   上層路徑，所以用「位置」而不是「表頭名字」去讀它（表頭每次匯出都不一樣）。
+const CSV_COL={name:"檔案/資料夾名稱", mime:"類型", created:"建檔日期",
+               modified:"最後修改日期", id:"檔案ID", size:"大小 (Bytes)", url:"檔案網址"};
+// 逐字元的 CSV 解析：欄位裡有逗號、換行、跳脫的雙引號，用 split(",") 一定會壞。
+function csvParse(text){
+  const rows=[]; let row=[], cell="", q=false;
+  const s=String(text||"").replace(/^﻿/,"");     // 去掉 Excel 的 BOM
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(q){
+      if(c==='"'){ if(s[i+1]==='"'){ cell+='"'; i++; } else q=false; }
+      else cell+=c;
+    } else if(c==='"'){ q=true; }
+    else if(c===","){ row.push(cell); cell=""; }
+    else if(c==="\n"){ row.push(cell); cell=""; rows.push(row); row=[]; }
+    else if(c!=="\r"){ cell+=c; }
+  }
+  if(cell.length||row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r=>r.length>1 || (r[0]||"").trim());
+}
+// 副檔名／類型判斷（對齊原型那支 Python 的分類）
+const AK_EXT={ mp4:"v",mov:"v",m4v:"v",avi:"v",mkv:"v",webm:"v",wmv:"v",flv:"v",
+  jpg:"i",jpeg:"i",png:"i",gif:"i",heic:"i",webp:"i",avif:"i",bmp:"i",tiff:"i",
+  srt:"s",vtt:"s",ass:"s",
+  txt:"d",doc:"d",docx:"d",pdf:"d",rtf:"d",xls:"d",xlsx:"d",csv:"d",ppt:"d",pptx:"d",pages:"d",
+  mp3:"a",wav:"a",m4a:"a",aac:"a",flac:"a",aif:"a",aiff:"a" };
+const assetExt=(n)=>{ const m=String(n||"").match(/\.([A-Za-z0-9]{1,5})$/); return m?m[1].toLowerCase():""; };
+const assetStem=(n)=>String(n||"").replace(/\.[A-Za-z0-9]{1,5}$/,"").trim();
+function assetKindOf(name, mime){
+  const m=String(mime||"").toLowerCase();
+  if(m==="folder"||m.includes("folder")) return "folder";
+  const e=assetExt(name);
+  if(AK_EXT[e]) return AK_EXT[e];
+  if(m.startsWith("video")) return "v";
+  if(m.startsWith("image")) return "i";
+  if(m.startsWith("audio")) return "a";
+  if(m.includes("document")||m.includes("text")||m.includes("sheet")||m.includes("pdf")) return "d";
+  return "o";
+}
+// ── 明確是垃圾、跟影片腳本無關的（老闆：「有很多是明確和影片腳本無關的不用進去」）
+// 每一條都是拿正式資料數過的，數字寫在後面，不是憑感覺列的。
+const ASSET_JUNK=[
+  [/^\._/,                       "macOS 資源分叉"],          // 39,169 筆，每個 0KB 的影子檔
+  [/^\.?DS_Store$/i,             ".DS_Store"],                //    206 筆
+  [/FreidBuffer/i,               "剪輯軟體暫存"],            // 21,436 筆，每個都是 4KB
+  [/^(IMG|DSC|DSCF|MVI|VID|MOV|PXL|GOPR|DJI)[-_ ]?\d{2,}$/i, "相機自動命名"],   // 15,348 筆
+  [/^S__\d+(_\d+)?$/,            "LINE 自動命名"],           //  1,003 筆
+  [/^(Screenshot|Screen Shot|螢幕擷取畫面|螢幕快照|螢幕錄製)/i, "螢幕截圖／錄影"],
+  [/^[\d.\-_ ]+$/,               "純數字檔名"],              // 31,218 筆
+  [/^(Track ?\d+|Stereo Mix|Audio ?\d+|未命名(檔案|文件|資料夾)?)$/i, "無名軌／未命名"],
+  [/^(copy|副本|複本|下載|download|new file)\s*\d*$/i, "副本／下載"],
+];
+const ASSET_JUNK_EXT=/^(dat|tmp|bak|ini|db|lnk|url|plist|log)$/i;
+function assetJunk(name){
+  if(ASSET_JUNK_EXT.test(assetExt(name))) return "垃圾副檔名";
+  const st=assetStem(name);
+  for(const [rx,why] of ASSET_JUNK) if(rx.test(st)) return why;
+  return "";
+}
+// ⚠️⚠️ 兩種「垃圾」要分開，混用會出大事（v196 第一版就是這樣寫錯的）：
+//
+//   assetJunk()      ＝「這個名字**搜不到東西**」→ 決定它要不要自己佔一列搜尋索引
+//   assetSystemJunk() ＝「這根本不是檔案」→ 決定它算不算**資料夾的內容**
+//
+// IMG_1618.MOV（186 MB 的毛片）在第一種裡是垃圾（名字搜不到），
+// 但它在第二種裡**不是垃圾** —— 它就是老闆要找的那支片。
+// 第一版兩邊都用 assetJunk()，結果「整個資料夾只放 IMG_*.MOV」的
+// 被判成空資料夾整個丟掉：正式資料實測 6,604 → 5,558 個資料夾，
+// 少掉的 1,046 個幾乎都是毛片資料夾，正好是老闆交代「要留」的那些。
+const ASSET_SYSJUNK=/^\._|^\.?DS_Store$|FreidBuffer/i;
+const ASSET_SYSJUNK_EXT=/^(dat|tmp|bak|ini|db|plist|log)$/i;
+function assetSystemJunk(name){
+  return ASSET_SYSJUNK.test(String(name||"")) || ASSET_SYSJUNK_EXT.test(assetExt(name));
+}
+// 名字自己講得出是什麼：兩個以上中文字，或三個以上英文詞
+function assetMeaningful(name){
+  const s=assetStem(name);
+  if((s.match(/[一-鿿]/g)||[]).length>=2) return true;
+  return s.split(/[^A-Za-z]+/).filter(w=>w.length>=3).length>=3;
+}
+const assetPath=(p)=>String(p||"").split("/").map(x=>x.trim()).filter(Boolean).join(" / ");
+
+// CSV → 索引。回 {folders, files, stat}
+function assetBuildIndex(rows){
+  if(!rows.length) throw new Error("CSV 是空的");
+  const head=rows[0].map(h=>String(h||"").trim());
+  const col={};
+  for(const k in CSV_COL){ col[k]=head.indexOf(CSV_COL[k]); }
+  // 第三欄（索引 2）是路徑 —— 它的表頭在匯出時被寫成某個檔名，所以認位置不認名字
+  col.path=2;
+  const miss=["name","mime","id"].filter(k=>col[k]<0);
+  if(miss.length) throw new Error("CSV 少了必要欄位："+miss.map(k=>CSV_COL[k]).join("、"));
+  const get=(r,k)=> col[k]>=0 ? String(r[col[k]]==null?"":r[col[k]]).trim() : "";
+
+  const seen=new Set(), items=[];
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];
+    const id=get(r,"id"); if(!id || seen.has(id)) continue;
+    seen.add(id);
+    const name=get(r,"name"), mime=get(r,"mime");
+    const sz=get(r,"size").replace(/[^\d]/g,"");
+    items.push({ id, n:name, k:assetKindOf(name,mime), p:assetPath(get(r,"path")),
+      c:get(r,"created").slice(0,10), m:get(r,"modified").slice(0,10),
+      sz: sz?+sz:0 });
+  }
+  // ① 資料夾：它自己的完整路徑＝「上層路徑 / 自己的名字」，那正是底下檔案的路徑欄
+  const folderAt=new Map();
+  items.forEach(d=>{ if(d.k==="folder") folderAt.set(assetPath((d.p?d.p+" / ":"")+d.n), d); });
+  // ② 檔案掛回資料夾（用完整路徑，不用名字 —— 實測 1,111 組同名資料夾）
+  // ⚠️ 這裡用 assetSystemJunk（不是 assetJunk）—— 名字看不懂的毛片**要算內容**，
+  //    見上面那段說明。用錯的話毛片資料夾會整個消失。
+  const inside=new Map();
+  let junk=0;
+  items.forEach(d=>{
+    if(d.k==="folder") return;
+    if(assetSystemJunk(d.n)){ junk++; return; }
+    const arr=inside.get(d.p); if(arr) arr.push(d); else inside.set(d.p,[d]);
+  });
+  // ③ 索引：只收「底下真的有東西」的資料夾
+  const folders=[], idxOf=new Map();
+  folderAt.forEach((f, full)=>{
+    const kids=inside.get(full); if(!kids || !kids.length) return;
+    const cnt={}; let mb=0;
+    kids.forEach(x=>{ cnt[x.k]=(cnt[x.k]||0)+1; mb+=x.sz; });
+    const vids=kids.filter(x=>x.k==="v").sort((a,b)=>b.sz-a.sz).slice(0,3);
+    idxOf.set(full, folders.length);
+    folders.push({ i:f.id, n:f.n, p:f.p, c:f.c, m:f.m, k:cnt,
+      mb:Math.round(mb/1048576*10)/10,
+      b:vids.map(v=>({i:v.id, n:v.n, mb:Math.round(v.sz/1048576*10)/10})) });
+  });
+  // ④ 名字自己就看得懂的檔案，另外進索引（13,125 個光靠資料夾名字搜不到）
+  const files=[];
+  items.forEach(d=>{
+    // 這裡才用 assetJunk：名字搜不到的檔案不必自己佔一列（它會透過資料夾被找到）
+    if(d.k==="folder" || assetJunk(d.n) || !assetMeaningful(d.n)) return;
+    const fi=idxOf.has(d.p)?idxOf.get(d.p):-1;
+    files.push({ i:d.id, n:d.n, t:d.k, f:fi, c:d.c, mb:Math.round(d.sz/1048576*10)/10 });
+  });
+  return { folders, files,
+    stat:{ 讀到:items.length, 丟掉的垃圾:junk, 資料夾:folders.length, 檔案:files.length } };
+}
+
+// ── 載入（按需，一次連線只載一次）───────────────────────────────────
+async function assetLoad(force){
+  if(ASSET_STATE==="loading") return;
+  if(ASSET_IDX && !force) return;
+  if(!window.DB || !window.DB.loadAssetIndex){ ASSET_STATE="error"; ASSET_ERR="資料層還沒連上"; return; }
+  ASSET_STATE="loading"; ASSET_ERR=""; render();
+  try{
+    const [got, groups]=await Promise.all([
+      window.DB.loadAssetIndex(),
+      window.DB.loadAssetGroups ? window.DB.loadAssetGroups() : Promise.resolve([]) ]);
+    ASSET_GROUPS={}; (groups||[]).forEach(g=>{ if(g&&g.id) ASSET_GROUPS[g.id]=g; });
+    if(!got || !got.json){ ASSET_IDX=null; ASSET_STATE="empty"; render(); return; }
+    const parsed=JSON.parse(got.json);
+    ASSET_IDX={ folders:parsed.folders||[], files:parsed.files||[], meta:got.meta||{} };
+    ASSET_STATE="ready";
+  }catch(e){
+    // 接不起來的 JSON 最可能的原因是「分段寫到一半」——講清楚要怎麼救，不要只說失敗
+    ASSET_IDX=null; ASSET_STATE="error";
+    ASSET_ERR=(e&&e.message)||"讀取失敗";
+  }
+  render();
+}
+// 這一頁是唯一「開了才下載」的重資料頁，所以進頁時才觸發（比照 needVideos）
+function needAssets(){ if(CUR_TAB==="assets" && ASSET_STATE==="idle") assetLoad(false); }
+
+function setAssetQ(v){
+  const box=document.getElementById("as_res");
+  assetSearch(v);
+  if(box) box.innerHTML=assetResultsHTML(); else render();
+  const n=document.getElementById("as_n");
+  if(n) n.textContent=ASSET_HITS?String(ASSET_HITS.length):"";
+}
+function assetPick(i){ ASSET_SEL=(ASSET_SEL===String(i))?"":String(i);
+  const box=document.getElementById("as_res"); if(box) box.innerHTML=assetResultsHTML(); else render(); }
+
+// 確認「這個資料夾就是那支片的主成片資料夾」
+async function assetConfirm(driveId, title){
+  if(dbBlocked()) return;
+  if(!canFindAssets()){ toast("你沒有這一頁的權限",true); return; }
+  const id=String(driveId||""); if(!id) return;
+  const now=nowIso();
+  const rec={ id, title:String(title||""), status:"confirmed",
+              by:currentUser(), at:now, q:ASSET_Q, updatedAt:now };
+  try{
+    await window.DB.set("assetgroups", id, rec);
+    ASSET_GROUPS[id]=rec;
+    logA("確認主成片資料夾：「"+(title||id)+"」", "找影片");
+    toast("已確認 —— 下次搜尋這個會排在前面");
+    if(ASSET_Q) assetSearch(ASSET_Q);
+    render();
+  }catch(e){ toast("存不進去，請稍後再試",true); }
+}
+async function assetUnconfirm(driveId){
+  if(dbBlocked()) return;
+  const id=String(driveId||""); if(!id || !ASSET_GROUPS[id]) return;
+  if(!confirm("取消這個資料夾的「已確認」？\n（只是取消標記，Google Drive 一個字都不會動）")) return;
+  try{
+    await window.DB.del("assetgroups", id);
+    const t=(ASSET_GROUPS[id]||{}).title||id; delete ASSET_GROUPS[id];
+    logA("取消確認主成片資料夾：「"+t+"」", "找影片");
+    toast("已取消確認");
+    if(ASSET_Q) assetSearch(ASSET_Q);
+    render();
+  }catch(e){ toast("取消失敗，請稍後再試",true); }
+}
+
+// ── 重建索引（管理員上傳 Drive 匯出的 CSV）──────────────────────────
+function assetPickCSV(){ const el=document.getElementById("as_csv"); if(el) el.click(); }
+async function assetImport(input){
+  const file=input && input.files && input.files[0];
+  if(input) input.value="";                       // 選同一個檔案還要能再觸發
+  if(!file) return;
+  if(!canRebuildAssets()){ toast("只有管理員可以重建索引",true); return; }
+  if(dbBlocked()) return;
+  if(!confirm("用「"+file.name+"」整份重建索引？\n\n"+
+              "・這只是重建搜尋用的索引，Google Drive 一個字都不會動\n"+
+              "・已經人工確認過的資料夾不會受影響\n"+
+              "・重建期間別關掉這一頁")) return;
+  const step=(s)=>{ ASSET_BUSY=s; const el=document.getElementById("as_busy");
+    if(el) el.textContent=s; else render(); };
+  try{
+    step("讀檔案…");
+    const text=await file.text();
+    step("解析 CSV…");
+    const rows=csvParse(text);
+    step("整理索引…（"+(rows.length-1)+" 筆）");
+    const built=assetBuildIndex(rows);
+    if(!built.folders.length && !built.files.length) throw new Error("這份 CSV 整理不出任何東西，欄位對不對？");
+    const json=JSON.stringify({v:1, folders:built.folders, files:built.files});
+    const meta={ built:nowIso(), by:currentUser(), folders:built.folders.length,
+                 files:built.files.length, rows:rows.length-1, source:file.name };
+    await window.DB.saveAssetIndex(json, meta, (i,n)=>step("上傳第 "+i+" / "+n+" 份…"));
+    logA("重建影片素材索引："+Object.entries(built.stat).map(([k,v])=>k+" "+v).join("、"), "找影片");
+    ASSET_BUSY="";
+    ASSET_IDX=null; ASSET_STATE="idle";
+    await assetLoad(true);
+    toast("索引更新好了：資料夾 "+built.folders.length+"、檔案 "+built.files.length);
+  }catch(e){
+    ASSET_BUSY="";
+    toast((e&&e.message)||"重建失敗", true);
+    render();
+  }
+}
+
+// ── 畫面 ────────────────────────────────────────────────────────────
+const AS_MAX=20;                                   // 規格：預設回前 20 個候選
+function assetKindChips(k){
+  return AK_ORDER.filter(x=>(k||{})[x]).map(x=>
+    `<span class="tag" style="font-size:11px">${AK_LABEL[x]} ${k[x]}</span>`).join(" ");
+}
+function assetFolderCard(h){
+  const f=h.f, done=ASSET_GROUPS[f.i];
+  const big=(f.b||[]).map(v=>
+    `<div style="font-size:12px;margin-top:2px"><a href="${DRIVE_FILE_URL(v.i)}" target="_blank" rel="noopener">${esc(v.n)}</a>
+      <span class="muted">${v.mb} MB</span></div>`).join("");
+  return `<div class="card" style="padding:12px;${done?'border-color:var(--green)':''}">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <b style="font-size:15px">📁 ${esc(f.n)}</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        ${done?`<span class="pill ok" style="font-size:10px">已確認・${esc(dispName(done.by||""))}</span>`:""}
+        <span class="muted" style="font-size:11px">可能性 ${h.score}</span></span></div>
+    <div class="muted" style="font-size:12px;margin-top:4px;word-break:break-all">${esc(f.p||"（最上層）")}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${assetKindChips(f.k)}
+      ${f.mb?`<span class="tag" style="font-size:11px">${f.mb} MB</span>`:""}
+      ${f.c?`<span class="muted" style="font-size:11px">建 ${esc(f.c)}</span>`:""}
+      ${f.m?`<span class="muted" style="font-size:11px">改 ${esc(f.m)}</span>`:""}</div>
+    <div style="margin-top:8px;padding:7px 9px;background:var(--panel2);border-radius:6px;font-size:12px;line-height:1.7">
+      為什麼中：${esc((h.why||[]).join("、"))}</div>
+    ${big?`<div style="margin-top:8px"><span class="muted" style="font-size:12px">最大的影片：</span>${big}</div>`:""}
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <a class="btn sm" style="text-decoration:none" href="${DRIVE_FOLDER_URL(f.i)}" target="_blank" rel="noopener">開 Drive 資料夾</a>
+      ${done
+        ? `<button class="btn sec sm" onclick="assetUnconfirm('${esc(jsEsc(f.i))}')">取消確認</button>`
+        : `<button class="btn sec sm" onclick="assetConfirm('${esc(jsEsc(f.i))}','${esc(jsEsc(f.n))}')">確認是這一支的主資料夾</button>`}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px;word-break:break-all">Drive ID ${esc(f.i)}</div>
+  </div>`;
+}
+function assetFileCard(h){
+  const x=h.x;
+  return `<div class="card" style="padding:12px">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <b style="font-size:14px">${esc(AK_LABEL[x.t]||"檔案")}｜${esc(x.n)}</b>
+      <span class="muted" style="font-size:11px">可能性 ${h.score}</span></div>
+    <div class="muted" style="font-size:12px;margin-top:4px">這個檔案不在任何索引到的資料夾底下（直接掛在最上層）</div>
+    <div style="margin-top:8px;padding:7px 9px;background:var(--panel2);border-radius:6px;font-size:12px">
+      為什麼中：${esc((h.why||[]).join("、"))}</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      <a class="btn sm" style="text-decoration:none" href="${DRIVE_FILE_URL(x.i)}" target="_blank" rel="noopener">開 Drive 檔案</a>
+      ${x.mb?`<span class="tag" style="font-size:11px">${x.mb} MB</span>`:""}
+      ${x.c?`<span class="muted" style="font-size:11px">建 ${esc(x.c)}</span>`:""}</div>
+  </div>`;
+}
+function assetResultsHTML(){
+  if(ASSET_HITS==null){
+    return `<p class="muted" style="font-size:13px">打一段短文案、商品名、片名，或任何你記得的片段。</p>`;
+  }
+  if(!ASSET_HITS.length){
+    return `<div class="card" style="padding:14px">
+      <b>找不到「${esc(ASSET_Q)}」</b>
+      <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
+        試試看：只打其中兩三個字、改用商品名、改用日期（例如 20260713）、
+        或用剪輯的名字。索引是資料夾為主，記得片名的一小段通常就夠了。</div></div>`;
+  }
+  const shown=ASSET_HITS.slice(0, AS_MAX);
+  const more=ASSET_HITS.length-shown.length;
+  return (ASSET_LOOSE?`<div class="card" style="padding:10px;border-color:var(--amber);background:var(--amberbg);font-size:13px;margin-bottom:10px">
+      每個字都要中的話一筆都沒有，所以自動放寬成「中其中一個就算」—— 下面的結果會比較雜。</div>`:"")
+    + `<div class="muted" style="font-size:12px;margin-bottom:8px">${ASSET_HITS.length} 個候選${more>0?`，先列前 ${AS_MAX} 個`:""}</div>`
+    + shown.map(h=>h.t==="f"?assetFolderCard(h):assetFileCard(h)).join("");
+}
+function viewAssets(){
+  if(!canFindAssets()) return `<h2>找影片</h2><p class="muted">你沒有這一頁的權限。</p>`;
+  const m=(ASSET_IDX&&ASSET_IDX.meta)||{};
+  const head=`<h2>找影片 <span class="muted" style="font-size:13px">Google Drive 素材</span></h2>
+    <div class="muted" style="font-size:12px;margin:-6px 0 12px">
+      這一頁只讀索引、只帶你去 Drive —— <b>不會動到 Google Drive 上的任何東西</b>。</div>`;
+  if(ASSET_STATE==="loading") return head+`<div class="card" style="padding:16px">索引載入中…（第一次會比較久，之後就留在這個分頁裡）</div>`;
+  if(ASSET_STATE==="error") return head+`<div class="card" style="padding:16px;border-color:var(--red)">
+      <b style="color:var(--red)">索引讀不起來</b>
+      <div class="muted" style="font-size:13px;margin-top:6px">${esc(ASSET_ERR)}</div>
+      <div class="muted" style="font-size:13px;margin-top:6px">
+        最常見的原因是上次重建到一半被中斷。${canRebuildAssets()?"重新上傳一次 CSV 就會整份蓋掉。":"請管理員重新匯入一次。"}</div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn sec sm" onclick="assetLoad(true)">再試一次</button>
+        ${canRebuildAssets()?`<button class="btn sm" onclick="assetPickCSV()">重新匯入 CSV</button>`:""}</div>
+      ${assetImportUI()}</div>`;
+  if(ASSET_STATE==="empty"||!ASSET_IDX) return head+`<div class="card" style="padding:16px">
+      <b>還沒有索引</b>
+      <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
+        ${canRebuildAssets()
+          ? "把 Google Drive 匯出的檔案清單 CSV 傳上來，我就把它整理成搜尋索引。"
+          : "請管理員先匯入一次 Google Drive 的檔案清單。"}</div>
+      ${canRebuildAssets()?`<div class="row" style="gap:8px;margin-top:10px"><button class="btn sm" onclick="assetPickCSV()">選 CSV 檔</button></div>`:""}
+      ${assetImportUI()}</div>`;
+  const nf=(ASSET_IDX.folders||[]).length, nx=(ASSET_IDX.files||[]).length;
+  return head
+    + `<div class="card" style="padding:12px">
+        <label style="font-weight:700">找什麼</label>
+        <input id="as_q" value="${esc(ASSET_Q)}" placeholder="短文案、商品名、片名、日期…（例如：祖母綠 平替）"
+          oninput="setAssetQ(this.value)" style="margin-top:6px">
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          索引裡有 <b>${nf}</b> 個資料夾、<b>${nx}</b> 個檔案${m.built?`・${esc(String(m.built).slice(0,16).replace("T"," "))} 更新`:""}
+          ${m.rows?`・來源 ${esc(String(m.source||"CSV"))}（${m.rows} 筆）`:""}
+          ${canRebuildAssets()?` ・<a href="javascript:void(0)" onclick="assetPickCSV()">重新匯入</a>`:""}
+        </div>
+        ${assetImportUI()}
+      </div>
+      <div id="as_res" style="margin-top:12px">${assetResultsHTML()}</div>`;
+}
+// 檔案選擇器＋進度。只有管理員畫得出來 —— 但真正的擋門在 assetImport()。
+function assetImportUI(){
+  if(!canRebuildAssets()) return "";
+  return `<input type="file" id="as_csv" accept=".csv,text/csv" style="display:none" onchange="assetImport(this)">
+    ${ASSET_BUSY?`<div id="as_busy" class="muted" style="font-size:12px;margin-top:8px">${esc(ASSET_BUSY)}</div>`:""}`;
+}
+
+// ===================================================================
 // 設定（管理員）
 // ===================================================================
 // 設定：海外（英/泰）TikTok 帳號與每帳號每日目標
@@ -8292,7 +8797,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事，也可以標急件">可指派</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事，也可以標急件">可指派</th><th title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -8423,6 +8928,19 @@ function viewSettings(){
       <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
         onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)">可指派</label>`;
   };
+  // v196：「找影片」那一頁的權限（老闆：「要有權限，給權限的人才能讀」）。
+  // ⚠️ 這是**介面上**的權限，跟這個系統其他頁同一個標準 —— 擋得住同事，
+  //    擋不住懂技術的外人（登入是匿名的，見 firebase/firestore.rules 開頭）。
+  const findSel=(u)=>{
+    if(["boss","manager"].includes(u.role||"editor"))
+      return '<span class="muted" style="font-size:12px">本來就有</span>';
+    if((u.role||"")==="intl")
+      return '<span class="muted" style="font-size:12px">—</span>';
+    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
+      <input type="checkbox" ${u.canFindAssets?"checked":""} style="width:auto;margin:0"
+        onchange="setMemberFindAssets('${esc(jsEsc(u.name))}',this.checked)"
+        title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</label>`;
+  };
   // v185：外包人員 —— 看不到別人的看板與成效（管理層本來就不會是外包）
   const outSel=(u)=>{
     if(["boss","manager","hr"].includes(u.role||"editor"))
@@ -8438,6 +8956,7 @@ function viewSettings(){
     <td data-label="區域">${zoneCell(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
     <td data-label="可指派">${asgSel(u)}</td>
+    <td data-label="找影片">${findSel(u)}</td>
     <td data-label="外包">${outSel(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
@@ -8737,6 +9256,10 @@ function setMemberFlex(name, on){
 function setMemberAssign(name, on){
   writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
     on?("「"+name+"」現在可以指派剪輯工作給同事，也可以標急件"):("已收回「"+name+"」指派剪輯工作與標急件的權限")); }
+// v196：「找影片」那一頁的權限
+function setMemberFindAssets(name, on){
+  writeAdmin("PUT","/api/users/"+name,{canFindAssets:!!on},
+    on?("「"+name+"」現在可以用「找影片」搜尋素材"):("已收回「"+name+"」的「找影片」權限")); }
 // v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
 function setMemberOutsourced(name, on){
   writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},

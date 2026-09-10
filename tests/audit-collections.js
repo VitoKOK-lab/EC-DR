@@ -87,6 +87,22 @@ function collectionsInBackup() {
   return found;
 }
 
+// 刻意不備份的集合（tools/_fs.py 的 NO_BACKUP）。
+// ⚠️ 這不是後門 —— 少了它，唯一能讓檢查變綠的辦法就是「把可以重建的
+//    4.8 MB 快照也每天備份一份」，那不是我們要的。加在這裡至少強迫寫下理由，
+//    而且下面會確認理由真的有寫（空字串不算）。
+function collectionsSkippedOnPurpose() {
+  const src = read("tools/_fs.py");
+  if (src === null) return new Map();
+  const block = src.match(/NO_BACKUP\s*=\s*\{([\s\S]*?)\n\}/);
+  const out = new Map();
+  if (!block) return out;
+  const re = /["']([a-zA-Z][a-zA-Z0-9_]*)["']\s*:\s*["']([^"']*)["']/g;
+  let m;
+  while ((m = re.exec(block[1]))) out.set(m[1], m[2]);
+  return out;
+}
+
 // --- 比對 -------------------------------------------------------------------
 const used = collectionsUsedInCode();
 const rules = collectionsInRules();
@@ -119,15 +135,33 @@ if (rules === null) {
 if (backup === null) {
   bad("找不到 tools/_fs.py");
 } else {
-  const missing = [...used].filter((c) => !backup.has(c)).sort();
+  const skip = collectionsSkippedOnPurpose();
+  const noReason = [...skip].filter(([, why]) => !String(why).trim()).map(([c]) => c);
+  if (noReason.length) {
+    bad(
+      `NO_BACKUP 裡這幾個沒寫理由：${noReason.join(", ")}\n` +
+      "        → 不備份必須是個寫得出理由的決定，不然跟漏掉沒兩樣。"
+    );
+  }
+  const both = [...skip.keys()].filter((c) => backup.has(c));
+  if (both.length) {
+    bad(
+      `這幾個同時列在 COLLECTIONS 與 NO_BACKUP：${both.join(", ")}\n` +
+      "        → 兩份清單打架，讀的人不知道到底有沒有備份。挑一邊。"
+    );
+  }
+  const missing = [...used].filter((c) => !backup.has(c) && !skip.has(c)).sort();
   if (missing.length) {
     bad(
       `這些集合程式有用、但備份清單沒有列到：${missing.join(", ")}\n` +
       "        → 它們不會被備份，而且是靜悄悄地不備份。\n" +
-      "        → 請在 tools/_fs.py 的 COLLECTIONS 補上"
+      "        → 請在 tools/_fs.py 的 COLLECTIONS 補上；\n" +
+      "          真的不需要備份的話，寫進 NO_BACKUP 並註明理由。"
     );
   } else {
-    ok(`備份清單涵蓋了全部 ${used.size} 個集合`);
+    ok(`備份清單涵蓋了 ${used.size - skip.size} 個集合` +
+       (skip.size ? `，另外 ${skip.size} 個刻意不備份：` +
+         [...skip].map(([c, w]) => `${c}（${w}）`).join("、") : ""));
   }
 }
 

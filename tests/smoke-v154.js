@@ -112,6 +112,9 @@ const COLLS=["videos","tasks","shifts","schedule","products","matches","logs"]; 
 const VIEWS={board:()=>viewBoard(), chat:()=>viewChat(), output:()=>viewOutput(),
   attend:()=>viewAttend(), cal:()=>viewCal(), work:()=>viewWork(), videos:()=>viewVideos(),
   videosDF:()=>viewVideosDF(), perf:()=>viewPerf(), log:()=>viewLog(),
+  // v196：找影片。它吃的是自己載入的 driveindex（不在 STATE 裡），
+  // 所以量出來會是「零條相依」—— 那正是 TAB_DEPS 裡登記 assets:[] 的意思。
+  assets:()=>viewAssets(),
   trash:()=>viewTrash(), settings:()=>viewSettings()};
 function setup(raw, who, role){
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{}, scheduleSet:async()=>{},
