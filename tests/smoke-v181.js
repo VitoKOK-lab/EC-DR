@@ -84,7 +84,10 @@ const labels=()=>myTabs().map(t=>t[1]);
          !["dashboard","flow","team"].some(t=>ids().includes(t)), ids());
     }); }
 { reset(); as("管理員","boss");
-  ok("**老闆的分頁從 11 個收到 9 個**", ids().length===9, {幾個:ids().length, 是:ids()});
+  // v196：又多了一個「找影片」（9 → 10）。這條在盯的是「不要再回到 11 個那種
+  //       什麼都塞進導覽列的狀態」，所以是釘數字，不是釘「永遠不准新增」。
+  ok("**老闆的分頁維持在 10 個以內**（收掉三個之後只再加了「找影片」）",
+     ids().length===10 && ids().includes("assets"), {幾個:ids().length, 是:ids()});
   ok("順序：溝通 → 看板 → 其他",
      ids()[0]==="chat" && ids()[1]==="board", ids()); }
 { reset(); as("麗君","cs");

@@ -246,6 +246,64 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
       mergeShifts(); push("shifts");
       return true;
     },
+
+    // ── 影片素材索引（v196）─────────────────────────────────────────
+    // Google Drive 匯出的 15.3 萬筆清單瘦身成 2.6 萬筆（4.8 MB JSON），
+    // 切成幾份大文件存在 driveindex 這個集合裡。
+    //
+    // ⚠️ 為什麼是「幾份大文件」而不是「2.6 萬筆小文件」：
+    //    Firestore 是按**文件筆數**計費與計速的。2.6 萬筆小文件＝每個開這一頁的人
+    //    讀 26,000 次；切成 9 份就是讀 9 次。同一份資料，差 2900 倍。
+    //    這份索引是唯讀的整份快照（重建就整份換掉），沒有「只改其中一筆」的需求，
+    //    所以拆成小文件除了變貴變慢之外沒有任何好處。
+    //
+    // ⚠️ 一份文件上限 1 MiB，所以切在 600 KB —— 中文一個字 3 bytes，
+    //    用字數估會估錯，一定要量 UTF-8 的實際長度（saveAssetIndex 裡在做）。
+    //
+    // 按需載入：只有真的打開「找影片」那一頁的人才會下載，而且一次連線只下載一次。
+    async loadAssetIndex() {
+      const s = await getDocs(collection(db, "driveindex"));
+      const meta = {}; const parts = [];
+      s.docs.forEach(d => {
+        if (d.id === "meta") Object.assign(meta, d.data() || {});
+        else { const o = d.data() || {}; parts.push([+o.i || 0, String(o.s || "")]); }
+      });
+      if (!parts.length) return { meta, json: "" };
+      parts.sort((a, b) => a[0] - b[0]);
+      return { meta, json: parts.map(p => p[1]).join("") };
+    },
+    // 重建索引：先寫完所有分段，最後才寫 meta。
+    // ⚠️ 順序不能反 —— meta 是「這份索引可以用了」的旗子。先寫 meta 的話，
+    //    分段還沒寫完就有人載入，會拿到接不起來的半份 JSON。
+    //    舊的分段比新的多時要刪掉多的，不然殘留的尾巴會被接到新資料後面。
+    async saveAssetIndex(json, meta, onProgress) {
+      const enc = new TextEncoder();
+      const LIMIT = 600000;                       // 每段 UTF-8 位元組上限（文件上限 1 MiB）
+      const parts = []; let buf = "", bytes = 0;
+      for (const ch of String(json)) {            // 逐字元累加，不會切壞多位元組字元
+        const n = enc.encode(ch).length;
+        if (bytes + n > LIMIT) { parts.push(buf); buf = ""; bytes = 0; }
+        buf += ch; bytes += n;
+      }
+      if (buf) parts.push(buf);
+      for (let i = 0; i < parts.length; i++) {
+        await setDoc(doc(db, "driveindex", "c" + i), { i, s: parts[i] });
+        if (onProgress) onProgress(i + 1, parts.length);
+      }
+      const old = await getDocs(collection(db, "driveindex"));
+      for (const d of old.docs) {
+        if (d.id === "meta") continue;
+        const n = +(d.data() || {}).i;
+        if (!(n >= 0 && n < parts.length)) await deleteDoc(doc(db, "driveindex", d.id));
+      }
+      await setDoc(doc(db, "driveindex", "meta"), Object.assign({ chunks: parts.length }, meta || {}));
+      return parts.length;
+    },
+    // 人工確認的結果（確認主資料夾／別名／備註）。筆數少，一次全讀。
+    async loadAssetGroups() {
+      const s = await getDocs(collection(db, "assetgroups"));
+      return s.docs.map(d => Object.assign({ id: d.id }, d.data() || {}));
+    },
   };
   const LOGS_DEFAULT = 300;                   // 一次最多抓幾筆操作紀錄（見 watchLogs）
   let logsUnsub = null, logsLimit = LOGS_DEFAULT;

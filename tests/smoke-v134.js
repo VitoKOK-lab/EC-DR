@@ -193,8 +193,16 @@ const saidRed=(s)=>errToasts.some(t=>t.includes(s));
      !/\b(n|ok|vc)\+\+;\s*\}catch\(e\)\{\}/.test(CODE));
   ok("不再有 await window.DB.update 直接排在 for 迴圈裡",
      !/for\s*\([^)]*\)\s*\{[^}]{0,200}try\{\s*await window\.DB\.(update|set)\(/.test(APP));
-  ok("bulkRun 用的是 allSettled（不是 all —— all 會在第一個失敗就整批放棄）",
-     /Promise\.allSettled/.test(APP) && !/await Promise\.all\(/.test(APP)); }
+  // v196：斷言收到 bulkRun 的函式本體裡。
+  // 原本是「整份 app.js 都不准出現 await Promise.all(」—— 那擋過頭了：
+  // 它要保護的是「批次寫入不能因為一筆失敗就整批放棄」，可是同一個寫法用在
+  // 「兩份資料都到齊才畫得出這一頁」（assetLoad 載索引＋已確認清單）是**對的**，
+  // 那裡就是要一個失敗就整個進 catch。禁到別的函式頭上只會逼人繞路。
+  { const i=APP.indexOf("async function bulkRun(");
+    const body=i<0?"":APP.slice(i, APP.indexOf("\n}", i));
+    ok("（前提）找得到 bulkRun 的本體", !!body, i);
+    ok("bulkRun 用的是 allSettled（不是 all —— all 會在第一個失敗就整批放棄）",
+       /Promise\.allSettled/.test(body) && !/Promise\.all\(/.test(body), body.slice(0,200)); } }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

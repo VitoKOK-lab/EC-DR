@@ -38,7 +38,20 @@ COLLECTIONS = [
     "matches",   # 商品配片
     "shifts",    # 出勤打卡
     "meta",      # 系統設定（meta/settings）
+    "assetgroups",  # 人工確認的影片素材包（v196）
 ]
+
+# 程式有用、但**刻意不備份**的集合。一定要寫理由 ——
+# 這份清單存在的意義是「不備份是個決定，不是漏掉的」。
+# audit-collections.js 會讀這裡，所以漏列還是會被抓出來，只是抓成「你要不要
+# 給個理由」而不是「你忘了」。
+NO_BACKUP = {
+    # Google Drive 匯出的 CSV 重建出來的整份唯讀快照（4.8 MB／9 份大文件）。
+    # 備份它等於每天複製一份一模一樣的東西，而真正的來源是 Drive 本身 ——
+    # 重跑一次匯入就整份回來。人工確認的結果在 assetgroups，那個沒有來源可以
+    # 重建，所以那個一定要備份。
+    "driveindex": "Drive CSV 重建得回來，來源是 Google Drive 本身",
+}
 
 TIMEOUT = 90
 RETRIES = 4
@@ -87,7 +100,8 @@ def check_collections_drift():
             found.update(re.findall(pat, src))
     # 這些是 fb.js 裡的區域變數或函式名誤判，不是集合
     found -= {"update", "del", "set"}
-    return sorted(found - set(COLLECTIONS))
+    # NO_BACKUP 的是「決定不備份」，不是「忘了加」，所以不用出聲（理由寫在上面）
+    return sorted(found - set(COLLECTIONS) - set(NO_BACKUP))
 
 
 def _post(url, body, token=None):

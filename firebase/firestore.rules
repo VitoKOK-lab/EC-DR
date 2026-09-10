@@ -69,6 +69,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // --- 影片素材索引（v196）-----------------------------------------------
+    // Drive 清單瘦身後的整份唯讀快照，切成幾份大文件（meta + c0,c1,...）。
+    // 重建時會刪掉「比新的份數多出來的舊分段」，所以 delete 必須開著 ——
+    // 擋掉的話殘留的尾巴會被接到新資料後面，變成接不起來的 JSON。
+    // ⚠️ 誰能重建是在介面上擋的（跟這個系統其他頁一樣），不是在這裡擋。
+    //    要真的擋住得先把匿名登入換成 Google 帳號＋白名單（見檔案開頭）。
+    match /driveindex/{id} { allow read, write: if signedIn(); }
+
+    // --- 人工確認的素材包（v196）-------------------------------------------
+    // 「這個資料夾就是那支片的主成片資料夾」—— 人確認過的結果，會一直累積。
+    // 確認錯了要能取消，所以 delete 開著。
+    match /assetgroups/{id} { allow read, write: if signedIn(); }
+
     // --- 以下四個集合程式需要刪除功能，維持原本權限 -------------------------
     match /users/{id}    { allow read, write: if signedIn(); }
     match /tasks/{id}    { allow read, write: if signedIn(); }
