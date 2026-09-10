@@ -127,7 +127,7 @@ function reset(vids, users){
 { reset([ v_("F1") ]); as("Regina","manager");
   const b=viewBoard();
   ok("Regina 的指派卡還在", /assignFootage\(\)/.test(b));
-  ok("而且她的其他管理卡也還在", b.includes("備片存量") && b.includes("工作進度與交辦回報")); }
+  ok("而且她的其他管理卡也還在", b.includes("新片存量") && b.includes("工作進度與交辦回報")); }   // v194 改名
 { reset([ v_("F1") ]); as("HR小姐","hr");
   ok("人資不能指派（她不是小主管也沒被授權）", !/assignFootage\(\)/.test(viewBoard())); }
 

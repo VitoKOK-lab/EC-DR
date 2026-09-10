@@ -192,9 +192,9 @@ function reset(vids, tasks){
 // ══════════ ⑥ 員工視角要在最上面（老闆隨時要用）══════════
 { reset(); as("管理員","boss"); SHIFT_DATE=T0;
   const b=viewBoard();
-  const iv=b.indexOf("員工視角"), iq=b.indexOf("備片存量"), it=b.indexOf("團隊今天在做什麼");
-  ok("（前提）三塊都在", iv>=0 && iq>=0 && it>=0, {員工視角:iv, 備片存量:iq, 團隊:it});
-  ok("**員工視角排在主管區的最前面**", iv<iq, {員工視角:iv, 備片存量:iq});
+  const iv=b.indexOf("員工視角"), iq=b.indexOf("新片存量"), it=b.indexOf("團隊今天在做什麼");   // v194 改名
+  ok("（前提）三塊都在", iv>=0 && iq>=0 && it>=0, {員工視角:iv, 新片存量:iq, 團隊:it});
+  ok("**員工視角排在主管區的最前面**", iv<iq, {員工視角:iv, 新片存量:iq});
   ok("**而且只有他自己一份**（本來搬過來忘了刪原本那張）",
      (b.match(/員工視角/g)||[]).length===(b.match(/enterViewAs/g)||[]).length
      && (b.match(/enterViewAs/g)||[]).length===1,

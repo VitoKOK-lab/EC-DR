@@ -322,6 +322,35 @@ function daySum(date){
 function dayBreakdown(date){ const list=dayVideoList(date);
   const target=daySum(date), total=list.length;
   return {total, target, short:Math.max(0,target-total), full: total>=target}; }
+// ── 「要不要去拍片」只能數新片（v194，老闆指定）─────────────────────
+// 老闆：「雖然我們每天要排四支影片，但關於拍片這一件事情其實是一天一支新的影片，
+//        其他三支是已經上過的舊片重新使用……並不是每天都要四支新的影片」。
+//
+// 原本「⚠ 要拍片了」是拿 dayBreakdown 算的 —— 那是**總支數 vs 每日上片目標**，
+// 重播、大流全部算進去，所以它量的是「排程有沒有洞」，不是「還要不要去拍」。
+// 正式資料實測（2026-09-10，未來 120 天）：每天實際排 2～5 支、最常見 3 支，
+// 目標卻是 4 → 今天就不滿 → 連續排滿天數 **0 天** → 那張卡永遠亮紅字，等於沒有。
+// 改成數新片之後是 **82 天**（連續排到 11/30），跟老闆說的「到 11 月都排滿了」對得上。
+//
+// 不算新片的兩種：① 重播格（slot.reused）—— 那支早就拍過了，重排不用再拍
+//                ② 大流的片 —— 成品直接拿進來，沒經過拍片（理由見 decorate）
+function dayNewList(date){
+  return dayVideoList(date).filter(it=>{
+    if(it.slot && it.slot.reused) return false;
+    const v=vid(it.videoId);
+    return !(v && isDF(v));
+  });
+}
+// 每日新片目標（＝一天要拍幾支）。各家可以自己設，沒設就是 1。
+// ⚠️ 預設**不能**跟著 daySum 走 —— 那正是老闆說錯掉的地方（上片 4 支 ≠ 要拍 4 支）。
+function dayNewTarget(){
+  const b=brandList().find(x=>x.id===BRAND);
+  if(b && b.dailyNewTarget>0) return +b.dailyNewTarget;
+  const v=STATE.settings&&STATE.settings.dailyNewTarget;
+  return (v!=null&&v!=="")?Math.max(0,+v||0):1;
+}
+function dayNewBreak(date){ const total=dayNewList(date).length, target=dayNewTarget();
+  return {total, target, short:Math.max(0,target-total), full: total>=target}; }
 // 我目前進行中的影片數
 // 進行中支數（顯示用，無上限）；bucket 可另傳做單一平台的顯示計數
 function inProgressCount(name, bucket){ bucket=bucket||(x=>true);
@@ -344,9 +373,9 @@ function brandList(){
   const extra=(Array.isArray(s.brands)?s.brands:[])
     .filter(b=>b && String(b.id||"").trim() && String(b.name||"").trim())
     .map(b=>({id:String(b.id).trim(), name:String(b.name).trim(), dailyTarget:+b.dailyTarget||0,
-              codePrefix:String(b.codePrefix||"")}));
+              dailyNewTarget:+b.dailyNewTarget||0, codePrefix:String(b.codePrefix||"")}));
   const first={id:"", name:String(s.brandName||"").trim()||BRAND_DEF.name, dailyTarget:0,
-    codePrefix:String(s.brandCodePrefix||"")};
+    dailyNewTarget:0, codePrefix:String(s.brandCodePrefix||"")};
   const seen=new Set([""]);
   return [first].concat(extra.filter(b=>!seen.has(b.id) && seen.add(b.id)));
 }
@@ -1397,11 +1426,10 @@ function calListBody(cfg){
     const wd=WD_LABEL[new Date(ds+"T00:00:00").getDay()];
     const isToday=ds===today;
     // 日期那一格：整格可以點，點下去就是原本改排程的視窗（清單本身只能看）
-    const dcell=`<a href="javascript:void(0)" onclick="${dayOpen(ds)}" style="font-weight:700"
-        title="${T("點日期改這天的排程","Click the date to edit this day")}">${m+1}/${d}</a>
-      <span class="muted" style="font-size:11px">（${wd}）</span>${isToday?` <span class="pill wa" style="font-size:10px">${T("今天","Today")}</span>`:""}`;
+    const dcell=`<span class="cl-dt"><a href="javascript:void(0)" onclick="${dayOpen(ds)}" style="font-weight:700"
+        title="${T("點日期改這天的排程","Click the date to edit this day")}">${m+1}/${d}</a><span class="muted" style="font-size:11px">（${wd}）</span></span>${isToday?`<span class="pill wa" style="font-size:10px">${T("今天","Today")}</span>`:""}`;
     if(!list.length){
-      body+=`<tr class="${isToday?'cl-today':''}"><td>${dcell}</td><td class="muted">—</td>
+      body+=`<tr class="${isToday?'cl-today':''}"><td class="cl-when">${dcell}</td>
         <td class="muted" style="font-style:italic">${T("（這天還沒排）","(nothing scheduled)")}</td></tr>`;
       continue;
     }
@@ -1415,8 +1443,10 @@ function calListBody(cfg){
       const rowCls=[isToday?"cl-today":"",
         w?("cl-warn"+(w.late?" late":"")):(miss?"cl-warn miss":"")].filter(Boolean).join(" ");
       body+=`<tr class="${rowCls}">
-        <td>${i===0?dcell:""}</td>
-        <td style="white-space:nowrap">${esc(r.time)||'<span class="muted">—</span>'}</td>
+        ${/* v194（老闆指定）：「日期跟時間不需要佔到兩個格子，他在同一個就可以了，
+              然後時間數字可以小一點，空間要留給文字」。兩欄併一欄、時間縮成小字排在
+              日期底下 —— 省下來的寬度全部給片名，手機上一行才裝得下比較多字。 */''}
+        <td class="cl-when">${i===0?dcell:""}<span class="cl-tm">${esc(r.time)||'—'}</span></td>
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
@@ -1436,8 +1466,8 @@ function calListBody(cfg){
     </div>
     <div class="muted" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
     <div style="overflow-x:auto">
-      <table class="vtable callist"><colgroup><col style="width:130px"><col style="width:74px"><col></colgroup>
-        <thead><tr><th>${T("日期","Date")}</th><th>${T("時間","Time")}</th><th>${T("影片貼文文案","Post caption")}</th></tr></thead>
+      <table class="vtable callist"><colgroup><col class="cl-cw"><col></colgroup>
+        <thead><tr><th>${T("日期・時間","Date · time")}</th><th>${T("影片貼文文案","Post caption")}</th></tr></thead>
         <tbody>${body}</tbody></table>
     </div>
   </div>`;
@@ -1730,13 +1760,22 @@ async function unscheduleReuse(id, ds, slotIdx){ if(dbBlocked()) return;
 // ===================================================================
 // 排程速覽：連續排滿天數（安全天數）＋未來 14 天缺口
 function scheduleGlance(){
+  const dsOf=(off)=>{ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); return d.toISOString().slice(0,10); };
   let runway=0;
-  for(let off=0;off<=120;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
-    if(dayBreakdown(ds).full) runway++; else break; }
+  for(let off=0;off<=120;off++){ if(dayBreakdown(dsOf(off)).full) runway++; else break; }
   const defs=[];
-  for(let off=0;off<14;off++){ const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()+off); const ds=d.toISOString().slice(0,10);
+  for(let off=0;off<14;off++){ const ds=dsOf(off);
     const b=dayBreakdown(ds); if(!b.full){ defs.push({ds,short:b.short}); } }
-  return {runway, defs, todayTarget:daySum(today)};
+  // v194（老闆指定）：拍片存量另外算一條 —— 只數新片，重播與大流不算。
+  // 兩條要並存，不能互相取代：newRunway 回答「還要不要去拍」，
+  // runway 回答「排程有沒有洞（那天湊不湊得滿）」，是兩個不同的問題。
+  let newRunway=0;
+  for(let off=0;off<=120;off++){ if(dayNewBreak(dsOf(off)).full) newRunway++; else break; }
+  const newDefs=[];
+  for(let off=0;off<14;off++){ const ds=dsOf(off);
+    const b=dayNewBreak(ds); if(!b.full){ newDefs.push({ds,short:b.short}); } }
+  return {runway, defs, todayTarget:daySum(today),
+          newRunway, newDefs, newTarget:dayNewTarget()};
 }
 // 日期欄位下方的一排小字：接下來 14 天各排了幾支、還缺幾支，點一下直接填進欄位。
 // （手機上的日期選擇器是作業系統畫的，沒辦法在它裡面加東西，所以資訊放在欄位下方）
@@ -1908,6 +1947,7 @@ function addBrandRow(){
     +'<td data-label="公司名稱"><input class="brd_name" placeholder="長照機構" style="font-size:13px"></td>'
     +'<td data-label="編號前綴"><input class="brd_pfx" maxlength="6" placeholder="例 C" style="font-size:13px"></td>'
     +'<td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" placeholder="沿用上面的" style="font-size:13px"></td>'
+    +'<td data-label="每日要拍幾支新的"><input class="brd_newtarget" type="number" min="0" max="99" placeholder="沿用上面的" style="font-size:13px"></td>'
     +'<td data-label=""><button class="btn sec sm" onclick="this.closest(\'tr\').remove()">✕</button></td>';
   tb.appendChild(tr);
 }
@@ -4067,23 +4107,32 @@ async function flowAssign(idx, name){ refreshToday();
     toast("已交辦給 "+name+"（等他按「收到」）"); }
   catch(e){ toast("交辦失敗，請稍後再試",true); }
 }
-// 流程中控①：備片存量警報（連續排滿天數 vs 兩個月目標、缺口、各平台排到哪天）
+// 流程中控①：備片存量警報（連續排到幾天後 vs 兩個月目標、缺口、各平台排到哪天）
+//
+// v194（老闆指定）：這張卡上的「⚠ 要拍片了」改成**只看新片**。
+// 老闆：「並不是每天都要四支新的影片」—— 一天一支新的，其餘是舊片重播。
+// 舊算法（總支數 vs 每日上片目標 4）今天就不滿，那顆燈永遠是紅的。
+// 排程總支數的缺口沒有刪掉，降成下面一行小字：那是「湊不湊得滿」，不是「要不要去拍」。
 function flowRunwayCard(g, okRunway, pct){
-  // ---- ① 兩個月備片警報 ----
-  const gapChips=(g.defs||[]).slice(0,6).map(d=>`<span class="pill em" style="font-size:11px">${fmtMD(d.ds)} 缺${d.short}</span>`).join(" ");
+  // ---- ① 兩個月備片警報（新片）----
+  const gapChips=(g.newDefs||[]).slice(0,6).map(d=>`<span class="pill em" style="font-size:11px">${fmtMD(d.ds)} 缺${d.short}</span>`).join(" ");
+  const slotGap=(g.defs||[]).length;
   // 各平台排到哪天（二創殼的最遠預排日）
   const platMax=(pred)=>{ const ds=(STATE.videos||[]).filter(v=>!v.deleted&&pred(v)).map(v=>String(v.scheduledDate||"").slice(0,10)).filter(Boolean).sort().pop(); return ds?fmtMD(ds):"未排"; };
   const platChips=[["蝦皮",v=>v.channel==="shopee"],["馬來",v=>v.channel==="ms"],["英文",v=>v.locale==="en"],["泰文",v=>v.locale==="th"]]
     .map(([l,p])=>`<span class="tag" style="font-size:11px">${l}排到 ${platMax(p)}</span>`).join(" ");
   const runwayCard=`<div class="card" style="border-color:${okRunway?'var(--green)':'var(--red)'}">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <b style="font-size:16px">📅 備片存量（目標：排滿到兩個月後）</b>
-      <span class="pill ${okRunway?'ok':'em'}">${okRunway?'✓ 安心':'⚠ 要拍片了'}</span></div>
-    <div style="font-size:15px;margin-top:10px">社群排程連續排滿 <b style="font-size:22px;color:${okRunway?'var(--green)':'var(--red)'}">${g.runway}</b> 天${okRunway?'':`，距離兩個月還缺 <b style="color:var(--red)">${RUNWAY_TARGET-g.runway}</b> 天`}</div>
+      <b style="font-size:16px">📅 新片存量（目標：新片排到兩個月後）</b>
+      <span class="pill ${okRunway?'ok':'em'}">${okRunway?'✓ 不用急著拍':'⚠ 要拍片了'}</span></div>
+    <div style="font-size:15px;margin-top:10px">每天至少 ${g.newTarget} 支新片，連續排了 <b style="font-size:22px;color:${okRunway?'var(--green)':'var(--red)'}">${g.newRunway}</b> 天${okRunway?'':`，距離兩個月還缺 <b style="color:var(--red)">${RUNWAY_TARGET-g.newRunway}</b> 天`}</div>
     <div class="flowbar" style="margin-top:8px"><i style="width:${pct}%;${okRunway?'':'background:linear-gradient(90deg,#B0473A,#D98A5F)'}"></i></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">舊片重播不用再拍，所以不算在這個數字裡。</div>
     ${okRunway?'':`<div style="margin-top:10px;padding:10px;background:var(--redbg);border-radius:6px;font-size:13px;line-height:1.7">
       <b style="color:var(--red)">下一步：</b>準備腳本 → 拍毛片 → 「＋新增毛片」進資料庫 → 指派給剪輯開工。</div>`}
-    ${gapChips?`<div style="margin-top:10px;font-size:12px" class="muted">近 14 天缺口：</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">${gapChips}</div>`:''}
+    ${gapChips?`<div style="margin-top:10px;font-size:12px" class="muted">近 14 天缺新片：</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">${gapChips}</div>`:''}
+    <div class="muted" style="font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line)">
+      另外看排程湊不湊得滿（含重播）：連續排滿 <b>${g.runway}</b> 天${slotGap?`，近 14 天有 <b>${slotGap}</b> 天不到 ${g.todayTarget} 支 —— 那是排片的事，不用去拍。`:'。'}</div>
     <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">${platChips}</div>
     <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
       <button class="btn sm" onclick="batchNewFootage()">＋ 批次新增毛片</button>
@@ -4180,8 +4229,9 @@ function viewFlow(){
   const wipAll=(STATE.videos||[]).filter(v=>v.stage==="剪輯中");
   const daily=Math.max(1,+daySum(today)||4);
   const stockDays=Math.floor(pool.length/daily);
-  const okRunway=g.runway>=RUNWAY_TARGET;
-  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+  // v194：紅綠燈改看**新片**存量 —— 「要拍片了」是拍片的問題，不是排片的問題。
+  const okRunway=g.newRunway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.newRunway/RUNWAY_TARGET*100));
 
   const runwayCard=flowRunwayCard(g, okRunway, pct);
 
@@ -4196,7 +4246,9 @@ function viewFlow(){
 
   // ---- 頂部焦點列 ----
   const focus=`<div class="focusbar">
-    <div><span class="fn ${okRunway?'':'warn'}">${g.runway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">排程存量(天)</span></div>
+    ${/* v194：焦點列這一格是拿來決定「要不要去拍片」的，所以數的是新片存量。
+          原本放的是總支數排滿天數（含重播），跟旁邊那張卡的紅綠燈對不起來。 */''}
+    <div><span class="fn ${okRunway?'':'warn'}">${g.newRunway}<i>/${RUNWAY_TARGET}</i></span><span class="fl">新片存量(天)</span></div>
     <div><span class="fn ${rawStockLow(pool.length)?'warn':''}">${pool.length}</span><span class="fl">毛片庫存</span></div>
     <div><span class="fn">${wipAll.length}</span><span class="fl">製作中</span></div>
     <div><span class="fn">${doneToday.length}</span><span class="fl">今日完成</span></div>
@@ -4719,6 +4771,13 @@ function dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN){
       <span style="font-size:15px">天完整排程</span>
       <span class="muted" style="font-size:13px">從今天起連續排滿到 <b style="color:var(--txt)">${g.runway>0?runwayEnd+'（'+weekdayZh(runwayEnd)+'）':'—（今天就缺）'}</b></span>
     </div>
+    ${/* v194（老闆指定）：「並不是每天都要四支新的影片」。上面那個數字是「湊不湊得滿」
+          （重播也算），下面這行才是「還要不要去拍」。兩件事分開寫，不要混成一個數字。 */''}
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <span style="font-family:var(--serif);font-size:26px;font-weight:700;line-height:1;color:${g.newRunway>=RUNWAY_TARGET?'var(--green)':(g.newRunway>=14?'var(--gold-dk)':'var(--red)')}">${g.newRunway}</span>
+      <span style="font-size:14px">天有新片</span>
+      <span class="muted" style="font-size:12px">每天至少 ${g.newTarget} 支新的${g.newRunway>=RUNWAY_TARGET?'　✓ 不用急著拍':'　⚠ 要拍片了'}</span>
+    </div>
     <div class="sstrip" style="margin-top:12px">${stripHTML}</div>
     <div class="row" style="gap:14px;margin-top:4px;font-size:11px">
       <span class="muted"><i class="slg slg-full"></i> 已排滿</span>
@@ -5204,8 +5263,9 @@ function viewBoard(){
   const teamTasks=perEditor.reduce((a,e)=>a+e.tasks.length,0);
   const teamAssignedOpen=perEditor.reduce((a,e)=>a+e.assignedOpen.length,0);
   const {g, poolN, unassignedPool, assignCount, noSchedN, wipN, stripHTML, runwayEnd, gapN}=dashSchedule();
-  const okRunway=g.runway>=RUNWAY_TARGET;
-  const pct=Math.min(100, Math.round(g.runway/RUNWAY_TARGET*100));
+  // v194：紅綠燈改看**新片**存量 —— 「要拍片了」是拍片的問題，不是排片的問題。
+  const okRunway=g.newRunway>=RUNWAY_TARGET;
+  const pct=Math.min(100, Math.round(g.newRunway/RUNWAY_TARGET*100));
   const pool=rawStock();
   const unassigned=pool.filter(v=>!v.assignedTo).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const daily=Math.max(1,+daySum(today)||4);
@@ -8258,7 +8318,7 @@ function setWorkHoursCard(s){
       <div class="muted" style="font-size:12px;margin:-2px 0 6px">同一批剪輯服務好幾家公司時用。<b>人、出勤、交辦是共用的</b>（一天只上一次班），
         分開的只有影片庫、月排程、待認領、毛片庫存與成效。第一家是原本的資料，只能改名字不能刪。
         代號請用英文或數字（存進資料庫用的，之後不要再改）。</div>
-      <table class="responsive"><thead><tr><th>代號</th><th>公司名稱</th><th style="width:120px">編號前綴</th><th style="width:130px">每日上片目標</th><th style="width:70px"></th></tr></thead>
+      <table class="responsive"><thead><tr><th>代號</th><th>公司名稱</th><th style="width:120px">編號前綴</th><th style="width:120px">每日上片目標</th><th style="width:120px">每日要拍幾支新的</th><th style="width:70px"></th></tr></thead>
       <tbody>${list.map((b,i)=>`<tr>
         <td data-label="代號">${i===0?'<span class="muted">（原本的）</span>'
           :`<input class="brd_id" value="${esc(b.id)}" placeholder="care" style="font-size:13px">`}</td>
@@ -8266,6 +8326,8 @@ function setWorkHoursCard(s){
         <td data-label="編號前綴"><input class="brd_pfx" value="${esc(b.codePrefix||"")}" maxlength="6"
           placeholder="${i===0?"（不加）":"例 C"}" style="font-size:13px"></td>
         <td data-label="每日上片目標"><input class="brd_target" type="number" min="0" max="99" value="${b.dailyTarget||""}"
+          placeholder="沿用上面的" style="font-size:13px"></td>
+        <td data-label="每日要拍幾支新的"><input class="brd_newtarget" type="number" min="0" max="99" value="${b.dailyNewTarget||""}"
           placeholder="沿用上面的" style="font-size:13px"></td>
         <td data-label="">${i===0?'':`<button class="btn sec sm" onclick="this.closest('tr').remove()">✕</button>`}</td></tr>`).join("")}
       </tbody></table>
@@ -8320,6 +8382,7 @@ function setSetTab(k){ SET_TAB=k; render(); try{ window.scrollTo(0,0); }catch(e)
 function viewSettings(){
   const s=STATE.settings||{};
   const dailyTargetVal=(s.dailyTarget!=null&&s.dailyTarget!=="")?s.dailyTarget:daySumLegacy(today);
+  const dailyNewVal=dayNewTarget();   // 沒設過就會拿到預設的 1
   const platStr=postPlatforms().map(p=>p.name+"="+p.utm).join("\n");
   const members=(STATE.users||[]).filter(u=>STAFF_ROLES.concat("manager").includes(u.role||"editor"));
   const ROLE_PICK=STAFF_ROLES.concat("manager");   // 可以指派的職位（管理員不在清單裡）
@@ -8433,6 +8496,12 @@ function viewSettings(){
     <label style="margin-top:6px">每日應上片數</label>
     <div class="row" style="gap:8px"><input type="number" min="0" id="set_daily" value="${dailyTargetVal}" style="max-width:120px;text-align:center">
       <span class="muted">支／天 —— 社群媒體月排程以此判斷「已排滿／缺幾支」，不分影片類型。</span></div>
+    ${/* v194（老闆指定）：「並不是每天都要四支新的影片」—— 上片 4 支裡面，
+          真正要去拍的只有 1 支，其餘是舊片重播。這兩個數字一定要分開設，
+          用同一個的話「要拍片了」那顆燈會永遠是紅的（實測今天就不滿）。 */''}
+    <label style="margin-top:14px">每日要拍幾支新的</label>
+    <div class="row" style="gap:8px"><input type="number" min="0" id="set_dailynew" value="${dailyNewVal}" style="max-width:120px;text-align:center">
+      <span class="muted">支／天 —— 「要不要去拍片」只看這個數字。舊片重播與大流的片不算，那些不用再拍。</span></div>
   </div>
   <div class="card"><b>排程與網站</b>
     <label style="margin-top:6px">預排天數視窗</label>
@@ -8538,7 +8607,19 @@ async function convertExistingToTW(){ if(dbBlocked()) return;
 async function saveSettings(){
   const plats=(val("set_plat")||"").split("\n").map(s=>s.trim()).filter(Boolean).map(line=>{
     const i=line.indexOf("="); const name=(i>=0?line.slice(0,i):line).trim(); const utm=(i>=0?line.slice(i+1):line).trim()||name; return {name,utm}; });
-  const settings={ dailyTarget:parseInt(val("set_daily"))||0, scheduleHorizonDays:parseInt(val("set_horizon"))||30, shoplineBase:(val("set_shop")||"").trim() };
+  // ⚠️ v194 修掉一個 v188 埋下的洞：設定頁拆成分頁之後，沒被畫出來的欄位
+  //    val() 一律回空字串 —— 這三個原本沒有 if 保護，所以站在「平台／分類／維護」
+  //    任何一頁按「確認送出設定」，就會把每日上片目標寫成 0、預排天數重設成 30、
+  //    Shopline 網址**整條清掉**（正式資料現在是 https://www.tzgrotw.tw/）。
+  //    每日上片目標一變 0，每天都算「排滿」，排程存量會直接跳到 120 天。
+  //    底下每一個區塊本來就都有 if 保護，就這一行漏掉。
+  const settings={};
+  if(document.getElementById("set_daily")){
+    settings.dailyTarget=parseInt(val("set_daily"))||0;
+    settings.dailyNewTarget=Math.max(0, parseInt(val("set_dailynew"))||0);
+  }
+  if(document.getElementById("set_horizon")) settings.scheduleHorizonDays=parseInt(val("set_horizon"))||30;
+  if(document.getElementById("set_shop")) settings.shoplineBase=(val("set_shop")||"").trim();
   let rateWarn="";
   // 管理員密碼：留空＝不改；要改的話存雜湊、把明文清掉（跟員工密碼同一套規則）
   const pw=(val("set_pw")||"").trim();
@@ -8555,6 +8636,7 @@ async function saveSettings(){
     { const ids=Array.from(document.querySelectorAll(".brd_id"));
       const names=Array.from(document.querySelectorAll(".brd_name"));
       const tgs=Array.from(document.querySelectorAll(".brd_target"));
+      const ntg=Array.from(document.querySelectorAll(".brd_newtarget"));
       const pfx=Array.from(document.querySelectorAll(".brd_pfx"));
       if(names.length){
         settings.brandName=String(names[0].value||"").trim()||"泰熙爾札娜";
@@ -8567,6 +8649,7 @@ async function saveSettings(){
           if(!id || !nm || seen.has(id)) continue;
           seen.add(id);
           out.push({id, name:nm, dailyTarget:+((tgs[i]&&tgs[i].value)||0)||0,
+                    dailyNewTarget:+((ntg[i]&&ntg[i].value)||0)||0,
                     codePrefix:String((pfx[i]&&pfx[i].value)||"").replace(/[^A-Za-z0-9-]/g,"").slice(0,6)});
         }
         settings.brands=out;
