@@ -75,10 +75,33 @@ node tests/check-cache-stamp.js --fix   # 更新 index.html 的 ?v=
 | `firebase-config.js` | Firebase 專案設定（可公開） |
 | `firebase/firestore.rules` | Firestore 安全規則 |
 | `firebase/README.md` | Firebase 專案建立與規則部署說明 |
+| `firebase/rules.test.mjs` | 安全規則測試（42 項，需模擬器） |
+| `tools/backup.py` | 一鍵完整備份（程式碼＋資料＋封面圖） |
+| `tools/restore.py` | 資料還原（預設試跑，需 `--confirm` 才寫入） |
+| `tools/install-schedule.sh` | 安裝每日自動備份與健康檢查（macOS launchd） |
+| `BACKUP.md` | 備份與災難復原操作手冊 |
 | `SCHEMA.md` | Firestore 資料結構 |
 | `UX-PLAN-v2.md` | UX 規劃（參考） |
 
+## 備份
+
+資料全在 Firebase 雲端，本機沒有副本就等於沒有退路。一鍵備份：
+
+```bash
+python3 tools/backup.py
+```
+
+會把程式碼（含完整 git 歷史）、Firestore 全部 9 個集合、影片封面圖抓回
+`~/EC-DR-Backups/`，並在完成後自我回驗校驗碼。只用 Python 3 標準函式庫，
+不必安裝任何東西。還原用 `tools/restore.py`（預設試跑，要 `--confirm` 才寫入）。
+
+**操作手冊與災難處置對照表見 [`BACKUP.md`](BACKUP.md)。**
+
 ## 安全性
 
-目前 Firestore 規則為「通過匿名登入即可讀寫」，適合內部信任的小團隊。
-日後要更嚴（限定 Email 網域、依角色限制寫入）可再升級。
+Firestore 規則已逐集合授權：`logs`／`schedule`／`shifts`／`meta` 不可刪除、
+`logs` 不可修改、`videos` 只有進了回收桶的才能永久刪除、未定義的集合一律拒絕。
+改規則前後請跑 `firebase/rules.test.mjs`（42 項）。
+
+⚠️ **登入方式仍是匿名登入，而這個 repo 是公開的** —— 上述規則擋得住「資料被破壞」，
+擋不住「資料被讀走」。詳見 [`firebase/README.md`](firebase/README.md) 的安全性備註。

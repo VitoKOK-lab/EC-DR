@@ -8379,6 +8379,37 @@ function viewSettings(){
     <td data-label=""><button class="btn sm sec" onclick="renameContact('${esc(jsEsc(c))}')">改名</button>
       <button class="btn sm danger" onclick="delContact('${esc(jsEsc(c))}')">刪除</button></td>
   </tr>`).join("");
+  // 備份狀態：Mac mini 上的 tools/backup.py 每天回報到 meta/settings.backupStatus。
+  // 放這裡的理由 —— 沒有人會為了確認備份有沒有跑而去開終端機。
+  // 要讓人看得到，就得放在他本來每天就會開的系統裡。
+  // 沒收到回報時明講「還沒收到」，不要顯示成正常 —— 假的安心比沒有更糟。
+  //
+  // ⚠️ v188 把設定分成五個子頁之後，這張卡刻意放在子頁列**上面**（五頁都看得到），
+  //    沒有收進「維護」子頁。理由跟當初放進系統是同一個：會特地點進維護頁去查
+  //    備份的人，本來就會自己開終端機；真正要接住的是「不會去查的人」。
+  const bs = s.backupStatus || null;
+  const backupCard = (()=>{
+    if(!bs || !bs.at) return `<div class="card">
+      <b style="font-size:16px">🛟 資料備份</b>
+      <div class="muted" style="font-size:12px;margin-top:4px">
+        還沒收到任何備份回報。若已在 Mac mini 設好排程，第一次跑完（凌晨三點）就會出現在這裡。</div></div>`;
+    // at 是台灣時間（UTC+8）的字串。明確標上時區，換裝置或換時區看才不會差幾小時。
+    const t = new Date(String(bs.at)+"+08:00").getTime();
+    const days = isNaN(t) ? NaN : Math.floor((Date.now()-t)/864e5);
+    const stale = !(days>=0) || days>3;          // 算不出來也當成不正常
+    const when = String(bs.at).replace("T"," ").slice(0,16);
+    const ago  = isNaN(days) ? "時間不明" : (days<=0 ? "今天" : (days===1 ? "昨天" : days+" 天前"));
+    return `<div class="card"${stale?' style="border-left:4px solid #C0392B"':''}>
+      <b style="font-size:16px">${stale?"⚠️ 資料備份可能停了":"🛟 資料備份正常"}</b>
+      <div style="font-size:13px;margin-top:6px">
+        最後一次：<b>${esc(when)}</b>（${esc(ago)}）・${esc(String(bs.docs||"?"))} 筆・封面 ${esc(String(bs.covers||0))} 張${bs.sizeMB?"・"+esc(String(bs.sizeMB))+" MB":""}</div>
+      ${stale?`<div style="font-size:12px;margin-top:6px;color:#C0392B">
+        超過 3 天沒更新。到 Mac mini 的終端機執行 <code>bash tools/install-schedule.sh --status</code> 看排程還在不在。</div>`
+      :`<div class="muted" style="font-size:12px;margin-top:4px">
+        每天凌晨三點自動備份到 Mac mini。這張卡超過 3 天沒更新就會變紅。</div>`}
+    </div>`;
+  })();
+
   // ── v188（老闆指定：「管理員的設定太多了，要分類分頁面」）─────────────
   // 正式資料實測：整頁 83,951 字元、14 個區塊、**221 個輸入欄位**擠在同一頁。
   // 光是成員名單 27 個人就佔掉一半以上（每人四顆鍵）。要改「每天上片目標」
@@ -8465,7 +8496,7 @@ function viewSettings(){
              : SET_TAB==="tags"    ? tags
              : SET_TAB==="maint"   ? maint
              : basic;
-  return `<h2>設定</h2>${tabBar}${body}`;
+  return `<h2>設定</h2>${backupCard}${tabBar}${body}`;
 }
 // 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）

@@ -5,3 +5,14 @@ Thumbs.db
 # 編輯器
 .vscode/
 .idea/
+
+# 規則測試用的臨時套件（見 firebase/rules.test.mjs），不進版控
+node_modules/
+package.json
+package-lock.json
+firebase-debug.log
+firestore-debug.log
+
+# Python 執行時產生的暫存檔
+__pycache__/
+*.pyc

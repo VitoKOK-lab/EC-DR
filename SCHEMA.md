@@ -421,6 +421,7 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 | 欄位 | 型別 | 說明 |
 |---|---|---|
 | `schemaVersion` | number | 結構版本（目前 9） |
+| `backupStatus` | map | **備份回報**（Mac mini 上的 `tools/backup.py` 每天寫入，見 [`BACKUP.md`](BACKUP.md)）。`{at, docs, covers, sizeMB, host, ok}`；`at` 是台灣時間 ISO 字串。設定頁用它畫「資料備份」狀態卡，超過 3 天沒更新變紅。<br>**由外部工具寫入，前端只讀不寫**，且一律用 `updateMask` 只改這個欄位——整份覆寫會把系統設定洗掉。<br>沒有這個欄位是正常的（還沒設排程），畫面會顯示「還沒收到回報」而不是假裝正常。 |
 | `dailyTarget` | number | **每日應上片數（單一數字，不分類型）**；月排程以此判斷已排滿／缺幾支。未設定時沿用 `weekdayTargets` 加總 |
 | `weekdayTargets` | map | （舊）`{0..6: {流量型, 帶貨型, 寵粉}}` 每星期幾各類型上片數；已被 `dailyTarget` 取代，僅作未設定時的後備加總 |
 | `reviewSince` | string | 審片流程上線日 `YYYY-MM-DD`；這天之前完成的舊片不列入待審核（預設 `2026-07-27`） |
