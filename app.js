@@ -495,7 +495,7 @@ async function route(method, path, body){
       if(body.pwSet!=null) patch.pwSet=!!body.pwSet;
       if(body.pwAt!=null) patch.pwAt=String(body.pwAt);          // 出勤起算時間（只寫第一次）
       if(body.flexHours!=null) patch.flexHours=!!body.flexHours; // 變動工時：不判遲到早退
-      // 可以指派剪輯工作（不含標急件）。⚠️ 這一格是白名單，沒列進來的欄位會被默默丟掉 ——
+      // 可以指派剪輯工作（v195 起也含標急件）。⚠️ 這一格是白名單，沒列進來的欄位會被默默丟掉 ——
       // 加新欄位時很容易忘記這裡，忘了就是「勾了沒反應」而且不會有任何錯誤訊息。
       if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
       // v185：外包人員（老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到
@@ -5976,15 +5976,20 @@ function unmarkShot(id){ const v=vid(id)||{};
     {action:"取消「毛片已上傳」", target:vidTitle(v)}); }
 // ── 急件 ──────────────────────────────────────────────────────
 // 主管指派毛片時可以把某一支標成急件；被指派的人畫面上那一列會變紅、排到最前面。
-// ⚠️ 這是「插隊」的權力，只有主管／經理人能按 —— 誰都能標的話，大家都標急件，
+// ⚠️ 這是「插隊」的權力，不是誰都能按 —— 誰都能標的話，大家都標急件，
 //    紅色就沒有意義了（跟「全部都是第一優先＝沒有第一優先」是同一回事）。
 //    真正的擋門在 canMarkUrgent()，按鈕只是不畫出來而已。
+// v195（老闆指定）：小主管也放行。老闆問「鴻儒怎麼沒有急件的按鈕」，
+//    決定「有『可指派』權限的人就能標」。理由：派片的人本來就在決定誰先剪什麼，
+//    要他為了插一支隊回頭找主管，等於多一道沒有意義的關卡。
+//    範圍沒有變大 —— 能標的還是同一批「被明確授權派片的人」（今天全公司一個）。
 // ── 誰可以指派剪輯工作 ────────────────────────────────────────
 // 主管與經理人本來就可以。除此之外，可以**逐一**給某個人這個權限
 // （users/{name}.canAssign）—— 用旗標而不是把名字寫死在程式裡：
 // 換人、多一個人、拿掉權限，都在「設定 → 成員」勾一下就好，不必改程式重新部署。
-// ⚠️ 這個權限只給「指派剪輯工作」，不包含標急件、看薪資、改設定那些。
-//    要擴張的話請明確再開一個旗標，不要偷偷讓它變成半個管理員。
+// ⚠️ 這個權限給的是「派片」那一組事：指派剪輯工作＋標急件（v195 老闆加的）。
+//    **不含**看薪資、改設定、主管看板那些。要再擴張請明確再開一個旗標，
+//    不要偷偷讓它變成半個管理員。
 function canAssignWork(){
   if(VIEW_AS) return false;
   if(["boss","manager"].includes(currentRole())) return true;
@@ -6013,12 +6018,14 @@ function isSubLead(){
 function seesLeadBoard(){
   return !VIEW_AS && ["boss","manager","hr"].includes(currentRole());
 }
-function canMarkUrgent(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
+// v195：小主管（canAssign）也能標 —— 跟 canAssignWork() 同一批人，刻意共用同一個定義，
+//       不要各寫一份條件，不然哪天改了一邊，另一邊會默默不一樣。
+function canMarkUrgent(){ return canAssignWork(); }
 const isUrgent=(v)=> !!(v && v.urgent);
 function toggleUrgent(id){
   if(dbBlocked()) return;
   const v=vid(id)||{};
-  if(!canMarkUrgent()){ toast(T("只有主管可以標急件","Only managers can flag a rush job"),true); return; }
+  if(!canMarkUrgent()){ toast(T("只有主管跟小主管可以標急件","Only managers and team leads can flag a rush job"),true); return; }
   const on=!isUrgent(v);
   dbUpdate("videos", id,
     on ? {urgent:true, urgentAt:nowIso(), urgentBy:currentUser(), updatedAt:nowIso()}
@@ -8285,7 +8292,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事（不含標急件）">可指派</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事，也可以標急件">可指派</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -8729,7 +8736,7 @@ function setMemberFlex(name, on){
 // 換人、多一個人、拿掉權限，在這裡勾一下就好，不必改程式重新部署。
 function setMemberAssign(name, on){
   writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
-    on?("「"+name+"」現在可以指派剪輯工作給同事"):("已收回「"+name+"」指派剪輯工作的權限")); }
+    on?("「"+name+"」現在可以指派剪輯工作給同事，也可以標急件"):("已收回「"+name+"」指派剪輯工作與標急件的權限")); }
 // v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
 function setMemberOutsourced(name, on){
   writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},
