@@ -5412,13 +5412,39 @@ function viewOutput(){
 // 被授權「可以指派剪輯工作」的人（canAssign）在自己的「上班計畫」也看得到這張卡。
 // 他沒有儀表板那一頁 —— 只給旗標不給入口，等於沒給。
 // 主管／經理人不走這裡（他們沒有「上班計畫」分頁，卡片在自己的頁面上）。
+// 「這個人的畫面上**看得到**指派卡嗎」——跟「他現在按不按得動」是兩件事。
+// 員工視角預覽要用這一個：預覽的重點就是「他看到什麼」，把它藏掉等於預覽在說謊。
+// 真正的擋門在 canAssignWork()（畫面）與 assignFootage()（寫入），兩道都還在。
+function canAssignShown(){
+  // ⚠️ 員工視角時**只看被預覽那個人的紀錄**，絕對不能走 currentRole()。
+  //    currentRole() 查不到那個人的時候會退回 localStorage 裡的職位 ——
+  //    那是**真人**（管理員）的職位，於是預覽任何一個不在名單上的人
+  //    都會借到管理員權限，指派卡就冒出來了。正式資料才驗得出來的洞。
+  if(VIEW_AS){
+    const p=(STATE&&STATE.users||[]).find(x=>x&&x.name===VIEW_AS);
+    return !!(p && (p.canAssign || ["boss","manager"].includes(p.role)));
+  }
+  if(["boss","manager"].includes(currentRole())) return true;
+  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===currentUser());
+  return !!(u && u.canAssign);
+}
 function workAssignFold(){
-  if(!canAssignWork()) return "";
+  if(!canAssignShown()) return "";
   const d=dashSchedule();
   // 標題跟主管那一張一字不差 —— 兩個人講的是同一件事，名字不一樣只會讓人以為是兩個功能。
   // 預設**打開**：小主管上看板就是為了派片，不該再點一下才看得到。
-  return fold(T("🎬 指派毛片給員工","Assign footage"), d.unassignedPool.length,
-    dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount), true);
+  const card=dashAssignFootageCard(staffNamesSorted(["editor"]), d.poolN, d.unassignedPool, d.assignCount);
+  // v191（老闆回報「沒看到」——他是用員工視角在看的）：
+  // 預覽時**照樣畫出來**，但整張包在 <fieldset disabled> 裡，裡面的下拉、勾選框、
+  // 按鈕全部按不動（瀏覽器原生行為，不必逐一加 disabled）。
+  // 藏掉的話，老闆想確認「泓儒到底看不看得到」時，看到的是一片空白 —— 那不是預覽，是誤導。
+  const body = VIEW_AS
+    ? `<div class="muted" style="font-size:12px;margin-bottom:8px">${T(
+        "👁 員工視角是唯讀預覽 —— 這張卡他看得到、也按得動，但你在預覽狀態下按不動。",
+        "Read-only preview — they can use this card, but you can't while previewing.")}</div>
+       <fieldset disabled style="border:0;padding:0;margin:0;min-width:0;opacity:.75">${card}</fieldset>`
+    : card;
+  return fold(T("🎬 指派毛片給員工","Assign footage"), d.unassignedPool.length, body, true);
 }
 // 管理員儀表板：今日進度＋排程健康/庫存＋每日匯報＋累計KPI
 // v181：儀表板與流程中控已經併進 viewBoard()（導覽列上沒有這兩頁了）。

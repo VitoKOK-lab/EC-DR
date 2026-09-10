@@ -100,9 +100,27 @@ function reset(vids, users){
   ok("不剪片的同仁也一樣（沒卡、沒按鍵）",
      !/assignFootage\(\)/.test(viewBoard()) && !viewBoard().includes("<button")); }
 
-// ══════════ ⑤ 員工視角預覽不能借到指派權 ══════════
+// ══════════ ⑤ 員工視角：看得到但按不動 ══════════
+// v191（老闆回報「沒看到」——他是用員工視角在看的）：
+// 藏掉的話，想確認「泓儒到底看不看得到」時，看到的是一片空白 —— 那不是預覽，是誤導。
+// 全站早就有這條原則（v185 的 OK 鍵就是這樣處理的），這裡漏了套。
 { reset([ v_("F1") ]); as("管理員","boss"); VIEW_AS="泓儒";
-  ok("**預覽小主管的畫面時派不動**", canAssignWork()===false && !/assignFootage\(\)/.test(viewBoard()));
+  const b=viewBoard();
+  ok("**預覽時照樣畫得出來**（不然預覽等於在說謊）", /assignFootage\(\)/.test(b), b.slice(0,200));
+  ok("**但整張是按不動的**", /<fieldset disabled/.test(b), (b.match(/<fieldset[^>]*>/)||[])[0]);
+  ok("而且有講清楚為什麼", b.includes("唯讀預覽"));
+  ok("**寫入那一關照樣擋**（畫得出來不等於按得動）", canAssignWork()===false);
+  VIEW_AS=null; }
+{ reset([ v_("F1") ]); as("管理員","boss"); VIEW_AS="小葵";
+  ok("**預覽沒指派權的人，照樣看不到那張卡**", !/assignFootage\(\)/.test(viewBoard()));
+  VIEW_AS=null; }
+// ⚠️ 這一條是拿正式資料驗才抓到的：currentRole() 查不到被預覽的人時，會退回
+//    localStorage 裡的職位 —— 那是**真人**（管理員）的，於是預覽任何一個不在
+//    名單上的人都會借到管理員權限，指派卡就冒出來了。
+{ reset([ v_("F1") ]); as("管理員","boss"); VIEW_AS="根本不在名單上的人";
+  ok("**預覽一個不在名單上的人，不會借到管理員權限**",
+     !/assignFootage\(\)/.test(viewBoard()) && canAssignShown()===false,
+     viewBoard().slice(0,160));
   VIEW_AS=null; }
 
 // ══════════ ⑥ 主管那一邊沒被弄壞 ══════════
