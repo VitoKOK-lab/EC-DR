@@ -6522,6 +6522,7 @@ function viewVideosDF(){
   const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
   const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
   return `<h2>影片庫大流</h2>
+  ${remakeCard()}
   <div class="card">
     <div class="muted" style="font-size:13px;line-height:1.7">
       這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
@@ -6917,6 +6918,104 @@ function typeTagOf(v){
 
 // 每一種類型旁邊那句話 —— 講它的目的，不是講它的好壞
 const TYPE_WHY={"寵粉":"帶貨：文案會引導留言關鍵字","代理招商":"招代理／招商","流量型":"衝觸及，不直接賣"};
+
+// ===================================================================
+// 二創建議（v200）：哪幾支片值得再剪一次
+//
+// 老闆的排法：「綜合排序，流量最重要，第二是留言，日期（第一次上傳日，
+// 多久沒有二次使用，也不能太常用），誰剪的（每一次的二創都會不同人）。」
+// 後來他補充：「誰剪的」不進排序 —— 那是要看誰剪的成效好，是歸因不是派工。
+// 留言的部分他選了「只跟同類型比」。
+//
+// 所以分數 ＝ 熱度 × 隔多久沒用 × 用過幾次
+//   熱度：觀看百分位 × 0.7 ＋ 留言百分位 × 0.3，**在自己的類型裡算**
+//         （寵粉片的留言是叫來的，拿去跟流量型比會系統性佔便宜）
+//   隔多久沒用：剛用過的先別再用
+//   用過幾次：用越多次越該讓它休息
+//
+// ⚠️ 為什麼「隔多久沒用」這條那麼重要：第一次做出來的時候，37 支候選有
+//    36 支被它排除 —— 因為那時只抓了 30 天的資料，而冷卻期也是 30 天，
+//    兩個 30 天互相抵銷，池子必然是空的。補抓半年之後才有東西可排。
+// ===================================================================
+const RMK_MIN_VIEWS=5000;   // 進候選池的門檻（跟老闆說的「至少 5000 點閱」同一條線）
+const RMK_COOL_DAYS=30;     // 這麼近才用過的，先別再用
+const RMK_VIEW_W=0.7;       // 熱度裡觀看佔的比重（老闆：流量最重要）
+function rmkAired(v){
+  const o=[];
+  const d=String(v&&v.scheduledDate||"").slice(0,10); if(d) o.push(d);
+  ((v&&v.usageHistory)||[]).forEach(u=>{ const x=String((u||{}).date||"").slice(0,10); if(x) o.push(x); });
+  return [...new Set(o)].filter(x=>x<=today).sort();
+}
+function rmkDaysSince(v){
+  const a=rmkAired(v); if(!a.length) return null;
+  return Math.round((new Date(today+"T00:00:00")-new Date(a[a.length-1]+"T00:00:00"))/864e5);
+}
+function rmkTimeK(v){ const g=rmkDaysSince(v);
+  if(g==null) return 0; if(g<RMK_COOL_DAYS) return 0;
+  return g<60?0.6:g<90?0.85:1.0; }
+function rmkUsedK(v){ return ({1:1,2:0.7,3:0.4})[rmkAired(v).length]||0; }
+// 百分位：比自己低的算 1 分、一樣的算半分。同分的片不會因為排序順序而分高下。
+function rmkPct(sorted, x){
+  let lo=0, eq=0; sorted.forEach(a=>{ if(a<x) lo++; else if(a===x) eq++; });
+  return sorted.length ? (lo+0.5*eq)/sorted.length : 0;
+}
+function rmkPool(){
+  return (STATE.videos||[]).filter(v=>!isVersion(v) && vidViews(v)>=RMK_MIN_VIEWS && rmkAired(v).length);
+}
+function rmkRank(){
+  const pool=rmkPool(), byType={};
+  pool.forEach(v=>{ (byType[vidType(v)]||(byType[vidType(v)]=[])).push(v); });
+  const out=[];
+  Object.keys(byType).forEach(t=>{
+    const vs=byType[t];
+    const vw=vs.map(vidViews).sort((a,b)=>a-b), cm=vs.map(vidComments).sort((a,b)=>a-b);
+    vs.forEach(v=>{
+      const heat=RMK_VIEW_W*rmkPct(vw,vidViews(v))+(1-RMK_VIEW_W)*rmkPct(cm,vidComments(v));
+      out.push({v, heat, tk:rmkTimeK(v), uk:rmkUsedK(v), score:heat*rmkTimeK(v)*rmkUsedK(v),
+                gap:rmkDaysSince(v), used:rmkAired(v).length, type:t});
+    });
+  });
+  return out.sort((a,b)=>b.score-a.score);
+}
+function rmkWhyNot(r){
+  if(r.gap!=null && r.gap<RMK_COOL_DAYS) return `${r.gap} 天前才用過`;
+  if(r.used>=4) return `已經用過 ${r.used} 次`;
+  return "";
+}
+function remakeCard(){
+  if(!(STATE.videos||[]).some(v=>vidViews(v)>0)) return "";
+  const all=rmkRank(), live=all.filter(r=>r.score>0), rest=all.length-live.length;
+  const top=live.slice(0, RMK_OPEN?30:8);
+  const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
+      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
+      <td data-label="觀看" class="pr-v"><b>${num(vidViews(r.v))}</b></td>
+      <td data-label="留言" class="pr-c">${num(vidComments(r.v))}</td>
+      <td data-label="多久沒用" class="pr-v">${r.gap} 天</td>
+      <td data-label="用過" class="pr-k">${r.used} 次</td>
+      <td data-label="剪輯" class="pr-e">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td></tr>`;
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>二創建議</b>
+      <span class="muted" style="font-size:12px">依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">
+      候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest?`，其中 ${rest} 支現在先不推薦`:""}。
+      ${live.length?"":"<b>現在沒有推薦的片</b> —— 多半是成效資料還太新，等舊片的成效補進來就會有。"}
+    </div>
+    ${live.length?`<div class="${top.length>10?'vidscroll':''}" style="margin-top:8px">
+      <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e"></colgroup>
+      <thead><tr><th>影片</th><th>類型</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th></tr></thead>
+      <tbody>${top.map(row).join("")}</tbody></table></div>
+      ${live.length>8?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`:""}
+    ${rest?`<details class="fold" style="margin-top:10px"><summary class="muted" style="font-size:12px">現在先不推薦的 ${rest} 支，為什麼</summary>
+      <div class="muted" style="font-size:12px;line-height:1.9;margin-top:6px">${
+        all.filter(r=>!r.score).slice(0,20).map(r=>`${esc(vidTitle(r.v)).slice(0,28)}　<b>${rmkWhyNot(r)}</b>`).join("<br>")
+      }${rest>20?`<br>…另外還有 ${rest-20} 支`:""}</div></details>`:""}
+  </div>`;
+}
+let RMK_OPEN=false;
+function rmkToggle(){ RMK_OPEN=!RMK_OPEN; render(); }
 
 // ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
 let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
