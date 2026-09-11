@@ -4156,6 +4156,32 @@ function flowRunwayCard(g, okRunway, pct){
   </div>`;
   return runwayCard;
 }
+// 看板：已播出卻沒有上片連結的存量（v197）
+// 為什麼要有這張卡：月排程上只標最近 14 天的（那是補得回來的），更舊的不標。
+// 不標很容易變成「不存在」—— 這張卡就是不讓它消失的那個數字。
+function pubLinkCard(){
+  const {fresh, old}=pubLinkSplit();
+  if(!old.length && !fresh.length) return "";
+  const sample=old.slice().sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")));
+  return `<div class="card" style="padding:12px">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🔗 上片連結</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        ${fresh.length?`<span class="pill em">最近 ${PUB_LINK_DAYS} 天有 ${fresh.length} 支要補</span>`:`<span class="pill ok">最近 ${PUB_LINK_DAYS} 天都補齊了</span>`}
+        ${old.length?`<span class="pill wa">更早的還有 ${old.length} 支</span>`:""}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:8px;line-height:1.8">
+      那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙 ——
+      沒有它，平台的觀看數接不回任何一支片，「哪支流量好、該拿去二創」就永遠判斷不了。
+      ${old.length?`<br>更早的 ${old.length} 支不會在月排程上標紅（人已經想不起來是哪一則了），要靠平台對接自動補。`:""}
+    </div>
+    ${sample.length?`<details class="fold" style="margin-top:8px"><summary style="font-size:13px">看更早那 ${old.length} 支<span class="n">${old.length}</span></summary>
+      <div class="foldbody" style="max-height:260px;overflow:auto">${sample.slice(0,200).map(v=>
+        `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px">
+          <span class="muted">${esc(String(v.scheduledDate||"").slice(5))}</span>
+          <a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${esc(vidTitle(v))}</a></div>`).join("")}
+        ${old.length>200?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${old.length-200} 支</div>`:""}</div></details>`:""}
+  </div>`;
+}
 // 流程中控②：毛片庫存警示。
 // ⚠️ 指派的操作**不在這裡**（老闆決定集中到儀表板）——
 //    儀表板與中控本來各有一份指派毛片，同一件事兩個入口、兩套畫面。
@@ -5301,6 +5327,7 @@ function viewBoard(){
   ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
       dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
   ${flowReviewQueueCard()}
+  ${pubLinkCard()}
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
   <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
@@ -6526,6 +6553,12 @@ function dfFormHTML(v, id){
     <label style="margin-top:10px">存檔連結（雲端資料夾或檔案）</label>
     <input id="df_drive" value="${esc(v.driveFolder||"")}" placeholder="https://drive.google.com/...">
     <div class="muted" style="font-size:12px;margin-top:4px">貼整條網址就好，清單上只會顯示成一顆「存檔」的連結。</div>
+    ${/* v197：大流的片一樣會排上片，一樣需要那條「發在哪一則」的網址。
+          ⚠️ 這一格要先存在，vidMissing 才可以對大流亮「缺上片連結」——
+             先亮燈再補格子＝指著一個沒地方填的欄位叫人去填（v136 的教訓）。 */''}
+    <label style="margin-top:10px">上片連結（發在平台上的那一則）</label>
+    <input id="df_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.facebook.com/... / https://www.instagram.com/...">
+    <div class="muted" style="font-size:12px;margin-top:4px">之後要對得回觀看數、判斷哪支流量好，靠的就是它。</div>
     <label style="margin-top:10px">文案</label>
     <textarea id="df_copy" style="min-height:96px" placeholder="貼文文案／口播稿">${esc(zhTW(v.videoCopy||""))}</textarea>
     ${id?"":'<div class="muted" style="font-size:12px;margin-top:10px">封面在建好之後按「編輯」上傳。</div>'}`;
@@ -6538,6 +6571,7 @@ function dfAdd(){
     // 直接就是成品：stage 一步到位，不進待處理、不進待認領、不進審片
     const video={ lib:DF_LIB, name, rawName:name,
       videoCopy:zhTW(val("df_copy").trim()), driveFolder:val("df_drive").trim(),
+      publishedLink:val("df_pub").trim(),
       stage:"已完成", published:true, finishedAt:nowIso(), backupDone:true, socialScheduled:true,
       reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),   // 成品不需要審，先標好免得跑進審片清單
       tags:["舊片"] };
@@ -6553,7 +6587,8 @@ function dfEdit(id){
     // 封面不在這裡送 —— 它是上傳當下就寫進資料庫的（coverChosen），這裡再送一次會蓋掉
     return await write("PUT","/api/videos/"+id,
       {video:{name, rawName:name, videoCopy:zhTW(val("df_copy").trim()),
-              driveFolder:val("df_drive").trim()}}, "已更新");
+              driveFolder:val("df_drive").trim(),
+              publishedLink:val("df_pub").trim()}}, "已更新");
   });
 }
 // ── 二創：不另開一筆影片，直接記在原片底下 ────────────────────────
@@ -7038,11 +7073,16 @@ function vidImplied(){
   if(VID_UNSCHED) out.push("date");           // 勾了「只看還沒排日期的」
   return out;
 }
-// 「上片連結」只有二創殼追得到 —— 它的編輯視窗有那一格（i_pub／{p}_pub）。
-// 台灣源片的編輯視窗**根本沒有這個輸入格**，所以那個欄位對源片永遠是空的
-// （實際資料：610 支影片有 0 支填得起來）。拿一個填不了的欄位當缺漏，
-// 等於對所有人亮一個永遠熄不掉的紅字 —— 燈號就失去意義了，看到紅色也不會再有人當一回事。
-function needPostLink(v){ return isVersion(v); }
+// 「上片連結」誰該有。
+//
+// v136 當初把源片排除掉，理由是「台灣源片的編輯視窗根本沒有這個輸入格」——
+// 拿一個填不了的欄位當缺漏，等於亮一個永遠熄不掉的紅字，燈號整組失去意義。
+// 那個判斷完全正確，而且救過這個系統一次。
+//
+// v197（老闆指定）把它放回來，但**先補上了輸入格**（編輯視窗「上片後」那一區的
+// e_pub），前提才成立。順序不能反 —— 先開燈號再補格子，中間那段時間就是
+// 對 400 多支片亮著一個沒人能處理的紅字。
+function needPostLink(v){ return isVersion(v) || needsPubLink(v); }
 // v184（老闆指定）：「是寵粉或銷售的我要有地方要提醒他們，輸入商品名稱
 // 還有這個商品的官網連結」。這兩種標籤就是要導購的片 —— 沒有商品名稱與
 // 官網連結，觀眾看完不知道去哪買，那支片等於白剪。
@@ -7059,6 +7099,40 @@ function prodMissing(v){
   return !hasName && !hasUrl ? {k:"prod", zh:"缺商品與連結", en:"needs product & link"}
        : !hasName          ? {k:"prod", zh:"缺商品名稱",   en:"needs product name"}
                            : {k:"prod", zh:"缺商品官網連結", en:"needs product URL"};
+}
+// ── 缺上片連結：只提醒「還補得回來」的那幾支（v197）──────────────────
+// 正式資料實測（2026-09-11）：416 支已播出的片一支都沒有上片連結，
+// 最早可以追到五月。全部標紅的話整個月排程從五月紅到現在 —— 那就變成
+// 「全部都是第一優先＝沒有第一優先」，跟急件那顆紅燈一樣會被無視。
+//
+// 所以只標最近 PUB_LINK_DAYS 天內播出的：那段時間剪輯還記得自己發在哪一則，
+// 補得回來。更舊的靠 Meta 對接自動補（人早就忘了是哪一則，逼他猜只會填錯）。
+//
+// ⚠️ 但「不標」不等於「不算」—— 超過窗期的總數要在看板上寫出來（pubLinkBacklog），
+//    不然每天有幾支默默滑出窗期，這個洞會一直長大而且沒有人看得到。
+//    （跟 v184 那條「待審七天就消失＝幫人忘記」是同一個教訓。）
+const PUB_LINK_DAYS=14;
+function needsPubLink(v){
+  if(!v || isVersion(v)) return false;              // 版本殼走它自己那一段
+  const sch=String(v.scheduledDate||"").slice(0,10);
+  if(!sch || sch>today) return false;               // 還沒播出，不用急
+  return !String(v.publishedLink||"").trim();
+}
+function pubLinkFresh(v){
+  if(!needsPubLink(v)) return false;
+  const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-PUB_LINK_DAYS);
+  return String(v.scheduledDate).slice(0,10) >= d.toISOString().slice(0,10);
+}
+// 還缺上片連結的片，分成「還補得回來」與「已經滑出窗期」兩堆。
+// ⚠️ 用 allLibVideos（影片庫＋大流）是刻意的：上片連結是**出片面**的事，
+//    大流的成品一樣會排上片、一樣需要那條網址。生產面的數字才不准碰大流。
+//    只呼叫一次就把兩堆都算出來 —— 那道「生產面不准偷用 allLibVideos」的
+//    守門是數出現次數的，能少一次是一次。
+function pubLinkSplit(){
+  const fresh=[], old=[];
+  allLibVideos().forEach(v=>{ if(!needsPubLink(v)) return;
+    (pubLinkFresh(v)?fresh:old).push(v); });
+  return {fresh, old};
 }
 function vidMissing(v){
   if(!v) return [];
@@ -7080,11 +7154,24 @@ function vidMissing(v){
   }
   if(isDF(v)){
     // 大流放的是成品：沒有毛片這一步（它本來就不用拍），所以不能標「缺毛片」——
-    // 那會變成又一個永遠熄不掉的燈號。它只有兩件事真的可能缺：存檔連結與文案。
+    // 那會變成又一個永遠熄不掉的燈號。它只有三件事真的可能缺。
+    if(pubLinkFresh(v)) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!String(v.driveFolder||"").trim()) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     if(!String(v.videoCopy||"").trim())   out.push({k:"copy",  zh:"缺文案",     en:"needs script"});
     return done();
   }
+  // ── v197（老闆指定）：「缺上片連結」一般台灣片也要標 ─────────────────
+  // 本來只有二創版本殼（上面那個 isVersion 分支）在檢查這一項，一般片整段漏掉 ——
+  // 正式資料實測（2026-09-11）：**410 支已經播出的片，上片連結 100% 是空的**，
+  // 而且一支都沒被提醒過。
+  //
+  // 為什麼這件事要緊到值得一顆紅燈：那條網址是「我們這支片」對上「平台上那則貼文」
+  // 的**唯一鑰匙**。沒有它，Meta 回來的觀看數接不回任何一支片 ——
+  // 「哪支片流量好、該拿去二創」這個判斷就永遠做不了。
+  //
+  // 排在最前面（比缺文案、缺毛片還前面）是刻意的：那兩個是「還沒開工」，
+  // 這個是「已經播出去了卻沒記下來」，過了就補不回來（人會忘記發在哪一則）。
+  if(pubLinkFresh(v)) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
   if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
   if(!vidShot(v))                      out.push({k:"raw",  zh:"缺毛片",  en:"needs footage"});
   if(!sch)                             out.push({k:"date", zh:"沒排日期", en:"no date"});
@@ -7178,7 +7265,9 @@ function openVideoModal(id, edit, fromWork){
   const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
   // 存檔資料夾從這一折搬到上面（拍毛片的人一進來就要看到，不是上片後才填），
   // 所以這裡不再拿 driveFolder 當「有沒有料」的依據。
-  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0);
+  // v197：還沒補上片連結而且已經該補了 → 這一區自己打開。
+  // 收起來的輸入格等於不存在，燈號叫人去補、點進來又找不到，比沒有還糟。
+  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0) || pubLinkFresh(v);
   // 「進階」一律收起來（都是選填、少碰的欄位）。裡面有東西時在標題上標個數字
   // 提示，這樣不用打開也知道有料 —— 比自動展開安靜，又不會讓人漏看。
   // 注意 name 不能拿來判斷：存檔時它預設會跟原始片名一樣，等於永遠有值。
@@ -7223,7 +7312,18 @@ function openVideoModal(id, edit, fromWork){
       ${productRows("e", v.products)}
       <label>${T("商品官網連結","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
       <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd || needsProduct(v), "e_prodfold")}
+    ${/* v197（老闆指定）：台灣源片也要有「上片連結」這一格。
+          v136 當初把「缺上片連結」的燈號從源片拿掉，理由是「那一格根本沒有地方可以填」——
+          拿填不了的欄位當缺漏＝亮一個永遠熄不掉的紅字。那個理由完全正確，
+          所以這次的順序是**先補上輸入格**，燈號才跟著回來（見 needPostLink）。
+          為什麼要緊：那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙 ——
+          沒有它，平台回來的觀看數接不回任何一支片。 */''}
     ${fold(T("上片後","After publishing"), null, `
+      <label>${T("上片連結（這支片發在平台上的那一則）","Post link (where this went live)")}</label>
+      <input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.facebook.com/... / https://www.instagram.com/...">
+      <div class="muted" style="font-size:12px;margin-top:4px">${T(
+        "貼上這支片實際發出去的那一則貼文網址。之後要對得回觀看數、判斷哪支流量好，靠的就是它。",
+        "Paste the actual post URL. This is what ties the video back to its view counts.")}</div>
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
@@ -7303,6 +7403,8 @@ async function saveVideo(id){
     // v177：幾點上片（只有整點）。沒有這一格的視窗（二創殼等）不要動到舊值
     publishTime:document.getElementById("e_time") ? val("e_time") : String(v0.publishTime||""),
     driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""),
+    // v197：上片連結。沒有這一格的視窗（二創殼走 i_pub／{p}_pub）不要動到舊值
+    publishedLink:document.getElementById("e_pub") ? val("e_pub").trim() : String(v0.publishedLink||""),
     // 帳號：只有英／泰源片那一格會出現；沒出現就不要動舊值（二創殼的帳號是建立時定的）
     account:document.getElementById("e_acct") ? val("e_acct").trim() : String(v0.account||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）

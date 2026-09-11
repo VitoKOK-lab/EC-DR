@@ -295,7 +295,15 @@ function lastSlot(){
   ok("齊全的大流片完全不長燈號", missingPill(full)==="");
   ok("大流不標「缺毛片」（它本來就不用拍）", !missingPill(d_("9",{rawLink:"",driveFolder:"http://d",videoCopy:"有"})).includes("缺毛片"));
   ok("大流不標「沒排日期」（還沒排是正常的，不是缺漏）", !missingPill(d_("9",{scheduledDate:null,driveFolder:"http://d",videoCopy:"有"})).includes("沒排日期"));
-  ok("大流不標「缺上片連結」", !missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3)})).includes("缺上片連結"));
+  // v197（老闆指定）：大流的片一樣會排上片，一樣需要那條「發在哪一則」的網址。
+  // ⚠️ 這條之所以以前是反過來的，理由跟 v136 一樣 —— 大流的編輯視窗（dfFormHTML）
+  //    沒有那一格。v197 先在 dfFormHTML 補上 df_pub，燈號才跟著回來。
+  ok("**大流過了上片日沒貼連結 → 要標「缺上片連結」**",
+     missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3)})).includes("缺上片連結"));
+  ok("**貼了就熄掉**",
+     !missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3),publishedLink:"https://www.facebook.com/x"})).includes("缺上片連結"));
+  ok("**大流的編輯視窗真的有那一格**（沒有就是叫人做不到的事）",
+     /id="df_pub"/.test(APP), (APP.match(/id="df_pub"[^>]*/)||[])[0]);
   ok("大流沒填存檔連結要標出來（那是它真的該有的）",
      missingPill(d_("9",{driveFolder:"",videoCopy:"有"})).includes("缺存檔連結"));
   ok("大流沒填文案也要標出來", missingPill(d_("9",{driveFolder:"http://d",videoCopy:""})).includes("缺文案"));

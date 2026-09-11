@@ -4,6 +4,7 @@
 //  ③ 標籤預設只露前兩個，其餘收進「更多標籤」（已勾的一定露）
 //  ④ 「進階」一律收起來，裡面有東西時在標題上標數字提示
 const fs=require("fs"), path=require("path");
+const RAW=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8");   // 原始碼（給「這一格存不存在」那種檢查用）
 let src=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8")
   .replace(/^let /gm,"").replace(/^const /gm,"");
 const el=()=>({value:"",innerHTML:"",textContent:"",className:"",style:{},checked:false,tagName:"DIV",dataset:{},
@@ -83,10 +84,21 @@ ok("沒排日期標「沒排日期」", missingPill(OKV("A",{scheduledDate:null}
 // 台灣源片的編輯視窗**沒有**上片連結那一格（只有存檔／毛片／參考來源），
 // 所以那個欄位對源片永遠是空的 —— 正式資料 610 支影片有 0 支填得起來。
 // 拿填不了的欄位當缺漏，就是對所有人亮一個永遠熄不掉的紅字，燈號會整組失去意義。
-ok("源片不再標「缺上片連結」（那一格根本沒有地方可以填）",
-   !missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("缺上片連結"));
-ok("源片就算過了上片日也不算落後了",
-   !missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("late"));
+// ⚠️ v136 當初把這個燈號從源片拿掉是**對的**，而且救過這個系統一次 ——
+//    當時源片的編輯視窗根本沒有「上片連結」那一格，亮了就是一個永遠熄不掉的紅字。
+//    v197 把燈號放回來，但**先補上了輸入格**（編輯視窗「上片後」那一區的 e_pub），
+//    前提才成立。所以這兩條改成反過來盯：燈號要亮、而且要有地方可以填。
+//    老闆要這個是因為那條網址是「我們這支片」對上「平台那則貼文」的唯一鑰匙，
+//    沒有它，平台回來的觀看數接不回任何一支片（正式資料：410 支已播出的片 0 支有）。
+ok("**源片過了上片日、沒貼連結 → 要標「缺上片連結」**",
+   missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("缺上片連結"));
+ok("**而且是紅的**（已經播出去卻沒記下來，過了就補不回來）",
+   missingPill(OKV("A",{scheduledDate:D2(-1)})).includes("late"));
+ok("**貼了就熄掉**（不是永遠亮著的那種燈）",
+   !missingPill(OKV("A",{scheduledDate:D2(-1),publishedLink:"https://www.facebook.com/x"})).includes("缺上片連結"));
+ok("還沒到上片日不用急", !missingPill(OKV("A",{scheduledDate:D2(3)})).includes("缺上片連結"));
+ok("**編輯視窗真的有那一格可以填**（沒有的話上面那幾條就是在叫人做不到的事）",
+   /id="e_pub"/.test(RAW), (RAW.match(/id="e_pub"[^>]*/)||[])[0]);
 ok("源片其他該標的照標（沒有連坐拿掉別的燈號）",
    missingPill(OKV("A",{scheduledDate:D2(-1),rawLink:""})).includes("缺毛片"));
 // 二創殼：沒有腳本／毛片這兩步，但它的編輯視窗有「上傳連結」欄位，所以照追
