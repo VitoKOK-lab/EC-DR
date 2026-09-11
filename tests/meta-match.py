@@ -324,6 +324,38 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 哪一把權杖開得了「成效」那扇門：用試的 —")
+# 2026-09-11 的實況：「權杖權限：五項都有 ✓」，但 IG 成效一律回
+# 「Bad signature（code=190）」，而同一把權杖抓貼文清單完全正常。
+# 那個訊息聽起來像簽章壞掉，實際上是「這把鑰匙開不了這扇門」——
+# IG 的洞察要用粉專的權杖。Meta 的錯誤訊息不會告訴你該換哪一把。
+CALLED = []
+
+
+def fake_insights(path, token, metrics, missing):
+    CALLED.append(token)
+    return {"views": 8800} if token == "PAGE" else {}
+
+
+_real = S._insights
+S._insights = fake_insights
+try:
+    CALLED[:] = []
+    tok, label = S.pick_token({"id": "M1"},
+                              [("這個帳號自己的粉專權杖", None),
+                               ("粉專權杖", "PAGE"),
+                               ("個人權杖", "USER")], ["views"])
+    ok(tok == "PAGE" and "粉專" in label, "試出「粉專權杖」要得到成效，就用那一把")
+    ok("USER" not in CALLED, "試到能用的就停，不會把每一把都打一次")
+
+    CALLED[:] = []
+    tok, label = S.pick_token({"id": "M1"},
+                              [("個人權杖", "USER"), ("粉專權杖", "USER")], ["views"])
+    ok(tok is None, "全部都要不到就照實回報，不要硬挑一把")
+    ok(CALLED == ["USER"], "同一把權杖不會重複試")
+finally:
+    S._insights = _real
+
 print("— API 版本與已廢除的指標 —")
 # 2026-09 查官方文件查到的：Meta 在 2024-08 把 impressions / plays / video_views
 # 全部併成 views；views 從 v22.0 才有。而這支原本寫死 v21.0 ——
@@ -463,6 +495,14 @@ ok(acc2[0].get("pageToken") == "PAGE_TOK",
    "粉專自己的權杖要存下來（粉專貼文用個人權杖會被擋成 code=190）")
 acc3, _ = U.map_accounts([{"id": "100", "name": "Zana Gems"}], [], PLATS)
 ok("pageToken" not in acc3[0], "Meta 沒給粉專權杖時不要硬塞一個空字串進去")
+
+# IG 的洞察也要用粉專的權杖 —— 跟粉專貼文同一個坑，我第一次只修了 FB 那一半。
+# 實況：「權杖權限：五項都有 ✓」，IG 成效卻一律 Bad signature（code=190）。
+acc4, _ = U.map_accounts([], [{"id": "17a", "username": "tzgrotw", "token": "PAGE_TOK"}], PLATS)
+ok(acc4[0].get("pageToken") == "PAGE_TOK",
+   "IG 帳號也要存下它所屬粉專的權杖（IG 洞察要用粉專那把）")
+acc5, _ = U.map_accounts([], [{"id": "17a", "username": "tzgrotw"}], PLATS)
+ok("pageToken" not in acc5[0], "沒拿到就不要塞空字串")
 
 # 這一條守的是「有沒有跟 Meta 要粉專權杖」。要不到的後果是 FB 那半邊整個抓不到，
 # 而那件事要真的連上 Meta 才會發現 —— 所以在這裡用字串守住，便宜但擋得住。

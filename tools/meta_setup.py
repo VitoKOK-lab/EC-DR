@@ -43,9 +43,11 @@ def discover(token):
                       "token": p.get("access_token") or ""})
         ig = p.get("instagram_business_account") or {}
         if ig.get("id"):
+            # IG 的洞察也要用**粉專的**權杖（跟粉專貼文同一個坑），一起存起來
             igs.append({"id": ig["id"],
                         "username": ig.get("username") or "",
-                        "via": p.get("name") or ""})
+                        "via": p.get("name") or "",
+                        "token": p.get("access_token") or ""})
     return pages, igs
 
 
@@ -81,7 +83,10 @@ def map_accounts(pages, igs, plats):
     for ig in igs:
         name = by_handle.get(str(ig.get("username", "")).lower()) \
             or ("IG @%s" % ig.get("username", ""))
-        accounts.append({"platform": "IG", "name": name, "igUserId": ig["id"]})
+        entry = {"platform": "IG", "name": name, "igUserId": ig["id"]}
+        if ig.get("token"):
+            entry["pageToken"] = ig["token"]
+        accounts.append(entry)
         seen.add(name)
     for pg in pages:
         name = by_handle.get(str(pg.get("name", "")).lower().replace(" ", "")) \

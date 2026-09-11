@@ -305,6 +305,31 @@ def list_all(cfg, since_ts):
     return token, posts
 
 
+def pick_token(sample, candidates, metrics):
+    """拿第一則貼文試打，找出哪一把權杖要得到成效。回傳 (權杖, 說明)。
+
+    ⚠️ 為什麼要用試的，而不是照規則挑：
+    2026-09-11 的實況是「權杖權限五項都有 ✓」，但 IG 的成效一律回
+    「Bad signature（code=190）」—— 而同一把權杖抓貼文清單完全正常。
+    那個訊息聽起來像簽章壞掉，實際上是「這把鑰匙開不了這扇門」：
+    IG 的洞察要用**粉專的**權杖，不是個人那一把。
+    FB 貼文早就踩過同一個坑（code=190 subcode=2069032），我只修了 FB 那一半。
+
+    Meta 的錯誤訊息不會告訴你該換哪一把，而規則每改版就變一次。
+    與其猜，不如花幾次呼叫試出來 —— 試對了整批都用那一把，試不出來就照實說。
+    """
+    tried = []
+    for label, tok in candidates:
+        if not tok or tok in tried:
+            continue
+        tried.append(tok)
+        probe = {}
+        vals = _insights("%s/insights" % sample["id"], tok, metrics, probe)
+        if vals:
+            return tok, label
+    return None, ""
+
+
 def add_insights(posts, cfg, token, verbose=False):
     """只對挑出來的這幾則問成效。**這一段是整支腳本裡最慢的部分。**
 
@@ -312,14 +337,31 @@ def add_insights(posts, cfg, token, verbose=False):
     然後把其中 900 多則丟掉 —— 那些是商品圖文，影片庫裡本來就沒有。
     改成先比對、先篩，再問成效，呼叫數掉到一兩百次。
     """
-    by_page = {}
-    for acc in (cfg.get("accounts") or []):
-        if acc.get("pageToken"):
-            by_page[acc.get("name")] = acc["pageToken"]
+    accounts = cfg.get("accounts") or []
+    by_page = dict((a.get("name"), a["pageToken"]) for a in accounts if a.get("pageToken"))
+    any_page = next(iter(by_page.values()), "")
+
+    # 每個帳號先試出一把能用的權杖，再整批抓（試的成本是每個帳號 1～3 次呼叫）
+    chosen = {}
+    for acc_name in sorted(set(p["account"] for p in posts)):
+        first = next(p for p in posts if p["account"] == acc_name)
+        mets = IG_METRICS if first["platform"] == "IG" else FB_METRICS
+        tok, label = pick_token(first, [
+            ("這個帳號自己的粉專權杖", by_page.get(acc_name)),
+            ("粉專權杖", any_page),
+            ("個人權杖", token),
+        ], mets)
+        chosen[acc_name] = tok
+        if tok:
+            print("  %s：用「%s」要得到成效" % (acc_name, label))
+        else:
+            print("  ⚠ %s：三把權杖都要不到成效" % acc_name)
+    sys.stdout.write("  ")
+
     missing = {}
     for i, p in enumerate(posts, 1):
         _tick(i)
-        tok = by_page.get(p["account"]) or token
+        tok = chosen.get(p["account"]) or token
         ins = _insights("%s/insights" % p["id"], tok,
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
         # ⚠️ 官方文件：「if insights data you are requesting does not exist or is
