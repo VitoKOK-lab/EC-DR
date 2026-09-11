@@ -57,14 +57,20 @@ MIN_CHARS = 12        # 文案正規化後短於這個字數就不參加比對�
 # 再往下到 10 只多 14 支，收穫遞減，而段落越短誤配的風險只會越高。
 DF_MAX_RATIO = 0.03   # 出現在超過這個比例的影片裡＝罐頭句，不採計
 DF_MIN_COUNT = 5      # 但至少要 5 支共用才算罐頭 —— 見下方說明
-POST_DF_MIN = 40      # 貼文那邊的下限（比影片那邊高很多，原因見下）
+POST_PER_ACCOUNT = 5  # 一支片在一個帳號上頂多發幾次（首播＋重播）
+POST_DF_FLOOR = 8     # 帳號數再少，下限也不低於這個
+MIN_HITS = 2          # 至少要對上這麼多段才算數（指紋只有一兩段的片除外）
 
-# 為什麼貼文那邊的下限要拉到 40：
-# 影片那邊，「兩支片共用同一段文字」就已經是要分辨的對象（重播／中英版），
-# 所以下限低。貼文那邊不一樣 —— **同一支片本來就會變成好幾則貼文**：
-# 7 個帳號各發一次、再重播個幾次，四十則以內都還在合理範圍。
-# 下限設太低會把「一支正常的片」自己的指紋當成罐頭句扣光，那支片就永遠對不到了。
-# 40 以上還在共用的，就不是一支片發很多次，是真的招呼語。
+# 【貼文那邊的門檻不可以用比例算】
+# 一開始貼文這邊沿用影片那邊的「超過 3% 就算罐頭」。1,183 則貼文的 3% 是 35 ——
+# 可是一句招呼語只要出現十幾次就足以當磁鐵了，35 這條線根本攔不到。
+# 實際踩到的：V081 的片名尾巴是「#首頁鏈接加入溱姐寵粉社群」（是「鏈接」，
+# 別的片都寫「連結」），這個變體在兩邊都稀有，於是它把 10 則完全不相干的
+# 商品貼文吸了過來（「買一堆廉價耳飾…」「當小貓咪遇上寶石…」）。
+#
+# 貼文這邊該問的不是「佔幾成」，而是「**一支片最多可能變成幾則貼文**」：
+# 連上幾個帳號 × 每個帳號頂多發幾次。超過那個數還在共用的，
+# 就不是同一支片發很多次，是招呼語。所以門檻跟著帳號數走，不是跟著總則數走。
 DATE_NEAR_DAYS = 3    # 並列時，上片日期離貼文日期幾天內算「對得上」
 
 # 為什麼罐頭句還要有一個「至少 5 支」的下限：
@@ -206,7 +212,8 @@ class Index(object):
             for s in set(shingles(np_)):
                 if s in self.by_shingle:      # 只數我們索引裡真的有的段
                     df[s] = df.get(s, 0) + 1
-        cap = max(POST_DF_MIN, int(math.floor(n * DF_MAX_RATIO)))
+        accounts = len(set(str((p or {}).get("account") or "") for p in posts))
+        cap = max(POST_DF_FLOOR, accounts * POST_PER_ACCOUNT)
         extra = set(s for s, c in df.items() if c > cap)
         if not extra:
             return 0
@@ -254,6 +261,14 @@ def match_post(post, index):
             hits[vid] = hits.get(vid, 0) + 1
     if not hits:
         return {"videoId": None, "why": "文案對不上任何一支", "candidates": []}
+
+    # 只對上一段（12 個字）的，證據太薄 —— 那正是招呼語的形狀。
+    # 但指紋本來就只有一兩段的短片名沒有更多可以給，那種就以它全部為準。
+    hits = {vid: h for vid, h in hits.items()
+            if h >= min(MIN_HITS, len(index.entries[vid]["key"]))}
+    if not hits:
+        return {"videoId": None, "why": "只對上一小段，證據不夠（多半是招呼語）",
+                "candidates": []}
 
     top = max(hits.values())
     best = [vid for vid, h in hits.items() if h == top]
