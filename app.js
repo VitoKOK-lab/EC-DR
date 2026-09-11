@@ -303,7 +303,9 @@ function dayVideoList(date){
   // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
   // 出片面：影片庫A 與大流一起算。大流的片是成品，排進來就是當天要出的其中一支，
   // 「今天到底出幾支」不該分它從哪個庫來（生產面的數字才要分，見 decorate）。
-  allLibVideos().forEach(v=>{ if(isSourceVid(v) && schedLineOf(v)==="tw" && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  // 二創殼（isRemake）也要收：它是版本殼，isSourceVid 是 false，但它就是那天要出的片。
+  // 少了它，排片人排的「上片日期」在月曆上完全看不到 —— 而那正是第三步的第一個動作。
+  allLibVideos().forEach(v=>{ if((isSourceVid(v)||isRemake(v)) && schedLineOf(v)==="tw" && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -2539,7 +2541,9 @@ function daySmall(v){
   return ` <span style="font-size:11px;flex:none;color:${col};font-weight:${n>=2?700:400}">${b==="新"?T("今天領","new"):T("第 "+b+" 天","d"+b)}</span>`;
 }
 // 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
-function shpBadge(v){ return (v.channel&&CHANNELS[v.channel])
+function shpBadge(v){ return isRemake(v)
+  ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="二創（原片再剪一次）">二創</span>`
+  : (v.channel&&CHANNELS[v.channel])
   ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
   : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : ''; }
 // 待認領卡裡會跟著搜尋／快選變動的幾塊，各自抽成函式 —— 打字時只換這幾塊，不整頁重繪
@@ -6959,8 +6963,14 @@ function rmkPct(sorted, x){
   let lo=0, eq=0; sorted.forEach(a=>{ if(a<x) lo++; else if(a===x) eq++; });
   return sorted.length ? (lo+0.5*eq)/sorted.length : 0;
 }
+// 候選池＝影片庫A ＋ 大流。
+// 正式資料實測：公司到目前為止做過的 5 次二創**全部都在大流**，而大流有 11 支
+// 觀看 5000 以上、也排過上片日。只讀 STATE.videos 的話這 11 支一支都推薦不到 ——
+// 建議選單正好漏掉真正在被二創的那個庫（而且它就掛在大流那一頁上）。
+// 這是出片／再利用面，不是生產面：毛片庫存、待認領、剪輯 KPI 的數字一個都沒動。
+function rmkAll(){ return allLibVideos(); }
 function rmkPool(){
-  return (STATE.videos||[]).filter(v=>!isVersion(v) && vidViews(v)>=RMK_MIN_VIEWS && rmkAired(v).length);
+  return rmkAll().filter(v=>!isVersion(v) && vidViews(v)>=RMK_MIN_VIEWS && rmkAired(v).length);
 }
 // 搜尋要找的東西：片名、原始檔名、文案、**帶貨商品**。
 // 老闆：「有時候是先有商品，再來找能用的影片。」—— 從商品名找回影片，
@@ -6975,7 +6985,7 @@ function rmkHay(v){
 function rmkSearchPool(q){
   const k=zhTW(String(q||"")).trim().toLowerCase();
   if(!k) return [];
-  return (STATE.videos||[]).filter(v=>!isVersion(v) && rmkHay(v).includes(k));
+  return rmkAll().filter(v=>!isVersion(v) && rmkHay(v).includes(k));
 }
 function rmkRank(pool){
   pool=pool||rmkPool();
@@ -7013,6 +7023,7 @@ function rmkSetQ(x){ RMK_Q=x; const el=document.getElementById("rmk_rows");
 // （整頁重畫會讓輸入框失焦，打一個字就要重點一次）
 function rmkRowsHTML(){
   const q=String(RMK_Q||"").trim();
+  const canPlan=canPlanRemake();   // 排二創是管理員／經理人的事，剪輯只是看得到建議
   const all = q ? rmkRank(rmkSearchPool(q)) : rmkRank();
   // 搜尋時：有分數的排前面，其餘照成效排（冷卻中的也要看得到，但要標出來）
   if(q) all.sort((a,b)=> (b.score-a.score) || (vidViews(b.v)-vidViews(a.v)));
@@ -7027,7 +7038,10 @@ function rmkRowsHTML(){
       <td data-label="留言" class="pr-c">${vidViews(r.v)?num(vidComments(r.v)):''}</td>
       <td data-label="多久沒用" class="pr-v">${r.gap==null?'<span class="muted">—</span>':r.gap+" 天"}</td>
       <td data-label="用過" class="pr-k">${r.used} 次</td>
-      <td data-label="上次誰剪" class="pr-e">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td></tr>`;
+      <td data-label="上次誰剪" class="pr-e">${esc(rmkLastEditor(r.v))||'<span class="muted">—</span>'}</td>
+      ${canPlan?`<td data-label=""><button class="btn sm" style="white-space:nowrap"
+        onclick="event.stopPropagation();openRmkPlan('${r.v.id}')"
+        title="排上片日期、取新片名、指定剪輯">排二創</button></td>`:""}</tr>`;
   if(!show.length){
     return `<div class="muted" style="font-size:13px;padding:10px 0">${
       q ? `找不到「${esc(q)}」。試試商品名、片名裡的關鍵字，或文案裡的一句話。`
@@ -7038,13 +7052,13 @@ function rmkRowsHTML(){
         : `候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest.length?`，其中 ${rest.length} 支現在先不推薦`:""}`
     }</div>
     <div class="${show.length>10?'vidscroll':''}">
-    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e"></colgroup>
-    <thead><tr><th>影片</th><th>類型</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th></tr></thead>
+    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e">${canPlan?'<col class="pr-k">':''}</colgroup>
+    <thead><tr><th>影片</th><th>類型</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th>${canPlan?"<th></th>":""}</tr></thead>
     <tbody>${show.map(row).join("")}</tbody></table></div>
     ${(!q && live.length>8)?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`;
 }
 function remakeCard(){
-  if(!(STATE.videos||[]).some(v=>vidViews(v)>0)) return "";
+  if(!rmkAll().some(v=>vidViews(v)>0)) return "";
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <b>二創建議</b>
@@ -7059,6 +7073,162 @@ function remakeCard(){
 }
 let RMK_OPEN=false;
 function rmkToggle(){ RMK_OPEN=!RMK_OPEN; render(); }
+
+// ===================================================================
+// 二創流程（第三步・v201）
+// ===================================================================
+// 老闆：「一樣要有一個人先安排片源的『上片日期』，和新的片名（原始腳本名和原毛片名
+//        禁止修改）給指定的剪輯，他們收到（才等同新片有拿到毛片）才開始剪，
+//        然後剪完再次上傳後我才能再回到第一步，再次追蹤。」
+//
+// 二創＝一筆**版本殼**（channel="remake" ＋ sourceVideoId），跟蝦皮／馬來／英／泰
+// 同一個形狀。排日期、指派、認領計時、審片、完成、拖延警示、團隊看板那一整套
+// 因此全部沿用 —— 不必為二創再寫第二套流程（兩套流程最後一定會長歪成兩個樣子）。
+//
+// 跟那四條線只差兩件事：
+//   ① 它跟原片走**同一本月曆**（見 schedLineOf）—— 二創就是台灣當天要出的片
+//   ② 片名由排片人現取，不自動加後綴；原毛片名沿用原片並鎖住（老闆指定）
+//
+// ⚠️ 殼的 lib 永遠是 ""（影片庫A），就算原片在大流也一樣。
+//    生產面（每日工作、待認領、團隊看板）讀的是 STATE.videos，大流那半邊已經被
+//    decorate 切到 videosDF 去了 —— 殼放大流＝被指派的剪輯永遠看不到自己有工作。
+const RMK_CH="remake";
+function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoId||"")); }
+// 誰可以排二創（老闆選的：管理員＋經理人，跟現在排月排程的是同一批人）
+function canPlanRemake(){ return ["boss","manager"].includes(currentRole()); }
+function remakesOfSrc(id){ id=String(id||""); if(!id) return [];
+  return (STATE.videos||[]).filter(v=>isRemake(v)&&String(v.sourceVideoId)===id)
+    .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+function rmkSrcOf(v){ return isRemake(v) ? vid(v.sourceVideoId) : null; }
+function rmkNoOf(v){ const s=rmkSrcOf(v); if(!s) return 0;
+  return remakesOfSrc(s.id).findIndex(x=>x.id===v.id)+1; }
+// 最後一次二創是誰剪的。建議選單的「上次誰剪」要看這個，不是原片的剪輯 ——
+// 要排下一次的人想知道的是「上一次交給誰」，不是半年前第一次是誰剪的。
+function rmkLastEditor(v){
+  const ks=remakesOfSrc(v&&v.id).filter(k=>k.editor||k.claimedBy||k.assignedTo);
+  const k=ks[ks.length-1];
+  return k ? String(k.editor||k.claimedBy||k.assignedTo||"") : String((v&&(v.editor||v.claimedBy))||"");
+}
+// 原片第一則貼文到今天幾天。比值旁邊一定要寫這個數字。
+// 老闆選的是「照算，也拿來排剪輯」—— 那就更要把年齡擺出來：原片累積了 155 天、
+// 二創才跑 30 天，比值天生就難看。看得到年齡，才分得出「這個剪輯不行」
+// 還是「這支本來就比得不公平」。
+function rmkSrcAgeDays(v){
+  const ats=((v&&v.metrics)||[]).map(m=>String((m||{}).postAt||"").slice(0,10)).filter(Boolean).sort();
+  if(!ats.length) return null;
+  return Math.round((new Date(today+"T00:00:00")-new Date(ats[0]+"T00:00:00"))/864e5);
+}
+// 二創比原片幾成。回 null＝其中一邊還沒有數字 ——
+// 沒有數字不等於零，也不等於中等（v200 那個 0.5 百分位就是這樣來的）。
+function rmkRatio(k){ const s=rmkSrcOf(k); if(!s) return null;
+  const a=vidViews(s); if(!a) return null;
+  const b=vidViews(k); if(!b) return null;
+  return b/a; }
+// 二創要掛在誰底下。二創的二創一律掛回**原片** ——
+// 成效永遠拿原片當基準；鏈子一節一節接下去，「比原本好還是壞」會越比越糊塗
+// （第 3 版比第 2 版好 8%、第 2 版比原片差 60%，那第 3 版到底行不行？）。
+function rmkPlanTarget(v){ return isRemake(v) ? (vid(v.sourceVideoId)||v) : v; }
+function rmkStagePill(k){
+  if(dispStage(k)==="待審核") return `<span class="pill wa" style="font-size:10px">待審核</span>`;
+  if(k.published||k.stage==="已完成"||k.stage==="已上片") return `<span class="pill ok" style="font-size:10px">完成</span>`;
+  if(k.stage==="剪輯中") return `<span class="pill wa" style="font-size:10px">剪輯中</span>`;
+  return `<span class="pill" style="font-size:10px">${k.claimedBy?"待剪":"等他收到"}</span>`;
+}
+
+// ── 排二創：排上片日期 ＋ 取新片名 ＋ 指定剪輯 ───────────────────────
+// 這三格全是必填。少任何一格，這支片就會卡在某個沒有人會看的地方：
+// 沒日期＝月曆上看不到；沒片名＝清單上跟原片長得一模一樣；沒指定人＝沒有人知道該他剪。
+function openRmkPlan(sourceId){
+  if(dbBlocked()) return;
+  if(!canPlanRemake()){ toast("只有管理員／經理人可以排二創",true); return; }
+  const s0=vid(sourceId);
+  if(!s0){ toast("找不到這支影片",true); return; }
+  const s=rmkPlanTarget(s0);
+  const eds=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
+  if(!eds.length){ toast("成員名單裡還沒有剪輯可以指派",true); return; }
+  const done=remakesOfSrc(s.id);
+  const hist=done.length?`<div class="muted" style="font-size:12px;margin-top:10px;line-height:1.8">
+      這支已經二創過 ${done.length} 次：<br>${done.map((k,i)=>
+        `${i+1}. ${esc(zhTW(k.name||""))}・${esc(k.editor||k.claimedBy||k.assignedTo||"")}・${
+          esc(String(k.scheduledDate||"").slice(0,10))||"沒排日期"}`).join("<br>")}</div>`:"";
+  const copy=String(s.videoCopy||"");
+  showModal("排二創："+zhTW(vidTitle(s)), `
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      排好之後這支會出現在指定剪輯的「每日工作」，他按 <b>認領開始剪</b> 才算拿到毛片、
+      才開始計剪片天數。剪完存回同一個資料夾，走原本的審片、上片流程。
+    </div>
+    <div class="card" style="background:var(--panel2);margin-top:10px">
+      <div style="font-size:13px"><b>原毛片名</b>　${esc(zhTW(s.rawName||s.name||""))||'<span class="muted">—</span>'}</div>
+      <div style="font-size:13px;margin-top:4px"><b>原始腳本</b>　${
+        esc(zhTW(copy.slice(0,60)))||'<span class="muted">—</span>'}${copy.length>60?"…":""}</div>
+      <div class="muted" style="font-size:11px;margin-top:6px">
+        這兩樣二創不會動到，也鎖起來不給改 —— 改掉就對不回原片，成效沒辦法前後比。</div>
+    </div>
+    <label style="margin-top:10px">新的片名 <span class="muted" style="font-weight:400">（這次二創要用的名字）</span></label>
+    <input id="rp_name" placeholder="例：${esc(zhTW(String(s.name||s.rawName||"").slice(0,12)))}－二創${done.length+1}">
+    <label style="margin-top:10px">上片日期</label>
+    <input type="date" id="rp_date">
+    <label style="margin-top:10px">指定剪輯</label>
+    <select id="rp_editor"><option value="">請選一個人</option>${
+      eds.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+    ${hist}`, async ()=>{
+    const name=zhTW(val("rp_name").trim());
+    const date=String(val("rp_date")||"").slice(0,10);
+    const who=String(val("rp_editor")||"").trim();
+    if(!name){ toast("要先取一個新的片名",true); return false; }
+    if(!date){ toast("要先排上片日期",true); return false; }
+    if(!who){ toast("要指定一個剪輯",true); return false; }
+    const rec=newVideoRecord({
+      channel:RMK_CH, sourceVideoId:s.id, lib:"",            // 殼一律放影片庫A，理由見上面那段
+      rawName:String(s.rawName||s.name||""),                 // 原毛片名沿用，鎖住不給改
+      name,                                                  // 新片名（排片人現取）
+      videoCopy:String(s.videoCopy||""),                     // 口播稿是同一支片的，沿用
+      driveFolder:String(s.driveFolder||"").trim(),          // 剪完存回同一個資料夾
+      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+      productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
+      tags:(s.tags||[]).slice(), subTag:(s.tags||[])[0]||"",
+      platforms:(s.platforms||[]).slice(),                   // 成效歸戶靠「上片日期＋帳號」，平台先跟著原片
+      stage:"待處理", assignedTo:who, scheduledDate:date });
+    const ok=await write("POST","/api/videos",{video:rec}, "已排給 "+who+"："+date+" 上片");
+    if(ok) render();
+    return ok!==false;
+  });
+}
+
+// ── 原片視窗的「二創」卡：第幾次、誰剪的、排哪天、比原片如何 ─────────
+function rmkVersionsCard(v){
+  if(!v||!v.id) return "";
+  if(isRemake(v)) return lineBackToSourceCard(v,
+    {head:"原片（這支是它的二創）", tail:"第 "+rmkNoOf(v)+" 次二創"});
+  const kids=remakesOfSrc(v.id); if(!kids.length) return "";
+  const age=rmkSrcAgeDays(v), sv=vidViews(v);
+  const rows=kids.map((k,i)=>{ const r=rmkRatio(k);
+    return `<tr>
+      <td data-label="第幾次">${i+1}</td>
+      <td data-label="片名"><a href="javascript:void(0)" onclick="${vidOpenFn(k)}">${esc(zhTW(k.name||k.rawName||""))}</a></td>
+      <td data-label="剪輯">${esc(k.editor||k.claimedBy||k.assignedTo||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="狀態">${rmkStagePill(k)}</td>
+      <td data-label="上片日">${esc(String(k.scheduledDate||"").slice(0,10))||'<span class="muted">—</span>'}</td>
+      <td data-label="觀看">${vidViews(k)?num(vidViews(k)):'<span class="muted">—</span>'}</td>
+      <td data-label="比原片">${r==null?'<span class="muted">—</span>':"<b>"+Math.round(r*100)+"%</b>"}</td></tr>`;
+  }).join("");
+  return `<div class="card" style="background:var(--panel2)"><b>二創（${kids.length}）</b>
+    <span class="muted" style="font-size:12px">原片 ${sv?num(sv)+" 觀看":"還沒有成效數字"}${
+      age!=null?"・上片 "+age+" 天":""}</span>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>第幾次</th><th>片名</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>觀看</th><th>比原片</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    ${(age!=null&&age>60)?`<div class="muted" style="font-size:11px;margin-top:6px">
+      ⚠ 原片那個數字是 ${age} 天累積來的，二創才剛開始跑 —— 比值天生偏低，看的時候要把這件事算進去。</div>`:""}
+  </div>`;
+}
+// 原片的「原毛片名／原始片名」該不該鎖。
+// 老闆：「原始腳本名和原毛片名禁止修改」。鎖的理由不只是規矩 ——
+// 成效是拿這些欄位去跟平台貼文比對的，改掉名字＝那支片的成效整批對不回來。
+function rmkNameLock(v){
+  if(isRemake(v)) return "二創沿用原片的原始片名，不給改 —— 改掉就對不回原片了";
+  if(v&&v.id&&remakesOfSrc(v.id).length) return "這支已經有二創，原始片名鎖住 —— 改掉成效會對不回來";
+  return "";
+}
 
 // ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
 let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
@@ -7476,7 +7646,8 @@ function openVideoModal(id, edit, fromWork){
   const metricsCard=vidMetricsCard(v);
   // 一創剪輯不需要看到二創版本的狀況（減少干擾）；做二創的人與管理層才顯示
   const localizedCard = (seesIntl() ? localizedVersionsCard(v) : "")
-                      + (seesTW()   ? (shopeeVersionsCard(v) + msVersionsCard(v)) : "");
+                      + (seesTW()   ? (shopeeVersionsCard(v) + msVersionsCard(v) + rmkVersionsCard(v)) : "");
+  const rawLock=rmkNameLock(v);   // 原毛片名鎖不鎖（老闆：原始腳本名和原毛片名禁止修改）
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -7510,8 +7681,11 @@ function openVideoModal(id, edit, fromWork){
         <label style="margin-top:0">${T("編號 ／ 原始片名","Code / Raw title")}</label>
         <div class="row" style="gap:8px">
           <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}">
-          <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1;min-width:0" placeholder="${T("原始片名","Raw title")}">
+          <input id="e_raw" value="${esc(v.rawName||"")}" placeholder="${T("原始片名","Raw title")}"
+            style="flex:1;min-width:0${rawLock?";background:var(--panel2);color:var(--muted)":""}"
+            ${rawLock?`readonly title="${esc(rawLock)}"`:""}>
         </div>
+        ${rawLock?`<div class="muted" style="font-size:11px;margin-top:4px">🔒 ${esc(rawLock)}</div>`:""}
         ${enFieldHTML("e_nameEn", T("英文片名","English title"), v.nameEn||"", "e_raw")}
       </div>
     </div>
@@ -7622,7 +7796,10 @@ async function saveVideo(id){
   await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
-  const video={code:val("e_code").trim(), rawName:zhTW(val("e_raw")), name:zhTW(val("e_name").trim()||val("e_raw").trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
+  // 鎖住的原始片名一律回存舊值，不讀畫面上那一格。唯讀只是擋手滑，
+  // 擋不住 devtools 或舊分頁 —— 而這個欄位一改，那支片的成效就整批對不回來。
+  const rawName = rmkNameLock(v0) ? String(v0.rawName||"") : zhTW(val("e_raw"));
+  const video={code:val("e_code").trim(), rawName, name:zhTW(val("e_name").trim()||rawName.trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
     products, productUrl,
     source:val("e_src"),
     // 階段：只有管理員／經理人那一格是真的下拉；其他人看到的是 disabled 的唯讀格
@@ -7693,6 +7870,12 @@ function lineMatch(v,k){ const L=LINES[k]; return !!L && String((v||{})[L.field]
 // v146 打開「海外可以自己拍」之後就會踩到：海外排了日期，中文月曆多算一支英文片，
 // 英文月曆卻看不到它 —— 兩邊的數字都是錯的。
 function schedLineOf(v){
+  // 二創殼跟原片走**同一本月曆**：二創就是台灣當天要出的其中一支，不像蝦皮／馬來／
+  // 英／泰那樣各有自己的行事曆。少了這一行，lineOf 會回 "remake"，這支就掉進一本
+  // 不存在的月曆 —— 排了日期卻哪裡都看不到，等於排了也不知道自己排過。
+  // 只往上找一層：二創的二創一律掛回原片（建立時就擋掉了），這裡再保險一次，
+  // 免得資料壞掉時互相指來指去把瀏覽器轉死。
+  if(isRemake(v)){ const s=vid(v.sourceVideoId); return (s&&!isRemake(s))?schedLineOf(s):"tw"; }
   const l=lineOf(v); if(l) return l;
   const o=origLangOf(v);
   return INTL_LOCALES.includes(o) ? o : "tw";

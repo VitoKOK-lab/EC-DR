@@ -331,7 +331,10 @@ function lastSlot(){
 // ══════════ ⑩ 原始碼：生產面不准偷用 allLibVideos ══════════
 { const CODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
   const uses=(CODE.match(/allLibVideos\(\)/g)||[]).length;
-  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=5);
+  // 上限 5→6（v201）：二創建議的候選池 rmkAll() 多用了一處。
+  // 那是出片／再利用面 —— 大流有 11 支合格的片，而公司做過的 5 次二創全在大流，
+  // 不加進來等於建議選單看不到真正在被二創的那個庫。生產面的數字一個都沒動。
+  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=6);
   ok("decorate 有把大流抽出去", /st\.videosDF=st\.videos\.filter\(isDF\)/.test(CODE));
   ok("抽出去之後 STATE.videos 真的只剩 A", /st\.videos=st\.videos\.filter\(v=>!isDF\(v\)\)/.test(CODE)); }
 
