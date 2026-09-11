@@ -64,7 +64,7 @@
 | `deleted` | boolean | 軟刪除 | true＝在回收桶（畫面一律隱藏，僅管理員回收桶可見、可復原）。**全員都可刪**（2026-07 起）：任何角色在影片視窗按刪除→進回收桶並記 `deletedBy`；救回／永久刪除只有管理員能做 |
 | `deletedBy` | string | 刪除者 | 成員名字 |
 | `deletedAt` | string(ISO) | 刪除時間 | |
-| `metrics` | object[] | 平台成效 | 後端以「影片標題」比對平台貼文後自動填；每筆 `{platform, account, views, likes, comments, shares, at}` |
+| `metrics` | object[] | 平台成效 | 後端以**文案**比對平台貼文後自動填（v198，`tools/meta_sync.py`）；每筆 `{platform, account, views, likes, comments, shares, at, postId, postAt, link}`。`at`＝抓取時間、`postAt`＝發文時間、`postId`＝平台那則的 id（同一支片在同一個帳號重播兩次＝兩則不同貼文、兩列，用 `postId` 當 key 才不會互相蓋掉） |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
 | `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`＝英／泰在地化二創版（海外剪輯做）。馬來西亞已改走 `channel:"ms"`（台灣區，schemaVersion 14 起；既有 `locale:"ms"` 資料已遷移） |
 | `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片同語言可有多支＝不同帳號/成片） |
@@ -75,9 +75,15 @@
 | `brand` | string | 公司／品牌（v131） | `""`＝第一家（原本的泰熙爾札娜，既有資料全部天生屬於它，**一筆都不用搬**）；其餘為 `settings.brands[].id`。**同一批剪輯服務多家公司**：人、出勤、交辦、訊息共用（一天只上一次班），分開的只有影片庫、月排程、待認領、毛片庫存、指派、成效 |
 | `origLang` | string | 一創語言（原本） | 只對一創原本（`locale=""` 且 `channel=""`）有意義：`""`＝中文（預設）、`"th"`泰、`"en"`英、`"my"`馬來。影片庫用「原本語言」選單分庫檢視（schemaVersion 15 起）。v122 起清單列不再標語言徽章 —— 下拉一次只顯示一種語言，每列再標一次是重複；語言只寫在單支影片的視窗裡 |
 
-> **平台成效串接（規劃中）**：後端（Supabase 排程）以官方 API 抓 TikTok／IG／FB 各帳號的貼文成效，
-> 用「貼文標題＝影片 `name`」比對回本集合，寫入 `metrics`/`metricsAt`。帳號粉絲數另存於未來的
-> `channelStats/{yyyy-mm-dd}` 或 `channels` 集合（待實作）。前端只讀 Firestore 顯示。
+> **平台成效串接（v198，程式已寫好、等權杖）**：`tools/meta_sync.py` 跑在 Mac mini 上（跟每日備份同一台），
+> 用 Meta Graph API 抓 FB 粉專／IG 各帳號的貼文，比對回本集合，寫入 `metrics`/`metricsAt`，
+> 順便把空的 `publishedLink` 補回去。前端只讀 Firestore 顯示。
+>
+> ⚠️ 比對用的是**文案**（`videoCopy`），不是影片標題。原本規劃寫「貼文標題＝影片 `name`」——
+> 那行不通：`name` 是內部檔名（「0819 黃鐵礦帶財」），平台貼文上根本沒有這串字。
+> 兩邊真正都有的只有文案。做法與實測數字見 `tools/meta_match.py`，測試在 `tests/meta-match.py`。
+>
+> 帳號粉絲數、「本週」差值需要每天存快照（官方 API 只給當下數字），另存 `channelStats/{yyyy-mm-dd}`（待實作）。
 
 > **跨語言二創（海外英文版）**：海外剪輯（`users.role="intl"`，全英文介面）在影片庫挑台灣**已完成**源片，
 > 建立一筆 `locale:"en"`、`sourceVideoId` 指回源片的**衍生影片**，翻譯重剪後填回 `driveFolder`（英文版存檔）、
