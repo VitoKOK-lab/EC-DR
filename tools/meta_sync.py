@@ -158,6 +158,16 @@ def _insight_values(data):
     return out
 
 
+def _tick(n):
+    """印一個點表示還活著。
+
+    成效是一則貼文一次 API 呼叫，一個帳號跑下來可能好幾分鐘。
+    中間什麼都不印的話，畫面看起來就是當掉了（第一次真的跑就是這樣）。
+    """
+    sys.stdout.write("." if n % 10 else str(n))
+    sys.stdout.flush()
+
+
 def fetch_ig(acc, token, since_ts, missing):
     """一個 IG 帳號的貼文＋成效。"""
     rows = _paged("%s/media" % acc["igUserId"], token,
@@ -168,6 +178,7 @@ def fetch_ig(acc, token, since_ts, missing):
         ts = str(r.get("timestamp") or "")
         if ts[:10] < since_ts:
             continue
+        _tick(len(posts) + 1)
         ins = _insights("%s/insights" % r["id"], token, IG_METRICS, missing)
         posts.append({
             "platform": "IG", "account": acc["name"],
@@ -182,7 +193,15 @@ def fetch_ig(acc, token, since_ts, missing):
 
 
 def fetch_fb(acc, token, since_ts, missing):
-    """一個 FB 粉專的貼文＋成效（含 Reels，Reels 也在 /posts 裡）。"""
+    """一個 FB 粉專的貼文＋成效（含 Reels，Reels 也在 /posts 裡）。
+
+    ⚠️ 粉專的貼文要用**粉專自己的權杖**，不是你個人那一把。
+    拿個人權杖去打 /{粉專}/posts 會被擋成
+    「Invalid OAuth 2.0 Access Token（code=190 subcode=2069032）」——
+    2026-09-11 第一次真的跑就是掛在這裡。粉專權杖在 /me/accounts 的
+    access_token 欄位裡，設定精靈會一起存進設定檔。
+    """
+    token = acc.get("pageToken") or token
     rows = _paged("%s/posts" % acc["pageId"], token,
                   {"fields": "id,message,created_time,permalink_url,"
                              "shares,comments.summary(true).limit(0)"}, since_ts)
@@ -191,6 +210,7 @@ def fetch_fb(acc, token, since_ts, missing):
         ts = str(r.get("created_time") or "")
         if ts[:10] < since_ts:
             continue
+        _tick(len(posts) + 1)
         ins = _insights("%s/insights" % r["id"], token, FB_METRICS, missing)
         posts.append({
             "platform": "FB", "account": acc["name"],
@@ -213,13 +233,16 @@ def fetch_all(cfg, since_ts, verbose=False):
     for acc in cfg.get("accounts") or []:
         plat = str(acc.get("platform", "")).upper()
         name = acc.get("name") or "(沒有名字的帳號)"
+        # 成效是一則一次呼叫，慢。先把帳號名字印出來、點點跟著跑，才看得出它還活著。
+        sys.stdout.write("  %s " % name)
+        sys.stdout.flush()
         try:
             got = fetch_ig(acc, token, since_ts, missing) if plat == "IG" \
                 else fetch_fb(acc, token, since_ts, missing)
         except MetaError as e:
-            print("  ⚠ %s 抓不到：%s" % (name, e))
+            print("\n  ⚠ %s 抓不到：%s" % (name, e))
             continue
-        print("  %s：%d 則" % (name, len(got)))
+        print("　共 %d 則" % len(got))
         posts.extend(got)
     if missing:
         print("\n  ⚠ 這些指標這個版本要不到（成效會少一欄，不影響比對）：")

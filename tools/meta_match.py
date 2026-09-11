@@ -77,6 +77,21 @@ def shingles(norm_text):
             for i in range(0, len(norm_text) - SHINGLE + 1, STRIDE)]
 
 
+def video_texts(v):
+    """這支片有可能出現在平台貼文上的文字。
+
+    ⚠️ 不是只有 videoCopy。2026-09-11 第一次拿真實貼文跑，193 則只對上 20 則，
+    查下去發現對不上的那些**大部分都在系統裡**，只是整段文案被打在「片名」那一格：
+        片名：「當爸爸容易嗎？人家說當了爸爸就會變成超人，其實我們只是學會了…」
+        文案：（空的）
+    只看 videoCopy 就等於看不到這一大半。三個欄位都要看。
+
+    三段各自切各自的，不要接成一串再切 —— 接起來會生出「片名結尾＋文案開頭」
+    這種現實中不存在的接縫，那是假指紋。
+    """
+    return [v.get("videoCopy"), v.get("name"), v.get("rawName")]
+
+
 def video_dates(v):
     """這支片已知的所有上片日期：scheduledDate ＋ 每一次重播（usageHistory）。
 
@@ -107,16 +122,16 @@ class Index(object):
             vid = v.get("id")
             if not vid:
                 continue
-            nv = normalize(v.get("videoCopy"))
-            if len(nv) < MIN_CHARS:
-                self.skipped.append(vid)
-                continue
-            sh = shingles(nv)
+            sh = set()
+            for t in video_texts(v):
+                nt = normalize(t)
+                if len(nt) >= MIN_CHARS:
+                    sh.update(shingles(nt))
             if not sh:
                 self.skipped.append(vid)
                 continue
-            self.entries[vid] = {"sh": set(sh), "dates": video_dates(v), "v": v}
-            for s in set(sh):
+            self.entries[vid] = {"sh": sh, "dates": video_dates(v), "v": v}
+            for s in sh:
                 df[s] = df.get(s, 0) + 1
         n = len(self.entries)
         cap = max(DF_MIN_COUNT, int(math.floor(n * DF_MAX_RATIO)))

@@ -28,14 +28,19 @@ import _fs                                   # noqa: E402
 from meta_sync import _call, MetaError, DEFAULT_CONFIG   # noqa: E402
 
 
+# 跟 /me/accounts 要哪些欄位。拉成常數是為了測得到 ——
+# access_token（粉專自己的權杖）漏要一次，整個 FB 那半邊就會掛在
+# 「Invalid OAuth 2.0 Access Token」，而那件事要等真的連上 Meta 才會發現。
+ACCOUNTS_FIELDS = "id,name,access_token,instagram_business_account{id,username,name}"
+
+
 def discover(token):
     """問 Meta：這把權杖管得到哪些粉專、每個粉專連著哪個 IG。"""
-    data = _call("me/accounts", token, {
-        "fields": "id,name,instagram_business_account{id,username,name}",
-        "limit": 100})
+    data = _call("me/accounts", token, {"fields": ACCOUNTS_FIELDS, "limit": 100})
     pages, igs = [], []
     for p in (data.get("data") or []):
-        pages.append({"id": p.get("id"), "name": p.get("name") or ""})
+        pages.append({"id": p.get("id"), "name": p.get("name") or "",
+                      "token": p.get("access_token") or ""})
         ig = p.get("instagram_business_account") or {}
         if ig.get("id"):
             igs.append({"id": ig["id"],
@@ -81,12 +86,27 @@ def map_accounts(pages, igs, plats):
     for pg in pages:
         name = by_handle.get(str(pg.get("name", "")).lower().replace(" ", "")) \
             or ("FB %s" % pg.get("name", ""))
-        accounts.append({"platform": "FB", "name": name, "pageId": pg["id"]})
+        entry = {"platform": "FB", "name": name, "pageId": pg["id"]}
+        if pg.get("token"):
+            entry["pageToken"] = pg["token"]
+        accounts.append(entry)
         seen.add(name)
     # LINE 社群沒有這種 API，本來就抓不到，不算「少了」
     missing = [p["name"] for p in plats
                if p["name"] not in seen and "LINE" not in p["name"]]
     return accounts, missing
+
+
+def needs_naming(accounts, plats):
+    """哪些帳號沒有對回系統清單上的名字。
+
+    粉專在 Meta 上改過名字就會這樣（實測：系統寫「FB 粉專（Zanagems）」，
+    Meta 上已經變成「泰熙爾 札娜寶石學院 - 世界各式彩寶…」）。
+    名字不一樣，成效就會落在一個沒有別人在用的平台名底下，跟那 155 支
+    標了「FB 粉專（Zanagems）」的片合不起來 —— 所以要問清楚，不能猜。
+    """
+    known = set(p["name"] for p in plats)
+    return [a for a in accounts if a["name"] not in known]
 
 
 def main():
@@ -121,6 +141,21 @@ def main():
             if a["platform"] == "IG" \
             else next(p["name"] for p in pages if p["id"] == a["pageId"])
         print("  %s  %-24s → %s" % (a["platform"], str(src)[:24], a["name"]))
+
+    # 對不到名字的，問清楚是不是同一個（改過名字的粉專就會這樣）
+    for a in needs_naming(accounts, plats):
+        if not missing:
+            break
+        print("\n「%s」對不到系統清單上的名字。" % a["name"][:40])
+        print("  它在系統裡是下面哪一個？（粉專改過名字就會這樣）")
+        for i, m in enumerate(missing, 1):
+            print("     %d. %s" % (i, m))
+        print("     0. 都不是，就用 Meta 上的名字")
+        s = input("  輸入數字：").strip()
+        if s.isdigit() and 1 <= int(s) <= len(missing):
+            a["name"] = missing[int(s) - 1]
+            missing = [m for m in missing if m != a["name"]]
+            print("  → 記成「%s」" % a["name"])
 
     # 清單上有、但這次沒查到的 —— 這是最有用的一段訊息
     if missing:

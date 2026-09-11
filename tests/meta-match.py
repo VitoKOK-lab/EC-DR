@@ -53,8 +53,29 @@ print("— 切段 —")
 ok(M.shingles("短的") == [], "不足 20 字切不出段（太短不夠指認）")
 ok(len(M.shingles("字" * 60)) == 41, "60 字重疊著切成 41 段（第 1～41 個字各起一段）")
 
+print("— 文案打在「片名」那一格也要對得到 —")
+# 2026-09-11 拿真實貼文跑，193 則只對上 20 則。查下去：對不上的大多**在系統裡**，
+# 只是整段文案被打在片名那一格，videoCopy 是空的。只看 videoCopy 就看不到那一大半。
+idxN = M.Index([vid("N1", "", name=COPY), vid("N2", COPY[:30] + "完全不同的另一段內容拿來墊長度用的文字")])
+ok(M.match_post(post(COPY), idxN)["videoId"] == "N1", "文案在片名裡，照樣對得回這一支")
+ok(M.match_post(post("✨" + COPY + " #珠寶"), idxN)["videoId"] == "N1", "片名那一格也吃得下前後加料")
+idxR = M.Index([vid("R9", "", rawName=COPY)])
+ok(M.match_post(post(COPY), idxR)["videoId"] == "R9", "原始檔名（rawName）也算一份")
+# 三個欄位要各切各的。接成一串再切，會生出「片名的結尾＋文案的開頭」這一段 ——
+# 那段字在現實中從來沒有出現過（平台上不會有人把片名接著文案一起貼），是假指紋。
+# 造法：片名、文案各剛好 20 字（各切得出一段），貼文只拿「片名後半＋文案前半」。
+# 接成一串的話這 20 字正好是接縫那一段，會對上；各切各的就對不上。
+NM, CP = "甲" * 10 + "乙" * 10, "丙" * 10 + "丁" * 10
+j = M.Index([vid("J1", CP, name=NM)])
+ok(M.match_post(post(NM), j)["videoId"] == "J1", "片名整段貼出來對得上（確認這支片真的有進索引）")
+# 兩個方向的接縫都要檢查 —— 誰接誰只是 video_texts 裡的排列順序，
+# 只測一個方向的話，把順序對調就測不到了。
+ok(M.match_post(post("乙" * 10 + "丙" * 10), j)["videoId"] is None
+   and M.match_post(post("丁" * 10 + "甲" * 10), j)["videoId"] is None,
+   "片名接文案的那個「接縫」不算指紋（那是假的，平台上不會出現）")
+
 print("— 太短的文案不參加比對 —")
-idx = M.Index([vid("V1", "1"), vid("V2", "請剪輯師自填"), vid("V3", COPY)])
+idx = M.Index([vid("V1", "1", name="1"), vid("V2", "請剪輯師自填", name="請剪輯師自填"), vid("V3", COPY)])
 ok(len(idx) == 1 and "V3" in idx.entries, "佔位字「1」與「請剪輯師自填」被擋在外面（正式資料有 48 支是「1」）")
 ok(set(idx.skipped) == {"V1", "V2"}, "被擋掉的有記下來，不是默默消失")
 
@@ -187,6 +208,23 @@ ok(acc[0]["igUserId"] == "17a" and acc[2]["pageId"] == "100", "id 有帶著（IG
 ok(miss == ["IG 英文（@tzgrotwofficial）"],
    "清單上有、Meta 查不到的帳號要點出來（那通常是還沒切專業帳號）")
 ok(not [m for m in miss if "LINE" in m], "LINE 社群沒有 API，不算「少了」，不要拿去煩他")
+
+acc2, _ = U.map_accounts([{"id": "100", "name": "Zana Gems", "token": "PAGE_TOK"}], [], PLATS)
+ok(acc2[0].get("pageToken") == "PAGE_TOK",
+   "粉專自己的權杖要存下來（粉專貼文用個人權杖會被擋成 code=190）")
+acc3, _ = U.map_accounts([{"id": "100", "name": "Zana Gems"}], [], PLATS)
+ok("pageToken" not in acc3[0], "Meta 沒給粉專權杖時不要硬塞一個空字串進去")
+
+# 這一條守的是「有沒有跟 Meta 要粉專權杖」。要不到的後果是 FB 那半邊整個抓不到，
+# 而那件事要真的連上 Meta 才會發現 —— 所以在這裡用字串守住，便宜但擋得住。
+ok("access_token" in U.ACCOUNTS_FIELDS, "跟 /me/accounts 要欄位時有把粉專權杖要進來")
+ok("instagram_business_account" in U.ACCOUNTS_FIELDS, "也要把粉專連著的 IG 要進來")
+
+renamed = [{"platform": "FB", "name": "FB 泰熙爾 札娜寶石學院", "pageId": "1"}]
+ok([a["name"] for a in U.needs_naming(renamed, PLATS)] == ["FB 泰熙爾 札娜寶石學院"],
+   "粉專改過名字、對不回系統清單的，要抓出來問人（不能猜）")
+ok(U.needs_naming([{"name": "IG 官方（@tzgrotw）"}], PLATS) == [],
+   "對得上的就不要多問")
 
 extra = U.map_accounts([], [{"id": "17z", "username": "newone"}], PLATS)[0]
 ok(extra[0]["name"] == "IG @newone", "清單上還沒有的新帳號照樣寫得進去，不會被丟掉")
