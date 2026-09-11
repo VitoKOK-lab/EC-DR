@@ -427,6 +427,8 @@ def main():
     ap.add_argument("--videos-file", default="",
                     help="影片庫改讀這份 JSON（備份檔）而不是連資料庫；只能搭配只看不寫")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--explain", default="",
+                    help="印出某一支影片對到了哪幾則貼文（警告跳出來時用這個查）")
     ap.add_argument("--why", action="store_true",
                     help="沒對到的那幾支，印出平台上最像的貼文（診斷「是沒發還是我門檻太高」）")
     args = ap.parse_args()
@@ -504,6 +506,25 @@ def main():
             print("     %-16s %-26s 對到 %d 則"
                   % (vid, str(byvid.get(vid, {}).get("name") or "")[:26], cnt))
         print("   多半是某一句「小編招呼語」變成磁鐵。**先不要 --write**，把這段貼給我。")
+
+    if args.explain:
+        e = plan.get(args.explain)
+        v = byvid.get(args.explain, {})
+        print("\n── %s %s 對到的每一則 ──"
+              % (args.explain, str(v.get("name") or "")[:34]))
+        print("   系統裡這支片的文字：")
+        for f in ("name", "rawName", "videoCopy"):
+            t = str(v.get(f) or "").replace("\n", " ")
+            if t:
+                print("     %-9s %s" % (f, t[:80]))
+        if not e:
+            print("   （這支沒有對到任何一則）")
+        for r in (e or {}).get("rows", []):
+            print("     %s %s %s｜觀看 %s｜%s"
+                  % (r["postAt"][:10], r["platform"], r["account"][:14],
+                     "{:,}".format(r["views"]),
+                     next((p.get("caption") or "")[:40].replace("\n", " ")
+                          for p in posts if str(p.get("id")) == r["postId"])))
 
     print("\n要更新的影片 %d 支：" % len(plan))
     for vid, e in sorted(plan.items(), key=lambda kv: -sum(r["views"] for r in kv[1]["rows"]))[:40]:
