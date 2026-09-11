@@ -162,6 +162,35 @@ ok(len(r) == 2, "以前人工填的那幾列沒有 postId，也不能被洗掉")
 
 ok(S.merge_metrics(None, new) == new, "本來沒有成效的片不會爆掉")
 
+# ---------------------------------------------------------------------------
+# 設定精靈：把 Meta 查到的帳號對上系統「上片平台」清單的名字
+# ---------------------------------------------------------------------------
+import meta_setup as U   # noqa: E402
+
+print("— 帳號對名字 —")
+PLATS = [{"name": "IG 溱姐主（@tzgems1111）", "utm": "ig_tzgems1111"},
+         {"name": "IG 官方（@tzgrotw）", "utm": "ig_tzgrotw"},
+         {"name": "IG 英文（@tzgrotwofficial）", "utm": "ig_tzgrotwofficial"},
+         {"name": "FB 粉專（Zanagems）", "utm": "fb_zanagems"},
+         {"name": "LINE 社群（珠寶社群）", "utm": "line_group"}]
+ok(U.handle_of({"utm": "ig_tzgems1111"}) == "tzgems1111", "utm 裡取得出 handle")
+ok(U.handle_of({"utm": ""}) == "" and U.handle_of({}) == "", "沒有 utm 不會爆掉")
+
+# 粉專在 FB 上的顯示名稱可能帶空白，utm 裡的 handle 沒有 —— 要對得上
+pages = [{"id": "100", "name": "Zana Gems"}]
+igs = [{"id": "17a", "username": "TzGems1111"}, {"id": "17b", "username": "tzgrotw"}]
+acc, miss = U.map_accounts(pages, igs, PLATS)
+ok([a["name"] for a in acc] == ["IG 溱姐主（@tzgems1111）", "IG 官方（@tzgrotw）",
+                                 "FB 粉專（Zanagems）"],
+   "IG 與粉專都對回系統原本的名字（大小寫不同也對得上）")
+ok(acc[0]["igUserId"] == "17a" and acc[2]["pageId"] == "100", "id 有帶著（IG 與 FB 欄位名不同）")
+ok(miss == ["IG 英文（@tzgrotwofficial）"],
+   "清單上有、Meta 查不到的帳號要點出來（那通常是還沒切專業帳號）")
+ok(not [m for m in miss if "LINE" in m], "LINE 社群沒有 API，不算「少了」，不要拿去煩他")
+
+extra = U.map_accounts([], [{"id": "17z", "username": "newone"}], PLATS)[0]
+ok(extra[0]["name"] == "IG @newone", "清單上還沒有的新帳號照樣寫得進去，不會被丟掉")
+
 print("\n%d / %d 通過" % (len(RAN) - len(FAILED), len(RAN)))
 if FAILED:
     sys.exit(1)
