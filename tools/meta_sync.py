@@ -268,6 +268,25 @@ def _fv(v):
     return {"stringValue": str(v if v is not None else "")}
 
 
+def coverage(videos, since_ts, until_ts, matched_ids):
+    """這段期間排了幾支片、其中幾支有對到貼文、幾支一則都沒對到。
+
+    這是判斷「比對到底有沒有在運作」唯一有意義的數字。
+    看「對上幾則 / 共幾則」會誤導：粉專一個月 989 則貼文，絕大多數是商品圖文，
+    本來就不在影片庫裡，那種對不上是對的。真正要擔心的是反過來 ——
+    **系統裡排了、平台上也發了，卻沒對到**，那才是比對漏掉了。
+    """
+    hit, miss = [], []
+    for v in videos or []:
+        if v.get("deleted"):
+            continue
+        ds = [d for d in meta_match.video_dates(v) if since_ts <= d <= until_ts]
+        if not ds:
+            continue
+        (hit if v.get("id") in matched_ids else miss).append(v)
+    return hit, miss
+
+
 def merge_metrics(old, rows):
     """把這次抓到的併進原本的 metrics，同一則貼文只留最新一筆。
 
@@ -415,14 +434,42 @@ def main():
     if len(plan) > 40:
         print("  …另外還有 %d 支" % (len(plan) - 40))
 
+    # ── 真正該看的數字：系統裡排了的片，有幾支沒對到 ──────────────────
+    import datetime
+    today = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).date().isoformat()
+    hit, miss = coverage(videos, since, today, set(plan.keys()))
+    print("\n── 這段期間（%s ~ %s）的涵蓋率 ──" % (since, today))
+    print("  系統裡排了 %d 支片　對到貼文 %d 支　**一則都沒對到 %d 支**"
+          % (len(hit) + len(miss), len(hit), len(miss)))
+    if miss:
+        print("  沒對到的（最多列 15 支）：")
+        for v in miss[:15]:
+            why = "沒有文案也沒有片名可比對" if v.get("id") in index.skipped else "文案比對不到平台上的貼文"
+            print("     %-16s %-26s %s｜%s"
+                  % (v.get("id"), str(v.get("name") or "")[:26],
+                     (meta_match.video_dates(v) or [""])[-1], why))
+        if len(miss) > 15:
+            print("     …另外還有 %d 支" % (len(miss) - 15))
+
     if unmatched:
-        print("\n對不上的 %d 則（這些要人看一下）：" % len(unmatched))
-        for u in unmatched[:20]:
-            p = u["post"]
-            print("  %s %s %s｜%s｜%s" % (p["platform"], p["account"], str(p.get("at"))[:10],
-                                         u["why"], (p.get("caption") or "")[:30].replace("\n", " ")))
-        if len(unmatched) > 20:
-            print("  …另外還有 %d 則" % (len(unmatched) - 20))
+        # 「文案對不上任何一支」絕大多數是商品圖文貼文 —— 影片庫裡本來就沒有，
+        # 那種對不上是對的，全部列出來只是把真正要看的那幾則淹掉。
+        byreason = {}
+        for u in unmatched:
+            byreason.setdefault(u["why"].split("，")[0], []).append(u)
+        print("\n對不上的 %d 則，分成：" % len(unmatched))
+        for why, rows in sorted(byreason.items(), key=lambda kv: -len(kv[1])):
+            print("  %4d 則　%s" % (len(rows), why))
+        amb = [u for u in unmatched if u.get("candidates")]
+        if amb:
+            print("\n  其中這 %d 則是「有好幾支長得一樣、分不出是哪一支」，要人決定：" % len(amb))
+            for u in amb[:15]:
+                p = u["post"]
+                print("     %s %s｜候選 %s｜%s"
+                      % (p["platform"], str(p.get("at"))[:10], "、".join(u["candidates"]),
+                         (p.get("caption") or "")[:26].replace("\n", " ")))
+            if len(amb) > 15:
+                print("     …另外還有 %d 則" % (len(amb) - 15))
 
     if not args.write:
         print("\n（只看不寫，資料庫沒有動。確認上面的清單是對的，再加 --write）")
