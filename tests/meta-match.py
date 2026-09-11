@@ -260,6 +260,81 @@ ok(len(r) == 2, "以前人工填的那幾列沒有 postId，也不能被洗掉")
 
 ok(S.merge_metrics(None, new) == new, "本來沒有成效的片不會爆掉")
 
+print("— 寫回資料庫：只動該動的欄位（v201）—")
+# 快照算得再對，沒寫進去就等於沒有。而寫太多欄位比沒寫更糟 ——
+# 這是正式資料，全公司即時同步。
+_SENT = []
+_realpatch, _realbase = S._fs._patch, S._fs.docs_base
+S._fs.docs_base = lambda cfg: "https://x/documents"
+S._fs._patch = lambda url, body, tok: _SENT.append((url, body))
+S.write_back({}, "tok", [{"videoId": "V1", "metrics": [{"postId": "P1", "views": 9}],
+                          "hist": [{"postId": "P1", "d": "2026-09-11", "views": 9, "comments": 1}],
+                          "fillLink": ""}], False)
+_url, _body = _SENT[-1]
+ok("updateMask.fieldPaths=metricsHist" in _url, "快照真的有寫進去（而且是走 updateMask）")
+ok(_body["fields"]["metricsHist"]["arrayValue"]["values"][0]["mapValue"]["fields"]["d"]["stringValue"]
+   == "2026-09-11", "寫的是算出來的那幾個點")
+ok("updateMask.fieldPaths=publishedLink" not in _url, "沒叫它補連結就不要碰 publishedLink")
+ok(sorted(_url.split("?")[1].split("&")) == sorted(
+   ["updateMask.fieldPaths=metrics", "updateMask.fieldPaths=metricsAt",
+    "updateMask.fieldPaths=metricsHist"]), "整份只動這三個欄位，其他一個都不碰")
+_SENT[:] = []
+S.write_back({}, "tok", [{"videoId": "V2", "metrics": [], "fillLink": ""}], False)
+ok("metricsHist" not in _SENT[-1][0], "沒算快照的時候不要送一個空的去蓋掉本來有的")
+S._fs._patch, S._fs.docs_base = _realpatch, _realbase
+
+print("— 被二創過的原片要一直量下去（v201）—")
+# 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
+# 那個比值就不是在比剪輯，是在比誰的數字比較新。
+PAR = S.remake_parents([
+    {"id": "R1", "channel": "remake", "sourceVideoId": "S1"},
+    {"id": "R2", "channel": "remake", "sourceVideoId": "S1"},
+    {"id": "R3", "channel": "remake", "sourceVideoId": "S2", "deleted": True},
+    {"id": "R4", "channel": "shopee", "sourceVideoId": "S3"},
+    {"id": "S1"},
+])
+ok(PAR == {"S1"}, "被二創過的原片抓得出來（已刪的二創不算、蝦皮版不算）")
+_p = {"comments": 0, "at": "2026-09-10T10:00:00"}
+ok(S.needs_insights(_p, {"id": "S1"}, "2026-09-10", 5, 5000, 30, (), PAR)[0],
+   "被二創過的原片，留言再少也要量（不然基準會停在半年前）")
+ok(not S.needs_insights(_p, {"id": "S9"}, "2026-09-10", 5, 5000, 30, (), PAR)[0],
+   "沒被二創過的普通舊片就不用多花這次呼叫")
+
+print("— 成效快照：沒有它，「比原本好還是壞」就只能拿累計去比（v201）—")
+# Meta 只給「到現在為止的累計」，每次同步都把上一次蓋掉。
+# 原片半年前上的累計 10 萬、二創上 30 天 3 萬 → 系統會說「只有原本的 30%」。
+# 那句話是假的：沒有人知道原片**它自己前 30 天**拿多少。所以要開始存點。
+def hrow(pid, views, post_day, **kw):
+    r = {"postId": pid, "views": views, "comments": 5, "postAt": post_day + "T10:00:00"}
+    r.update(kw)
+    return r
+
+h1 = S.merge_hist(None, [hrow("P1", 1000, "2026-09-01")], "2026-09-04")
+ok(h1 == [{"postId": "P1", "d": "2026-09-04", "views": 1000, "comments": 5}], "第一次就記一個點")
+h2 = S.merge_hist(h1, [hrow("P1", 2500, "2026-09-01")], "2026-09-07")
+ok([h["views"] for h in h2] == [1000, 2500], "三天後再記一個點，舊的留著（這才叫快照）")
+h3 = S.merge_hist(h2, [hrow("P1", 2600, "2026-09-01")], "2026-09-07")
+ok(h3 == h2, "同一天跑兩次不會記兩個點")
+
+ok(S.merge_hist(None, [hrow("P2", 9, "2026-06-01")], "2026-09-11") == [],
+   "上片超過 35 天就不再記 —— 再記也不會拿來比，只是把文件撐大")
+ok(S.merge_hist(None, [hrow("P3", 0, "2026-09-01", viewsMissing=True)], "2026-09-04") == [],
+   "洞察沒給數字的不記（空的不是 0，v198 那個坑不能再踩一次）")
+ok(S.merge_hist(None, [{"views": 5, "postAt": "2026-09-01T10:00:00"}], "2026-09-04") == [],
+   "沒有 postId 就不知道是誰的點，不記")
+
+# 不能無限長：一則貼文最多留 HIST_MAX_PER_POST 個點
+long_h = None
+for i in range(1, 26):
+    long_h = S.merge_hist(long_h, [hrow("P4", i * 100, "2026-09-01")],
+                          "2026-09-%02d" % i if i <= 30 else "2026-10-01")
+ok(len(long_h) == S.HIST_MAX_PER_POST, "一則貼文最多留 %d 個點" % S.HIST_MAX_PER_POST)
+ok(long_h[-1]["views"] == 2500, "留下來的是最新的那幾個，不是最舊的")
+
+two = S.merge_hist(None, [hrow("P5", 10, "2026-09-01"), hrow("P6", 20, "2026-09-02")], "2026-09-04")
+ok(len(two) == 2, "同一支片有兩則貼文（重播）→ 各記各的")
+ok(S.merge_hist(None, [], "2026-09-04") == [], "這次沒抓到東西就不動")
+
 print("— 哪幾則值得花一次呼叫去問成效 —")
 # 老闆：「我要的是成效好的，至少 5000 點閱、五個人留言以上。」
 # 留言數在貼文清單裡就拿得到（不用另外呼叫），觀看數要問了才知道 ——
@@ -602,6 +677,62 @@ ok(U.naming_choices({"platform": "FB"}, MISS[:4]) == MISS[:4],
 
 extra = U.map_accounts([], [{"id": "17z", "username": "newone"}], PLATS)[0]
 ok(extra[0]["name"] == "IG @newone", "清單上還沒有的新帳號照樣寫得進去，不會被丟掉")
+
+print("— 二創：原片和它的二創算同一家，再用上片日期分（v201）—")
+# 二創沿用原片的腳本與原毛片名，文案幾乎一模一樣。
+# 分開索引的話，同一則貼文會同時打中兩支，而且**打中的段數還不一定一樣多** ——
+# 原片的「片名」那一格常常整段就是貼文文案，二創的片名則是排片人另取的短名。
+# 於是分數高的那一邊直接贏走，贏的跟「這則貼文到底是誰發的」完全沒關係。
+def rmk(i, src, date, **kw):
+    v = {"id": i, "channel": "remake", "sourceVideoId": src,
+         "videoCopy": COPY, "rawName": "原毛片名", "scheduledDate": date}
+    v.update(kw)
+    return v
+
+SRC = vid("S1", COPY, "2026-04-02", name=COPY)          # 原片：片名那一格就是整段文案
+RMK = rmk("R1", "S1", "2026-08-12", name="二創短片名")   # 二創：另取的短名
+fam = M.Index([SRC, RMK])
+ok(len(fam) == 1 and "S1" in fam.entries, "原片＋二創只佔索引裡的一家（掛在原片底下）")
+ok([m["id"] for m in fam.entries["S1"]["members"]] == ["S1", "R1"], "原片排第一，二創接在後面")
+ok(fam.entries["S1"]["dates"] == ["2026-04-02", "2026-08-12"], "家族的日期是全部成員的聯集")
+
+r = M.match_post(post(COPY, "2026-08-13T10:00:00"), fam)
+ok(r["videoId"] == "R1" and r["familyId"] == "S1", "貼文日期貼著二創的上片日 → 算二創")
+r = M.match_post(post(COPY, "2026-04-03T10:00:00"), fam)
+ok(r["videoId"] == "S1", "貼文日期貼著原片的上片日 → 算原片")
+r = M.match_post(post(COPY, "2026-06-15T10:00:00"), fam)
+ok(r["videoId"] == "S1" and "算原片" in r["why"], "兩邊都不近 → 算原片，而且講明白為什麼")
+
+# 分不出來就算原片：寧可少算一筆二創，也不要把成效掛到某個剪輯頭上 ——
+# 那個數字最後會變成「這個剪輯適不適任」的證據。
+same = M.Index([vid("S2", COPY, "2026-05-10", name=COPY), rmk("R2", "S2", "2026-05-10")])
+r = M.match_post(post(COPY, "2026-05-10T10:00:00"), same)
+ok(r["videoId"] == "S2" and "分不出來" in r["why"], "同一天上片、分不出來 → 算原片")
+
+# 上片連結是最硬的證據，二創自己的連結要認得出來
+lk = M.Index([SRC, rmk("R3", "S1", "2026-08-12", publishedLink="https://ig.com/p/rmk/")])
+r = M.match_post(post(COPY, "2026-04-03T10:00:00", permalink="https://ig.com/p/rmk/"), lk)
+ok(r["videoId"] == "R3", "二創自己的上片連結對上 → 直接算它（連結贏過日期）")
+
+# 家族內共用的段不是罐頭句：df 一個家族只數一次。
+# 一支片被二創了 6 次，它的腳本就會在 7 筆資料裡各出現一次 —— 若照筆數數，
+# 那段會被當成罐頭句扣掉，這支片的指紋就沒了，整家的成效全部對不回來。
+many = [vid("V%02d" % i, "第%02d支的獨家內容說明第%02d支的獨家內容說明" % (i, i)) for i in range(30)]
+base = many + [vid("SX", COPY, "2026-01-01", name=COPY)]
+solo = M.Index(base)
+withr = M.Index(base + [rmk("RX%d" % i, "SX", "2026-0%d-01" % (i + 2)) for i in range(6)])
+ok(M.normalize(COPY)[:M.SHINGLE] not in solo.boilerplate, "沒有二創時，這段不是罐頭句")
+ok(M.normalize(COPY)[:M.SHINGLE] not in withr.boilerplate,
+   "被二創 6 次之後也還不是 —— 家族只數一次，不會被自己的二創推過門檻")
+ok(M.match_post(post(COPY, "2026-05-01T10:00:00"), withr)["videoId"] == "RX3",
+   "而且照樣分得出是第幾次二創發的")
+
+# 壞資料不能讓整批比對掛掉
+orphan = M.Index([rmk("R8", "不存在的原片", "2026-08-12", name="孤兒二創的片名夠長才進得了索引")])
+ok(len(orphan) == 1 and "R8" in orphan.entries, "二創指到一支不存在的原片 → 自己成一家，不會炸")
+ok(M.is_remake({"channel": "remake", "sourceVideoId": "S1"}), "認得出二創")
+ok(not M.is_remake({"channel": "remake", "sourceVideoId": ""}), "沒有來源片的殼不算二創（那是壞資料）")
+ok(not M.is_remake({"channel": "shopee", "sourceVideoId": "S1"}), "蝦皮版不是二創")
 
 print("\n%d / %d 通過" % (len(RAN) - len(FAILED), len(RAN)))
 if FAILED:

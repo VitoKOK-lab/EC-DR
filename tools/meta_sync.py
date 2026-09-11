@@ -481,11 +481,26 @@ def remake_suspects(videos):
     return out
 
 
+def remake_parents(videos):
+    """被二創過的原片有哪些（回一組 id）。
+
+    這些片要一直量下去。老闆比的是「二創比原本好還是壞」，如果原片的數字停在
+    半年前、二創的數字是這個月的，那個比值就不是在比剪輯，是在比誰的數字比較新。
+    量得到的最起碼要是同一天量的。
+    """
+    out = set()
+    for v in videos or []:
+        if v and not v.get("deleted") and meta_match.is_remake(v):
+            out.add(str(v.get("sourceVideoId") or ""))
+    out.discard("")
+    return out
+
+
 def needs_insights(post, video, today, min_comments, min_views, track_days,
-                   suspects=()):
+                   suspects=(), parents=()):
     """這一則要不要花一次 API 呼叫去問成效？回傳 (要不要, 為什麼)。
 
-    三種情況要問：
+    四種情況要問：
       1. 留言數夠 —— 可能是達標片。留言數在清單裡就有，不用花呼叫就篩得掉。
       2. 這支片還在追蹤期內 —— 已經達標過，要繼續看它後續掉多少。
       3. 這支片是二創 —— **不管它自己達不達標都要記**。
@@ -502,6 +517,8 @@ def needs_insights(post, video, today, min_comments, min_views, track_days,
         return True, "二創"
     if video.get("id") in (suspects or ()):
         return True, "同資料夾不同檔名（可能是二創）"
+    if video.get("id") in (parents or ()):
+        return True, "被二創過的原片（要當比較的基準）"
     until = tracked_until(video, min_views, min_comments, track_days)
     if until and today <= until:
         return True, "追蹤中"
@@ -628,8 +645,65 @@ def merge_metrics(old, rows):
     return [by_key[k] for k in order]
 
 
+HIST_MAX_DAYS = 35        # 上片後這麼多天內才留快照（老闆：「約三十天就夠」）
+HIST_MAX_PER_POST = 15    # 一則貼文最多留幾個點（每 3 天一點，30 天約 10 個）
+
+
+def merge_hist(old, rows, day):
+    """把這次抓到的數字追加成快照。同一則貼文同一天只留一筆。
+
+    ⚠️ 為什麼非存不可：Meta 只給「到現在為止的累計」，我們每次同步都把上一次的數字
+    蓋掉。於是原片是半年前上的、累計 10 萬；二創上了 30 天 3 萬 ——
+    系統會說「只有原本的 30%」。那句話是假的：我們根本不知道原片**它自己前 30 天**
+    拿多少。搞不好也才 2.5 萬，那這個二創其實是贏的。
+
+    這個數字沒有人存過，也補不回來（老片就是沒有），只能從今天開始存。
+    存法：每次同步替每一則還在追蹤期內的貼文記一個點 {postId, d, views, comments}，
+    上片超過 HIST_MAX_DAYS 天就不再記 —— 再記下去也不會拿來比，只是把文件撐大。
+    """
+    out = [dict(h or {}) for h in (old or [])]
+    seen = set((str(h.get("postId") or ""), str(h.get("d") or "")) for h in out)
+    day = str(day or "")[:10]
+    for r in rows or []:
+        pid = str(r.get("postId") or "")
+        if not pid or (pid, day) in seen:
+            continue
+        if r.get("viewsMissing"):
+            continue                      # 洞察沒給數字。空的不是 0，不要存成 0
+        age = _days_between(str(r.get("postAt") or "")[:10], day)
+        if age is None or age > HIST_MAX_DAYS:
+            continue
+        out.append({"postId": pid, "d": day,
+                    "views": int(r.get("views") or 0),
+                    "comments": int(r.get("comments") or 0)})
+        seen.add((pid, day))
+    # 每一則貼文只留最後 HIST_MAX_PER_POST 個點（舊的先丟）
+    bypost = {}
+    for h in out:
+        bypost.setdefault(str(h.get("postId") or ""), []).append(h)
+    kept = []
+    for pid, hs in bypost.items():
+        hs.sort(key=lambda x: str(x.get("d") or ""))
+        kept.extend(hs[-HIST_MAX_PER_POST:])
+    kept.sort(key=lambda x: (str(x.get("d") or ""), str(x.get("postId") or "")))
+    return kept
+
+
+def _days_between(a, b):
+    """b 減 a 幾天（都是 YYYY-MM-DD）。任一個空的或壞掉就回 None。"""
+    if not a or not b:
+        return None
+    try:
+        import datetime as _d
+        pa = _d.date(int(a[0:4]), int(a[5:7]), int(a[8:10]))
+        pb = _d.date(int(b[0:4]), int(b[5:7]), int(b[8:10]))
+        return (pb - pa).days
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
 def write_back(cfg_fb, token, plan, fill_links):
-    """把每一支影片的 metrics 寫回去。只動 metrics／metricsAt（＋選填的上片連結）。"""
+    """把每一支影片的 metrics 寫回去。只動 metrics／metricsAt／metricsHist（＋選填的上片連結）。"""
     done, failed = 0, 0
     for p in plan:
         fields = {
@@ -639,6 +713,11 @@ def write_back(cfg_fb, token, plan, fill_links):
             "metricsAt": {"stringValue": _fs.taipei_now()},
         }
         mask = ["metrics", "metricsAt"]
+        if p.get("hist") is not None:
+            fields["metricsHist"] = {"arrayValue": {"values": [
+                {"mapValue": {"fields": {k: _fv(v) for k, v in h.items()}}}
+                for h in p["hist"]]}}
+            mask.append("metricsHist")
         if fill_links and p.get("fillLink"):
             fields["publishedLink"] = {"stringValue": p["fillLink"]}
             mask.append("publishedLink")
@@ -790,7 +869,10 @@ def main():
 
     # 3. 比對
     matched, unmatched, index = meta_match.match_all(posts, videos)
-    print("可以參加比對的 %d 支（另外 %d 支沒有文案或太短，只能靠人填上片連結）"
+    # 索引的單位是「家族」（原片＋它的二創算一家）—— 二創沿用原片的腳本，
+    # 分開索引的話同一則貼文會同時打中好幾支，結果是**原片自己的成效反而對不上**
+    # （實測：一支片掛了 2 支二創，它自己那則就變成「有 3 支文案一樣、分不出來」）。
+    print("可以參加比對的 %d 家（原片＋它的二創算一家；另外 %d 支沒有文案或太短，只能靠人填上片連結）"
           % (len(index), len(index.skipped)))
     print("\n比對結果：%d 則對上、%d 則對不上" % (len(matched), len(unmatched)))
 
@@ -800,11 +882,12 @@ def main():
     import datetime as _dt
     today = (_dt.datetime.utcnow() + _dt.timedelta(hours=8)).date().isoformat()
     suspects = remake_suspects(videos)
+    parents = remake_parents(videos)
     want, why_count = [], {}
     for mm in matched:
         ok, why = needs_insights(mm["post"], byvid.get(mm["videoId"]), today,
                                  args.min_comments, args.min_views, args.track_days,
-                                 suspects)
+                                 suspects, parents)
         if ok:
             want.append(mm["post"])
             why_count[why] = why_count.get(why, 0) + 1
@@ -989,9 +1072,13 @@ def main():
 
     # 4. 寫回去
     final = []
+    today_str = _fs.taipei_now()[:10]
     for vid, e in plan.items():
         final.append({"videoId": vid,
                       "metrics": merge_metrics(byvid.get(vid, {}).get("metrics"), e["rows"]),
+                      # 快照：每次同步替還在追蹤期內的貼文記一個點，之後才有
+                      # 「原片第 30 天」可以跟「二創第 30 天」比（見 merge_hist）
+                      "hist": merge_hist(byvid.get(vid, {}).get("metricsHist"), e["rows"], today_str),
                       "fillLink": e["fillLink"]})
     done, failed = write_back(cfg_fb, token, final, args.fill_links)
     print("\n寫入完成：%d 支成功、%d 支失敗" % (done, failed))

@@ -134,6 +134,29 @@ def video_texts(v):
     return [v.get("videoCopy"), v.get("name"), v.get("rawName")]
 
 
+REMAKE_CH = "remake"      # 二創殼：同語言同平台，原片再剪一次（見 SCHEMA「二創流程」）
+FAMILY_NEAR_DAYS = 7      # 家族內歸戶：貼文日期離某一支的上片日期幾天內算它的
+
+
+def is_remake(v):
+    """這支是不是二創殼。"""
+    v = v or {}
+    return str(v.get("channel") or "") == REMAKE_CH and bool(str(v.get("sourceVideoId") or ""))
+
+
+def family_root(v):
+    """這支屬於哪一個家族 —— 二創算在原片底下，其餘就是自己。
+
+    ⚠️ 為什麼要有家族這件事：二創沿用原片的腳本與原毛片名，文案幾乎一模一樣。
+    分開索引的話，同一則貼文會同時打中原片和二創，而且**打中的段數還不一定一樣多**
+    （原片的「片名」那一格常常整段就是貼文文案，二創的片名則是排片人另取的短名），
+    於是分數高的那一邊直接贏走 —— 贏的那一邊跟貼文是誰發的完全沒有關係。
+    正確的做法是：先認出是「哪一支片的家族」，再用**上片日期**決定是家族裡的哪一支。
+    """
+    v = v or {}
+    return str(v.get("sourceVideoId") or "") if is_remake(v) else str(v.get("id") or "")
+
+
 def video_dates(v):
     """這支片已知的所有上片日期：scheduledDate ＋ 每一次重播（usageHistory）。
 
@@ -155,24 +178,39 @@ class Index(object):
     """把影片清單整理成可以比對的樣子（罐頭句在這裡算掉）。"""
 
     def __init__(self, videos):
-        self.entries = {}      # videoId -> {"sh": set, "dates": [...], "v": video}
+        # 索引的單位是**家族**（原片＋它的每一支二創），不是單支影片。
+        # rootId -> {"sh": set, "dates": [...], "v": 原片, "members": [{"id","dates","v"}]}
+        self.entries = {}
         self.skipped = []      # 文案太短／沒有文案，比對不到的那些
+        alive = [v for v in (videos or []) if v and not v.get("deleted") and v.get("id")]
+        ids = set(str(v.get("id")) for v in alive)
+        fams = {}
+        for v in alive:
+            root = family_root(v)
+            if root not in ids:
+                root = str(v.get("id"))   # 二創指到一支不存在／已刪的原片 → 自己成一家
+            fams.setdefault(root, []).append(v)
         df = {}
-        for v in videos or []:
-            if v.get("deleted"):
-                continue
-            vid = v.get("id")
-            if not vid:
-                continue
+        for root, members in fams.items():
+            # 原片排第一，二創照建立時間接在後面
+            members = sorted(members, key=lambda m: (0 if str(m.get("id")) == root else 1,
+                                                     str(m.get("createdAt") or ""), str(m.get("id"))))
             sh = set()
-            for t in video_texts(v):
-                nt = normalize(t)
-                if len(nt) >= MIN_CHARS:
-                    sh.update(shingles(nt))
+            for m in members:
+                for t in video_texts(m):
+                    nt = normalize(t)
+                    if len(nt) >= MIN_CHARS:
+                        sh.update(shingles(nt))
             if not sh:
-                self.skipped.append(vid)
+                self.skipped.extend(str(m.get("id")) for m in members)
                 continue
-            self.entries[vid] = {"sh": sh, "dates": video_dates(v), "v": v}
+            dates = sorted(set(d for m in members for d in video_dates(m)))
+            self.entries[root] = {
+                "sh": sh, "dates": dates, "v": members[0],
+                "members": [{"id": str(m.get("id")), "dates": video_dates(m), "v": m} for m in members],
+            }
+            # df 一個家族只數一次 —— 家族內共用的段（二創沿用原片的腳本）不是罐頭句，
+            # 數兩次會把它往「罐頭」的門檻推，扣掉之後那支片就少了指紋。
             for s in sh:
                 df[s] = df.get(s, 0) + 1
         n = len(self.entries)
@@ -239,17 +277,59 @@ def _days_apart(a, b):
         return None
 
 
+def attribute(post, entry):
+    """家族內歸戶：這則貼文算原片的，還是算它某一支二創的。
+
+    靠的是**上片日期**，不是文案 —— 二創沿用原片的腳本，文案幾乎一模一樣，
+    用文字永遠分不出來。而第三步的流程本來就規定「先排上片日期」，那就拿它來分：
+    排在 9/18 上片的二創，9/18 前後那則貼文就是它的。
+
+    分不出來就算**原片**。寧可少算一筆二創，也不要把不確定的成效掛到某個剪輯頭上 ——
+    那個數字最後會變成「這個剪輯適不適任」的證據。
+    回傳 (videoId, 說明)。
+    """
+    members = entry.get("members") or []
+    root = str(entry["v"].get("id") or "")
+    if len(members) <= 1:
+        return root, ""
+    pdate = str(post.get("at") or "")[:10]
+    cands = []
+    for m in members:
+        ds = [d for d in (_days_apart(x, pdate) for x in m["dates"])
+              if d is not None and d <= FAMILY_NEAR_DAYS]
+        if ds:
+            cands.append((min(ds), m["id"]))
+    if not cands:
+        return root, "家族裡沒有一支的上片日期對得上，算原片"
+    lo = min(c[0] for c in cands)
+    win = [c[1] for c in cands if c[0] == lo]
+    if len(win) > 1:
+        return root, "有 %d 支的上片日期一樣近，分不出來，算原片" % len(win)
+    if win[0] != root:
+        return win[0], "上片日期差 %d 天 → 算這一支二創" % lo
+    return root, "上片日期最接近原片"
+
+
+def _pick(index, root, post, score, why):
+    """家族對上了，再決定是家族裡的哪一支。"""
+    vid, mwhy = attribute(post, index.entries[root])
+    return {"videoId": vid, "familyId": root, "score": score,
+            "why": why + ("（%s）" % mwhy if mwhy else "")}
+
+
 def match_post(post, index):
     """一則貼文對回一支影片。
 
-    回傳 {"videoId":.., "score":.., "why":..} 或
+    回傳 {"videoId":.., "familyId":.., "score":.., "why":..} 或
          {"videoId":None, "why":"...", "candidates":[...]}
     """
     link = str(post.get("permalink") or "").strip()
     if link:
-        for vid, e in index.entries.items():
-            if str(e["v"].get("publishedLink") or "").strip() == link:
-                return {"videoId": vid, "score": 999, "why": "上片連結一模一樣"}
+        for root, e in index.entries.items():
+            for m in e["members"]:
+                if str(m["v"].get("publishedLink") or "").strip() == link:
+                    return {"videoId": m["id"], "familyId": root, "score": 999,
+                            "why": "上片連結一模一樣"}
 
     np_ = normalize(post.get("caption"))
     if len(np_) < MIN_CHARS:
@@ -273,9 +353,10 @@ def match_post(post, index):
     top = max(hits.values())
     best = [vid for vid, h in hits.items() if h == top]
     if len(best) == 1:
-        return {"videoId": best[0], "score": top, "why": "文案對上 %d 段（每段 20 字）" % top}
+        return _pick(index, best[0], post, top, "文案對上 %d 段（每段 20 字）" % top)
 
-    # 分數並列 —— 同一支腳本重播／二創會這樣。改用上片日期分。
+    # 分數並列 —— 兩支不同的片用了同一段腳本會這樣（同一支片的二創已經併成一家了）。
+    # 改用上片日期分。
     pdate = str(post.get("at") or "")[:10]
     near = []
     for vid in best:
@@ -284,8 +365,8 @@ def match_post(post, index):
         if ds and min(ds) <= DATE_NEAR_DAYS:
             near.append((min(ds), vid))
     if len(near) == 1:
-        return {"videoId": near[0][1], "score": top,
-                "why": "文案對上 %d 段（有兩支一樣，用上片日期分開）" % top}
+        return _pick(index, near[0][1], post, top,
+                     "文案對上 %d 段（有兩支一樣，用上片日期分開）" % top)
 
     return {"videoId": None,
             "why": "有 %d 支文案一樣、日期也分不開，要人看一下" % len(best),
@@ -305,6 +386,7 @@ def match_all(posts, videos):
         r = match_post(p, index)
         if r.get("videoId"):
             matched.append({"post": p, "videoId": r["videoId"],
+                            "familyId": r.get("familyId") or r["videoId"],
                             "score": r.get("score"), "why": r["why"]})
         else:
             unmatched.append({"post": p, "why": r["why"],
