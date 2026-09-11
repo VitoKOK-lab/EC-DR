@@ -186,18 +186,22 @@ ok(S.merge_metrics(None, new) == new, "本來沒有成效的片不會爆掉")
 print("— 涵蓋率（排了的片有幾支沒對到）—")
 # 真正要擔心的不是「989 則貼文只對上 238 則」（大多是商品圖文，本來就不在影片庫），
 # 而是反過來：系統裡排了、平台上也發了，卻沒對到。
-VS = [vid("H1", COPY, "2026-08-20"),          # 期間內，有對到
-      vid("M1", COPY, "2026-08-25"),          # 期間內，沒對到 ← 就是要抓這種
-      vid("O1", COPY, "2026-05-01"),          # 期間外，不算
-      vid("N0", COPY, ""),                    # 沒排過，不算
-      vid("D1", COPY, "2026-08-21", deleted=True)]   # 回收桶，不算
-hit, miss = S.coverage(VS, "2026-08-12", "2026-09-11", {"H1"})
+VS = [vid("H1", COPY, "2026-08-20", published=True),   # 期間內，有對到
+      vid("M1", COPY, "2026-08-25", published=True),   # 已上片卻沒對到 ← 要抓這種
+      vid("U1", COPY, "2026-08-26"),                   # 排了但還沒上片 → 沒對到是正常的
+      vid("O1", COPY, "2026-05-01", published=True),   # 期間外，不算
+      vid("N0", COPY, "", published=True),             # 沒排過，不算
+      vid("D1", COPY, "2026-08-21", published=True, deleted=True)]   # 回收桶，不算
+hit, unpub, miss = S.coverage(VS, "2026-08-12", "2026-09-11", {"H1"})
 ok([v["id"] for v in hit] == ["H1"] and [v["id"] for v in miss] == ["M1"],
    "只算「這段期間排過的片」，期間外／沒排過／回收桶裡的都不算進分母")
+ok([v["id"] for v in unpub] == ["U1"],
+   "「排了日期但還沒發出去」要另外分一堆 —— 平台上本來就沒有它，"
+   "算進「沒對到」會害我們去查一個不存在的問題（正式資料 153 支裡有 19 支是這種）")
 
 # 重播的片：早幾次在 usageHistory，只看 scheduledDate 會把它算成期間外
-rp = [vid("P1", COPY, "2026-12-01", usageHistory=[{"date": "2026-08-30"}])]
-h2, m2 = S.coverage(rp, "2026-08-12", "2026-09-11", set())
+rp = [vid("P1", COPY, "2026-12-01", published=True, usageHistory=[{"date": "2026-08-30"}])]
+h2, u2, m2 = S.coverage(rp, "2026-08-12", "2026-09-11", set())
 ok([v["id"] for v in m2] == ["P1"], "八月重播過的片算在這段期間內（日期要看 usageHistory）")
 
 print("— 診斷：最像的貼文是哪一則 —")

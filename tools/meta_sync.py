@@ -269,22 +269,32 @@ def _fv(v):
 
 
 def coverage(videos, since_ts, until_ts, matched_ids):
-    """這段期間排了幾支片、其中幾支有對到貼文、幾支一則都沒對到。
+    """這段期間排了幾支片，分成三堆：對到、還沒上片、已上片卻沒對到。
 
     這是判斷「比對到底有沒有在運作」唯一有意義的數字。
     看「對上幾則 / 共幾則」會誤導：粉專一個月 989 則貼文，絕大多數是商品圖文，
     本來就不在影片庫裡，那種對不上是對的。真正要擔心的是反過來 ——
     **系統裡排了、平台上也發了，卻沒對到**，那才是比對漏掉了。
+
+    ⚠️ 「排了日期」不等於「發出去了」。第一次跑量到這段期間排了 153 支，
+    其中 19 支系統自己標著 published=false（還在待處理、剪輯中，或剪完還沒發）。
+    平台上本來就不會有那 19 支的貼文 —— 把它們算進「沒對到」會讓數字看起來
+    比實際糟，然後我們會去查一個根本不存在的問題。
     """
-    hit, miss = [], []
+    hit, unpub, miss = [], [], []
     for v in videos or []:
         if v.get("deleted"):
             continue
         ds = [d for d in meta_match.video_dates(v) if since_ts <= d <= until_ts]
         if not ds:
             continue
-        (hit if v.get("id") in matched_ids else miss).append(v)
-    return hit, miss
+        if v.get("id") in matched_ids:
+            hit.append(v)
+        elif not v.get("published"):
+            unpub.append(v)
+        else:
+            miss.append(v)
+    return hit, unpub, miss
 
 
 PROBE = 6      # 診斷用的段落長度（比正式比對的 20 字短，為了看得到「有點像」）
@@ -471,12 +481,14 @@ def main():
     # ── 真正該看的數字：系統裡排了的片，有幾支沒對到 ──────────────────
     import datetime
     today = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).date().isoformat()
-    hit, miss = coverage(videos, since, today, set(plan.keys()))
+    hit, unpub, miss = coverage(videos, since, today, set(plan.keys()))
     print("\n── 這段期間（%s ~ %s）的涵蓋率 ──" % (since, today))
-    print("  系統裡排了 %d 支片　對到貼文 %d 支　**一則都沒對到 %d 支**"
-          % (len(hit) + len(miss), len(hit), len(miss)))
+    print("  系統裡排了 %d 支片" % (len(hit) + len(unpub) + len(miss)))
+    print("     對到貼文　　　　　　　　　%d 支" % len(hit))
+    print("     系統說還沒上片（正常）　　%d 支" % len(unpub))
+    print("     **已上片、卻沒對到**　　　%d 支　← 只有這堆要查" % len(miss))
     if miss:
-        print("  沒對到的（最多列 15 支）：")
+        print("\n  已上片卻沒對到的（最多列 15 支）：")
         for v in miss[:15]:
             why = "沒有文案也沒有片名可比對" if v.get("id") in index.skipped else "文案比對不到平台上的貼文"
             print("     %-16s %-26s %s｜%s"
