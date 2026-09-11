@@ -2437,8 +2437,12 @@ function workReviewCard(me){
             擠到三個螢幕以下。改成不換行、鍵縮短成「已審過」，完整說明留在 title。 */''}
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center">
         <span style="flex:1;min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        ${/* v184：只有 Regina 按得動 —— 剪輯那邊畫成一個「等她」的字樣，
-              不要留一顆按不動的鍵（那比沒有還糟：會以為系統壞了）。 */''}
+        ${/* v184 曾經只讓 Regina／管理員按得動，剪輯那邊畫成一個「待審」的字樣。
+              2026-09-11 老闆決定復原：「先幫我復原回去給每一位剪輯，先讓他們可以
+              自己按『已審核』」—— Regina 口頭說 OK，剪輯自己按這顆往下走，
+              不必等她一個人幫全部人點（上面那句說明講的就是這個流程）。
+              剩下的「待審」字樣只留給按不得的情況：員工視角（唯讀預覽）。
+              按不動就不要畫鍵 —— 那比沒有還糟：會以為系統壞了。 */''}
         ${canReview()
           ? `<button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`
           : `<span class="pill wa" style="font-size:10px;flex:none">${T("待審","In review")}</span>`}</div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
@@ -2496,7 +2500,8 @@ function reviewStateHTML(v){
 function workRecent7Card(me){
   // v184（老闆指定）：「目前的待審的片子，記錄七天，改成沒有上限，
   //   只要還沒審過的都會出現」。七天一到就消失，等於幫人忘記 ——
-  //   而且現在只有 Regina 能審，等超過七天本來就很常見。
+  //   等超過七天本來就很常見（當時只有 Regina 能按「審過」，更常見；
+  //   2026-09-11 復原給剪輯自己按之後，這條規矩照舊有用）。
   //   規矩：**還沒審過的一律留著**，審過的才只留最近七天。
   const from=new Date(Date.now()+288e5-6*864e5).toISOString().slice(0,10);   // 含今天共 7 天
   const list=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
@@ -6156,12 +6161,21 @@ function reviewCardHTML(v){
 // 已審過通知「知道了」：連結都補齊後，剪輯自己收起（reviewAck）；在那之前會一直亮在審片進度卡
 function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
 // 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
-// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
-// 以前剪輯可以自己按「Regina 審過了」——那等於審核制度形同虛設，而且
-// v184 起產出統計是以「審過」為準的，自己按等於自己給自己打分數。
-function canReview(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
+//
+// v184（老闆指定）曾經改成「只有 Regina／管理員按得動」：理由是自己按等於自己
+// 給自己打分數（v184 起產出統計以「審過」為準）。
+//
+// 2026-09-11 老闆決定改回來：「我前幾天好像把審核完畢的按鈕，只留給 Regina 可以按
+// 其他人的按鈕被取消掉，先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」。
+// 實際跑起來變成 Regina 一個人要幫全部人按，片子卡在待審清單上不會動；而且 Regina
+// 本來就是「口頭說 OK」，這顆鍵的意思一直是「她說可以了，我往下走」，不是審核本身。
+// 真正的審核（通過／退回附原因）在影片庫的審片視窗（reviewVid），那個沒有動。
+//
+// 唯一還擋著的是 VIEW_AS：管理員用「員工視角」預覽別人的畫面時一律唯讀，
+// 不可以代替員工按下去（跟全站其他寫入的規矩一致）。
+function canReview(){ return !VIEW_AS; }
 function editorMarkReviewed(id){ const v=vid(id)||{};
-  if(!canReview()){ toast(T("審片只有 Regina（或管理員）可以按","Only Regina can approve"),true); return; }
+  if(!canReview()){ toast(T("員工視角為唯讀預覽，離開後才能操作","Read-only preview — leave it first"),true); return; }
   if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
     `Has Regina approved "${vidTitle(v)}"?\nNext step: upload to the cloud & add the links.`))) return;
   write("PUT",`/api/videos/${id}`,{video:{reviewStatus:"通過",reviewedBy:currentUser(),reviewedAt:nowIso()}},

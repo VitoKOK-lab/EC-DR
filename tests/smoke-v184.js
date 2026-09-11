@@ -285,24 +285,45 @@ function reset(vids, tasks){
   const d=teamDayStat("小葵", []);
   ok("**當日的「今日完成」照舊算剪完的**", d.done.length===1, d.done.length); }
 
-// ══════════ ⑩ 審片只有 Regina 可以按 ══════════
-// 老闆：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」
+// ══════════ ⑩ 審過鍵：每一位剪輯自己按（2026-09-11 復原） ══════════
+// v184 原本是「只有 Regina／管理員按得動」，老闆 2026-09-11 決定改回來：
+//   「我前幾天好像把審核完畢的按鈕，只留給 Regina 可以按其他人的按鈕被取消掉，
+//     先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」
+// Regina 還是口頭說 OK，這顆鍵的意思一直是「她說可以了，我往下走」。
+// 真正的審核（通過／退回附原因）在影片庫的審片視窗（reviewVid），那個沒有動。
+// 原本這一段在盯的兩件事照樣留著：Regina／管理員那邊也要有鍵、按不動就不要畫鍵。
 { reset([ v_("W1",{editor:"小葵",claimedBy:"小葵",stage:"已完成",finishedAt:T0+"T10:00:00",reviewStatus:""}) ]);
   as("小葵","editor");
   const c=workReviewCard("小葵");
-  ok("**剪輯這邊沒有審過鍵**", !c.includes("editorMarkReviewed('W1')"), (c.match(/editorMarkReviewed[^)]*\)/g)||[]));
-  ok("**改成寫著「待審」**（不要留一顆按不動的鍵）", c.includes(">待審<"));
+  ok("**剪輯自己就有審過鍵**", c.includes("editorMarkReviewed('W1')"), c.slice(0,160));
+  ok("**而且真的畫成一顆鍵**（不是只剩一行字）", c.includes("<button") && c.includes("✓ 審過"));
+  ok("不會又退回成按不動的「待審」字樣", !c.includes(">待審<"));
+  ok("下面那句說明文字留著（老闆：不需要把它拿掉）",
+     c.includes("待審核 — Regina 說 OK 後，自己按「已審過」進下一步"));
   as("Regina","manager");
-  ok("Regina 才有鍵", workReviewCard("小葵").includes("editorMarkReviewed('W1')"));
+  ok("Regina 那邊也還有鍵", workReviewCard("小葵").includes("editorMarkReviewed('W1')"));
   as("管理員","boss");
   ok("管理員也有（他是最後的守門人）", workReviewCard("小葵").includes("editorMarkReviewed('W1')")); }
-{ // 就算硬呼叫也要擋 —— 只把鍵藏起來不算防護
+{ // 剪輯自己呼叫要真的寫得進去（復原後這就是正常用法）
   reset([ v_("W1",{editor:"小葵",claimedBy:"小葵",stage:"已完成",finishedAt:T0+"T10:00:00",reviewStatus:""}) ]);
   as("小葵","editor");
   const W=[]; global.window.DB.update=async(c,id,p)=>{W.push([c,id,p]);};
   editorMarkReviewed("W1");
-  ok("**剪輯硬呼叫也寫不進去**", W.length===0, W);
-  ok("而且有講原因", (global.__toasts||[]).some(t=>t.includes("只有 Regina"))); }
+  ok("**剪輯自己按 → 寫進 reviewStatus=通過，審核人記自己**",
+     W.some(([c,id,p])=>c==="videos"&&id==="W1"&&p.reviewStatus==="通過"&&p.reviewedBy==="小葵"), W); }
+{ // 唯一還擋著的是員工視角（唯讀預覽）—— 管理員不可以代替員工按下去。
+  // 只把鍵藏起來不算防護，所以硬呼叫也要一起驗。
+  reset([ v_("W1",{editor:"小葵",claimedBy:"小葵",stage:"已完成",finishedAt:T0+"T10:00:00",reviewStatus:""}) ]);
+  as("管理員","boss"); VIEW_AS="小葵";
+  const c=workReviewCard("小葵");
+  ok("**員工視角底下不畫鍵**", !c.includes("editorMarkReviewed('W1')"), (c.match(/editorMarkReviewed[^)]*\)/g)||[]));
+  ok("按不動就寫「待審」（不要留一顆按不動的鍵）", c.includes(">待審<"));
+  const W=[]; global.window.DB.update=async(c2,id,p)=>{W.push([c2,id,p]);};
+  global.__toasts=[];
+  editorMarkReviewed("W1");
+  ok("**員工視角硬呼叫也寫不進去**", W.length===0, W);
+  ok("而且有講原因（唯讀預覽）", (global.__toasts||[]).some(t=>t.includes("唯讀預覽")), global.__toasts);
+  VIEW_AS=null; }
 
 // ══════════ ⑪ 還沒審的一律留著，不再只看七天 ══════════
 // 老闆：「目前的待審的片子，記錄七天，改成沒有上限，只要還沒審過的都會出現」

@@ -165,11 +165,14 @@ reset(); hookDB(); CUR_TAB="team"; render();
 ok("渲染人資頁不會寫入任何資料", calls.length===0);
 
 // ── 剪輯流程完全不受人資影響 ──
-// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
+// 2026-09-11（老闆指定）：「先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」
+// —— v184 那條「只有 Regina 按得動」復原掉了。這一段在盯的是「人資那一頁不會影響
+// 剪輯流程」，所以照樣兩邊都驗：剪輯自己按得動、Regina 也按得動。
 reset(); hookDB(); localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 editorMarkReviewed("D1");
-ok("**剪輯自己按審過 → 擋下來，什麼都不寫**",
-   !calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"), calls.map(c=>c.slice(0,3)));
+ok("**剪輯自己按審過 → 寫得進去（審核人記自己）**",
+   calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"&&c[3].reviewStatus==="通過"&&c[3].reviewedBy==="小葵"),
+   calls.map(c=>c.slice(0,3)));
 reset(); hookDB(); localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
 editorMarkReviewed("D1");
 ok("Regina 按得動", calls.some(c=>c[0]==="update"&&c[1]==="videos"&&c[2]==="D1"&&c[3].reviewStatus==="通過"));

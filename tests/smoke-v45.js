@@ -49,10 +49,13 @@ let h=viewWork();
 ok("審片進度卡出現且計數=3", h.includes("審片進度") && h.includes('">3</span>'));
 ok("退回段：紅色＋原因", h.includes("被退回，要修") && h.includes("字卡打錯"));
 ok("通過待補段：列出通過但缺連結的片", h.includes("已審過（通過）") && h.includes("通過待補連結"));
-// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
-ok("待審核段：列出等審的片", h.includes("待審核 — Regina 說 OK 後") && h.includes("等審的片"));
-ok("**剪輯這邊沒有「審過」鍵，只寫著在等 Regina**",
-   !h.includes("editorMarkReviewed('W1')") && h.includes("待審"));
+// 2026-09-11（老闆指定）：「先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」
+// —— v184 那條「只有 Regina 按得動」復原掉了。下面那句說明文字老闆說不需要拿掉，
+// 它描述的正好就是復原後的流程（Regina 口頭說 OK，剪輯自己按），所以整句都要在。
+ok("待審核段：列出等審的片，說明文字整句都在",
+   h.includes("待審核 — Regina 說 OK 後，自己按「已審過」進下一步") && h.includes("等審的片"));
+ok("**剪輯這邊有自己按得動的「審過」鍵**",
+   h.includes("editorMarkReviewed('W1')") && h.includes("✓ 審過"));
 { const seg=h.split("審片進度")[1].split("剪完等審的片")[0].split("最近 7 天剪完的片")[0];   // v184：還沒審的那張卡標題會變
   ok("已審完成的片不出現在審片卡裡", !seg.includes("全部完成的片"));
   // v136：源片填不了上片連結，所以有存檔連結就算補齊 —— 不能讓它永遠掛在卡上叫
