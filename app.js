@@ -6850,9 +6850,51 @@ function viewTrash(){
       <tbody>${rows||`<tr><td colspan="4" class="muted">回收桶是空的</td></tr>`}</tbody></table>
     </div></div>`;
 }
+// ===================================================================
+// 影片分成兩種：泛流量 ／ 賣貨型（v199）
+//
+// 老闆的分法：「高流量、低留言是泛流量內容；高留言、只要流量超過 5000，
+// 都是賣貨型的影片，這都需要看出來，這是我們分類的方式。」
+//
+// 怎麼分？用「每千次觀看有幾則留言」。這條線不是挑的，是資料自己畫出來的 ——
+// 拿第一批真實成效（觀看 ≥ 5,000 的 38 支）算留言率排序之後，再**分頭**去看
+// 文案裡有沒有「留言」「關鍵字」「下單」這種叫人行動的話，兩邊幾乎重合：
+//     每千觀看 2 則這條線：賣貨型 18 支，其中 16 支（89%）文案真的有 CTA
+//                          泛流量 20 支，只有 2 支（10%）有
+// 兩個完全獨立的訊號指到同一個地方，所以這條線是真的。
+//
+// 最極端的對比：
+//     中東女性包頭巾文化   136,419 觀看 →   9 則留言（0.07‰）泛流量
+//     爸爸抓的藥            6,616 觀看 → 519 則留言（78.45‰）賣貨型
+// 觀看差 20 倍，留言差 58 倍 —— 而且是反過來。
+//
+// ⚠️ 觀看不到 5,000 的一律不分類。留言率的分母太小，1 則留言就能把它推到
+//    任何一邊；那不是分類，是雜訊。
+// ===================================================================
+const KIND_MIN_VIEWS=5000;     // 低於這個觀看數不分類（分母太小，算出來沒意義）
+const KIND_RATE=2.0;           // 每千次觀看幾則留言算「賣貨型」
+function vidMetricRows(v){ return Array.isArray(v&&v.metrics)?v.metrics:[]; }
+function vidViews(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.views||0),0); }
+function vidComments(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.comments||0),0); }
+function vidCommentRate(v){ const n=vidViews(v); return n?1000*vidComments(v)/n:0; }
+function vidKind(v){
+  // 沒有成效的片觀看數是 0，本來就過不了下面這一關 —— 不必另外擋一次。
+  if(vidViews(v)<KIND_MIN_VIEWS) return "";
+  return vidCommentRate(v)>=KIND_RATE ? "賣貨型" : "泛流量";
+}
+function kindPill(v){
+  const k=vidKind(v); if(!k) return "";
+  // 綠色＝賣貨型（有人留言就是有人想買），金色＝泛流量（衝觸及）。
+  // 兩種都是好東西，顏色只是要分得開 —— 不是好壞。
+  return `<span class="pill ${k==="賣貨型"?"ok":"wa"}" style="font-size:10px" `
+       + `title="每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言">${k}</span>`;
+}
+
 // ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
 let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
+let PERF_KIND=null;   // 選中的類型（null＝兩種都看）
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
+function perfSetKind(k){ PERF_KIND=(PERF_KIND===k)?null:k; render(); }
 function num(n){ return (+n||0).toLocaleString(); }
 function viewPerf(){
   const vids=STATE.videos||[];
@@ -6864,7 +6906,14 @@ function viewPerf(){
   // 影片排行（依選中平台，否則全部）
   const inScope=r=> !PERF_PLAT || r.platform===PERF_PLAT;
   const perVid={}; rows.filter(inScope).forEach(r=>{ const o=perVid[r.v.id]||(perVid[r.v.id]={v:r.v,views:0,likes:0}); o.views+=(+r.views||0); o.likes+=(+r.likes||0); });
-  const vRank=Object.values(perVid).sort((a,b)=>b.views-a.views).slice(0,50);
+  // 分類看的是「這支片的全部成效」，不是選中平台那一份 —— 只看一個帳號的留言率
+  // 會因為那個帳號的貼文剛好沒帶 CTA 就翻面，那不是這支片的性質。
+  const vAll=Object.values(perVid);
+  const kindOf=(o)=>vidKind(o.v);
+  const kindCount={"泛流量":0,"賣貨型":0,"":0};
+  vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
+  const vRank=vAll.filter(o=>!PERF_KIND||kindOf(o)===PERF_KIND)
+                  .sort((a,b)=>b.views-a.views).slice(0,50);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
     (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
@@ -6878,19 +6927,29 @@ function viewPerf(){
   return `<h2>平台成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
     <b>尚無平台成效數據</b>
-    <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
+    <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
-  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
+  ${hasData?`<div class="row" style="gap:10px;margin-bottom:6px">${
+    [["泛流量","觀看衝得高、沒什麼人留言"],["賣貨型","有人留言就是有人想買"]].map(([k,why])=>
+    `<button class="card" onclick="perfSetKind('${k}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
+      <b>${k}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]||0}</div>
+      <div class="muted" style="font-size:12px">${why}</div></button>`).join("")
+    }${kindCount[""]?`<div class="card" style="min-width:150px;flex:1;opacity:.75">
+      <b class="muted">還沒分類</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px;color:var(--muted)">${kindCount[""]}</div>
+      <div class="muted" style="font-size:12px">觀看不到 ${num(KIND_MIN_VIEWS)}，留言率算不準</div></div>`:''}</div>`:''}
+  <div class="card"><b>影片排行${PERF_KIND?`（只看${PERF_KIND}）`:(PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）')}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
-    <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
+    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-e"><col class="pr-p"><col class="pr-v"><col class="pr-c"></colgroup>
+    <thead><tr><th>#</th><th>影片</th><th>類型</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>留言</th></tr></thead>
     <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
       <td data-label="#">${i+1}</td>
       <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
+      <td data-label="類型" class="pr-k">${kindPill(r.v)||'<span class="muted">—</span>'}</td>
       <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="帶貨商品">${prodCell(r.v)}</td>
-      <td data-label="觀看"><b>${num(r.views)}</b></td>
-      <td data-label="讚">${num(r.likes)}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">尚無資料</td></tr>`}</tbody></table>
+      <td data-label="觀看" class="pr-v"><b>${num(r.views)}</b></td>
+      <td data-label="留言" class="pr-c">${num(vidComments(r.v))}<span class="muted" style="font-size:11px">・${vidCommentRate(r.v).toFixed(1)}‰</span></td></tr>`).join("")||`<tr><td colspan="7" class="muted">${PERF_KIND?'這個類型還沒有影片':'尚無資料'}</td></tr>`}</tbody></table>
     </div>
   </div>
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
@@ -6935,11 +6994,13 @@ function vidMetricsCard(v){
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
   const html = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
-      <b>平台成效</b>${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</div>
+      <b>平台成效</b><span class="row" style="gap:6px">${kindPill(v)}${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</span></div>
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
-      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
-      :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
+      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">${
+        vidKind(v)?`每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言 → ${vidKind(v)}　・　`:''
+      }更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
+      :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。同步工作會以<b>貼文文案</b>比對 IG／FB 的貼文，把觀看、讚、留言填進這裡。對不到的話，通常是這支片沒有文案、或平台上用了完全不同的行銷文案發。</div>`}
   </div>` : "";
   // 跨語言：源片列出各語言版本（中英一起看）；英文版顯示回連源片
   return html;
