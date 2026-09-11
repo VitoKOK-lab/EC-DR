@@ -226,6 +226,15 @@ ok([a["name"] for a in U.needs_naming(renamed, PLATS)] == ["FB 泰熙爾 札娜�
 ok(U.needs_naming([{"name": "IG 官方（@tzgrotw）"}], PLATS) == [],
    "對得上的就不要多問")
 
+# 問的時候只列同一種平台 —— 拿粉專去對 IG 帳號是不可能的，那些選項只是雜訊
+MISS = ["IG 泰熙爾汗（@tzgems5588）", "IG 英文（@tzgrotwofficial）",
+        "IG 代理（@tzgems666）", "IG 官方（@tzgrotw）", "FB 粉專（Zanagems）"]
+ok(U.naming_choices({"platform": "FB"}, MISS) == ["FB 粉專（Zanagems）"],
+   "問粉專的時候只列粉專（第一版把 4 個 IG 也列出來，老闆看不懂在問什麼）")
+ok(U.naming_choices({"platform": "IG"}, MISS) == MISS[:4], "問 IG 的時候只列 IG")
+ok(U.naming_choices({"platform": "FB"}, MISS[:4]) == MISS[:4],
+   "篩完一個都不剩就還是全部列出來（總比什麼都不給選好）")
+
 extra = U.map_accounts([], [{"id": "17z", "username": "newone"}], PLATS)[0]
 ok(extra[0]["name"] == "IG @newone", "清單上還沒有的新帳號照樣寫得進去，不會被丟掉")
 

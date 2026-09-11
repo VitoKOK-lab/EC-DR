@@ -109,6 +109,18 @@ def needs_naming(accounts, plats):
     return [a for a in accounts if a["name"] not in known]
 
 
+def naming_choices(account, missing):
+    """問「這個帳號在系統裡是哪一個」的時候，只列同一種平台的選項。
+
+    第一次上線時四個 IG 跟一個粉專全部列出來讓人選，老闆的反應是
+    「這指的是哪裡？我看不懂」—— 沒錯，拿粉專去對 IG 帳號本來就不可能，
+    那四個選項只是雜訊。系統清單的名字都以「IG 」「FB 」開頭，照這個篩。
+    """
+    want = str(account.get("platform", "")).upper()
+    same = [m for m in missing if m.upper().startswith(want)]
+    return same or list(missing)      # 篩完一個都不剩，就還是全部列出來
+
+
 def main():
     print("EC-DR 平台成效同步 — 設定精靈\n")
     print("請貼上 Meta 的長期存取權杖（EAA... 開頭那一長串）。")
@@ -146,14 +158,17 @@ def main():
     for a in needs_naming(accounts, plats):
         if not missing:
             break
-        print("\n「%s」對不到系統清單上的名字。" % a["name"][:40])
-        print("  它在系統裡是下面哪一個？（粉專改過名字就會這樣）")
-        for i, m in enumerate(missing, 1):
+        choices = naming_choices(a, missing)
+        kind = "粉專" if a["platform"] == "FB" else "IG 帳號"
+        print("\nMeta 上這個%s：%s" % (kind, a["name"][:50]))
+        print("  對不回系統「上片平台」清單上的任何一個名字（改過名字就會這樣）。")
+        print("  它在系統裡是下面哪一個？")
+        for i, m in enumerate(choices, 1):
             print("     %d. %s" % (i, m))
         print("     0. 都不是，就用 Meta 上的名字")
         s = input("  輸入數字：").strip()
-        if s.isdigit() and 1 <= int(s) <= len(missing):
-            a["name"] = missing[int(s) - 1]
+        if s.isdigit() and 1 <= int(s) <= len(choices):
+            a["name"] = choices[int(s) - 1]
             missing = [m for m in missing if m != a["name"]]
             print("  → 記成「%s」" % a["name"])
 
