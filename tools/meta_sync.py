@@ -7,6 +7,7 @@
     python3 tools/meta_sync.py --write             真的寫進資料庫
     python3 tools/meta_sync.py --write --fill-links 順便把對到的上片連結補回去
     python3 tools/meta_sync.py --days 90           往回抓 90 天（預設 30）
+    python3 tools/meta_sync.py --min-views 3000    放寬「成效好」的門檻（預設 5000 觀看 / 5 留言）
     python3 tools/meta_sync.py --save-posts x.json 把平台原始回應存起來
     python3 tools/meta_sync.py --from-file x.json  用存起來的回應重跑比對（不連網）
 
@@ -28,6 +29,18 @@
 
 放在家目錄不是 repo 裡，是因為 repo 是公開的 —— 權杖進了 git 就等於公開。
 name 要跟系統裡「上片平台」那張清單的寫法一樣，成效頁才會合在一起看。
+
+【只抓成效好的，不是全部抓下來】
+老闆要的是「成效好的片」：至少 5,000 點閱、5 個人留言。這兩個數字剛好可以
+拆成兩段用 ——
+  留言數在**貼文清單裡就拿得到**，不用另外呼叫 → 拿它當篩子
+  觀看數要問了才知道（一則一次呼叫，很慢）→ 篩剩的才去問
+所以順序是：抓清單 → 比對 → 篩 → 才問成效。
+第一版對全部 1,183 則都問了一次（二十幾分鐘），再把其中 900 多則丟掉。
+
+達標的片會繼續追蹤 30 天（看它後續掉多少），不是永遠。
+另外二創（sourceVideoId 有值的）不管達不達標都記 —— 要比的是
+「二創比原片掉了幾成」，二創剪壞的那幾支如果不記，就永遠看不出是誰剪壞的。
 
 【怎麼對回影片】見 tools/meta_match.py，那支有完整說明與測試。
 """
@@ -168,32 +181,33 @@ def _tick(n):
     sys.stdout.flush()
 
 
-def fetch_ig(acc, token, since_ts, missing):
-    """一個 IG 帳號的貼文＋成效。"""
+def list_ig(acc, token, since_ts):
+    """一個 IG 帳號的貼文清單。**不問成效**——那是另一段，很貴。
+
+    留言數（comments_count）跟讚數在清單裡就拿得到，不用另外呼叫。
+    這件事決定了整個流程的形狀：先用留言數篩，篩剩的才去問觀看數。
+    """
     rows = _paged("%s/media" % acc["igUserId"], token,
                   {"fields": "id,caption,timestamp,permalink,media_type,"
                              "like_count,comments_count"}, since_ts)
-    posts = []
+    out = []
     for r in rows:
         ts = str(r.get("timestamp") or "")
         if ts[:10] < since_ts:
             continue
-        _tick(len(posts) + 1)
-        ins = _insights("%s/insights" % r["id"], token, IG_METRICS, missing)
-        posts.append({
+        out.append({
             "platform": "IG", "account": acc["name"],
             "id": r.get("id"), "caption": r.get("caption") or "",
             "at": ts, "permalink": r.get("permalink") or "",
-            "views": ins.get("views", ins.get("reach", 0)),
-            "likes": r.get("like_count", ins.get("likes", 0)),
-            "comments": r.get("comments_count", ins.get("comments", 0)),
-            "shares": ins.get("shares", 0),
+            "views": 0, "shares": 0,
+            "likes": int(r.get("like_count") or 0),
+            "comments": int(r.get("comments_count") or 0),
         })
-    return posts
+    return out
 
 
-def fetch_fb(acc, token, since_ts, missing):
-    """一個 FB 粉專的貼文＋成效（含 Reels，Reels 也在 /posts 裡）。
+def list_fb(acc, token, since_ts):
+    """一個 FB 粉專的貼文清單（含 Reels）。同樣不問成效。
 
     ⚠️ 粉專的貼文要用**粉專自己的權杖**，不是你個人那一把。
     拿個人權杖去打 /{粉專}/posts 會被擋成
@@ -201,57 +215,135 @@ def fetch_fb(acc, token, since_ts, missing):
     2026-09-11 第一次真的跑就是掛在這裡。粉專權杖在 /me/accounts 的
     access_token 欄位裡，設定精靈會一起存進設定檔。
     """
-    token = acc.get("pageToken") or token
-    rows = _paged("%s/posts" % acc["pageId"], token,
+    rows = _paged("%s/posts" % acc["pageId"], acc.get("pageToken") or token,
                   {"fields": "id,message,created_time,permalink_url,"
                              "shares,comments.summary(true).limit(0)"}, since_ts)
-    posts = []
+    out = []
     for r in rows:
         ts = str(r.get("created_time") or "")
         if ts[:10] < since_ts:
             continue
-        _tick(len(posts) + 1)
-        ins = _insights("%s/insights" % r["id"], token, FB_METRICS, missing)
-        posts.append({
+        out.append({
             "platform": "FB", "account": acc["name"],
             "id": r.get("id"), "caption": r.get("message") or "",
             "at": ts, "permalink": r.get("permalink_url") or "",
-            "views": ins.get("post_video_views", ins.get("post_impressions", 0)),
-            "likes": ins.get("post_reactions_by_type_total", 0),
-            "comments": (((r.get("comments") or {}).get("summary") or {})
-                         .get("total_count", 0)),
-            "shares": ((r.get("shares") or {}).get("count", 0)),
+            "views": 0, "likes": 0,
+            "comments": int((((r.get("comments") or {}).get("summary") or {})
+                             .get("total_count")) or 0),
+            "shares": int(((r.get("shares") or {}).get("count")) or 0),
         })
-    return posts
+    return out
 
 
-def fetch_all(cfg, since_ts, verbose=False):
+def list_all(cfg, since_ts):
+    """把每個帳號的貼文清單抓回來。這一段便宜 —— 一頁 50 則。"""
     token = cfg.get("token") or os.environ.get("META_TOKEN", "")
     if not token:
         raise MetaError("沒有 token：請在設定檔寫 token，或設環境變數 META_TOKEN")
-    missing, posts = {}, []
+    posts = []
     for acc in cfg.get("accounts") or []:
-        plat = str(acc.get("platform", "")).upper()
         name = acc.get("name") or "(沒有名字的帳號)"
-        # 成效是一則一次呼叫，慢。先把帳號名字印出來、點點跟著跑，才看得出它還活著。
-        sys.stdout.write("  %s " % name)
-        sys.stdout.flush()
         try:
-            got = fetch_ig(acc, token, since_ts, missing) if plat == "IG" \
-                else fetch_fb(acc, token, since_ts, missing)
+            got = (list_ig(acc, token, since_ts)
+                   if str(acc.get("platform", "")).upper() == "IG"
+                   else list_fb(acc, token, since_ts))
         except MetaError as e:
-            print("\n  ⚠ %s 抓不到：%s" % (name, e))
+            print("  ⚠ %s 抓不到：%s" % (name, e))
             continue
-        print("　共 %d 則" % len(got))
+        print("  %s　%d 則" % (name, len(got)))
         posts.extend(got)
+    return token, posts
+
+
+def add_insights(posts, cfg, token, verbose=False):
+    """只對挑出來的這幾則問成效。**這一段是整支腳本裡最慢的部分。**
+
+    一則貼文一次 API 呼叫。第一版對全部 1,183 則都問了一次（二十幾分鐘），
+    然後把其中 900 多則丟掉 —— 那些是商品圖文，影片庫裡本來就沒有。
+    改成先比對、先篩，再問成效，呼叫數掉到一兩百次。
+    """
+    by_page = {}
+    for acc in (cfg.get("accounts") or []):
+        if acc.get("pageToken"):
+            by_page[acc.get("name")] = acc["pageToken"]
+    missing = {}
+    for i, p in enumerate(posts, 1):
+        _tick(i)
+        tok = by_page.get(p["account"]) or token
+        ins = _insights("%s/insights" % p["id"], tok,
+                        IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
+        if p["platform"] == "IG":
+            p["views"] = ins.get("views", ins.get("reach", 0))
+            p["shares"] = ins.get("shares", p.get("shares", 0))
+        else:
+            p["views"] = ins.get("post_video_views", ins.get("post_impressions", 0))
+            p["likes"] = ins.get("post_reactions_by_type_total", p.get("likes", 0))
+    print("")
     if missing:
-        print("\n  ⚠ 這些指標這個版本要不到（成效會少一欄，不影響比對）：")
+        print("  ⚠ 這些指標這個版本要不到（成效會少一欄，不影響比對）：")
         for m, why in missing.items():
             print("     %s —— %s" % (m, why))
     if verbose and posts:
-        print("\n  第一則長這樣（確認欄位有沒有對）：")
+        print("  第一則長這樣（確認欄位有沒有對）：")
         print("  " + json.dumps(posts[0], ensure_ascii=False)[:400])
     return posts
+
+
+# ---------------------------------------------------------------------------
+# 哪幾則值得去問成效
+# ---------------------------------------------------------------------------
+def is_hit(post, min_views, min_comments):
+    """這一則算不算「成效好」。老闆的定義：至少 5,000 點閱、5 個人留言。"""
+    return (int(post.get("views") or 0) >= min_views
+            and int(post.get("comments") or 0) >= min_comments)
+
+
+def tracked_until(v, min_views, min_comments, track_days):
+    """這支片追蹤到哪一天為止（沒達標過就回空字串）。
+
+    達標那一則的發文日 ＋ track_days。老闆：「需要繼續追蹤，但也不需要永遠，
+    待約三十天就可以，有足夠的數據跟第二次創作比較。」
+    不另外存欄位 —— 從已經記下來的 metrics 就推得出來，少一個要同步的狀態。
+    """
+    best = ""
+    for m in (v.get("metrics") or []):
+        if not is_hit(m, min_views, min_comments):
+            continue
+        d = str(m.get("postAt") or "")[:10]
+        if d:
+            best = max(best, _plus_days(d, track_days))
+    return best
+
+
+def _plus_days(d, n):
+    import datetime
+    try:
+        y, mo, da = int(d[0:4]), int(d[5:7]), int(d[8:10])
+        return (datetime.date(y, mo, da) + datetime.timedelta(days=n)).isoformat()
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+
+def needs_insights(post, video, today, min_comments, min_views, track_days):
+    """這一則要不要花一次 API 呼叫去問成效？回傳 (要不要, 為什麼)。
+
+    三種情況要問：
+      1. 留言數夠 —— 可能是達標片。留言數在清單裡就有，不用花呼叫就篩得掉。
+      2. 這支片還在追蹤期內 —— 已經達標過，要繼續看它後續掉多少。
+      3. 這支片是二創（sourceVideoId 有值）—— **不管它自己達不達標都要記**。
+         老闆要比的是「二創比原片掉了幾成」；二創剪壞的那幾支如果因為沒達標
+         就不記，就永遠看不出是誰剪壞的 —— 而那正是最該看見的事。
+    """
+    if int(post.get("comments") or 0) >= min_comments:
+        return True, "留言夠"
+    if not video:
+        return False, ""
+    if str(video.get("sourceVideoId") or "").strip():
+        return True, "二創"
+    until = tracked_until(video, min_views, min_comments, track_days)
+    if until and today <= until:
+        return True, "追蹤中"
+    return False, ""
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +512,12 @@ def main():
     ap = argparse.ArgumentParser(description="同步 FB／IG 貼文成效回影片庫")
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--days", type=int, default=30)
+    ap.add_argument("--min-views", type=int, default=5000,
+                    help="成效好的門檻：觀看數（預設 5000）")
+    ap.add_argument("--min-comments", type=int, default=5,
+                    help="成效好的門檻：留言數（預設 5）。也是「要不要花一次呼叫去問成效」的篩子")
+    ap.add_argument("--track-days", type=int, default=30,
+                    help="一支片達標之後，繼續追蹤幾天（預設 30）")
     ap.add_argument("--write", action="store_true", help="真的寫進資料庫（預設只看不寫）")
     ap.add_argument("--fill-links", action="store_true", help="順便把空的上片連結補回去")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
@@ -438,7 +536,8 @@ def main():
     print("EC-DR 平台成效同步　範圍：%s 起　模式：%s"
           % (since, "寫入" if args.write else "只看不寫（要寫請加 --write）"))
 
-    # 1. 拿貼文
+    # 1. 拿貼文清單（便宜）—— 這一段還不問成效
+    cfg, token = None, None
     if args.from_file:
         posts = json.load(open(args.from_file, encoding="utf-8"))
         print("\n用檔案裡的 %d 則貼文（沒有連網）" % len(posts))
@@ -447,12 +546,8 @@ def main():
             print("\n找不到設定檔 %s。\n內容格式見這支檔案開頭的說明。" % args.config)
             return 2
         cfg = json.load(open(args.config, encoding="utf-8"))
-        print("\n抓平台貼文：")
-        posts = fetch_all(cfg, since, args.verbose)
-    if args.save_posts:
-        json.dump(posts, open(args.save_posts, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=1)
-        print("  原始回應存到 %s" % args.save_posts)
+        print("\n抓貼文清單（還不問成效）：")
+        token, posts = list_all(cfg, since)
     if not posts:
         print("\n沒有抓到任何貼文，結束。")
         return 1
@@ -480,8 +575,41 @@ def main():
     print("\n比對結果：%d 則對上、%d 則對不上" % (len(matched), len(unmatched)))
 
     byvid = {v["id"]: v for v in videos}
+
+    # 3.5 挑出值得花一次呼叫去問成效的那幾則，然後才問
+    import datetime as _dt
+    today = (_dt.datetime.utcnow() + _dt.timedelta(hours=8)).date().isoformat()
+    want, why_count = [], {}
+    for mm in matched:
+        ok, why = needs_insights(mm["post"], byvid.get(mm["videoId"]), today,
+                                 args.min_comments, args.min_views, args.track_days)
+        if ok:
+            want.append(mm["post"])
+            why_count[why] = why_count.get(why, 0) + 1
+    print("\n要問成效的 %d 則（其餘 %d 則不用花呼叫）："
+          % (len(want), len(posts) - len(want)))
+    for why, n in sorted(why_count.items(), key=lambda kv: -kv[1]):
+        print("  %4d 則　%s" % (n, why))
+    if want and not args.from_file:
+        print("\n問成效（一則一次呼叫，這段最慢）：")
+        sys.stdout.write("  ")
+        add_insights(want, cfg, token, args.verbose)
+
+    if args.save_posts:
+        json.dump(posts, open(args.save_posts, "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
+        print("  原始回應存到 %s" % args.save_posts)
+
+    hits = [p for p in want if is_hit(p, args.min_views, args.min_comments)]
+    hit_vids = set(mm["videoId"] for mm in matched if mm["post"] in hits)
+    print("\n達標（觀看 ≥ %s 且留言 ≥ %d）：%d 則、%d 支片"
+          % ("{:,}".format(args.min_views), args.min_comments, len(hits), len(hit_vids)))
+
+    wanted_ids = set(id(p) for p in want)
     plan = {}
     for m in matched:
+        if id(m["post"]) not in wanted_ids:
+            continue
         p, vid = m["post"], m["videoId"]
         row = {"platform": p["platform"], "account": p["account"],
                "views": int(p.get("views") or 0), "likes": int(p.get("likes") or 0),
@@ -526,12 +654,13 @@ def main():
                      next((p.get("caption") or "")[:40].replace("\n", " ")
                           for p in posts if str(p.get("id")) == r["postId"])))
 
-    print("\n要更新的影片 %d 支：" % len(plan))
+    print("\n要更新的影片 %d 支（★＝這次有達標）：" % len(plan))
     for vid, e in sorted(plan.items(), key=lambda kv: -sum(r["views"] for r in kv[1]["rows"]))[:40]:
         v = byvid.get(vid, {})
         tot = sum(r["views"] for r in e["rows"])
-        print("  %-16s %-30s %d 則・觀看合計 %s%s"
-              % (vid, str(v.get("name") or "")[:30], len(e["rows"]), "{:,}".format(tot),
+        print("  %s %-16s %-30s %d 則・觀看合計 %s%s"
+              % ("★" if vid in hit_vids else "　", vid, str(v.get("name") or "")[:30],
+                 len(e["rows"]), "{:,}".format(tot),
                  "　＋補上片連結" if (args.fill_links and e["fillLink"]) else ""))
     if len(plan) > 40:
         print("  …另外還有 %d 支" % (len(plan) - 40))

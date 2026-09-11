@@ -260,6 +260,43 @@ ok(len(r) == 2, "以前人工填的那幾列沒有 postId，也不能被洗掉")
 
 ok(S.merge_metrics(None, new) == new, "本來沒有成效的片不會爆掉")
 
+print("— 哪幾則值得花一次呼叫去問成效 —")
+# 老闆：「我要的是成效好的，至少 5000 點閱、五個人留言以上。」
+# 留言數在貼文清單裡就拿得到（不用另外呼叫），觀看數要問了才知道 ——
+# 所以留言數當篩子、觀看數當判定，剛好各司其職。
+ok(S.is_hit({"views": 9000, "comments": 8}, 5000, 5), "觀看夠、留言也夠 → 達標")
+ok(not S.is_hit({"views": 9000, "comments": 2}, 5000, 5), "觀看夠但沒人留言 → 不算")
+ok(not S.is_hit({"views": 300, "comments": 20}, 5000, 5), "留言多但沒人看 → 不算")
+
+print("— 達標之後追蹤 30 天，不是永遠 —")
+HITROW = {"views": 9000, "comments": 8, "postAt": "2026-08-20T10:00:00"}
+ok(S.tracked_until({"metrics": [HITROW]}, 5000, 5, 30) == "2026-09-19",
+   "追蹤到「達標那一則的發文日 ＋ 30 天」為止")
+ok(S.tracked_until({"metrics": [{"views": 10, "comments": 0, "postAt": "2026-08-20"}]},
+                   5000, 5, 30) == "",
+   "沒達標過的片不會進追蹤（那樣等於全部都追）")
+ok(S.tracked_until({}, 5000, 5, 30) == "", "還沒有任何成效的片不會爆掉")
+
+print("— 要不要問成效 —")
+P_HOT = {"comments": 9, "views": 0}
+P_COLD = {"comments": 1, "views": 0}
+ok(S.needs_insights(P_HOT, None, "2026-09-11", 5, 5000, 30)[0],
+   "留言夠就問（連對到哪支片都還不用知道）")
+ok(not S.needs_insights(P_COLD, {"id": "X"}, "2026-09-11", 5, 5000, 30)[0],
+   "留言不夠、又不是追蹤中、又不是二創 → 不用花這次呼叫")
+ok(S.needs_insights(P_COLD, {"id": "T", "metrics": [HITROW]},
+                    "2026-09-11", 5, 5000, 30)[0],
+   "追蹤期內的片，留言再少也要問（要看它後續掉多少）")
+ok(not S.needs_insights(P_COLD, {"id": "T", "metrics": [HITROW]},
+                        "2026-10-30", 5, 5000, 30)[0],
+   "過了 30 天就不追了（不是永遠）")
+ok(S.needs_insights(P_COLD, {"id": "R", "sourceVideoId": "V001"},
+                    "2026-09-11", 5, 5000, 30)[0],
+   "二創不管達不達標都要記 —— 剪壞的那幾支如果不記，就永遠看不出是誰剪壞的")
+ok(S.needs_insights(P_COLD, {"id": "R", "sourceVideoId": ""},
+                    "2026-09-11", 5, 5000, 30)[0] is False,
+   "sourceVideoId 是空字串不算二創")
+
 print("— 涵蓋率（排了的片有幾支沒對到）—")
 # 真正要擔心的不是「989 則貼文只對上 238 則」（大多是商品圖文，本來就不在影片庫），
 # 而是反過來：系統裡排了、平台上也發了，卻沒對到。
