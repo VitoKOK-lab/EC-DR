@@ -6962,15 +6962,36 @@ function rmkPct(sorted, x){
 function rmkPool(){
   return (STATE.videos||[]).filter(v=>!isVersion(v) && vidViews(v)>=RMK_MIN_VIEWS && rmkAired(v).length);
 }
-function rmkRank(){
-  const pool=rmkPool(), byType={};
+// 搜尋要找的東西：片名、原始檔名、文案、**帶貨商品**。
+// 老闆：「有時候是先有商品，再來找能用的影片。」—— 從商品名找回影片，
+// 所以 products 一定要進去，那正是這個用法的入口。
+function rmkHay(v){
+  return [v.name, v.rawName, v.videoCopy, ((v.products||[]).map(p=>p&&p.name).join(" "))]
+    .map(x=>zhTW(String(x||""))).join(" ").toLowerCase();
+}
+// 有搜尋的時候，池子**放寬成整個影片庫**（不限成效、不限 5,000 觀看）——
+// 因為這時候他要的是「能用的影片」，不是「成效好的影片」。
+// 成效只拿來排序，不拿來擋人。
+function rmkSearchPool(q){
+  const k=zhTW(String(q||"")).trim().toLowerCase();
+  if(!k) return [];
+  return (STATE.videos||[]).filter(v=>!isVersion(v) && rmkHay(v).includes(k));
+}
+function rmkRank(pool){
+  pool=pool||rmkPool();
+  const byType={};
   pool.forEach(v=>{ (byType[vidType(v)]||(byType[vidType(v)]=[])).push(v); });
   const out=[];
   Object.keys(byType).forEach(t=>{
     const vs=byType[t];
     const vw=vs.map(vidViews).sort((a,b)=>a-b), cm=vs.map(vidComments).sort((a,b)=>a-b);
     vs.forEach(v=>{
-      const heat=RMK_VIEW_W*rmkPct(vw,vidViews(v))+(1-RMK_VIEW_W)*rmkPct(cm,vidComments(v));
+      // ⚠️ 沒有成效數字的片，百分位算出來會是 0.5（沒有人比它低、也沒有人比它高），
+      // 看起來像「中等」—— 但「沒有數字」不等於「中等」。那種片一律 0 分，
+      // 讓它落到「先不推薦」那一堆，並且講明是「還沒有成效數字」。
+      const heat=vidViews(v)>0
+        ? RMK_VIEW_W*rmkPct(vw,vidViews(v))+(1-RMK_VIEW_W)*rmkPct(cm,vidComments(v))
+        : 0;
       out.push({v, heat, tk:rmkTimeK(v), uk:rmkUsedK(v), score:heat*rmkTimeK(v)*rmkUsedK(v),
                 gap:rmkDaysSince(v), used:rmkAired(v).length, type:t});
     });
@@ -6978,40 +6999,62 @@ function rmkRank(){
   return out.sort((a,b)=>b.score-a.score);
 }
 function rmkWhyNot(r){
-  if(r.gap!=null && r.gap<RMK_COOL_DAYS) return `${r.gap} 天前才用過`;
+  if(r.gap==null) return "還沒排過上片日";
+  if(r.gap<RMK_COOL_DAYS) return `${r.gap} 天前才用過`;
   if(r.used>=4) return `已經用過 ${r.used} 次`;
+  if(!vidViews(r.v)) return "還沒有成效數字";
+  if(vidViews(r.v)<RMK_MIN_VIEWS) return `觀看只有 ${num(vidViews(r.v))}`;
   return "";
+}
+let RMK_Q="";
+function rmkSetQ(x){ RMK_Q=x; const el=document.getElementById("rmk_rows");
+  if(el) el.innerHTML=rmkRowsHTML(); }
+// 清單那一塊單獨拆出來 —— 打字的時候只重畫這一塊，不要整頁 render
+// （整頁重畫會讓輸入框失焦，打一個字就要重點一次）
+function rmkRowsHTML(){
+  const q=String(RMK_Q||"").trim();
+  const all = q ? rmkRank(rmkSearchPool(q)) : rmkRank();
+  // 搜尋時：有分數的排前面，其餘照成效排（冷卻中的也要看得到，但要標出來）
+  if(q) all.sort((a,b)=> (b.score-a.score) || (vidViews(b.v)-vidViews(a.v)));
+  const live=all.filter(r=>r.score>0), rest=all.filter(r=>!r.score);
+  const show = q ? all.slice(0,40) : live.slice(0, RMK_OPEN?30:8);
+  const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a>${
+        r.score?"":`<span class="muted" style="font-size:11px">　${esc(rmkWhyNot(r))}</span>`}</td>
+      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
+      <td data-label="帶貨商品">${((r.v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join("、"))||'<span class="muted">—</span>'}</td>
+      <td data-label="觀看" class="pr-v">${vidViews(r.v)?`<b>${num(vidViews(r.v))}</b>`:'<span class="muted">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${vidViews(r.v)?num(vidComments(r.v)):''}</td>
+      <td data-label="多久沒用" class="pr-v">${r.gap==null?'<span class="muted">—</span>':r.gap+" 天"}</td>
+      <td data-label="用過" class="pr-k">${r.used} 次</td>
+      <td data-label="上次誰剪" class="pr-e">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td></tr>`;
+  if(!show.length){
+    return `<div class="muted" style="font-size:13px;padding:10px 0">${
+      q ? `找不到「${esc(q)}」。試試商品名、片名裡的關鍵字，或文案裡的一句話。`
+        : "<b>現在沒有推薦的片</b> —— 多半是成效資料還太新（剛用過的片先不推薦），等舊片的成效補進來就會有。"}</div>`;
+  }
+  return `<div class="muted" style="font-size:12px;margin-bottom:6px">${
+      q ? `找到 ${all.length} 支${all.length>40?"（列前 40 支）":""}，${live.length} 支現在就可以二創`
+        : `候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest.length?`，其中 ${rest.length} 支現在先不推薦`:""}`
+    }</div>
+    <div class="${show.length>10?'vidscroll':''}">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e"></colgroup>
+    <thead><tr><th>影片</th><th>類型</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th></tr></thead>
+    <tbody>${show.map(row).join("")}</tbody></table></div>
+    ${(!q && live.length>8)?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`;
 }
 function remakeCard(){
   if(!(STATE.videos||[]).some(v=>vidViews(v)>0)) return "";
-  const all=rmkRank(), live=all.filter(r=>r.score>0), rest=all.length-live.length;
-  const top=live.slice(0, RMK_OPEN?30:8);
-  const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
-      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
-      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
-      <td data-label="觀看" class="pr-v"><b>${num(vidViews(r.v))}</b></td>
-      <td data-label="留言" class="pr-c">${num(vidComments(r.v))}</td>
-      <td data-label="多久沒用" class="pr-v">${r.gap} 天</td>
-      <td data-label="用過" class="pr-k">${r.used} 次</td>
-      <td data-label="剪輯" class="pr-e">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td></tr>`;
   return `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <b>二創建議</b>
       <span class="muted" style="font-size:12px">依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比</span>
     </div>
-    <div class="muted" style="font-size:12px;margin-top:6px">
-      候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest?`，其中 ${rest} 支現在先不推薦`:""}。
-      ${live.length?"":"<b>現在沒有推薦的片</b> —— 多半是成效資料還太新，等舊片的成效補進來就會有。"}
+    <div class="row" style="gap:8px;margin-top:10px">
+      <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
+             oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
     </div>
-    ${live.length?`<div class="${top.length>10?'vidscroll':''}" style="margin-top:8px">
-      <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e"></colgroup>
-      <thead><tr><th>影片</th><th>類型</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th></tr></thead>
-      <tbody>${top.map(row).join("")}</tbody></table></div>
-      ${live.length>8?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`:""}
-    ${rest?`<details class="fold" style="margin-top:10px"><summary class="muted" style="font-size:12px">現在先不推薦的 ${rest} 支，為什麼</summary>
-      <div class="muted" style="font-size:12px;line-height:1.9;margin-top:6px">${
-        all.filter(r=>!r.score).slice(0,20).map(r=>`${esc(vidTitle(r.v)).slice(0,28)}　<b>${rmkWhyNot(r)}</b>`).join("<br>")
-      }${rest>20?`<br>…另外還有 ${rest-20} 支`:""}</div></details>`:""}
+    <div id="rmk_rows" style="margin-top:8px">${rmkRowsHTML()}</div>
   </div>`;
 }
 let RMK_OPEN=false;
