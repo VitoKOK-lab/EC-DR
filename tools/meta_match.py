@@ -57,6 +57,14 @@ MIN_CHARS = 12        # 文案正規化後短於這個字數就不參加比對�
 # 再往下到 10 只多 14 支，收穫遞減，而段落越短誤配的風險只會越高。
 DF_MAX_RATIO = 0.03   # 出現在超過這個比例的影片裡＝罐頭句，不採計
 DF_MIN_COUNT = 5      # 但至少要 5 支共用才算罐頭 —— 見下方說明
+POST_DF_MIN = 40      # 貼文那邊的下限（比影片那邊高很多，原因見下）
+
+# 為什麼貼文那邊的下限要拉到 40：
+# 影片那邊，「兩支片共用同一段文字」就已經是要分辨的對象（重播／中英版），
+# 所以下限低。貼文那邊不一樣 —— **同一支片本來就會變成好幾則貼文**：
+# 7 個帳號各發一次、再重播個幾次，四十則以內都還在合理範圍。
+# 下限設太低會把「一支正常的片」自己的指紋當成罐頭句扣光，那支片就永遠對不到了。
+# 40 以上還在共用的，就不是一支片發很多次，是真的招呼語。
 DATE_NEAR_DAYS = 3    # 並列時，上片日期離貼文日期幾天內算「對得上」
 
 # 為什麼罐頭句還要有一個「至少 5 支」的下限：
@@ -176,6 +184,40 @@ class Index(object):
     def __len__(self):
         return len(self.entries)
 
+    def drop_post_boilerplate(self, posts):
+        """貼文那邊的罐頭句也要扣掉。回傳扣掉了幾段。
+
+        ⚠️ 這是 2026-09-11 真的跑出來的災難：有一支片對到了 **734 則**貼文。
+            Vmtuvv2iz055a0「當藍寶石和緬因貓相遇💙 留言「藍寶石」．小編私訊您詳情」
+        磁鐵是結尾那句招呼語。它在**幾百則商品貼文**裡都有，但在影片庫裡
+        只有這一支片有 —— 所以用影片算出來的 df 是 1，一點都不像罐頭句，
+        扣不掉。於是每一則帶著那句話的商品貼文都被判給了它。
+
+        教訓：罐頭句有兩種。一種是影片那邊共用的（片尾社群連結），
+        一種是**貼文那邊共用、影片那邊只有一支有**的（小編的固定招呼語）。
+        只算一邊就會漏掉另一邊，而漏掉的那一邊正好最會製造假配對。
+        """
+        n = len(posts or [])
+        if not n:
+            return 0
+        df = {}
+        for p in posts:
+            np_ = normalize((p or {}).get("caption"))
+            for s in set(shingles(np_)):
+                if s in self.by_shingle:      # 只數我們索引裡真的有的段
+                    df[s] = df.get(s, 0) + 1
+        cap = max(POST_DF_MIN, int(math.floor(n * DF_MAX_RATIO)))
+        extra = set(s for s, c in df.items() if c > cap)
+        if not extra:
+            return 0
+        # 反查表就是比對時唯一讀的東西 —— 從這裡拿掉就等於扣掉了。
+        # （不要再去同步 entries 裡的 key：那份建完索引就沒人看，
+        #   留著只會變成第二份「真相」，哪天兩邊不一致就很難查。）
+        self.boilerplate |= extra
+        for s in extra:
+            self.by_shingle.pop(s, None)
+        return len(extra)
+
 
 def _days_apart(a, b):
     """兩個 YYYY-MM-DD 差幾天；任一個空的就回 None。"""
@@ -242,6 +284,7 @@ def match_all(posts, videos):
     unmatched ：[{post, why, candidates}]
     """
     index = Index(videos)
+    index.dropped_post_boilerplate = index.drop_post_boilerplate(posts)
     matched, unmatched = [], []
     for p in posts or []:
         r = match_post(p, index)

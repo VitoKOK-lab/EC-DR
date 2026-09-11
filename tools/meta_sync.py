@@ -491,6 +491,20 @@ def main():
         if not str(byvid.get(vid, {}).get("publishedLink") or "").strip() and row["link"]:
             e["fillLink"] = e["fillLink"] or row["link"]
 
+    # ── 一支片對到太多則＝幾乎一定是誤配 ──────────────────────────────
+    # 一支片頂多是「每個帳號各發一次、偶爾重播」，連上兩個帳號的話個位數就滿了。
+    # 2026-09-11 有一支對到 734 則（磁鐵是小編的固定招呼語），就是這樣被抓到的。
+    # 這條線不擋寫入 —— 它只負責讓人一眼看到不對勁，判斷還是人做。
+    TOO_MANY = max(8, len(set(p["account"] for p in posts)) * 4)
+    hogs = sorted([(len(e["rows"]), vid) for vid, e in plan.items() if len(e["rows"]) > TOO_MANY],
+                  reverse=True)
+    if hogs:
+        print("\n⚠⚠ 這幾支對到的則數多到不合理（超過 %d 則），幾乎一定是誤配：" % TOO_MANY)
+        for cnt, vid in hogs[:10]:
+            print("     %-16s %-26s 對到 %d 則"
+                  % (vid, str(byvid.get(vid, {}).get("name") or "")[:26], cnt))
+        print("   多半是某一句「小編招呼語」變成磁鐵。**先不要 --write**，把這段貼給我。")
+
     print("\n要更新的影片 %d 支：" % len(plan))
     for vid, e in sorted(plan.items(), key=lambda kv: -sum(r["views"] for r in kv[1]["rows"]))[:40]:
         v = byvid.get(vid, {})
