@@ -324,6 +324,25 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 排程：每天叫起來，自己決定要不要跑 —")
+# 老闆要「每三天更新一次」。不用 launchd 直接排每三天，是因為那樣只要有一次
+# 失敗（權杖過期、網路斷），就要再等三天才會重試，而且沒人知道。
+# 改成每天醒來，看上次成功是幾天前 —— 失敗的隔天就會自己再試一次。
+import json as _json
+import tempfile as _tmp
+_old_state = S.STATE_FILE
+S.STATE_FILE = _tmp.mktemp(suffix=".json")
+try:
+    ok(S._last_success() == "", "還沒跑過的時候回空字串（不會爆掉）")
+    _json.dump({"lastSuccess": "2026-09-11T21:00:00"}, open(S.STATE_FILE, "w"))
+    ok(S._last_success() == "2026-09-11", "讀得回上次成功的日期（只取到日，不含時間）")
+    S._mark_success({"videos": 73})
+    ok(len(S._last_success()) == 10, "記下來的也是日期格式")
+    open(S.STATE_FILE, "w").write("這不是 JSON")
+    ok(S._last_success() == "", "狀態檔壞掉就當成沒跑過，不要讓整支掛在這裡")
+finally:
+    S.STATE_FILE = _old_state
+
 print("— 哪一把權杖開得了「成效」那扇門：用試的 —")
 # 2026-09-11 的實況：「權杖權限：五項都有 ✓」，但 IG 成效一律回
 # 「Bad signature（code=190）」，而同一把權杖抓貼文清單完全正常。

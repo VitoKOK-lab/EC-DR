@@ -10,6 +10,7 @@
     python3 tools/meta_sync.py --min-views 3000    放寬「成效好」的門檻（預設 5000 觀看 / 5 留言）
     python3 tools/meta_sync.py --save-posts x.json 把平台原始回應存起來
     python3 tools/meta_sync.py --from-file x.json  用存起來的回應重跑比對（不連網）
+    python3 tools/meta_sync.py --write --every 3   排程用：上次成功不到 3 天就跳過
 
 【預設是「只看不寫」】
 第一次跑一定要先看清單：哪一則對到哪一支、哪幾則對不上。
@@ -636,6 +637,47 @@ def write_back(cfg_fb, token, plan, fill_links):
     return done, failed
 
 
+STATE_FILE = os.path.expanduser("~/.ecdr-meta-last.json")
+
+
+def _last_success():
+    """上一次成功跑完是哪一天（YYYY-MM-DD）。沒跑過就回空字串。"""
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return str(json.load(f).get("lastSuccess") or "")[:10]
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+
+def _mark_success(info):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(dict(info, lastSuccess=_fs.taipei_now()[:10]), f, ensure_ascii=False)
+    except Exception as e:                                     # noqa: BLE001
+        print("  ⚠ 狀態檔寫不進去：%s" % e)
+
+
+def report_status(cfg_fb, token, status):
+    """把這次的結果寫進 meta/settings 的 metaSyncStatus。
+
+    跟每日備份同一個做法 —— 前端本來就訂閱了 meta/settings，
+    寫在這裡系統就看得到，不必另外開集合。
+    這一格存在的理由只有一個：**讓「默默停掉」看得見**。
+    權杖 60 天會過期，過期之後它每天照跑照掛，沒有這一格沒有人會發現。
+    ⚠️ 一定要用 updateMask 只寫 metaSyncStatus，整份覆寫會把系統設定洗掉。
+    """
+    url = "%s/meta/settings?updateMask.fieldPaths=metaSyncStatus" % _fs.docs_base(cfg_fb)
+    fields = {}
+    for k, v in status.items():
+        if isinstance(v, bool):
+            fields[k] = {"booleanValue": v}
+        elif isinstance(v, int):
+            fields[k] = {"integerValue": str(v)}
+        else:
+            fields[k] = {"stringValue": str(v)}
+    _fs._patch(url, {"fields": {"metaSyncStatus": {"mapValue": {"fields": fields}}}}, token)
+
+
 def write_log(cfg_fb, token, text, detail):
     """在 logs 留一筆，寫清楚是後台跑的（跟人在網頁上按的分得開）。"""
     import random
@@ -668,6 +710,8 @@ def main():
     ap.add_argument("--from-file", default="", help="用存好的 JSON 重跑比對，不連網")
     ap.add_argument("--videos-file", default="",
                     help="影片庫改讀這份 JSON（備份檔）而不是連資料庫；只能搭配只看不寫")
+    ap.add_argument("--every", type=int, default=0,
+                    help="上一次成功不到 N 天就直接跳過（排程用：每天叫起來，自己決定要不要跑）")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--explain", default="",
                     help="印出某一支影片對到了哪幾則貼文（警告跳出來時用這個查）")
@@ -679,6 +723,19 @@ def main():
     since = (datetime.date.today() - datetime.timedelta(days=args.days)).isoformat()
     print("EC-DR 平台成效同步　範圍：%s 起　模式：%s"
           % (since, "寫入" if args.write else "只看不寫（要寫請加 --write）"))
+
+    # 排程用：每天叫起來，但上次成功不到 N 天就不跑。
+    # 為什麼不用 launchd 直接排「每三天」：那樣只要有一次失敗（權杖過期、網路斷），
+    # 就要再等三天才會重試，而且沒人知道。每天醒來自己判斷，失敗的隔天就會再試。
+    if args.every > 0:
+        last = _last_success()
+        if last:
+            gap = (datetime.date.today() - datetime.date(
+                int(last[0:4]), int(last[5:7]), int(last[8:10]))).days
+            if gap < args.every:
+                print("\n上一次成功是 %s（%d 天前），不到 %d 天，這次跳過。"
+                      % (last, gap, args.every))
+                return 0
 
     # 1. 拿貼文清單（便宜）—— 這一段還不問成效
     cfg, token = None, None
@@ -913,6 +970,15 @@ def main():
                      "；同時補了上片連結" if args.fill_links else ""))
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 操作紀錄寫不進去：%s" % e)
+    info = {"at": _fs.taipei_now(), "ok": not failed, "videos": done,
+            "failed": failed, "hits": len(hits), "posts": len(posts),
+            "matched": len(matched), "days": args.days}
+    try:
+        report_status(cfg_fb, token, info)
+    except Exception as e:                                      # noqa: BLE001
+        print("  ⚠ 狀態回報寫不進去：%s" % e)
+    if not failed:
+        _mark_success(info)
     return 0 if not failed else 1
 
 
