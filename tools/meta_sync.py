@@ -287,6 +287,38 @@ def coverage(videos, since_ts, until_ts, matched_ids):
     return hit, miss
 
 
+PROBE = 6      # 診斷用的段落長度（比正式比對的 20 字短，為了看得到「有點像」）
+#          6 字是被資料逼出來的：「旺桃花珠寶套組」整個片名才 7 個字，
+#          切 8 字的話它自己一段都切不出來，永遠回報「平台上沒發」—— 那是假的。
+
+
+def best_near_miss(video, posts, topn=2):
+    """這支片最像的幾則貼文是哪些、像多少。純診斷，不影響比對結果。
+
+    正式比對要 20 個字連續一樣才算數，而且文案短於 20 字的片根本不進索引。
+    可是「旺桃花珠寶」這種五個字的片名也是真的片 —— 它到底是
+    「平台上根本沒發」還是「發了但我門檻設太高」？兩件事的處理方式完全不同，
+    用 6 字的段落去看「有多像」就分得出來。
+    """
+    vw = set()
+    for t in meta_match.video_texts(video):
+        n = meta_match.normalize(t)
+        vw.update(n[i:i + PROBE] for i in range(0, max(0, len(n) - PROBE + 1)))
+    if not vw:
+        return []
+    scored = []
+    for p in posts:
+        np_ = meta_match.normalize(p.get("caption"))
+        if len(np_) < PROBE:
+            continue
+        pw = set(np_[i:i + PROBE] for i in range(0, len(np_) - PROBE + 1))
+        hit = len(vw & pw)
+        if hit:
+            scored.append((hit, len(vw), p))
+    scored.sort(key=lambda x: -x[0])
+    return scored[:topn]
+
+
 def merge_metrics(old, rows):
     """把這次抓到的併進原本的 metrics，同一則貼文只留最新一筆。
 
@@ -362,6 +394,8 @@ def main():
     ap.add_argument("--videos-file", default="",
                     help="影片庫改讀這份 JSON（備份檔）而不是連資料庫；只能搭配只看不寫")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--why", action="store_true",
+                    help="沒對到的那幾支，印出平台上最像的貼文（診斷「是沒發還是我門檻太高」）")
     args = ap.parse_args()
 
     import datetime
@@ -450,6 +484,17 @@ def main():
                      (meta_match.video_dates(v) or [""])[-1], why))
         if len(miss) > 15:
             print("     …另外還有 %d 支" % (len(miss) - 15))
+        if args.why:
+            print("\n  ── 這幾支「最像的貼文」是哪一則（診斷用，用 6 字段落看有多像）──")
+            for v in miss:
+                near = best_near_miss(v, posts)
+                print("\n   %s %s" % (v.get("id"), str(v.get("name") or "")[:34]))
+                if not near:
+                    print("      平台上找不到任何一則跟它沾得上邊 → 這支大概沒發在這兩個帳號")
+                for hit, tot, p in near:
+                    print("      像 %d/%d 段　%s %s｜%s"
+                          % (hit, tot, p["platform"], str(p.get("at"))[:10],
+                             (p.get("caption") or "")[:34].replace("\n", " ")))
 
     if unmatched:
         # 「文案對不上任何一支」絕大多數是商品圖文貼文 —— 影片庫裡本來就沒有，
