@@ -1,11 +1,16 @@
-// v199 影片分成兩種：泛流量／賣貨型
+// v199 影片類型：用人標的 mainType，不要用留言率猜
 //
-// 老闆的分法：「高流量、低留言是泛流量內容；高留言、只要流量超過 5000，
-// 都是賣貨型的影片，這都需要看出來，這是我們分類的方式。」
+// 我第一版是**算**出來的：每千次觀看 2 則留言以上算「賣貨型」。
+// 老闆一句話打穿：「有時候大流量也可能很多人留言，我們真的要留言
+// 也會引導觀眾留言。」—— 留言多是因為我們叫他們留言，那個數字量的不是
+// 觀眾的反應，是我們自己下的決定。
+// 我當時還拿「留言率高的片 89% 文案有 CTA」當驗證，那是循環論證。
 //
-// 這條線（每千次觀看 2 則留言）不是挑的，是第一批真實成效畫出來的：
-// 觀看 ≥ 5,000 的 38 支照留言率排序之後，再分頭看文案裡有沒有叫人留言／下單，
-// 兩邊幾乎重合 —— 賣貨型 18 支裡 16 支（89%）真的有 CTA，泛流量 20 支裡只有 2 支。
+// 系統裡早就有 mainType（剪輯選標籤自動帶出來的）。拿它跟我算的交叉比對：
+// 人標「寵粉」的 10 支我全部算成賣貨型，打架 0 支 —— 我那個算法在有人標的
+// 地方沒加任何價值，只在沒人標的 23 支上瞎猜。
+//
+// 所以：類型看 mainType，留言率只當數字擺旁邊。
 const fs = require("fs");
 const path = require("path");
 let src = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8")
@@ -27,44 +32,35 @@ let pass = 0, fail = 0;
 const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("FAIL  " + n); } };
 
 // —— 真實數字（2026-09-11 第一次同步寫進資料庫的那一批）——
-const 包頭巾 = { id: "V283", metrics: [{ views: 136419, comments: 9 }] };      // 0.07‰
-const 勞力士 = { id: "V299", metrics: [{ views: 55327, comments: 9 }] };       // 0.16‰
-const 爸爸抓的藥 = { id: "X1", metrics: [{ views: 6616, comments: 519 }] };    // 78.45‰
-const 兔耳歐泊 = { id: "X2", metrics: [{ views: 33670, comments: 73 }] };      // 2.17‰ 剛好在線上
-const 老外學中文 = { id: "X3", metrics: [{ views: 16165, comments: 31 }] };    // 1.92‰ 剛好在線下
+const 包頭巾 = { id: "V283", mainType: "", metrics: [{ views: 136419, comments: 9 }] };
+const 兔耳歐泊 = { id: "X2", mainType: "寵粉", metrics: [{ views: 33670, comments: 73 }] };
+const 招商片 = { id: "X4", mainType: "代理招商", metrics: [{ views: 5574, comments: 11 }] };
+const 流量片 = { id: "X5", mainType: "流量型", metrics: [{ views: 16165, comments: 31 }] };
 
-ok(vidKind(包頭巾) === "泛流量", "13.6 萬觀看只有 9 則留言 → 泛流量");
-ok(vidKind(勞力士) === "泛流量", "5.5 萬觀看 9 則留言 → 泛流量");
-ok(vidKind(爸爸抓的藥) === "賣貨型", "6,616 觀看卻有 519 則留言 → 賣貨型");
-ok(vidKind(兔耳歐泊) === "賣貨型", "2.17‰ 在線上 → 賣貨型（文案是「下方留言：【小兔子】」）");
-ok(vidKind(老外學中文) === "泛流量", "1.92‰ 在線下 → 泛流量（文案沒有叫人留言）");
+// —— 類型是人標的，不是算的 ——
+ok(vidType(兔耳歐泊) === "寵粉", "類型直接讀 mainType");
+ok(vidType(包頭巾) === "", "沒標就是沒標，不要幫他猜一個");
+ok(typePill(兔耳歐泊).includes("寵粉"), "標籤印得出來");
+ok(typePill(包頭巾) === "", "沒標就不要印一個空標籤");
+ok(typePill(流量片).includes("流量型"), "流量型也要印（舊的 typeTag 只認寵粉與代理招商，看不到它）");
 
-// —— 觀看太少不分類：分母小到 1 則留言就能翻面 ——
-ok(vidKind({ metrics: [{ views: 400, comments: 3 }] }) === "",
-   "觀看不到 5,000 不分類（7.5‰ 看起來像賣貨，其實只是 3 則留言）");
-ok(vidKind({ metrics: [{ views: 4999, comments: 0 }] }) === "", "差一點也不分類");
-ok(vidKind({ metrics: [{ views: 5000, comments: 0 }] }) === "泛流量", "剛好到門檻就分");
-
-// —— 沒資料不要亂猜 ——
-ok(vidKind({ metrics: [] }) === "", "沒有成效的片不分類");
-ok(vidKind({}) === "", "連 metrics 欄位都沒有也不會爆掉");
-ok(vidCommentRate({ metrics: [] }) === 0, "沒有觀看數時留言率是 0，不是除以零");
-
-// —— 多個帳號要加總之後再算，不是各算各的 ——
+// —— 留言率只是數字，不是結論 ——
+ok(Math.abs(vidCommentRate(兔耳歐泊) - 2.168) < 0.01, "留言率＝每千次觀看的留言數");
+ok(vidCommentRate({ metrics: [] }) === 0, "沒有觀看數時回 0，不是除以零");
 const 跨帳號 = { metrics: [{ views: 9000, comments: 2 }, { views: 1000, comments: 40 }] };
 ok(vidViews(跨帳號) === 10000 && vidComments(跨帳號) === 42, "跨帳號的觀看與留言要加總");
 ok(Math.abs(vidCommentRate(跨帳號) - 4.2) < 0.01,
    "留言率用加總後的數字算（分帳號各算會得出 0.2‰ 跟 40‰ 兩個都不對的答案）");
 
-// —— 畫面 ——
-ok(kindPill(爸爸抓的藥).includes("賣貨型"), "標籤印得出賣貨型");
-ok(kindPill(包頭巾).includes("泛流量"), "標籤印得出泛流量");
-ok(kindPill(爸爸抓的藥).includes("78.4"), "滑鼠移上去看得到實際的留言率");
-ok(kindPill({ metrics: [] }) === "", "沒分類就不要印一個空標籤");
+// —— 分母太小就不要秀留言率 ——
+ok(!rateShown({ metrics: [{ views: 400, comments: 3 }] }),
+   "觀看不到 5,000 不顯示留言率（1 則留言就能把它推到任何一邊）");
+ok(rateShown({ metrics: [{ views: 5000, comments: 0 }] }), "到門檻就顯示");
+ok(!rateShown({ metrics: [] }), "沒有成效的片沒有留言率可言");
 
 // —— 整頁畫面 ——
-const vids = [包頭巾, 勞力士, 爸爸抓的藥, 兔耳歐泊, 老外學中文];
-vids.forEach((v, i) => { v.name = "片" + v.id; v.products = []; v.editor = "泓儒";
+const vids = [包頭巾, 兔耳歐泊, 招商片, 流量片];
+vids.forEach(v => { v.name = "片" + v.id; v.products = []; v.editor = "泓儒";
   v.metrics.forEach(m => { m.platform = "IG"; m.account = "IG 溱姐主"; m.likes = 10; }); });
 global.window.DB = { videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
 localStorage.getItem = k => (k === "ecdr_role" ? "boss" : "管理員");
@@ -75,15 +71,22 @@ LAST_RAW = { users: [{ name: "管理員", role: "boss" }],
 STATE = decorate(LAST_RAW);
 PERF_PLAT = null; PERF_KIND = null;
 let html = viewPerf();
-ok(html.includes("泛流量") && html.includes("賣貨型"), "成效頁有兩張分類卡");
-ok(/賣貨型<\/b><div[^>]*>2</.test(html.replace(/\s+/g, "")) || html.includes("賣貨型"), "卡片上有支數");
-ok(html.includes("<th>類型</th>"), "影片排行多了「類型」欄");
-ok(html.includes("<th>留言</th>"), "而且看得到留言數（不然沒辦法判斷分類對不對）");
+// 驗卡片要看那顆按鈕，不能只看字串有沒有出現 ——
+// 「代理招商」本來就會出現在表格列裡，只檢查字串的話拿掉卡片也照樣通過。
+ok(["寵粉", "代理招商", "流量型"].every(k => html.includes("perfSetKind('" + k + "')")),
+   "成效頁三種類型都有可以點的卡片");
+ok(html.includes("沒標類型"), "沒標的那一堆也要單獨列出來（那是待辦，不是一種類型）");
+ok(!html.includes("泛流量") && !html.includes("賣貨型"),
+   "不要再出現我自己編的那兩個名字（系統裡沒有這種東西）");
+ok(html.includes("<th>類型</th>") && html.includes("<th>留言</th>"), "排行表有類型與留言欄");
 
-PERF_KIND = "賣貨型";
+PERF_KIND = "寵粉";
 html = viewPerf();
-ok(html.includes("只看賣貨型"), "點了分類卡，標題會講清楚現在只看哪一種");
-ok(html.includes("片X1") && !html.includes("片V283"), "只看賣貨型的時候，泛流量的片不在排行裡");
+ok(html.includes("只看寵粉"), "點了類型卡，標題會講清楚現在只看哪一種");
+ok(html.includes("片X2") && !html.includes("片V283"), "只看寵粉的時候，其他類型不在排行裡");
+PERF_KIND = "（沒標）";
+html = viewPerf();
+ok(html.includes("片V283") && !html.includes("片X2"), "「沒標類型」篩得出沒標的那幾支");
 PERF_KIND = null;
 
 console.log(`\n${pass} / ${pass + fail} 通過`);
