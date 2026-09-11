@@ -125,12 +125,23 @@ def _call(path, token, params=None, tries=4):
     raise MetaError("Graph API 重試都失敗：%s" % last)
 
 
-def _paged(path, token, params, since_ts, limit_pages=40):
-    """一頁一頁翻，翻到比 since_ts 還舊就停。"""
+PAGE_CAP = 400          # 安全上限：20,000 則。純粹防無窮迴圈，不該是實際的終點
+
+
+def _paged(path, token, params, since_ts, limit_pages=PAGE_CAP):
+    """一頁一頁翻，翻到比 since_ts 還舊就停。
+
+    ⚠️ 上限撞到要**大聲講**。原本是 40 頁（2,000 則），2026-09-11 抓 180 天時
+    粉專回了剛好 2,000 則 —— 那不是「剛好這麼多」，是被我截斷了，
+    而畫面上完全看不出來。半年的資料少了一大塊，涵蓋率被低估，
+    然後我們會去查一個「為什麼這麼多片對不到」的假問題。
+    默默截斷比抓不到更糟：抓不到會報錯，截斷會給你一個看起來正常的數字。
+    """
     out = []
     p = dict(params or {})
     p["limit"] = 50
     after = None
+    hit_cap = True
     for _ in range(limit_pages):
         if after:
             p["after"] = after
@@ -141,11 +152,17 @@ def _paged(path, token, params, since_ts, limit_pages=40):
         if rows:
             last = rows[-1].get("timestamp") or rows[-1].get("created_time") or ""
             if last and last[:10] < since_ts:
+                hit_cap = False
                 break
         nxt = ((data.get("paging") or {}).get("cursors") or {}).get("after")
         if not nxt or not rows:
+            hit_cap = False
             break
         after = nxt
+    if hit_cap:
+        print("\n  ⚠⚠ %s 翻到第 %d 頁就停了（共 %d 則）—— 這是安全上限，不是真的翻完。"
+              % (path, limit_pages, len(out)))
+        print("     代表更舊的貼文**沒有抓到**，涵蓋率會被低估。請調高 PAGE_CAP 再跑一次。")
     return out
 
 

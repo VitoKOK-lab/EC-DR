@@ -324,6 +324,46 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 翻頁撞到上限要大聲講 —")
+# 2026-09-11 抓 180 天，粉專回了**剛好 2,000 則** —— 那不是剛好這麼多，
+# 是撞到我設的 40 頁上限被截斷了，而畫面上完全看不出來。
+# 默默截斷比抓不到更糟：抓不到會報錯，截斷會給你一個看起來正常的數字。
+ok(S.PAGE_CAP * 50 >= 20000, "安全上限要夠高（20,000 則以上），不然半年的資料會被截掉")
+
+_pages = []
+
+
+def fake_call(path, token, params=None, tries=4):
+    # 永遠還有下一頁、日期永遠在範圍內 → 只有上限擋得住
+    _pages.append(1)
+    return {"data": [{"id": str(len(_pages)), "timestamp": "2026-09-01T00:00:00"}],
+            "paging": {"cursors": {"after": "c%d" % len(_pages)}}}
+
+
+_real_call = S._call
+S._call = fake_call
+try:
+    import io as _io
+    import contextlib as _ctx
+    buf = _io.StringIO()
+    _pages[:] = []
+    with _ctx.redirect_stdout(buf):
+        got = S._paged("x/posts", "tok", {}, "2026-03-15", limit_pages=5)
+    ok(len(got) == 5, "撞到上限就停（不會無窮翻下去）")
+    ok("安全上限" in buf.getvalue() and "沒有抓到" in buf.getvalue(),
+       "而且要大聲講出來 —— 靜靜截斷會讓涵蓋率被低估，然後我們去查一個假問題")
+
+    # 反過來：正常翻完不可以亂喊
+    def fake_done(path, token, params=None, tries=4):
+        return {"data": [{"id": "1", "timestamp": "2026-01-01T00:00:00"}], "paging": {}}
+    S._call = fake_done
+    buf2 = _io.StringIO()
+    with _ctx.redirect_stdout(buf2):
+        S._paged("x/posts", "tok", {}, "2026-03-15", limit_pages=5)
+    ok("安全上限" not in buf2.getvalue(), "翻到比範圍還舊就停，這種正常結束不要喊")
+finally:
+    S._call = _real_call
+
 print("— 排程：每天叫起來，自己決定要不要跑 —")
 # 老闆要「每三天更新一次」。不用 launchd 直接排每三天，是因為那樣只要有一次
 # 失敗（權杖過期、網路斷），就要再等三天才會重試，而且沒人知道。
