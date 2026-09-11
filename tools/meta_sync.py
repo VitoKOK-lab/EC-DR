@@ -684,9 +684,20 @@ def main():
                   ensure_ascii=False, indent=1)
         print("  原始回應存到 %s" % args.save_posts)
 
-    if want and not any(int(p.get("views") or 0) for p in want):
-        print("\n⚠⚠ 這 %d 則**一則都沒抓到觀看數**（全是 0）。" % len(want))
-        print("   那不是「沒有成效好的片」，是成效根本沒抓到 —— 看上面的權限檢查。")
+    # 某一個平台「整個」都是 0 就要喊 —— 不用等到全部平台都掛。
+    # 2026-09-11 踩到的就是這個形狀：IG 的成效全被擋（Bad signature），
+    # FB 還有數字，所以「全部都是 0」的條件沒成立，警告沒跳出來，
+    # 畫面只顯示「達標 0 則」—— 看起來像「沒有成效好的片」。
+    # 那是最糟的失敗形狀：它不像故障，像結論。
+    by_plat = {}
+    for p in want:
+        by_plat.setdefault(p["platform"], []).append(int(p.get("views") or 0))
+    dead = [k for k, vs in by_plat.items() if vs and not any(vs)]
+    if dead:
+        print("\n⚠⚠ %s 的成效**一則都沒抓到**（%d 則全是 0）。"
+              % ("、".join(dead), sum(len(by_plat[k]) for k in dead)))
+        print("   那不是「沒有成效好的片」，是成效根本沒抓到。")
+        print("   最可能的原因是權杖少了權限 —— 跑一次不加 --from-file 就會看到檢查結果。")
         print("   **先不要 --write**，寫進去會是一堆 0。")
 
     hits = [p for p in want if is_hit(p, args.min_views, args.min_comments)]

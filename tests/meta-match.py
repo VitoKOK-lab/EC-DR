@@ -324,6 +324,22 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 某個平台整個掛掉要喊出來 —")
+# 2026-09-11 踩到的形狀：IG 成效全被擋、FB 還有數字，
+# 所以「全部都是 0」的條件不成立，警告沒跳，畫面只顯示「達標 0 則」。
+# 那是最糟的失敗形狀 —— 它不像故障，像結論。
+def dead_platforms(want):
+    by = {}
+    for p in want:
+        by.setdefault(p["platform"], []).append(int(p.get("views") or 0))
+    return sorted(k for k, vs in by.items() if vs and not any(vs))
+
+MIX = [{"platform": "IG", "views": 0}, {"platform": "IG", "views": 0},
+       {"platform": "FB", "views": 2020}]
+ok(dead_platforms(MIX) == ["IG"], "IG 整個 0、FB 還有數字 → 還是要喊 IG")
+ok(dead_platforms([{"platform": "FB", "views": 5}]) == [], "有數字就不喊")
+ok(dead_platforms([]) == [], "一則都沒問的時候不要亂喊")
+
 print("— 權杖權限檢查 —")
 # 2026-09-11 踩到：IG 的貼文清單抓得到，但成效一律 Bad signature（code=190），
 # 於是「達標 0 則」—— 看起來像「沒有成效好的片」，其實是觀看數根本沒抓到。
