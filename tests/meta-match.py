@@ -46,12 +46,21 @@ COPY = ("這個不是顏料它是一整片的寶石宥溱在這邊告訴你打�
 print("— 文案正規化 —")
 ok(M.normalize("臺灣") == M.normalize("台灣"), "臺／台 視為同一個字（Drive 用台、系統用臺）")
 ok(M.normalize("ＡＢＣ１２３") == "abc123", "全形轉半形、英文轉小寫")
-ok(M.normalize("招財 ✨#水晶，好運！\n下一行") == "招財水晶好運下一行", "表情符號／標點／空白／換行全部丟掉")
+ok(M.normalize("招財 ✨#水晶，好運！\n下一行") == "招財水晶好運下1行", "表情符號／標點／空白／換行全部丟掉")
 ok(M.normalize(None) == "", "沒有文案不會爆掉")
 
+# 寫的時候會換、意思一樣的字要折成同一個 —— 都是真實案例裡一個字就整段對不上的
+ok(M.normalize("妳一定要知道的5種") == M.normalize("你一定要知道的五種"),
+   "你／妳、阿拉伯數字／中文數字 折成同一個（真實案例：V088）")
+ok(M.normalize("他們要的是什麼") == M.normalize("她們要的是什麼"),
+   "他／她 折成同一個（真實案例：V035）")
+ok(M.normalize("十五") != M.normalize("15"),
+   "十百千萬刻意不折 ——「十五」折成「105」是錯的，寧可不折")
+
 print("— 切段 —")
-ok(M.shingles("短的") == [], "不足 20 字切不出段（太短不夠指認）")
-ok(len(M.shingles("字" * 60)) == 41, "60 字重疊著切成 41 段（第 1～41 個字各起一段）")
+ok(M.shingles("短的") == [], "不足一段的長度切不出段（太短不夠指認）")
+ok(len(M.shingles("字" * 60)) == 60 - M.SHINGLE + 1,
+   "60 字重疊著切，切得出 60-段長+1 段（每個字各起一段）")
 
 print("— 文案打在「片名」那一格也要對得到 —")
 # 2026-09-11 拿真實貼文跑，193 則只對上 20 則。查下去：對不上的大多**在系統裡**，
@@ -115,7 +124,8 @@ for i in range(40):
         tail += CAN_C
     many.append(vid("W%d" % i, ("第%02d支的獨家內容說明" % i) * 3 + tail, "2026-08-%02d" % (i + 1)))
 idx2 = M.Index(many)
-ok(M.normalize(CAN_A)[:20] in idx2.boilerplate and M.normalize(CAN_C)[:20] in idx2.boilerplate,
+ok(M.normalize(CAN_A)[:M.SHINGLE] in idx2.boilerplate
+   and M.normalize(CAN_C)[:M.SHINGLE] in idx2.boilerplate,
    "三句共用話都被認出來是罐頭句（資料自己算的，不用手維護清單）")
 # 整則貼文只有罐頭話、沒有任何一支的獨家內容 → 誰都不可以對上。
 # 三句故意用跟 W0 不一樣的順序接 —— 同樣順序的話，兩句接起來的那個接縫
@@ -125,7 +135,7 @@ ok(r["videoId"] is None, "只有罐頭話的貼文對不上任何一支（不然
 # 有獨家內容的照樣對得上
 r = M.match_post(post("第07支的獨家內容說明" * 3 + CAN_A), idx2)
 ok(r["videoId"] == "W7", "獨家內容還在，照樣對得上正確的那一支")
-ok(M.normalize("第00支的獨家內容說明第00支的獨家內容說明")[:20] not in idx2.boilerplate,
+ok(M.normalize("第00支的獨家內容說明第00支的獨家內容說明")[:M.SHINGLE] not in idx2.boilerplate,
    "只有一兩支有的內容不會被當成罐頭句丟掉")
 
 print("— 兩支文案一樣（同腳本重播／中英版）—")
@@ -192,16 +202,36 @@ VS = [vid("H1", COPY, "2026-08-20", published=True),   # 期間內，有對到
       vid("O1", COPY, "2026-05-01", published=True),   # 期間外，不算
       vid("N0", COPY, "", published=True),             # 沒排過，不算
       vid("D1", COPY, "2026-08-21", published=True, deleted=True)]   # 回收桶，不算
-hit, unpub, miss = S.coverage(VS, "2026-08-12", "2026-09-11", {"H1"})
+hit, unpub, miss, elsew = S.coverage(VS, "2026-08-12", "2026-09-11", {"H1"}, {"FB 粉專"})
 ok([v["id"] for v in hit] == ["H1"] and [v["id"] for v in miss] == ["M1"],
    "只算「這段期間排過的片」，期間外／沒排過／回收桶裡的都不算進分母")
 ok([v["id"] for v in unpub] == ["U1"],
    "「排了日期但還沒發出去」要另外分一堆 —— 平台上本來就沒有它，"
    "算進「沒對到」會害我們去查一個不存在的問題（正式資料 153 支裡有 19 支是這種）")
 
+print("— 發在別的帳號的片，不該算進這兩個帳號的分母 —")
+# 41 支「已上片卻沒對到」裡有 20 支是這種：十支英文版、十支泰文版，
+# 全部發在 TikTok 泰國／英語帳號，本來就不在這兩個 Meta 帳號上。
+CONN = {"FB 粉專（Zanagems）", "IG 溱姐主（@tzgems1111）"}
+ok(S.expected_here({"account": "IG 溱姐主（@tzgems1111）"}, CONN), "指名發在我們連上的帳號 → 算")
+ok(S.expected_here({}, CONN), "沒指定帳號的一般台灣片 → 算")
+ok(not S.expected_here({"account": "tiktok-Thailand"}, CONN), "指名發在 TikTok 泰國 → 不算")
+ok(not S.expected_here({"origLang": "en"}, CONN), "英文原創 → 不算（走海外帳號）")
+ok(not S.expected_here({"origLang": "th"}, CONN), "泰文原創 → 不算")
+ok(not S.expected_here({"locale": "en"}, CONN), "英文在地化版 → 不算")
+ok(not S.expected_here({"channel": "shopee"}, CONN), "蝦皮版 → 不算")
+ok(S.expected_here({"origLang": "zh"}, CONN) and S.expected_here({"origLang": ""}, CONN),
+   "中文原創（含沒填的舊資料）→ 算")
+
+mixed = [vid("T1", COPY, "2026-08-20", published=True, account="tiktok-Thailand"),
+         vid("T2", COPY, "2026-08-20", published=True)]
+h3, u3, m3, e3 = S.coverage(mixed, "2026-08-12", "2026-09-11", set(), CONN)
+ok([v["id"] for v in e3] == ["T1"] and [v["id"] for v in m3] == ["T2"],
+   "發在別的帳號的獨立一堆，不會混進「已上片卻沒對到」")
+
 # 重播的片：早幾次在 usageHistory，只看 scheduledDate 會把它算成期間外
 rp = [vid("P1", COPY, "2026-12-01", published=True, usageHistory=[{"date": "2026-08-30"}])]
-h2, u2, m2 = S.coverage(rp, "2026-08-12", "2026-09-11", set())
+h2, u2, m2, e2 = S.coverage(rp, "2026-08-12", "2026-09-11", set(), {"FB 粉專"})
 ok([v["id"] for v in m2] == ["P1"], "八月重播過的片算在這段期間內（日期要看 usageHistory）")
 
 print("— 診斷：最像的貼文是哪一則 —")

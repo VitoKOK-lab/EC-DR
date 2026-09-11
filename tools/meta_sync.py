@@ -268,7 +268,27 @@ def _fv(v):
     return {"stringValue": str(v if v is not None else "")}
 
 
-def coverage(videos, since_ts, until_ts, matched_ids):
+def expected_here(v, connected):
+    """這支片，預期會出現在我們連上的這幾個帳號上嗎？
+
+    第一次跑完，41 支「已上片卻沒對到」裡有 20 支長這樣：
+        Vmtoft5xd02upv  THIS GOAT LOOKED AT ME…   origLang=en  account=tiktok-English…
+        Vmtofq7n907udp  แพะตัวนี้มองฉันราวกับว่า…  origLang=th  account=tiktok-Thailand
+    十支英文版、十支泰文版，全部發在 TikTok 泰國／英語帳號 ——
+    它們**本來就不在**這兩個 Meta 帳號上。算進分母只會讓數字看起來很糟，
+    然後我們去查一個根本不存在的問題。
+    """
+    if str(v.get("locale") or "").strip():          # 英文版／泰文版在地化
+        return False
+    if str(v.get("channel") or "").strip():         # 蝦皮版／馬來版
+        return False
+    if str(v.get("origLang") or "").strip() not in ("", "zh"):   # 泰文／英文原創
+        return False
+    acc = str(v.get("account") or "").strip()       # 指定發在某個帳號（TikTok…）
+    return not (acc and acc not in connected)
+
+
+def coverage(videos, since_ts, until_ts, matched_ids, connected=()):
     """這段期間排了幾支片，分成三堆：對到、還沒上片、已上片卻沒對到。
 
     這是判斷「比對到底有沒有在運作」唯一有意義的數字。
@@ -281,20 +301,23 @@ def coverage(videos, since_ts, until_ts, matched_ids):
     平台上本來就不會有那 19 支的貼文 —— 把它們算進「沒對到」會讓數字看起來
     比實際糟，然後我們會去查一個根本不存在的問題。
     """
-    hit, unpub, miss = [], [], []
+    hit, unpub, miss, elsewhere = [], [], [], []
+    connected = set(connected or ())
     for v in videos or []:
         if v.get("deleted"):
             continue
         ds = [d for d in meta_match.video_dates(v) if since_ts <= d <= until_ts]
         if not ds:
             continue
-        if v.get("id") in matched_ids:
+        if not expected_here(v, connected):
+            elsewhere.append(v)
+        elif v.get("id") in matched_ids:
             hit.append(v)
         elif not v.get("published"):
             unpub.append(v)
         else:
             miss.append(v)
-    return hit, unpub, miss
+    return hit, unpub, miss, elsewhere
 
 
 PROBE = 6      # 診斷用的段落長度（比正式比對的 20 字短，為了看得到「有點像」）
@@ -481,12 +504,17 @@ def main():
     # ── 真正該看的數字：系統裡排了的片，有幾支沒對到 ──────────────────
     import datetime
     today = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).date().isoformat()
-    hit, unpub, miss = coverage(videos, since, today, set(plan.keys()))
+    connected = set(a.get("account") for a in [] ) | set(
+        p["post"]["account"] for p in matched) | set(
+        u["post"]["account"] for u in unmatched)
+    hit, unpub, miss, elsewhere = coverage(videos, since, today, set(plan.keys()), connected)
     print("\n── 這段期間（%s ~ %s）的涵蓋率 ──" % (since, today))
-    print("  系統裡排了 %d 支片" % (len(hit) + len(unpub) + len(miss)))
-    print("     對到貼文　　　　　　　　　%d 支" % len(hit))
-    print("     系統說還沒上片（正常）　　%d 支" % len(unpub))
-    print("     **已上片、卻沒對到**　　　%d 支　← 只有這堆要查" % len(miss))
+    print("  系統裡排了 %d 支片" % (len(hit) + len(unpub) + len(miss) + len(elsewhere)))
+    print("     發在別的帳號（海外／蝦皮，不該算）　%d 支" % len(elsewhere))
+    print("     系統說還沒上片（正常）　　　　　　　%d 支" % len(unpub))
+    print("     ── 這兩個帳號應該要有的：%d 支 ──" % (len(hit) + len(miss)))
+    print("     對到貼文　　　　　　　　　　　　　　%d 支" % len(hit))
+    print("     **已上片、卻沒對到**　　　　　　　　%d 支　← 只有這堆要查" % len(miss))
     if miss:
         print("\n  已上片卻沒對到的（最多列 15 支）：")
         for v in miss[:15]:
