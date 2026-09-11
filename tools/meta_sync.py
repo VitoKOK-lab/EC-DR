@@ -235,11 +235,48 @@ def list_fb(acc, token, since_ts):
     return out
 
 
+NEEDED_SCOPES = ["instagram_basic", "instagram_manage_insights",
+                 "pages_read_engagement", "pages_show_list", "read_insights"]
+
+
+def check_token(token):
+    """跑之前先問 Meta：這把權杖到底有哪些權限。
+
+    2026-09-11 踩到的：IG 的**貼文清單抓得到**（195 則），但成效一律回
+    「Bad signature（code=190）」，於是達標變成 0 則 —— 看起來像「沒有成效好的片」，
+    其實是觀看數根本沒抓到。
+    清單只要 instagram_basic，成效要 instagram_manage_insights ——
+    少勾一個就長這樣，而錯誤訊息完全不會告訴你這件事。
+    """
+    try:
+        data = _call("me/permissions", token)
+    except MetaError as e:
+        print("  ⚠ 問不到這把權杖的權限：%s" % e)
+        return
+    got = set(d.get("permission") for d in (data.get("data") or [])
+              if d.get("status") == "granted")
+    lack = [s for s in NEEDED_SCOPES if s not in got]
+    if not lack:
+        print("  權杖權限：五項都有 ✓")
+        return
+    print("  ⚠ 這把權杖少了這些權限，對應的東西會抓不到：")
+    for s in lack:
+        why = {"instagram_manage_insights": "IG 的觀看數（清單還是抓得到，所以容易誤判成『沒有好片』）",
+               "instagram_basic": "IG 的貼文清單",
+               "read_insights": "FB 粉專的成效",
+               "pages_read_engagement": "FB 粉專的貼文",
+               "pages_show_list": "查得到你管理哪些粉專"}.get(s, "")
+        print("     %-28s %s" % (s, why))
+    print("  → 回圖形 API 測試工具重新產生權杖，五項都勾，再用偵錯工具延長成 60 天，")
+    print("    然後重跑 python3 tools/meta_setup.py")
+
+
 def list_all(cfg, since_ts):
     """把每個帳號的貼文清單抓回來。這一段便宜 —— 一頁 50 則。"""
     token = cfg.get("token") or os.environ.get("META_TOKEN", "")
     if not token:
         raise MetaError("沒有 token：請在設定檔寫 token，或設環境變數 META_TOKEN")
+    check_token(token)
     posts = []
     for acc in cfg.get("accounts") or []:
         name = acc.get("name") or "(沒有名字的帳號)"
@@ -324,13 +361,56 @@ def _plus_days(d, n):
         return ""
 
 
-def needs_insights(post, video, today, min_comments, min_views, track_days):
+def _folder_key(v):
+    """存檔資料夾的 id。網址後面的 ?usp=share_link 之類的參數不算。"""
+    import re
+    f = str((v or {}).get("driveFolder") or "").strip()
+    m = re.search(r"/folders/([A-Za-z0-9_-]+)", f)
+    return m.group(1) if m else f
+
+
+def remake_suspects(videos):
+    """可能是二創的片 —— 老闆給的判準：同一個資料夾、檔名不一樣。
+
+        「二創是『同一個資料夾的影片』若不同名字，就可能是第二次創作，
+          我們不會同一支影片再次上傳。」
+
+    正式資料量到 34 組同資料夾，其中 28 組檔名不一樣。那 28 組裡有兩種東西：
+      真二創：V058（6/19）跟 Vmsik66vf20mnh（8/10），隔兩個月、新文案
+              V175 跟 Vmtv7p1dg062ak「(可二剪)溱姐帶你認識權志龍身上的珠寶」
+      重複建檔：V002 跟 V036，同一天、名字只差一個空格 —— 那是同一支片建了兩筆
+
+    這裡**刻意用寬的版本**（不去分辨那兩種）。因為這個判斷只決定
+    「要不要多花一次 API 呼叫」：多抓幾則的成本是幾秒，
+    漏掉的成本是永遠看不到那個剪輯的表現。要分辨真假是第二步排序時的事。
+    """
+    by_folder = {}
+    for v in videos or []:
+        if v.get("deleted"):
+            continue
+        f = _folder_key(v)
+        if f:
+            by_folder.setdefault(f, []).append(v)
+    out = set()
+    for group in by_folder.values():
+        if len(group) < 2:
+            continue
+        names = set(str(v.get("name") or "").strip() for v in group)
+        if len(names) > 1:                 # 檔名完全一樣＝同一支，不是二創
+            out.update(v.get("id") for v in group if v.get("id"))
+    return out
+
+
+def needs_insights(post, video, today, min_comments, min_views, track_days,
+                   suspects=()):
     """這一則要不要花一次 API 呼叫去問成效？回傳 (要不要, 為什麼)。
 
     三種情況要問：
       1. 留言數夠 —— 可能是達標片。留言數在清單裡就有，不用花呼叫就篩得掉。
       2. 這支片還在追蹤期內 —— 已經達標過，要繼續看它後續掉多少。
-      3. 這支片是二創（sourceVideoId 有值）—— **不管它自己達不達標都要記**。
+      3. 這支片是二創 —— **不管它自己達不達標都要記**。
+         兩種認法：sourceVideoId 有值（跨語言版／蝦皮版），
+         或「同一個資料夾、檔名不一樣」（老闆給的判準，見 remake_suspects）。
          老闆要比的是「二創比原片掉了幾成」；二創剪壞的那幾支如果因為沒達標
          就不記，就永遠看不出是誰剪壞的 —— 而那正是最該看見的事。
     """
@@ -340,6 +420,8 @@ def needs_insights(post, video, today, min_comments, min_views, track_days):
         return False, ""
     if str(video.get("sourceVideoId") or "").strip():
         return True, "二創"
+    if video.get("id") in (suspects or ()):
+        return True, "同資料夾不同檔名（可能是二創）"
     until = tracked_until(video, min_views, min_comments, track_days)
     if until and today <= until:
         return True, "追蹤中"
@@ -579,10 +661,12 @@ def main():
     # 3.5 挑出值得花一次呼叫去問成效的那幾則，然後才問
     import datetime as _dt
     today = (_dt.datetime.utcnow() + _dt.timedelta(hours=8)).date().isoformat()
+    suspects = remake_suspects(videos)
     want, why_count = [], {}
     for mm in matched:
         ok, why = needs_insights(mm["post"], byvid.get(mm["videoId"]), today,
-                                 args.min_comments, args.min_views, args.track_days)
+                                 args.min_comments, args.min_views, args.track_days,
+                                 suspects)
         if ok:
             want.append(mm["post"])
             why_count[why] = why_count.get(why, 0) + 1
@@ -599,6 +683,11 @@ def main():
         json.dump(posts, open(args.save_posts, "w", encoding="utf-8"),
                   ensure_ascii=False, indent=1)
         print("  原始回應存到 %s" % args.save_posts)
+
+    if want and not any(int(p.get("views") or 0) for p in want):
+        print("\n⚠⚠ 這 %d 則**一則都沒抓到觀看數**（全是 0）。" % len(want))
+        print("   那不是「沒有成效好的片」，是成效根本沒抓到 —— 看上面的權限檢查。")
+        print("   **先不要 --write**，寫進去會是一堆 0。")
 
     hits = [p for p in want if is_hit(p, args.min_views, args.min_comments)]
     hit_vids = set(mm["videoId"] for mm in matched if mm["post"] in hits)
@@ -671,7 +760,11 @@ def main():
     connected = set(a.get("account") for a in [] ) | set(
         p["post"]["account"] for p in matched) | set(
         u["post"]["account"] for u in unmatched)
-    hit, unpub, miss, elsewhere = coverage(videos, since, today, set(plan.keys()), connected)
+    # ⚠️ 這裡要用「有比對到的片」，不是「有問成效的片」。
+    # 改成先篩再問成效之後我一度傳了 plan.keys()，涵蓋率從 110 掉到 57 ——
+    # 那是假的下降：沒去問成效不代表沒對到，只代表那則沒達到留言門檻。
+    matched_ids = set(mm["videoId"] for mm in matched)
+    hit, unpub, miss, elsewhere = coverage(videos, since, today, matched_ids, connected)
     print("\n── 這段期間（%s ~ %s）的涵蓋率 ──" % (since, today))
     print("  系統裡排了 %d 支片" % (len(hit) + len(unpub) + len(miss) + len(elsewhere)))
     print("     發在別的帳號（海外／蝦皮，不該算）　%d 支" % len(elsewhere))

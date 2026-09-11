@@ -297,6 +297,42 @@ ok(S.needs_insights(P_COLD, {"id": "R", "sourceVideoId": ""},
                     "2026-09-11", 5, 5000, 30)[0] is False,
    "sourceVideoId 是空字串不算二創")
 
+print("— 二創怎麼認出來：同資料夾、不同檔名 —")
+# 老闆：「二創是『同一個資料夾的影片』若不同名字，就可能是第二次創作，
+#        我們不會同一支影片再次上傳。」
+F = "https://drive.google.com/drive/folders/AAA111?usp=share_link"
+F_SAME = "https://drive.google.com/drive/folders/AAA111"     # 同一個資料夾，網址參數不同
+F2 = "https://drive.google.com/drive/folders/BBB222"
+VS2 = [vid("A", "", name="原片", driveFolder=F),
+       vid("B", "", name="(可二剪)原片", driveFolder=F_SAME),
+       vid("C", "", name="別支片", driveFolder=F2)]
+sus = S.remake_suspects(VS2)
+ok(sus == {"A", "B"}, "同資料夾、檔名不同 → 兩支都當成二創嫌疑（網址參數不同不影響）")
+ok("C" not in sus, "自己一個資料夾的不算")
+
+SAME = [vid("D", "", name="一樣的名字", driveFolder=F),
+        vid("E", "", name="一樣的名字", driveFolder=F)]
+ok(S.remake_suspects(SAME) == set(), "檔名完全一樣＝同一支片，不是二創")
+ok(S.remake_suspects([vid("G", "", name="沒資料夾"), vid("H", "", name="也沒有")]) == set(),
+   "沒填資料夾的不會被兜在一起（空字串不是一個資料夾）")
+ok(S.remake_suspects([vid("I", "", name="在", driveFolder=F),
+                      vid("J", "", name="回收桶", driveFolder=F, deleted=True)]) == set(),
+   "回收桶裡的那筆不算（不然會讓還在的那支被誤判成二創）")
+
+ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
+   "二創嫌疑的片，留言再少也要問")
+ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
+   "不是嫌疑的就不用多花這次呼叫")
+
+print("— 權杖權限檢查 —")
+# 2026-09-11 踩到：IG 的貼文清單抓得到，但成效一律 Bad signature（code=190），
+# 於是「達標 0 則」—— 看起來像「沒有成效好的片」，其實是觀看數根本沒抓到。
+ok("instagram_manage_insights" in S.NEEDED_SCOPES,
+   "IG 成效的權限有列進必要清單（少了它會靜靜地變成「沒有好片」）")
+ok("read_insights" in S.NEEDED_SCOPES, "FB 粉專成效的權限也要列")
+ok("instagram_basic" in S.NEEDED_SCOPES and "pages_show_list" in S.NEEDED_SCOPES,
+   "抓清單要的那兩項也要列（少了會整個抓不到，比較好發現）")
+
 print("— 涵蓋率（排了的片有幾支沒對到）—")
 # 真正要擔心的不是「989 則貼文只對上 238 則」（大多是商品圖文，本來就不在影片庫），
 # 而是反過來：系統裡排了、平台上也發了，卻沒對到。
