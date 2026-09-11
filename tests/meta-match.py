@@ -324,6 +324,23 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 疑似誤配要擋得住寫入，不是事後才講 —")
+# 2026-09-11：畫面印了「⚠⚠ 對到 9 則，先不要 --write」，
+# 但那句話是在寫入流程中間印的 —— 講的時候已經寫進去了。
+# 發現問題卻擋不住問題，那個警告等於沒有。
+import argparse as _ap
+_p = _ap.ArgumentParser()
+for a in ("--write", "--force", "--fill-links", "--verbose", "--why"):
+    _p.add_argument(a, action="store_true")
+_p.add_argument("--every", type=int, default=0)
+ok(hasattr(_p.parse_args([]), "force"), "（前提）有 --force 這個開關")
+src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                        "tools", "meta_sync.py"), encoding="utf-8").read()
+i_hog = src.index("if hogs and not args.force:")
+i_write = src.index("done, failed = write_back(")
+ok(i_hog < i_write, "擋下來的判斷要排在 write_back 前面（不然擋了也來不及）")
+ok("return 2" in src[i_hog:i_write], "而且是直接結束，不是印一行然後照寫")
+
 print("— 翻頁撞到上限要大聲講 —")
 # 2026-09-11 抓 180 天，粉專回了**剛好 2,000 則** —— 那不是剛好這麼多，
 # 是撞到我設的 40 頁上限被截斷了，而畫面上完全看不出來。

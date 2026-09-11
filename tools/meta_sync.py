@@ -729,6 +729,8 @@ def main():
                     help="影片庫改讀這份 JSON（備份檔）而不是連資料庫；只能搭配只看不寫")
     ap.add_argument("--every", type=int, default=0,
                     help="上一次成功不到 N 天就直接跳過（排程用：每天叫起來，自己決定要不要跑）")
+    ap.add_argument("--force", action="store_true",
+                    help="即使有疑似誤配也照樣寫入（確認過那幾支是對的才用）")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--explain", default="",
                     help="印出某一支影片對到了哪幾則貼文（警告跳出來時用這個查）")
@@ -874,9 +876,12 @@ def main():
     if hogs:
         print("\n⚠⚠ 這幾支對到的則數多到不合理（超過 %d 則），幾乎一定是誤配：" % TOO_MANY)
         for cnt, vid in hogs[:10]:
-            print("     %-16s %-26s 對到 %d 則"
-                  % (vid, str(byvid.get(vid, {}).get("name") or "")[:26], cnt))
-        print("   多半是某一句「小編招呼語」變成磁鐵。**先不要 --write**，把這段貼給我。")
+            e = plan[vid]
+            ds = sorted(r["postAt"][:10] for r in e["rows"] if r.get("postAt"))
+            span = ("%s～%s" % (ds[0], ds[-1])) if ds else ""
+            print("     %-16s %-26s 對到 %d 則　%s"
+                  % (vid, str(byvid.get(vid, {}).get("name") or "")[:26], cnt, span))
+        print("   多半是小編的固定叫賣模板變成磁鐵（每次上新品套一次，日期會橫跨好幾個月）。")
 
     if args.explain:
         e = plan.get(args.explain)
@@ -970,6 +975,17 @@ def main():
     if not args.write:
         print("\n（只看不寫，資料庫沒有動。確認上面的清單是對的，再加 --write）")
         return 0
+
+    # ⚠️ 警告要**擋得住寫入**，不然它只是事後諸葛。
+    # 2026-09-11 就是這樣：「先不要 --write」那句話印出來的時候，
+    # 那 9 則誤配已經寫進資料庫了 —— 因為它印在寫入流程的中間。
+    # 發現問題卻擋不住問題，那個警告等於沒有。
+    if hogs and not args.force:
+        print("\n⛔ 有 %d 支疑似誤配，**這次不寫入**。" % len(hogs))
+        print("   先用 --explain <影片id> 把那幾則叫出來看，確認之後再決定：")
+        print("     是誤配 → 跟我說，我修比對規則")
+        print("     其實是對的 → 加 --force 再跑一次")
+        return 2
 
     # 4. 寫回去
     final = []
