@@ -324,6 +324,26 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— API 版本與已廢除的指標 —")
+# 2026-09 查官方文件查到的：Meta 在 2024-08 把 impressions / plays / video_views
+# 全部併成 views；views 從 v22.0 才有。而這支原本寫死 v21.0 ——
+# 要一個那個版本沒有的指標，又去要兩個已經被廢掉的。
+ok(int(S.GRAPH_VER.lstrip("v").split(".")[0]) >= 22,
+   "API 版本至少要 v22（views 這個指標從 v22 才有）")
+ok(S.IG_METRICS[0] == "views" and S.FB_METRICS[0] == "views",
+   "兩邊都以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
+ok(S.VIEW_KEYS[0] == "views" and "post_impressions" in S.VIEW_KEYS,
+   "舊名稱留在後面當備援（老貼文還抓得到），但排在 views 後面")
+
+print("— 抓不到觀看數 ≠ 沒人看 —")
+# 官方文件：「if insights data you are requesting does not exist or is currently
+# unavailable the API will return an empty data set **instead of 0**.」
+# 把空的當 0，會讓「抓不到」跟「真的沒人看」在畫面上變成同一件事 ——
+# 而我們正是用觀看數當門檻。
+ok(not S.is_hit({"views": 0, "comments": 9}, 5000, 5),
+   "抓不到觀看數的貼文不會被誤判成達標")
+ok(S.is_hit({"views": 9000, "comments": 9}, 5000, 5), "有數字的照樣判達標")
+
 print("— 某個平台整個掛掉要喊出來 —")
 # 2026-09-11 踩到的形狀：IG 成效全被擋、FB 還有數字，
 # 所以「全部都是 0」的條件不成立，警告沒跳，畫面只顯示「達標 0 則」。

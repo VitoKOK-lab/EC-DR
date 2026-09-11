@@ -59,15 +59,28 @@ import _fs                      # noqa: E402
 import meta_match               # noqa: E402
 
 GRAPH = "https://graph.facebook.com"
-GRAPH_VER = os.environ.get("META_GRAPH_VERSION", "v21.0")
+GRAPH_VER = os.environ.get("META_GRAPH_VERSION", "v25.0")
 DEFAULT_CONFIG = os.path.expanduser("~/.ecdr-meta.json")
 
 # 想要的欄位；平台不給就跳過那一個，不要整支掛掉。
 # Graph API 改版時第一個會壞的就是這裡（指標名稱每一兩版就搬一次家），
 # 所以一律「一個一個試、失敗就記下來」，不要一次全要。
+#
+# 【2026-09 查過官方文件之後改的】
+# Meta 在 2024-08 把 impressions / plays / video_views **全部併成 views**：
+#     video_views  —— 2025-01-08 起所有版本廢除
+#     impressions、plays —— 2025-04-21 起所有版本廢除
+#     views 從 **v22.0** 開始才有（媒體與帳號洞察都是）
+# 而這支腳本原本寫死 v21.0 —— 要一個那個版本沒有的指標，又去要兩個已經被廢掉的。
+# FB 粉專那邊回的「(#100) The value must be a valid insights metric」就是這麼來的，
+# 不是偶發。舊名稱留在清單後面當備援：真的碰到老貼文時還抓得到，
+# 抓不到也只會被記進 missing，不會讓整支掛掉。
 IG_METRICS = ["views", "reach", "likes", "comments", "shares", "saved"]
-FB_METRICS = ["post_impressions", "post_impressions_unique",
-              "post_video_views", "post_reactions_by_type_total"]
+FB_METRICS = ["views", "post_reactions_by_type_total",
+              "post_impressions", "post_video_views"]
+
+# 哪些指標算「觀看數」。順序就是優先序。
+VIEW_KEYS = ["views", "post_video_views", "post_impressions", "reach"]
 
 
 class MetaError(Exception):
@@ -309,11 +322,18 @@ def add_insights(posts, cfg, token, verbose=False):
         tok = by_page.get(p["account"]) or token
         ins = _insights("%s/insights" % p["id"], tok,
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
+        # ⚠️ 官方文件：「if insights data you are requesting does not exist or is
+        #    currently unavailable the API will return an **empty data set
+        #    instead of 0**.」
+        #    所以「抓不到」跟「真的沒人看」在回應裡長得一樣 —— 都是沒有那個欄位。
+        #    把它當 0 會讓這兩件事在畫面上變成同一件事，而我們正是用觀看數當門檻。
+        #    這裡分開記：抓不到就標 viewsMissing，不要假裝它是 0。
+        view = next((ins[k] for k in VIEW_KEYS if k in ins), None)
+        p["views"] = int(view or 0)
+        p["viewsMissing"] = view is None
         if p["platform"] == "IG":
-            p["views"] = ins.get("views", ins.get("reach", 0))
             p["shares"] = ins.get("shares", p.get("shares", 0))
         else:
-            p["views"] = ins.get("post_video_views", ins.get("post_impressions", 0))
             p["likes"] = ins.get("post_reactions_by_type_total", p.get("likes", 0))
     print("")
     if missing:
@@ -692,6 +712,12 @@ def main():
     by_plat = {}
     for p in want:
         by_plat.setdefault(p["platform"], []).append(int(p.get("views") or 0))
+    nodata = [p for p in want if p.get("viewsMissing")]
+    if nodata:
+        print("\n⚠ 有 %d 則**抓不到觀看數**（Meta 回空的，不是回 0）。" % len(nodata))
+        print("   常見原因：帳號粉絲數不足 100（官方說有些指標就是不給），")
+        print("   或那則貼文的類型／年紀不支援。這幾則不會被當成「沒人看」。")
+
     dead = [k for k, vs in by_plat.items() if vs and not any(vs)]
     if dead:
         print("\n⚠⚠ %s 的成效**一則都沒抓到**（%d 則全是 0）。"
@@ -715,6 +741,7 @@ def main():
                "views": int(p.get("views") or 0), "likes": int(p.get("likes") or 0),
                "comments": int(p.get("comments") or 0), "shares": int(p.get("shares") or 0),
                "at": _fs.taipei_now(), "postId": str(p.get("id") or ""),
+               "viewsMissing": bool(p.get("viewsMissing")),
                "postAt": str(p.get("at") or "")[:19], "link": p.get("permalink") or ""}
         e = plan.setdefault(vid, {"videoId": vid, "rows": [], "fillLink": ""})
         e["rows"].append(row)
