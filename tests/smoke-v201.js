@@ -174,7 +174,112 @@ mount([原片, 二創]);
 ok(shpBadge(vid("R1")).includes("二創"), "清單上二創有自己的小標");
 ok(shpBadge(vid("S1")) === "", "原片不標");
 
-// ══════════ ⑭ 存檔的時候也不准改到原始片名 ══════════
+// ══════════ ⑭ 同齡比較：有快照才算得出來 ══════════
+// Meta 只給累計，所以原片（半年前上的）跟二創（上了 30 天）天生不同基準。
+// 後端從 v201 開始每次同步存一個點，存滿才換成「第 30 天對第 30 天」。
+const MP = (views, postAt, postId) => [{ platform: "IG", account: "IG a", views, comments: 10, likes: 0,
+                                         postAt: postAt + "T00:00:00", postId }];
+const H = (postId, d, views) => ({ postId, d, views, comments: 1 });
+{ const s = V({ id: "S5", name: "原片", metrics: MP(100000, D(200), "ps"),
+                metricsHist: [H("ps", D(178), 20000), H("ps", D(169), 25000), H("ps", D(160), 28000)] });
+  const k = V({ id: "R5", name: "二創", channel: "remake", sourceVideoId: "S5", scheduledDate: D(40),
+                metrics: MP(30000, D(40), "pk"), metricsHist: [H("pk", D(15), 24000), H("pk", D(8), 27500)] });
+  mount([s, k]);
+  ok(rmkViewsAtAge(vid("S5"), 30) === 25000, "原片第 30 天：取第一個滿 30 天的點（不是最新那個）");
+  ok(rmkViewsAtAge(vid("R5"), 30) === 27500, "二創第 30 天也一樣");
+  const c = rmkCompare(vid("R5"));
+  ok(c.basis === "same" && Math.round(c.r * 100) === 110, "兩邊都有第 30 天 → 同齡比：27,500 ÷ 25,000 ＝ 110%");
+  ok(rmkRatio(vid("R5")) < 1, "拿累計比的話反而是 30%（同一支片，兩種算法差很多 —— 這就是為什麼要存快照）");
+  ok(rmkBasisNote(c) === "同齡 30 天", "而且要標出來這個比值是怎麼算的");
+}
+{ // 一支片在兩個帳號各發一次，只拿到其中一則的點 → 不能算（半支片比整支片）
+  const s = V({ id: "S6", metrics: MP(100000, D(200), "p1").concat(MP(50000, D(200), "p2")),
+                metricsHist: [H("p1", D(169), 25000)] });
+  mount([s]);
+  ok(rmkViewsAtAge(vid("S6"), 30) === null, "有貼文還沒有第 30 天的點 → 不給數字（半支片比整支片比沒有更糟）");
+  const s2 = Object.assign({}, s, { metricsHist: [H("p1", D(169), 25000), H("p2", D(169), 12000)] });
+  mount([s2]);
+  ok(rmkViewsAtAge(vid("S6"), 30) === 37000, "兩則都有點了才加總");
+}
+{ mount([原片, 二創]);
+  const c = rmkCompare(vid("R1"));
+  ok(c.basis === "total" && c.age === 155, "沒有快照 → 退回累計比，而且把原片累積幾天帶出來");
+  ok(rmkBasisNote(c) === "原片累積 155 天", "老片的比值旁邊一定寫這句");
+  ok(rmkViewsAtAge(V({ metrics: [] }), 30) === null, "沒有貼文不會爆掉");
+  ok(rmkViewsAtAge(V({ metrics: MP(5, D(5), "px") }), 30) === null, "才上片 5 天，本來就不該有第 30 天");
+}
+
+// ══════════ ⑮ 剪輯二創成效：用中位數，一支爆片不代表穩定 ══════════
+ok(rmkMedian([1, 2, 3]) === 2 && rmkMedian([1, 2, 3, 4]) === 2.5, "中位數（單數取中間、雙數取平均）");
+ok(rmkMedian([]) === null, "沒有資料就不給中位數");
+{ const src = (id, vw) => V({ id, name: "原" + id, metrics: MP(vw, D(100), "s" + id) });
+  const rk = (id, s, who, vw, st) => V({ id, name: "二創" + id, channel: "remake", sourceVideoId: s,
+    editor: who, stage: st || "已上片", metrics: vw ? MP(vw, D(20), "r" + id) : [] });
+  mount([src("A", 10000), src("B", 10000), src("C", 10000), src("D", 10000),
+         rk("r1", "A", "阿剪", 5000), rk("r2", "B", "阿剪", 5000), rk("r3", "C", "阿剪", 90000),
+         rk("r4", "A", "阿二", 1000), rk("r5", "B", "阿二", 1200), rk("r6", "D", "阿二", 0, "待處理")]);
+  const st = rmkEditorStats();
+  const 剪 = st.find(o => o.name === "阿剪"), 二 = st.find(o => o.name === "阿二");
+  ok(Math.round(剪.med * 100) === 50, "阿剪的中位數是 50%（不是被那支 900% 拉高的平均 333%）");
+  ok(Math.round(剪.best * 100) === 900 && Math.round(剪.worst * 100) === 50, "最好、最差都看得到");
+  ok(二.n === 2 && 二.pend === 1, "還沒有數字的算「進行中」，不進比值");
+  ok(st[0].name === "阿剪", "比值高的排前面");
+  ok(剪.age === 100, "他分到的原片平均幾天 —— 分配公不公平要看得到");
+  const card = rmkPerfCard();
+  ok(card.includes("剪輯二創成效") && card.includes("阿剪"), "成效頁有這張卡");
+  ok(card.includes("比值天生偏低"), "沒有同齡數字的時候，把「這個比值不準」直接寫在卡上");
+  ok(card.includes("看每一支二創（6）"), "可以展開看每一支");
+}
+mount([原片]);
+ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡出來");
+
+// ══════════ ⑯ 二創也是一次「再用」══════════
+// 老闆：「日期（第一次上傳日，多久沒有二次使用，也不能太常用）」。
+// 少了這條，一支片被二創三次之後，建議選單上還是寫「用過 1 次、120 天沒用」，
+// 於是它會一直排在最前面被推薦去二創第四次。
+{ const s = V({ id: "S7", name: "被二創過的片", scheduledDate: D(120), metrics: M(80000, 200, D(120)) });
+  const k1 = V({ id: "K1", channel: "remake", sourceVideoId: "S7", scheduledDate: D(60), createdAt: "2026-07-01" });
+  const k2 = V({ id: "K2", channel: "remake", sourceVideoId: "S7", scheduledDate: D(5), createdAt: "2026-09-01" });
+  mount([s]);
+  ok(rmkAired(vid("S7")).length === 1 && rmkRank().find(x => x.v.id === "S7").score > 0,
+     "還沒被二創過：用過 1 次，照常推薦");
+  mount([s, k1]);
+  ok(rmkAired(vid("S7")).length === 2, "二創排過的上片日算一次「用過」");
+  mount([s, k1, k2]);
+  ok(rmkAired(vid("S7")).length === 3 && rmkUsedK(vid("S7")) === 0.4, "用過三次 → 分數壓到 0.4");
+  ok(rmkDaysSince(vid("S7")) === 5, "「多久沒用」看的是最後一次二創，不是原片那次");
+  ok(rmkRank().find(x => x.v.id === "S7").score === 0, "5 天前才二創過 → 先別再推薦");
+  ok(rmkWhyNot(rmkRank().find(x => x.v.id === "S7")).includes("5 天前"), "而且講清楚為什麼");
+  // 還沒到上片日的二創不算 —— 排了不等於出了
+  const 未來 = V({ id: "K3", channel: "remake", sourceVideoId: "S7", scheduledDate: D(-10), createdAt: "2026-09-09" });
+  mount([s, k1, 未來]);
+  ok(rmkAired(vid("S7")).length === 2, "排在未來的二創還沒出，先不算進「用過幾次」");
+}
+
+// ══════════ ⑰ 上次二創的成績要寫在建議清單上 ══════════
+// 老闆問的四件事之一是「要不要再次剪這一支」。上次剪出來只有兩成，跟上次剪得比原本還好，
+// 是兩個完全不同的決定。
+{ const s = V({ id: "S8", name: "有二創成績的片", scheduledDate: D(200), metrics: M(100000, 300, D(200)) });
+  const k1 = V({ id: "L1", name: "二創1", channel: "remake", sourceVideoId: "S8", scheduledDate: D(150),
+                 editor: "阿剪", createdAt: "2026-05-01", metrics: M(20000, 30, D(150)) });
+  const k2 = V({ id: "L2", name: "二創2", channel: "remake", sourceVideoId: "S8", scheduledDate: D(100),
+                 editor: "阿二", createdAt: "2026-07-01", metrics: [] });
+  mount([s, k1, k2], "管理員", "boss");
+  ok(Math.round(rmkLastResult(vid("S8")).r * 100) === 20, "取最近一支**有數字**的（最新那支還在剪，不算它 0 分）");
+  ok(rmkRowsHTML().includes("上次二創 20%"), "寫在建議清單的「上次誰剪」旁邊");
+  // 人跟數字一定要是同一支、同一個人。第一版分開取，畫面上出現「阿二　上次二創 20%」——
+  // 那 20% 是阿剪剪的，阿二那支還在剪。同一格裡兩個數字指到不同的人，看的人一定誤會。
+  ok(rmkLastEditor(vid("S8")) === "阿剪", "有成績的話，「上次誰剪」也要跟著指到剪出那個成績的人");
+  ok(/阿剪<span class="muted"[^>]*>　上次二創 20%/.test(rmkRowsHTML()), "畫面上這兩個字連在一起，不會各指各的");
+  mount([s, k2], "管理員", "boss");
+  ok(rmkLastEditor(vid("S8")) === "阿二" && rmkLastResult(vid("S8")) === null,
+     "都還沒有成績 → 顯示最近被指派的那個人，但不給數字");
+  mount([原片], "管理員", "boss");
+  ok(rmkLastResult(vid("S1")) === null, "沒有二創過就沒有這個數字");
+  ok(!rmkRowsHTML().includes("上次二創"), "也不要硬擠一個 0% 上去");
+}
+
+// ══════════ ⑱ 存檔的時候也不准改到原始片名 ══════════
 // 畫面上設 readonly 只擋得住手滑，擋不住 devtools、也擋不住一個開了三天的舊分頁。
 // 真正要擋的是寫進資料庫那一刻 —— 這個欄位一改，那支片的成效就整批對不回來。
 (async () => {

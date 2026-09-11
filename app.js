@@ -6948,6 +6948,12 @@ function rmkAired(v){
   const o=[];
   const d=String(v&&v.scheduledDate||"").slice(0,10); if(d) o.push(d);
   ((v&&v.usageHistory)||[]).forEach(u=>{ const x=String((u||{}).date||"").slice(0,10); if(x) o.push(x); });
+  // 二創也是一次「再用」。老闆：「多久沒有二次使用，也不能太常用」——
+  // 少了這一段，一支片被二創三次之後，建議選單上還是寫「用過 1 次、83 天沒用」，
+  // 然後它會一直排在最前面被推薦去二創第四次。
+  // 還沒到上片日的不算（下面那道 <=today 會濾掉）——排了不等於出了。
+  if(!isRemake(v)) remakesOfSrc(v&&v.id).forEach(k=>{
+    const x=String((k||{}).scheduledDate||"").slice(0,10); if(x) o.push(x); });
   return [...new Set(o)].filter(x=>x<=today).sort();
 }
 function rmkDaysSince(v){
@@ -7038,7 +7044,9 @@ function rmkRowsHTML(){
       <td data-label="留言" class="pr-c">${vidViews(r.v)?num(vidComments(r.v)):''}</td>
       <td data-label="多久沒用" class="pr-v">${r.gap==null?'<span class="muted">—</span>':r.gap+" 天"}</td>
       <td data-label="用過" class="pr-k">${r.used} 次</td>
-      <td data-label="上次誰剪" class="pr-e">${esc(rmkLastEditor(r.v))||'<span class="muted">—</span>'}</td>
+      <td data-label="上次誰剪" class="pr-e">${(()=>{ const L=rmkLastCut(r.v);
+        return (esc(L.who)||'<span class="muted">—</span>')
+          + (L.c?`<span class="muted" style="font-size:11px">　上次二創 ${pctTxt(L.c.r)}</span>`:""); })()}</td>
       ${canPlan?`<td data-label=""><button class="btn sm" style="white-space:nowrap"
         onclick="event.stopPropagation();openRmkPlan('${r.v.id}')"
         title="排上片日期、取新片名、指定剪輯">排二創</button></td>`:""}</tr>`;
@@ -7096,19 +7104,43 @@ const RMK_CH="remake";
 function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoId||"")); }
 // 誰可以排二創（老闆選的：管理員＋經理人，跟現在排月排程的是同一批人）
 function canPlanRemake(){ return ["boss","manager"].includes(currentRole()); }
-function remakesOfSrc(id){ id=String(id||""); if(!id) return [];
-  return (STATE.videos||[]).filter(v=>isRemake(v)&&String(v.sourceVideoId)===id)
-    .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))); }
+// 原片 → 它的二創。建一次表，不要每問一支就掃一次全庫 ——
+// 排序那裡是「每支片都問一次」，掃全庫的話 1,045 支就變成一百萬次比對。
+// 快取靠陣列本身的身分認（跟 allLibVideos 同一招）：資料一換就自動重建。
+let RMKX=null, RMKX_SRC=null;
+function rmkIndex(){
+  const a=(STATE&&STATE.videos)||[];
+  if(RMKX && RMKX_SRC===a) return RMKX;
+  const m={};
+  a.forEach(v=>{ if(isRemake(v)){ const k=String(v.sourceVideoId); (m[k]||(m[k]=[])).push(v); } });
+  Object.keys(m).forEach(k=>m[k].sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||""))));
+  RMKX=m; RMKX_SRC=a; return m;
+}
+function remakesOfSrc(id){ return rmkIndex()[String(id||"")] || []; }
 function rmkSrcOf(v){ return isRemake(v) ? vid(v.sourceVideoId) : null; }
 function rmkNoOf(v){ const s=rmkSrcOf(v); if(!s) return 0;
   return remakesOfSrc(s.id).findIndex(x=>x.id===v.id)+1; }
 // 最後一次二創是誰剪的。建議選單的「上次誰剪」要看這個，不是原片的剪輯 ——
 // 要排下一次的人想知道的是「上一次交給誰」，不是半年前第一次是誰剪的。
-function rmkLastEditor(v){
-  const ks=remakesOfSrc(v&&v.id).filter(k=>k.editor||k.claimedBy||k.assignedTo);
-  const k=ks[ks.length-1];
-  return k ? String(k.editor||k.claimedBy||k.assignedTo||"") : String((v&&(v.editor||v.claimedBy))||"");
+// 「上次誰剪」跟「上次二創幾成」必須是**同一個人、同一支**。
+// 第一版分成兩個函式各自取，畫面上就出現「巧芸　上次二創 50%」——
+// 那 50% 是陳鋒剪的，巧芸那支還在剪。同一格裡兩個數字指到不同的人，看的人一定誤會。
+// 所以：有成績的話，人跟數字都取**最近一支有成績的**；都還沒有成績，就只顯示
+// 最近被指派的那個人、不給數字（沒有數字不等於零）。
+function rmkLastCut(v){
+  const ks=remakesOfSrc(v&&v.id);
+  for(let i=ks.length-1;i>=0;i--){
+    const c=rmkCompare(ks[i]);
+    if(c.r!=null) return {who:rmkEditorOf(ks[i]), c};
+  }
+  const done=ks.filter(k=>rmkEditorOf(k));
+  const k=done[done.length-1];
+  return {who: k?rmkEditorOf(k):String((v&&(v.editor||v.claimedBy))||""), c:null};
 }
+function rmkLastEditor(v){ return rmkLastCut(v).who; }
+// 老闆問的四件事之一是「要不要再次剪這一支」——
+// 上次剪出來只有原本的兩成，跟上次剪得比原本還好，是兩個完全不同的決定。
+function rmkLastResult(v){ return rmkLastCut(v).c; }
 // 原片第一則貼文到今天幾天。比值旁邊一定要寫這個數字。
 // 老闆選的是「照算，也拿來排剪輯」—— 那就更要把年齡擺出來：原片累積了 155 天、
 // 二創才跑 30 天，比值天生就難看。看得到年齡，才分得出「這個剪輯不行」
@@ -7202,7 +7234,7 @@ function rmkVersionsCard(v){
     {head:"原片（這支是它的二創）", tail:"第 "+rmkNoOf(v)+" 次二創"});
   const kids=remakesOfSrc(v.id); if(!kids.length) return "";
   const age=rmkSrcAgeDays(v), sv=vidViews(v);
-  const rows=kids.map((k,i)=>{ const r=rmkRatio(k);
+  const rows=kids.map((k,i)=>{ const c=rmkCompare(k);
     return `<tr>
       <td data-label="第幾次">${i+1}</td>
       <td data-label="片名"><a href="javascript:void(0)" onclick="${vidOpenFn(k)}">${esc(zhTW(k.name||k.rawName||""))}</a></td>
@@ -7210,17 +7242,135 @@ function rmkVersionsCard(v){
       <td data-label="狀態">${rmkStagePill(k)}</td>
       <td data-label="上片日">${esc(String(k.scheduledDate||"").slice(0,10))||'<span class="muted">—</span>'}</td>
       <td data-label="觀看">${vidViews(k)?num(vidViews(k)):'<span class="muted">—</span>'}</td>
-      <td data-label="比原片">${r==null?'<span class="muted">—</span>':"<b>"+Math.round(r*100)+"%</b>"}</td></tr>`;
+      <td data-label="比原片">${c.r==null?'<span class="muted">—</span>'
+        :`<b>${pctTxt(c.r)}</b>${c.basis==="same"?`<span class="muted" style="font-size:11px">　同齡 ${RMK_CMP_DAYS} 天</span>`:""}`}</td></tr>`;
   }).join("");
+  const allSame=kids.length>0 && kids.every(k=>rmkCompare(k).basis==="same");
   return `<div class="card" style="background:var(--panel2)"><b>二創（${kids.length}）</b>
     <span class="muted" style="font-size:12px">原片 ${sv?num(sv)+" 觀看":"還沒有成效數字"}${
       age!=null?"・上片 "+age+" 天":""}</span>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>第幾次</th><th>片名</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>觀看</th><th>比原片</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    ${(age!=null&&age>60)?`<div class="muted" style="font-size:11px;margin-top:6px">
+    ${(!allSame&&age!=null&&age>60)?`<div class="muted" style="font-size:11px;margin-top:6px">
       ⚠ 原片那個數字是 ${age} 天累積來的，二創才剛開始跑 —— 比值天生偏低，看的時候要把這件事算進去。</div>`:""}
   </div>`;
 }
+// ── 同齡比較：有快照才算得出來 ───────────────────────────────────
+// Meta 只給「到現在為止的累計」，所以原片（半年前上的）跟二創（上了 30 天）
+// 的數字天生不同基準。後端從 v201 開始每次同步存一個點（metricsHist），
+// 存滿之後這裡就能拿「原片第 30 天」對「二創第 30 天」。
+// 老片補不回來 —— 那種只能用累計比，畫面上會標出原片幾天。
+const RMK_CMP_DAYS=30;
+function rmkHist(v){ return Array.isArray(v&&v.metricsHist)?v.metricsHist:[]; }
+// 這支片「上片後第 n 天」的觀看。每 3 天一個點，所以取第一個 age>=n 的點。
+// ⚠️ 要**每一則貼文都有**那個點才算數：一支片在兩個帳號各發一次，只拿到其中
+//    一則的數字就去比，等於拿半支片比整支片 —— 那比沒有數字更糟。
+function rmkViewsAtAge(v, n){
+  const post={}; ((v&&v.metrics)||[]).forEach(m=>{
+    const pid=String((m||{}).postId||""); const pa=String((m||{}).postAt||"").slice(0,10);
+    if(pid&&pa) post[pid]=pa; });
+  const ids=Object.keys(post); if(!ids.length) return null;
+  const best={};
+  rmkHist(v).forEach(h=>{
+    const pid=String((h||{}).postId||""), d=String((h||{}).d||"").slice(0,10);
+    if(!post[pid]||!d) return;
+    const age=Math.round((new Date(d+"T00:00:00")-new Date(post[pid]+"T00:00:00"))/864e5);
+    if(age<n) return;
+    if(best[pid]==null||age<best[pid].age) best[pid]={age, views:+h.views||0};
+  });
+  if(Object.keys(best).length!==ids.length) return null;   // 有貼文還沒跑到第 n 天
+  return ids.reduce((s,pid)=>s+best[pid].views, 0);
+}
+// 這一支二創跟原片怎麼比。回 {r, basis, age}：
+//   basis="same"＝兩邊都有第 30 天的數字，這個比值是真的
+//   basis="total"＝只能拿累計比，age 就是原片累積了幾天（一定要寫出來）
+function rmkCompare(k){
+  const s=rmkSrcOf(k);
+  if(!s) return {r:null, basis:"", age:null};
+  const a=rmkViewsAtAge(s,RMK_CMP_DAYS), b=rmkViewsAtAge(k,RMK_CMP_DAYS);
+  if(a&&b) return {r:b/a, basis:"same", age:null};
+  return {r:rmkRatio(k), basis:"total", age:rmkSrcAgeDays(s)};
+}
+function rmkBasisNote(c){
+  if(c.basis==="same") return "同齡 "+RMK_CMP_DAYS+" 天";
+  return c.age!=null ? ("原片累積 "+c.age+" 天") : "";
+}
+
+// ── 剪輯二創成效：「你能不能比原本更好」──────────────────────────
+// 老闆：「剪輯成效一定是前原本來比較，因為我們會選出來都是比較好的，所以二剪要看的
+//        是，你能不比原本更好，如果是合理衰退，比例多少合不合理，跟其他剪輯比的是
+//        這個（好的東西給誰剪是浪費的感覺，這樣分配的人才知道怎麼配，或是有人剪很快，
+//        但都亂剪）。」
+function rmkShells(){ return (STATE.videos||[]).filter(isRemake); }
+function rmkEditorOf(k){ return String((k&&(k.editor||k.claimedBy||k.assignedTo))||""); }
+// 用中位數不用平均：一支爆片就能把一個人的平均拉到天上，那不叫穩定。
+function rmkMedian(a){
+  if(!a.length) return null;
+  const s=a.slice().sort((x,y)=>x-y), m=s.length>>1;
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+}
+function rmkEditorStats(){
+  const by={};
+  rmkShells().forEach(k=>{
+    const n=rmkEditorOf(k); if(!n) return;
+    const o=by[n]||(by[n]={name:n, rs:[], ages:[], pend:0});
+    const c=rmkCompare(k);
+    if(c.r==null){ o.pend++; return; }      // 還沒有數字：算在「進行中」，不進比值
+    o.rs.push(c.r);
+    const a=rmkSrcAgeDays(rmkSrcOf(k)); if(a!=null) o.ages.push(a);
+  });
+  return Object.keys(by).map(n=>{ const o=by[n];
+    return Object.assign(o, { n:o.rs.length, med:rmkMedian(o.rs),
+      best:o.rs.length?Math.max.apply(null,o.rs):null,
+      worst:o.rs.length?Math.min.apply(null,o.rs):null,
+      age:o.ages.length?Math.round(o.ages.reduce((a,b)=>a+b,0)/o.ages.length):null }); })
+    .sort((a,b)=>(b.med==null?-1:b.med)-(a.med==null?-1:a.med));
+}
+const pctTxt=(r)=>Math.round(r*100)+"%";
+let RMK_LIST_OPEN=false;
+function rmkListToggle(){ RMK_LIST_OPEN=!RMK_LIST_OPEN; render(); }
+function rmkPerfCard(){
+  const shells=rmkShells(); if(!shells.length) return "";
+  const st=rmkEditorStats();
+  const rows=st.map(o=>`<tr>
+      <td data-label="剪輯">${esc(o.name)}</td>
+      <td data-label="有數字的" class="pr-k">${o.n} 支${o.pend?`<span class="muted" style="font-size:11px">　進行中 ${o.pend}</span>`:""}</td>
+      <td data-label="比原片（中位數）" class="pr-v">${o.med==null?'<span class="muted">—</span>':"<b>"+pctTxt(o.med)+"</b>"}</td>
+      <td data-label="最好" class="pr-v">${o.best==null?'<span class="muted">—</span>':pctTxt(o.best)}</td>
+      <td data-label="最差" class="pr-v">${o.worst==null?'<span class="muted">—</span>':pctTxt(o.worst)}</td>
+      <td data-label="他分到的原片" class="pr-v">${o.age==null?'<span class="muted">—</span>':"平均 "+o.age+" 天"}</td></tr>`).join("");
+  const list=shells.slice().sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")))
+    .map(k=>{ const s=rmkSrcOf(k), c=rmkCompare(k), note=rmkBasisNote(c);
+      return `<tr style="cursor:pointer" onclick="${vidOpenFn(k)}">
+      <td data-label="原片">${s?esc(zhTW(vidTitle(s))):'<span class="muted">原片不見了</span>'}</td>
+      <td data-label="二創"><a href="javascript:void(0)">${esc(zhTW(k.name||k.rawName||""))}</a></td>
+      <td data-label="剪輯">${esc(rmkEditorOf(k))||'<span class="muted">—</span>'}</td>
+      <td data-label="狀態" class="pr-k">${rmkStagePill(k)}</td>
+      <td data-label="上片日" class="pr-k">${esc(String(k.scheduledDate||"").slice(0,10))||'<span class="muted">—</span>'}</td>
+      <td data-label="原片觀看" class="pr-v">${s&&vidViews(s)?num(vidViews(s)):'<span class="muted">—</span>'}</td>
+      <td data-label="二創觀看" class="pr-v">${vidViews(k)?num(vidViews(k)):'<span class="muted">—</span>'}</td>
+      <td data-label="比原片" class="pr-v">${c.r==null?'<span class="muted">還沒有數字</span>'
+        :`<b>${pctTxt(c.r)}</b>${note?`<span class="muted" style="font-size:11px">　${esc(note)}</span>`:""}`}</td></tr>`; }).join("");
+  const anySame=shells.some(k=>rmkCompare(k).basis==="same");
+  return `<div class="card"><b>剪輯二創成效</b>
+    <span class="muted" style="font-size:12px">比值＝二創觀看 ÷ 原片觀看；用中位數排（一支爆片不代表穩定）</span>
+    <div class="${st.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-v"><col class="pr-v"><col class="pr-v"><col class="pr-v"></colgroup>
+    <thead><tr><th>剪輯</th><th>有數字的</th><th>比原片（中位數）</th><th>最好</th><th>最差</th><th>他分到的原片</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6" class="muted">還沒有二創有成效數字</td></tr>'}</tbody></table></div>
+    ${anySame?"":`<div class="muted" style="font-size:11px;margin-top:6px">
+      ⚠ 現在的比值是拿<b>累計</b>算的：原片累積了好幾個月，二創才跑幾週，比值天生偏低。
+      「他分到的原片」那一欄就是在講這件事 —— 有人平均分到 150 天的老片，比值難看不一定是他的問題。
+      系統從現在開始存每 3 天一個點，等新片累積兩三個月，就會自動換成「同齡 ${RMK_CMP_DAYS} 天對 ${RMK_CMP_DAYS} 天」。</div>`}
+    <button class="btn sm" style="margin-top:8px" onclick="rmkListToggle()">${
+      RMK_LIST_OPEN?"收起每一支":`看每一支二創（${shells.length}）`}</button>
+    ${RMK_LIST_OPEN?`<div class="${shells.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col><col><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-v"><col class="pr-v"></colgroup>
+    <thead><tr><th>原片</th><th>二創</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>原片觀看</th><th>二創觀看</th><th>比原片</th></tr></thead>
+    <tbody>${list}</tbody></table></div>`:""}
+  </div>`;
+}
+
 // 原片的「原毛片名／原始片名」該不該鎖。
 // 老闆：「原始腳本名和原毛片名禁止修改」。鎖的理由不只是規矩 ——
 // 成效是拿這些欄位去跟平台貼文比對的，改掉名字＝那支片的成效整批對不回來。
@@ -7291,6 +7441,7 @@ function viewPerf(){
       <td data-label="留言" class="pr-c">${num(vidComments(r.v))}${rateShown(r.v)?`<span class="muted" style="font-size:11px">・${vidCommentRate(r.v).toFixed(1)}‰</span>`:''}</td></tr>`).join("")||`<tr><td colspan="7" class="muted">${PERF_KIND?'這個類型還沒有影片':'尚無資料'}</td></tr>`}</tbody></table>
     </div>
   </div>
+  ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
