@@ -1185,7 +1185,6 @@ function vid(id){ return vidxBuild().byId.get(id); }
 function versionsOfSrc(sourceId){ return vidxBuild().bySrc.get(sourceId)||[]; }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 // 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
-function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(dataLabel(t))}</span>`; }
 
 // ===================================================================
 // 畫面路由
@@ -1568,7 +1567,7 @@ function openDay(ds){
     // 搜尋照樣打得到編號（那是比對資料，不是顯示）。
     const titleTxt=esc(v?vidName(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -6883,10 +6882,37 @@ function vidCommentRate(v){ const n=vidViews(v); return n?1000*vidComments(v)/n:
 // 留言率要有意義，分母不能太小 —— 觀看幾百的片，1 則留言就能把它推到任何一邊
 const RATE_MIN_VIEWS=5000;
 function rateShown(v){ return vidViews(v)>=RATE_MIN_VIEWS; }
-function vidType(v){ return String((v&&v.mainType)||""); }
+// 三種類型互斥且窮盡：一支片不是帶貨、就是招商，要不然就是內容。
+// 從標籤推，推不出來再看文案 —— **不存進資料庫**，每次現算。
+// 現算的好處：舊資料自己會修正。正式資料裡有 28 支存著「流量型」卻掛著
+// 「寵粉」標籤（那 71 支流量型全是 createdAt 空的原始匯入資料，
+//  而現在的建檔規則根本產生不出「流量型」這個值）。
+const TYPE_SELL=["寵粉","帶貨","銷售"];
+const TYPE_BIZ=["代理","招商","代理招商"];
+// 文案裡「叫人行動」的話。⚠️ 這一條跟我被退回的那個留言率規則差在哪：
+// 它讀的是**我們自己寫了什麼**（意圖，直接可讀），不是**觀眾做了什麼**
+// （反應，會被我們自己的 CTA 帶動）。用反應去倒推意圖是循環論證，
+// 用我們寫的字判斷我們的意圖不是。
+const TYPE_CTA=/留言|關鍵字|私訊|下單|限量|寵粉價|市價|特價|快搶|團購/;
+function vidType(v){
+  const tags=(v&&v.tags||[]).map(String);
+  if(tags.some(t=>TYPE_BIZ.includes(t))) return "代理招商";
+  if(tags.some(t=>t.includes("寵粉")||TYPE_SELL.includes(t))) return "寵粉";
+  // 標籤沒填的時候看文案 —— 正式資料 23 支「看起來像流量型」裡有 4 支
+  // 其實是寵粉（片名就寫著「留言：【寶石】」，405 則留言全場最高）
+  if(TYPE_CTA.test([v&&v.name,v&&v.rawName,v&&v.videoCopy].map(x=>String(x||"")).join(" ")))
+    return "寵粉";
+  return "流量型";
+}
+// 成效頁：三種都標（那一頁就是在看分類）
 function typePill(v){
   const t=vidType(v);
-  return t ? `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>` : "";
+  return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`;
+}
+// 清單上：只標帶貨與招商。流量型是多數，每一列都標一次等於沒標。
+function typeTagOf(v){
+  const t=vidType(v);
+  return t==="流量型" ? "" : `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`;
 }
 
 // 每一種類型旁邊那句話 —— 講它的目的，不是講它的好壞
@@ -6911,7 +6937,7 @@ function viewPerf(){
   // 分類看的是「這支片的全部成效」，不是選中平台那一份 —— 只看一個帳號的留言率
   // 會因為那個帳號的貼文剛好沒帶 CTA 就翻面，那不是這支片的性質。
   const vAll=Object.values(perVid);
-  const kindOf=(o)=>vidType(o.v)||"（沒標）";
+  const kindOf=(o)=>vidType(o.v);
   const kindCount={};
   vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
   const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
@@ -6938,9 +6964,7 @@ function viewPerf(){
     `<button class="card" onclick="perfSetKind('${esc(jsEsc(k))}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:140px;flex:1">
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
       <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
-    }${kindCount["（沒標）"]?`<button class="card" onclick="perfSetKind('（沒標）')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND==="（沒標）"?'var(--accent)':'var(--line)'};min-width:140px;flex:1;opacity:.8">
-      <b class="muted">沒標類型</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px;color:var(--muted)">${kindCount["（沒標）"]}</div>
-      <div class="muted" style="font-size:12px">建檔時沒選到對應的標籤</div></button>`:''}</div>`:''}
+    }</div>`:''}
   <div class="card"><b>影片排行${PERF_KIND?`（只看${esc(PERF_KIND)}）`:(PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）')}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-e"><col class="pr-p"><col class="pr-v"><col class="pr-c"></colgroup>
@@ -6948,7 +6972,7 @@ function viewPerf(){
     <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
       <td data-label="#">${i+1}</td>
       <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
-      <td data-label="類型" class="pr-k">${typePill(r.v)||'<span class="muted">—</span>'}</td>
+      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
       <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="帶貨商品">${prodCell(r.v)}</td>
       <td data-label="觀看" class="pr-v"><b>${num(r.views)}</b></td>
