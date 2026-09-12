@@ -58,7 +58,7 @@ const ROLE_TABS = {
   // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
   //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
   //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
-  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片流量"]],
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片成效"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
@@ -416,7 +416,7 @@ function allLibVideos(){
 // 老闆：「這個功能要開權限，現在我的後台都沒有做好，權限還沒有明確可以依照人員新增。」
 //
 // 以前：職位決定一切，只有三個旗標（canAssign／canFindAssets／outsourced）能逐人開。
-// 結果是 ——「想讓 Regina 看『影片流量』，只能把她升成管理員」，連設定、成員、
+// 結果是 ——「想讓 Regina 看『影片成效』，只能把她升成管理員」，連設定、成員、
 // 回收桶、操作紀錄一起給出去。中間沒有檔位。
 //
 // 現在：每一項功能一個 key。職位給一批預設，users.perms 再逐人補，兩邊取聯集。
@@ -434,8 +434,8 @@ const PERMS = {
            why:"指派毛片給剪輯、排二創、標急件" },
   find:  { label:"找影片",   roles:["boss","manager"], legacy:"canFindAssets",
            why:"搜尋 Google Drive 素材庫" },
-  perf:  { label:"影片流量", roles:["boss"], tab:"perf", zhOnly:true,
-           why:"平台成效、影片排行、剪輯二創成效" },
+  perf:  { label:"影片成效", roles:["boss"], tab:"perf", zhOnly:true,
+           why:"各平台累計觀看、影片排行、帶貨商品排行、剪輯二創成效" },
   output:{ label:"剪輯產出", roles:["boss","hr"], tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
   attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
@@ -7489,7 +7489,10 @@ function rmkTrend(v){
   return {rows:rs, vals, read};
 }
 
-// ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+// ===== 影片成效：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+// v202 改名：分頁本來叫「影片流量」，頁面標題卻寫「平台成效」—— 同一頁兩個名字。
+// 老闆：「影片流量這個名字不好，不明意義」。三處（分頁、標題、權限表）統一成「影片成效」。
+// 影片視窗裡那張卡照舊叫「平台成效」—— 那是「這一支片在各平台的成績」，是另一件事。
 let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
 let PERF_KIND=null;   // 選中的類型（null＝全部；值是 mainType，或 "（沒標）"）
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
@@ -7524,9 +7527,9 @@ function viewPerf(){
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
       <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
 
-  return `<h2>平台成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
+  return `<h2>影片成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
-    <b>尚無平台成效數據</b>
+    <b>尚無影片成效數據</b>
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}

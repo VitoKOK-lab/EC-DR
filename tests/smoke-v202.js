@@ -3,7 +3,7 @@
 // 老闆：「這個功能要開權限，現在我的後台都沒有做好，權限還沒有明確可以依照人員新增。」
 //       「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
 //
-// 以前只有三個旗標能逐人開，其他全綁在職位上 —— 想讓 Regina 看「影片流量」，
+// 以前只有三個旗標能逐人開，其他全綁在職位上 —— 想讓 Regina 看「影片成效」，
 // 只能把她升成管理員，連設定、成員、回收桶一起給出去。
 //
 // ⚠️ 這一支最重要的是**第 ① 段**：職位預設值必須跟改這套之前一模一樣。
@@ -85,12 +85,12 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 
 // ══════════ ② 逐人開：職位沒給的，勾了就有 ══════════
 { reset([U("Regina", "manager")], "Regina", "manager");
-  ok("（對照）經理人本來看不到影片流量", !hasPerm("perf"));
+  ok("（對照）經理人本來看不到影片成效", !hasPerm("perf"));
   ok("（對照）分頁也沒有", !myTabs().some(t => t[0] === "perf"), myTabs().map(t => t[0]));
   reset([U("Regina", "manager", { perms: ["perf"] })], "Regina", "manager");
-  ok("勾了「影片流量」就看得到", hasPerm("perf"));
+  ok("勾了「影片成效」就看得到", hasPerm("perf"));
   ok("而且分頁真的長出來", myTabs().some(t => t[0] === "perf"), myTabs().map(t => t[0]));
-  ok("分頁名字是權限表上那個名字", (myTabs().find(t => t[0] === "perf") || [])[1] === "影片流量");
+  ok("分頁名字是權限表上那個名字", (myTabs().find(t => t[0] === "perf") || [])[1] === PERMS.perf.label);
   ok("沒勾的還是沒有", !hasPerm("output")); }
 { reset([U("小葵", "editor", { perms: ["assign"] })], "小葵", "editor");
   ok("一般剪輯被開了「工作指派」→ 排得了二創", canAssignWork() && canPlanRemake());
@@ -105,9 +105,9 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 
 // ══════════ ④ 員工視角：看被預覽那個人的權限，不是看自己的 ══════════
 { reset([U("管理員", "boss"), U("小葵", "editor")], "管理員", "boss");
-  ok("（對照）管理員自己看得到影片流量", hasPerm("perf"));
+  ok("（對照）管理員自己看得到影片成效", hasPerm("perf"));
   VIEW_AS = "小葵";
-  ok("預覽小葵 → 看不到影片流量（不然預覽出來的是假畫面）", !hasPerm("perf"));
+  ok("預覽小葵 → 看不到影片成效（不然預覽出來的是假畫面）", !hasPerm("perf"));
   VIEW_AS = null; }
 // ⚠️ 要預覽一個**真的有**指派權限的人才測得到「預覽是唯讀」——
 //    預覽一個本來就沒權限的人，把 !VIEW_AS 拿掉照樣是 false，那條斷言是空的。

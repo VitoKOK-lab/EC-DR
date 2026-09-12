@@ -945,7 +945,7 @@ slots: [{ videoId, reused:true, by, at, time, ver }]   // ver 省略或 1 ＝原
 「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
 
 以前職位決定一切，只有三個旗標（`canAssign`／`canFindAssets`／`outsourced`）能逐人開。
-結果是：**想讓 Regina 看「影片流量」，只能把她升成管理員** —— 連設定、成員、回收桶、
+結果是：**想讓 Regina 看「影片成效」，只能把她升成管理員** —— 連設定、成員、回收桶、
 操作紀錄一起給出去，中間沒有檔位。
 
 現在每一項功能一個 key，寫在 `app.js` 的 `PERMS`：
@@ -954,7 +954,7 @@ slots: [{ videoId, reused:true, by, at, time, ver }]   // ver 省略或 1 ＝原
 |---|---|---|---|
 | `assign` | 工作指派 | boss, manager | — |
 | `find` | 找影片 | boss, manager | `assets` |
-| `perf` | 影片流量 | boss | `perf` |
+| `perf` | 影片成效 | boss | `perf` |
 | `output` | 剪輯產出 | boss, hr | `output` |
 | `attend` | 出勤 | boss, hr | `attend` |
 | `df` | 大流量影片 | boss, manager, editor | `videosDF` |
@@ -980,7 +980,7 @@ slots: [{ videoId, reused:true, by, at, time, ver }]   // ver 省略或 1 ＝原
 
 ### ⚠️ 海外剪輯（intl）不給中文頁
 
-`zhOnly` 標出來的五項（影片流量／剪輯產出／出勤／大流量影片／主管看板）整頁是中文的，
+`zhOnly` 標出來的五項（影片成效／剪輯產出／出勤／大流量影片／主管看板）整頁是中文的，
 權限頁上海外那一列不給勾。**前四項有分頁，`myTabs()` 本來就擋；`lead` 沒有分頁，
 所以第一版漏掉了** —— `seesLeadBoard()` 因此再擋一道：畫面上勾不到，不等於資料裡不會有。
 
