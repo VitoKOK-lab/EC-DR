@@ -58,7 +58,7 @@ const ROLE_TABS = {
   // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
   //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
   //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
-  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片流量"]],
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片成效"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
@@ -188,6 +188,10 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
   //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
   if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","找影片"]);
+  // v202：職位沒給、但在權限表上被勾起來的分頁，補進來。
+  // 海外剪輯（intl）一律不補 —— 這幾頁整頁是中文的，給了就是中文漏進英文介面。
+  if(currentRole()!=="intl") PERM_KEYS.forEach(k=>{ const P=PERMS[k];
+    if(P.tab && hasPerm(k) && !t.some(x=>x[0]===P.tab)) t.push([P.tab, P.label]); });
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -303,7 +307,9 @@ function dayVideoList(date){
   // 導致排了日期但還沒剪完的片在月曆上完全看不到（等於排了也不知道自己排過）。
   // 出片面：影片庫A 與大流一起算。大流的片是成品，排進來就是當天要出的其中一支，
   // 「今天到底出幾支」不該分它從哪個庫來（生產面的數字才要分，見 decorate）。
-  allLibVideos().forEach(v=>{ if(isSourceVid(v) && schedLineOf(v)==="tw" && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
+  // 二創殼（isRemake）也要收：它是版本殼，isSourceVid 是 false，但它就是那天要出的片。
+  // 少了它，排片人排的「上片日期」在月曆上完全看不到 —— 而那正是第三步的第一個動作。
+  allLibVideos().forEach(v=>{ if((isSourceVid(v)||isRemake(v)) && schedLineOf(v)==="tw" && v.scheduledDate===date && !seen.has(v.id)){ seen.add(v.id); out.push({videoId:v.id, fromVideo:true}); } });
   return out;
 }
 // 每天上片目標：依「星期幾」設定 流量／寵粉／代理招商 各幾支（帶貨已併入寵粉，不分平假日）
@@ -404,7 +410,67 @@ function allLibVideos(){
   ALLLIB_A=a; ALLLIB_D=d; return ALLLIB;
 }
 // 誰看得到「影片庫大流」：管理員、經理人、剪輯（海外不做大流）
-function seesDF(){ return ["boss","manager","editor"].includes(currentRole()); }
+// ===================================================================
+// 權限（v202）
+// ===================================================================
+// 老闆：「這個功能要開權限，現在我的後台都沒有做好，權限還沒有明確可以依照人員新增。」
+//
+// 以前：職位決定一切，只有三個旗標（canAssign／canFindAssets／outsourced）能逐人開。
+// 結果是 ——「想讓 Regina 看『影片成效』，只能把她升成管理員」，連設定、成員、
+// 回收桶、操作紀錄一起給出去。中間沒有檔位。
+//
+// 現在：每一項功能一個 key。職位給一批預設，users.perms 再逐人補，兩邊取聯集。
+// 所有判斷一律走 hasPerm() —— 不要各寫一份條件，不然改了一邊，另一邊會默默不一樣
+// （canMarkUrgent 共用 canAssignWork 就是這個理由，v195 已經吃過一次虧）。
+//
+// ⚠️ 設定／成員／回收桶／操作紀錄**刻意不在這張表裡**（老闆選的）：
+//    拿到設定的人可以再把權限發給別人，那等於多配一把管理員鑰匙。
+//    那一項照舊只認 isOwner()。
+//
+// ⚠️ 職位預設值必須跟改這段之前**一模一樣** —— 這裡動一個字，就會有人突然
+//    多看到或少看到一整頁，而且不會有任何錯誤訊息。
+const PERMS = {
+  assign:{ label:"工作指派", roles:["boss","manager"], legacy:"canAssign",
+           why:"指派毛片給剪輯、排二創、標急件" },
+  find:  { label:"找影片",   roles:["boss","manager"], legacy:"canFindAssets",
+           why:"搜尋 Google Drive 素材庫" },
+  perf:  { label:"影片成效", roles:["boss"], tab:"perf", zhOnly:true,
+           why:"各平台累計觀看、影片排行、帶貨商品排行、剪輯二創成效" },
+  output:{ label:"剪輯產出", roles:["boss","hr"], tab:"output", zhOnly:true,
+           why:"誰做完幾支、審過沒、檔案在哪" },
+  attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
+           why:"打卡紀錄、遲到早退、月報表" },
+  df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
+           why:"成品庫與二創建議" },
+  lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
+           why:"全隊交辦、備片存量、成效" },
+};
+const PERM_KEYS = Object.keys(PERMS);
+function permsOf(u){ return Array.isArray(u&&u.perms) ? u.perms : []; }
+// 這個人有沒有這一項。職位給的 ∪ 逐人給的 ∪ 舊旗標。
+// 沒有指名就看「現在畫面上是誰」—— 員工視角要看**被預覽的那個人**的權限，
+// 不是看管理員自己的，不然預覽出來的畫面是假的。currentUser() 已經處理了 VIEW_AS。
+function hasPerm(key, name){
+  const P=PERMS[key]; if(!P) return false;
+  const who = name || currentUser();
+  const u = (STATE&&STATE.users||[]).find(x=>x&&x.name===who) || null;
+  if(!u){
+    // 名單裡找不到這個人。只有「就是現在登入的本人、而且不是在預覽別人」時，
+    // 才退回 currentRole()（資料還沒載完的那一瞬間要照舊能用）。
+    //
+    // ⚠️ 預覽一個名單上沒有的名字**絕對不能**退回 currentRole()：
+    //    那個函式找不到人時會讀 localStorage 裡**管理員自己**的職位，
+    //    於是預覽就借到了管理員權限。tests/smoke-v196.js 在守這一條。
+    if(name || VIEW_AS) return false;
+    return (P.roles||[]).includes(currentRole());
+  }
+  if((P.roles||[]).includes(u.role||"editor")) return true;
+  if(permsOf(u).indexOf(key)>=0) return true;
+  return !!(P.legacy && u[P.legacy]);   // 舊旗標照樣算數，資料庫不用搬
+}
+// 這一項是職位本來就給的嗎（設定畫面用：那種不必勾，也不給取消）
+function permByRole(key, role){ return ((PERMS[key]||{}).roles||[]).includes(role); }
+function seesDF(){ return hasPerm("df"); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
 // 選過的帳號記在 localStorage。**「有沒有選過」跟「選了哪一家」是兩件事** ——
@@ -504,6 +570,9 @@ async function route(method, path, body){
       if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
       // v196：可以看「找影片」那一頁
       if(body.canFindAssets!=null) patch.canFindAssets=!!body.canFindAssets;
+      // v202：逐人權限（設定→權限那張表）。⚠️ 跟上面幾個一樣，這裡是白名單 ——
+      //       忘了加就是「勾了沒反應」，而且不會有任何錯誤訊息。
+      if(body.perms!=null) patch.perms=(Array.isArray(body.perms)?body.perms:[]).map(String);
       // v185：外包人員（老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到
       // 公司其他人的看板，和成效」）。用旗標不是把名字寫死 —— 換人、多一個人
       // 在設定裡勾一下就好。
@@ -1185,7 +1254,6 @@ function vid(id){ return vidxBuild().byId.get(id); }
 function versionsOfSrc(sourceId){ return vidxBuild().bySrc.get(sourceId)||[]; }
 function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 // 只標出「寵粉／代理招商」；流量型與未分類不顯示（多數都是流量型，不必特別寫）
-function typeTag(t){ if(t!=="寵粉"&&t!=="代理招商") return ""; return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(dataLabel(t))}</span>`; }
 
 // ===================================================================
 // 畫面路由
@@ -1568,7 +1636,7 @@ function openDay(ds){
     // 搜尋照樣打得到編號（那是比對資料，不是顯示）。
     const titleTxt=esc(v?vidName(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTag(v.mainType):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -2437,8 +2505,12 @@ function workReviewCard(me){
             擠到三個螢幕以下。改成不換行、鍵縮短成「已審過」，完整說明留在 title。 */''}
       ${waitingReview.map(v=>`<div style="margin-top:6px;padding:7px 9px;background:var(--panel2);border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:8px;align-items:center">
         <span style="flex:1;min-width:0"><a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>${reviewWaitPill(v)} <span class="muted" style="font-size:12px">${T("完成於","done")} ${esc(String(v.finishedAt||"").slice(0,10))}</span></span>
-        ${/* v184：只有 Regina 按得動 —— 剪輯那邊畫成一個「等她」的字樣，
-              不要留一顆按不動的鍵（那比沒有還糟：會以為系統壞了）。 */''}
+        ${/* v184 曾經只讓 Regina／管理員按得動，剪輯那邊畫成一個「待審」的字樣。
+              2026-09-11 老闆決定復原：「先幫我復原回去給每一位剪輯，先讓他們可以
+              自己按『已審核』」—— Regina 口頭說 OK，剪輯自己按這顆往下走，
+              不必等她一個人幫全部人點（上面那句說明講的就是這個流程）。
+              剩下的「待審」字樣只留給按不得的情況：員工視角（唯讀預覽）。
+              按不動就不要畫鍵 —— 那比沒有還糟：會以為系統壞了。 */''}
         ${canReview()
           ? `<button class="btn sec sm" style="flex:none;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`
           : `<span class="pill wa" style="font-size:10px;flex:none">${T("待審","In review")}</span>`}</div>`).join("")}${waitingReview.length>6?`</div></details>`:""}</div>`:''}
@@ -2496,7 +2568,8 @@ function reviewStateHTML(v){
 function workRecent7Card(me){
   // v184（老闆指定）：「目前的待審的片子，記錄七天，改成沒有上限，
   //   只要還沒審過的都會出現」。七天一到就消失，等於幫人忘記 ——
-  //   而且現在只有 Regina 能審，等超過七天本來就很常見。
+  //   等超過七天本來就很常見（當時只有 Regina 能按「審過」，更常見；
+  //   2026-09-11 復原給剪輯自己按之後，這條規矩照舊有用）。
   //   規矩：**還沒審過的一律留著**，審過的才只留最近七天。
   const from=new Date(Date.now()+288e5-6*864e5).toISOString().slice(0,10);   // 含今天共 7 天
   const list=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
@@ -2535,7 +2608,9 @@ function daySmall(v){
   return ` <span style="font-size:11px;flex:none;color:${col};font-weight:${n>=2?700:400}">${b==="新"?T("今天領","new"):T("第 "+b+" 天","d"+b)}</span>`;
 }
 // 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
-function shpBadge(v){ return (v.channel&&CHANNELS[v.channel])
+function shpBadge(v){ return isRemake(v)
+  ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="二創（原片再剪一次）">二創</span>`
+  : (v.channel&&CHANNELS[v.channel])
   ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
   : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : ''; }
 // 待認領卡裡會跟著搜尋／快選變動的幾塊，各自抽成函式 —— 打字時只換這幾塊，不整頁重繪
@@ -4151,6 +4226,32 @@ function flowRunwayCard(g, okRunway, pct){
   </div>`;
   return runwayCard;
 }
+// 看板：已播出卻沒有上片連結的存量（v197）
+// 為什麼要有這張卡：月排程上只標最近 14 天的（那是補得回來的），更舊的不標。
+// 不標很容易變成「不存在」—— 這張卡就是不讓它消失的那個數字。
+function pubLinkCard(){
+  const {fresh, old}=pubLinkSplit();
+  if(!old.length && !fresh.length) return "";
+  const sample=old.slice().sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")));
+  return `<div class="card" style="padding:12px">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🔗 上片連結</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        ${fresh.length?`<span class="pill em">最近 ${PUB_LINK_DAYS} 天有 ${fresh.length} 支要補</span>`:`<span class="pill ok">最近 ${PUB_LINK_DAYS} 天都補齊了</span>`}
+        ${old.length?`<span class="pill wa">更早的還有 ${old.length} 支</span>`:""}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:8px;line-height:1.8">
+      那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙 ——
+      沒有它，平台的觀看數接不回任何一支片，「哪支流量好、該拿去二創」就永遠判斷不了。
+      ${old.length?`<br>更早的 ${old.length} 支不會在月排程上標紅（人已經想不起來是哪一則了），要靠平台對接自動補。`:""}
+    </div>
+    ${sample.length?`<details class="fold" style="margin-top:8px"><summary style="font-size:13px">看更早那 ${old.length} 支<span class="n">${old.length}</span></summary>
+      <div class="foldbody" style="max-height:260px;overflow:auto">${sample.slice(0,200).map(v=>
+        `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px">
+          <span class="muted">${esc(String(v.scheduledDate||"").slice(5))}</span>
+          <a href="javascript:void(0)" onclick="${vidOpenFn(v)}">${esc(vidTitle(v))}</a></div>`).join("")}
+        ${old.length>200?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${old.length-200} 支</div>`:""}</div></details>`:""}
+  </div>`;
+}
 // 流程中控②：毛片庫存警示。
 // ⚠️ 指派的操作**不在這裡**（老闆決定集中到儀表板）——
 //    儀表板與中控本來各有一份指派毛片，同一件事兩個入口、兩套畫面。
@@ -5296,6 +5397,7 @@ function viewBoard(){
   ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
       dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
   ${flowReviewQueueCard()}
+  ${pubLinkCard()}
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
   <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
@@ -5321,7 +5423,7 @@ let OUT_FILTER="all";                 // all｜ok 審過｜wait 還沒審｜back
 // 要「檢查某個人這個月做了什麼」得先在裡面找到他。主管與人資每個月的動作是
 // 「一個人一個人看」，所以介面就照那個動作分兩層。
 let OUT_WHO="";
-function canSeeOutput(){ return ["boss","hr"].includes(currentRole()); }
+function canSeeOutput(){ return hasPerm("output"); }
 function setOutFilter(k){ OUT_FILTER=OUT_FILTER===k?"all":k; render(); }
 // 點某個人 → 進他的清單。預設就停在「審過」那一格 —— 主管與人資要檢查的
 // 是「這個月審過的成品」，不是全部。其他幾格還在，一按就切。
@@ -6001,11 +6103,7 @@ function unmarkShot(id){ const v=vid(id)||{};
 // ⚠️ 這個權限給的是「派片」那一組事：指派剪輯工作＋標急件（v195 老闆加的）。
 //    **不含**看薪資、改設定、主管看板那些。要再擴張請明確再開一個旗標，
 //    不要偷偷讓它變成半個管理員。
-function canAssignWork(){
-  if(VIEW_AS) return false;
-  if(["boss","manager"].includes(currentRole())) return true;
-  return isSubLead();
-}
+function canAssignWork(){ return !VIEW_AS && hasPerm("assign"); }
 // ── 小主管（v178）─────────────────────────────────────────────────
 // 老闆：「regina 還有鴻儒，干脆把鴻儒變成小主管，但他不用看到儀表版」
 //
@@ -6026,9 +6124,9 @@ function isSubLead(){
 }
 // 誰看得到「主管版」的團隊看板（多出：交辦追蹤全隊、備片存量、成效）
 // ⚠️ 小主管不在裡面 —— 他只管指派影片，不看管理面的東西。
-function seesLeadBoard(){
-  return !VIEW_AS && ["boss","manager","hr"].includes(currentRole());
-}
+// 海外剪輯一律不給 —— 主管看板整頁是中文的。畫面上勾不到，但「勾不到」不等於
+// 「資料裡不會有」（舊資料、手改、將來多一個入口），所以這裡再擋一道。
+function seesLeadBoard(){ return !VIEW_AS && currentRole()!=="intl" && hasPerm("lead"); }
 // v195：小主管（canAssign）也能標 —— 跟 canAssignWork() 同一批人，刻意共用同一個定義，
 //       不要各寫一份條件，不然哪天改了一邊，另一邊會默默不一樣。
 function canMarkUrgent(){ return canAssignWork(); }
@@ -6156,12 +6254,21 @@ function reviewCardHTML(v){
 // 已審過通知「知道了」：連結都補齊後，剪輯自己收起（reviewAck）；在那之前會一直亮在審片進度卡
 function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
 // 剪輯自己按「已審過」：Regina 口頭審過後，剪輯在等審清單按這顆 → 進下一步（上傳雲端＋補連結）
-// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
-// 以前剪輯可以自己按「Regina 審過了」——那等於審核制度形同虛設，而且
-// v184 起產出統計是以「審過」為準的，自己按等於自己給自己打分數。
-function canReview(){ return !VIEW_AS && ["boss","manager"].includes(currentRole()); }
+//
+// v184（老闆指定）曾經改成「只有 Regina／管理員按得動」：理由是自己按等於自己
+// 給自己打分數（v184 起產出統計以「審過」為準）。
+//
+// 2026-09-11 老闆決定改回來：「我前幾天好像把審核完畢的按鈕，只留給 Regina 可以按
+// 其他人的按鈕被取消掉，先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」。
+// 實際跑起來變成 Regina 一個人要幫全部人按，片子卡在待審清單上不會動；而且 Regina
+// 本來就是「口頭說 OK」，這顆鍵的意思一直是「她說可以了，我往下走」，不是審核本身。
+// 真正的審核（通過／退回附原因）在影片庫的審片視窗（reviewVid），那個沒有動。
+//
+// 唯一還擋著的是 VIEW_AS：管理員用「員工視角」預覽別人的畫面時一律唯讀，
+// 不可以代替員工按下去（跟全站其他寫入的規矩一致）。
+function canReview(){ return !VIEW_AS; }
 function editorMarkReviewed(id){ const v=vid(id)||{};
-  if(!canReview()){ toast(T("審片只有 Regina（或管理員）可以按","Only Regina can approve"),true); return; }
+  if(!canReview()){ toast(T("員工視角為唯讀預覽，離開後才能操作","Read-only preview — leave it first"),true); return; }
   if(!confirm(T(`Regina 已經審過「${vidTitle(v)}」了嗎？\n按下後進入下一步：上傳雲端＋補連結。`,
     `Has Regina approved "${vidTitle(v)}"?\nNext step: upload to the cloud & add the links.`))) return;
   write("PUT",`/api/videos/${id}`,{video:{reviewStatus:"通過",reviewedBy:currentUser(),reviewedAt:nowIso()}},
@@ -6482,6 +6589,7 @@ function viewVideosDF(){
   const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
   const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
   return `<h2>影片庫大流</h2>
+  ${remakeCard()}
   <div class="card">
     <div class="muted" style="font-size:13px;line-height:1.7">
       這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
@@ -6512,6 +6620,12 @@ function dfFormHTML(v, id){
     <label style="margin-top:10px">存檔連結（雲端資料夾或檔案）</label>
     <input id="df_drive" value="${esc(v.driveFolder||"")}" placeholder="https://drive.google.com/...">
     <div class="muted" style="font-size:12px;margin-top:4px">貼整條網址就好，清單上只會顯示成一顆「存檔」的連結。</div>
+    ${/* v197：大流的片一樣會排上片，一樣需要那條「發在哪一則」的網址。
+          ⚠️ 這一格要先存在，vidMissing 才可以對大流亮「缺上片連結」——
+             先亮燈再補格子＝指著一個沒地方填的欄位叫人去填（v136 的教訓）。 */''}
+    <label style="margin-top:10px">上片連結（發在平台上的那一則）</label>
+    <input id="df_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.facebook.com/... / https://www.instagram.com/...">
+    <div class="muted" style="font-size:12px;margin-top:4px">之後要對得回觀看數、判斷哪支流量好，靠的就是它。</div>
     <label style="margin-top:10px">文案</label>
     <textarea id="df_copy" style="min-height:96px" placeholder="貼文文案／口播稿">${esc(zhTW(v.videoCopy||""))}</textarea>
     ${id?"":'<div class="muted" style="font-size:12px;margin-top:10px">封面在建好之後按「編輯」上傳。</div>'}`;
@@ -6524,6 +6638,7 @@ function dfAdd(){
     // 直接就是成品：stage 一步到位，不進待處理、不進待認領、不進審片
     const video={ lib:DF_LIB, name, rawName:name,
       videoCopy:zhTW(val("df_copy").trim()), driveFolder:val("df_drive").trim(),
+      publishedLink:val("df_pub").trim(),
       stage:"已完成", published:true, finishedAt:nowIso(), backupDone:true, socialScheduled:true,
       reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),   // 成品不需要審，先標好免得跑進審片清單
       tags:["舊片"] };
@@ -6539,7 +6654,8 @@ function dfEdit(id){
     // 封面不在這裡送 —— 它是上傳當下就寫進資料庫的（coverChosen），這裡再送一次會蓋掉
     return await write("PUT","/api/videos/"+id,
       {video:{name, rawName:name, videoCopy:zhTW(val("df_copy").trim()),
-              driveFolder:val("df_drive").trim()}}, "已更新");
+              driveFolder:val("df_drive").trim(),
+              publishedLink:val("df_pub").trim()}}, "已更新");
   });
 }
 // ── 二創：不另開一筆影片，直接記在原片底下 ────────────────────────
@@ -6801,9 +6917,586 @@ function viewTrash(){
       <tbody>${rows||`<tr><td colspan="4" class="muted">回收桶是空的</td></tr>`}</tbody></table>
     </div></div>`;
 }
-// ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+// ===================================================================
+// 影片的類型：用人標的，不要用數字猜（v199）
+//
+// 老闆要看得出「泛流量內容」跟「賣貨型」的差別。我第一版是**算**出來的 ——
+// 用「每千次觀看有幾則留言」，2‰ 以上算賣貨型。
+//
+// 他退回來的理由一句話就把它打穿了：
+//     「有時候大流量也可能很多人留言，我們真的要留言也會引導觀眾留言。」
+//
+// 留言多是**因為我們叫他們留言**。所以那個數字量的不是觀眾的反應，
+// 是我們自己下的決定。我當時還拿「留言率高的片，89% 文案裡有叫人留言」
+// 當成驗證 —— 那是循環論證，兩個訊號根本不獨立。
+//
+// 而且系統裡早就有這個欄位：mainType，由剪輯選的標籤自動帶出來
+// （寵粉／帶貨／銷售 → 寵粉；代理／招商 → 代理招商）。
+// 正式資料：寵粉 162 支、流量型 71 支、代理招商 31 支。
+// 拿它跟我算的交叉比對：人標「寵粉」的 10 支，我全部算成賣貨型 —— 完全一致；
+// 打架的 0 支。也就是說我那個算法在**有人標的地方沒有加任何價值**，
+// 只在沒人標的 23 支上瞎猜。
+//
+// 所以：類型用 mainType（人標的意圖），留言率只當**數字**擺旁邊。
+// 留言率仍然有用，但它回答的是另一個問題：
+//     寵粉片 → 叫人留言的那句話有沒有奏效
+//     流量型 → 沒叫人留言卻有人留言，那是內容真的打到人（更難得）
+// 兩種都是好事，不該被塞進同一個二選一的標籤裡。
+// ===================================================================
+function vidMetricRows(v){ return Array.isArray(v&&v.metrics)?v.metrics:[]; }
+function vidViews(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.views||0),0); }
+function vidComments(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.comments||0),0); }
+function vidCommentRate(v){ const n=vidViews(v); return n?1000*vidComments(v)/n:0; }
+// 留言率要有意義，分母不能太小 —— 觀看幾百的片，1 則留言就能把它推到任何一邊
+const RATE_MIN_VIEWS=5000;
+function rateShown(v){ return vidViews(v)>=RATE_MIN_VIEWS; }
+// 三種類型互斥且窮盡：一支片不是帶貨、就是招商，要不然就是內容。
+// 從標籤推，推不出來再看文案 —— **不存進資料庫**，每次現算。
+// 現算的好處：舊資料自己會修正。正式資料裡有 28 支存著「流量型」卻掛著
+// 「寵粉」標籤（那 71 支流量型全是 createdAt 空的原始匯入資料，
+//  而現在的建檔規則根本產生不出「流量型」這個值）。
+const TYPE_SELL=["寵粉","帶貨","銷售"];
+const TYPE_BIZ=["代理","招商","代理招商"];
+// 文案裡「叫人行動」的話。⚠️ 這一條跟我被退回的那個留言率規則差在哪：
+// 它讀的是**我們自己寫了什麼**（意圖，直接可讀），不是**觀眾做了什麼**
+// （反應，會被我們自己的 CTA 帶動）。用反應去倒推意圖是循環論證，
+// 用我們寫的字判斷我們的意圖不是。
+const TYPE_CTA=/留言|關鍵字|私訊|下單|限量|寵粉價|市價|特價|快搶|團購/;
+function vidType(v){
+  const tags=(v&&v.tags||[]).map(String);
+  if(tags.some(t=>TYPE_BIZ.includes(t))) return "代理招商";
+  if(tags.some(t=>t.includes("寵粉")||TYPE_SELL.includes(t))) return "寵粉";
+  // 標籤沒填的時候看文案 —— 正式資料 23 支「看起來像流量型」裡有 4 支
+  // 其實是寵粉（片名就寫著「留言：【寶石】」，405 則留言全場最高）
+  if(TYPE_CTA.test([v&&v.name,v&&v.rawName,v&&v.videoCopy].map(x=>String(x||"")).join(" ")))
+    return "寵粉";
+  return "流量型";
+}
+// 成效頁：三種都標（那一頁就是在看分類）
+function typePill(v){
+  const t=vidType(v);
+  return `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`;
+}
+// 清單上：只標帶貨與招商。流量型是多數，每一列都標一次等於沒標。
+function typeTagOf(v){
+  const t=vidType(v);
+  return t==="流量型" ? "" : `<span class="tag ${t==="寵粉"?"sales":""}">${esc(t)}</span>`;
+}
+
+// 每一種類型旁邊那句話 —— 講它的目的，不是講它的好壞
+const TYPE_WHY={"寵粉":"帶貨：文案會引導留言關鍵字","代理招商":"招代理／招商","流量型":"衝觸及，不直接賣"};
+
+// ===================================================================
+// 二創建議（v200）：哪幾支片值得再剪一次
+//
+// 老闆的排法：「綜合排序，流量最重要，第二是留言，日期（第一次上傳日，
+// 多久沒有二次使用，也不能太常用），誰剪的（每一次的二創都會不同人）。」
+// 後來他補充：「誰剪的」不進排序 —— 那是要看誰剪的成效好，是歸因不是派工。
+// 留言的部分他選了「只跟同類型比」。
+//
+// 所以分數 ＝ 熱度 × 隔多久沒用 × 用過幾次
+//   熱度：觀看百分位 × 0.7 ＋ 留言百分位 × 0.3，**在自己的類型裡算**
+//         （寵粉片的留言是叫來的，拿去跟流量型比會系統性佔便宜）
+//   隔多久沒用：剛用過的先別再用
+//   用過幾次：用越多次越該讓它休息
+//
+// ⚠️ 為什麼「隔多久沒用」這條那麼重要：第一次做出來的時候，37 支候選有
+//    36 支被它排除 —— 因為那時只抓了 30 天的資料，而冷卻期也是 30 天，
+//    兩個 30 天互相抵銷，池子必然是空的。補抓半年之後才有東西可排。
+// ===================================================================
+const RMK_MIN_VIEWS=5000;   // 進候選池的門檻（跟老闆說的「至少 5000 點閱」同一條線）
+const RMK_COOL_DAYS=30;     // 這麼近才用過的，先別再用
+const RMK_VIEW_W=0.7;       // 熱度裡觀看佔的比重（老闆：流量最重要）
+function rmkAired(v){
+  const o=[];
+  const d=String(v&&v.scheduledDate||"").slice(0,10); if(d) o.push(d);
+  ((v&&v.usageHistory)||[]).forEach(u=>{ const x=String((u||{}).date||"").slice(0,10); if(x) o.push(x); });
+  // 二創也是一次「再用」。老闆：「多久沒有二次使用，也不能太常用」——
+  // 少了這一段，一支片被二創三次之後，建議選單上還是寫「用過 1 次、83 天沒用」，
+  // 然後它會一直排在最前面被推薦去二創第四次。
+  // 還沒到上片日的不算（下面那道 <=today 會濾掉）——排了不等於出了。
+  if(!isRemake(v)) remakesOfSrc(v&&v.id).forEach(k=>{
+    const x=String((k||{}).scheduledDate||"").slice(0,10); if(x) o.push(x); });
+  return [...new Set(o)].filter(x=>x<=today).sort();
+}
+function rmkDaysSince(v){
+  const a=rmkAired(v); if(!a.length) return null;
+  return Math.round((new Date(today+"T00:00:00")-new Date(a[a.length-1]+"T00:00:00"))/864e5);
+}
+function rmkTimeK(v){ const g=rmkDaysSince(v);
+  if(g==null) return 0; if(g<RMK_COOL_DAYS) return 0;
+  return g<60?0.6:g<90?0.85:1.0; }
+function rmkUsedK(v){ return ({1:1,2:0.7,3:0.4})[rmkAired(v).length]||0; }
+// 百分位：比自己低的算 1 分、一樣的算半分。同分的片不會因為排序順序而分高下。
+function rmkPct(sorted, x){
+  let lo=0, eq=0; sorted.forEach(a=>{ if(a<x) lo++; else if(a===x) eq++; });
+  return sorted.length ? (lo+0.5*eq)/sorted.length : 0;
+}
+// 候選池＝影片庫A ＋ 大流。
+// 正式資料實測：公司到目前為止做過的 5 次二創**全部都在大流**，而大流有 11 支
+// 觀看 5000 以上、也排過上片日。只讀 STATE.videos 的話這 11 支一支都推薦不到 ——
+// 建議選單正好漏掉真正在被二創的那個庫（而且它就掛在大流那一頁上）。
+// 這是出片／再利用面，不是生產面：毛片庫存、待認領、剪輯 KPI 的數字一個都沒動。
+function rmkAll(){ return allLibVideos(); }
+function rmkPool(){
+  return rmkAll().filter(v=>!isVersion(v) && vidViews(v)>=RMK_MIN_VIEWS && rmkAired(v).length);
+}
+// 搜尋要找的東西：片名、原始檔名、文案、**帶貨商品**。
+// 老闆：「有時候是先有商品，再來找能用的影片。」—— 從商品名找回影片，
+// 所以 products 一定要進去，那正是這個用法的入口。
+function rmkHay(v){
+  return [v.name, v.rawName, v.videoCopy, ((v.products||[]).map(p=>p&&p.name).join(" "))]
+    .map(x=>zhTW(String(x||""))).join(" ").toLowerCase();
+}
+// 有搜尋的時候，池子**放寬成整個影片庫**（不限成效、不限 5,000 觀看）——
+// 因為這時候他要的是「能用的影片」，不是「成效好的影片」。
+// 成效只拿來排序，不拿來擋人。
+function rmkSearchPool(q){
+  const k=zhTW(String(q||"")).trim().toLowerCase();
+  if(!k) return [];
+  return rmkAll().filter(v=>!isVersion(v) && rmkHay(v).includes(k));
+}
+function rmkRank(pool){
+  pool=pool||rmkPool();
+  const byType={};
+  pool.forEach(v=>{ (byType[vidType(v)]||(byType[vidType(v)]=[])).push(v); });
+  const out=[];
+  Object.keys(byType).forEach(t=>{
+    const vs=byType[t];
+    const vw=vs.map(vidViews).sort((a,b)=>a-b), cm=vs.map(vidComments).sort((a,b)=>a-b);
+    vs.forEach(v=>{
+      // ⚠️ 沒有成效數字的片，百分位算出來會是 0.5（沒有人比它低、也沒有人比它高），
+      // 看起來像「中等」—— 但「沒有數字」不等於「中等」。那種片一律 0 分，
+      // 讓它落到「先不推薦」那一堆，並且講明是「還沒有成效數字」。
+      const heat=vidViews(v)>0
+        ? RMK_VIEW_W*rmkPct(vw,vidViews(v))+(1-RMK_VIEW_W)*rmkPct(cm,vidComments(v))
+        : 0;
+      out.push({v, heat, tk:rmkTimeK(v), uk:rmkUsedK(v), score:heat*rmkTimeK(v)*rmkUsedK(v),
+                gap:rmkDaysSince(v), used:rmkAired(v).length, type:t});
+    });
+  });
+  return out.sort((a,b)=>b.score-a.score);
+}
+function rmkWhyNot(r){
+  if(r.gap==null) return "還沒排過上片日";
+  if(r.gap<RMK_COOL_DAYS) return `${r.gap} 天前才用過`;
+  if(r.used>=4) return `已經用過 ${r.used} 次`;
+  if(!vidViews(r.v)) return "還沒有成效數字";
+  if(vidViews(r.v)<RMK_MIN_VIEWS) return `觀看只有 ${num(vidViews(r.v))}`;
+  return "";
+}
+let RMK_Q="";
+function rmkSetQ(x){ RMK_Q=x; const el=document.getElementById("rmk_rows");
+  if(el) el.innerHTML=rmkRowsHTML(); }
+// 清單那一塊單獨拆出來 —— 打字的時候只重畫這一塊，不要整頁 render
+// （整頁重畫會讓輸入框失焦，打一個字就要重點一次）
+function rmkRowsHTML(){
+  const q=String(RMK_Q||"").trim();
+  const canPlan=canPlanRemake();   // 排二創是管理員／經理人的事，剪輯只是看得到建議
+  const all = q ? rmkRank(rmkSearchPool(q)) : rmkRank();
+  // 搜尋時一律**照觀看排**，不照二創分數排。
+  // 老闆：「他還是要能被排列出來（如果我要找強片為了某個品項銷售）。」
+  // 有搜尋＝他在找「這個商品最強的那支片」，不是在找「現在最適合二創的片」。
+  // 照分數排的話，一支二創過三次的 10 萬觀看強片會沉到一堆沒人看過的新片下面。
+  // 二創狀態照樣標在旁邊（rmkWhyNot），只標不擋。
+  if(q) all.sort((a,b)=> (vidViews(b.v)-vidViews(a.v)) || (vidComments(b.v)-vidComments(a.v)));
+  const live=all.filter(r=>r.score>0), rest=all.filter(r=>!r.score);
+  const show = q ? all.slice(0,40) : live.slice(0, RMK_OPEN?30:8);
+  const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a>${
+        r.score?"":`<span class="muted" style="font-size:11px">　${esc(rmkWhyNot(r))}</span>`}</td>
+      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
+      <td data-label="帶貨商品">${((r.v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join("、"))||'<span class="muted">—</span>'}</td>
+      <td data-label="觀看" class="pr-v">${vidViews(r.v)?`<b>${num(vidViews(r.v))}</b>`:'<span class="muted">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${vidViews(r.v)?num(vidComments(r.v)):''}</td>
+      <td data-label="多久沒用" class="pr-v">${r.gap==null?'<span class="muted">—</span>':r.gap+" 天"}</td>
+      <td data-label="用過" class="pr-k">${r.used} 次</td>
+      <td data-label="上次誰剪" class="pr-e">${(()=>{ const L=rmkLastCut(r.v);
+        return (esc(L.who)||'<span class="muted">—</span>')
+          + (L.c?`<span class="muted" style="font-size:11px">　上次二創 ${pctTxt(L.c.r)}</span>`:""); })()}</td>
+      ${canPlan?`<td data-label=""><button class="btn sm" style="white-space:nowrap"
+        onclick="event.stopPropagation();openRmkPlan('${r.v.id}')"
+        title="排上片日期、取新片名、指定剪輯">排二創</button></td>`:""}</tr>`;
+  if(!show.length){
+    return `<div class="muted" style="font-size:13px;padding:10px 0">${
+      q ? `找不到「${esc(q)}」。試試商品名、片名裡的關鍵字，或文案裡的一句話。`
+        : "<b>現在沒有推薦的片</b> —— 多半是成效資料還太新（剛用過的片先不推薦），等舊片的成效補進來就會有。"}</div>`;
+  }
+  return `<div class="muted" style="font-size:12px;margin-bottom:6px">${
+      q ? `找到 ${all.length} 支${all.length>40?"（列前 40 支）":""}，${live.length} 支現在就可以二創`
+        : `候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest.length?`，其中 ${rest.length} 支現在先不推薦`:""}`
+    }</div>
+    <div class="${show.length>10?'vidscroll':''}">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e">${canPlan?'<col class="pr-k">':''}</colgroup>
+    <thead><tr><th>影片</th><th>類型</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th>${canPlan?"<th></th>":""}</tr></thead>
+    <tbody>${show.map(row).join("")}</tbody></table></div>
+    ${(!q && live.length>8)?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`;
+}
+function remakeCard(){
+  if(!rmkAll().some(v=>vidViews(v)>0)) return "";
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>二創建議</b>
+      <span class="muted" style="font-size:12px">依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比</span>
+    </div>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
+             oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
+    </div>
+    <div id="rmk_rows" style="margin-top:8px">${rmkRowsHTML()}</div>
+  </div>`;
+}
+let RMK_OPEN=false;
+function rmkToggle(){ RMK_OPEN=!RMK_OPEN; render(); }
+
+// ===================================================================
+// 二創流程（第三步・v201）
+// ===================================================================
+// 老闆：「一樣要有一個人先安排片源的『上片日期』，和新的片名（原始腳本名和原毛片名
+//        禁止修改）給指定的剪輯，他們收到（才等同新片有拿到毛片）才開始剪，
+//        然後剪完再次上傳後我才能再回到第一步，再次追蹤。」
+//
+// 二創＝一筆**版本殼**（channel="remake" ＋ sourceVideoId），跟蝦皮／馬來／英／泰
+// 同一個形狀。排日期、指派、認領計時、審片、完成、拖延警示、團隊看板那一整套
+// 因此全部沿用 —— 不必為二創再寫第二套流程（兩套流程最後一定會長歪成兩個樣子）。
+//
+// 跟那四條線只差兩件事：
+//   ① 它跟原片走**同一本月曆**（見 schedLineOf）—— 二創就是台灣當天要出的片
+//   ② 片名由排片人現取，不自動加後綴；原毛片名沿用原片並鎖住（老闆指定）
+//
+// ⚠️ 殼的 lib 永遠是 ""（影片庫A），就算原片在大流也一樣。
+//    生產面（每日工作、待認領、團隊看板）讀的是 STATE.videos，大流那半邊已經被
+//    decorate 切到 videosDF 去了 —— 殼放大流＝被指派的剪輯永遠看不到自己有工作。
+const RMK_CH="remake";
+function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoId||"")); }
+// 誰可以排二創 —— 走既有的「工作指派」權限（canAssignWork），不另外發明一套。
+// 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
+// 那個權限系統裡已經有了：設定→成員的「工作指派」勾勾（users.canAssign），
+// 泓儒早就打勾了。排二創跟指派毛片本來就是同一件事（把工作分給誰），
+// 共用同一個開關，換人的時候只要改一個地方 —— 兩份定義遲早會不一致。
+function canPlanRemake(){ return canAssignWork(); }
+// 原片 → 它的二創。建一次表，不要每問一支就掃一次全庫 ——
+// 排序那裡是「每支片都問一次」，掃全庫的話 1,045 支就變成一百萬次比對。
+// 快取靠陣列本身的身分認（跟 allLibVideos 同一招）：資料一換就自動重建。
+let RMKX=null, RMKX_SRC=null;
+function rmkIndex(){
+  const a=(STATE&&STATE.videos)||[];
+  if(RMKX && RMKX_SRC===a) return RMKX;
+  const m={};
+  a.forEach(v=>{ if(isRemake(v)){ const k=String(v.sourceVideoId); (m[k]||(m[k]=[])).push(v); } });
+  Object.keys(m).forEach(k=>m[k].sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||""))));
+  RMKX=m; RMKX_SRC=a; return m;
+}
+function remakesOfSrc(id){ return rmkIndex()[String(id||"")] || []; }
+function rmkSrcOf(v){ return isRemake(v) ? vid(v.sourceVideoId) : null; }
+function rmkNoOf(v){ const s=rmkSrcOf(v); if(!s) return 0;
+  return remakesOfSrc(s.id).findIndex(x=>x.id===v.id)+1; }
+// 最後一次二創是誰剪的。建議選單的「上次誰剪」要看這個，不是原片的剪輯 ——
+// 要排下一次的人想知道的是「上一次交給誰」，不是半年前第一次是誰剪的。
+// 「上次誰剪」跟「上次二創幾成」必須是**同一個人、同一支**。
+// 第一版分成兩個函式各自取，畫面上就出現「巧芸　上次二創 50%」——
+// 那 50% 是陳鋒剪的，巧芸那支還在剪。同一格裡兩個數字指到不同的人，看的人一定誤會。
+// 所以：有成績的話，人跟數字都取**最近一支有成績的**；都還沒有成績，就只顯示
+// 最近被指派的那個人、不給數字（沒有數字不等於零）。
+function rmkLastCut(v){
+  const ks=remakesOfSrc(v&&v.id);
+  for(let i=ks.length-1;i>=0;i--){
+    const c=rmkCompare(ks[i]);
+    if(c.r!=null) return {who:rmkEditorOf(ks[i]), c};
+  }
+  const done=ks.filter(k=>rmkEditorOf(k));
+  const k=done[done.length-1];
+  return {who: k?rmkEditorOf(k):String((v&&(v.editor||v.claimedBy))||""), c:null};
+}
+function rmkLastEditor(v){ return rmkLastCut(v).who; }
+// 老闆問的四件事之一是「要不要再次剪這一支」——
+// 上次剪出來只有原本的兩成，跟上次剪得比原本還好，是兩個完全不同的決定。
+function rmkLastResult(v){ return rmkLastCut(v).c; }
+// 原片第一則貼文到今天幾天。比值旁邊一定要寫這個數字。
+// 老闆選的是「照算，也拿來排剪輯」—— 那就更要把年齡擺出來：原片累積了 155 天、
+// 二創才跑 30 天，比值天生就難看。看得到年齡，才分得出「這個剪輯不行」
+// 還是「這支本來就比得不公平」。
+function rmkSrcAgeDays(v){
+  const ats=((v&&v.metrics)||[]).map(m=>String((m||{}).postAt||"").slice(0,10)).filter(Boolean).sort();
+  if(!ats.length) return null;
+  return Math.round((new Date(today+"T00:00:00")-new Date(ats[0]+"T00:00:00"))/864e5);
+}
+// 二創比原片幾成。回 null＝其中一邊還沒有數字 ——
+// 沒有數字不等於零，也不等於中等（v200 那個 0.5 百分位就是這樣來的）。
+function rmkRatio(k){ const s=rmkSrcOf(k); if(!s) return null;
+  const a=vidViews(s); if(!a) return null;
+  const b=vidViews(k); if(!b) return null;
+  return b/a; }
+// 二創要掛在誰底下。二創的二創一律掛回**原片** ——
+// 成效永遠拿原片當基準；鏈子一節一節接下去，「比原本好還是壞」會越比越糊塗
+// （第 3 版比第 2 版好 8%、第 2 版比原片差 60%，那第 3 版到底行不行？）。
+function rmkPlanTarget(v){ return isRemake(v) ? (vid(v.sourceVideoId)||v) : v; }
+function rmkStagePill(k){
+  if(dispStage(k)==="待審核") return `<span class="pill wa" style="font-size:10px">待審核</span>`;
+  if(k.published||k.stage==="已完成"||k.stage==="已上片") return `<span class="pill ok" style="font-size:10px">完成</span>`;
+  if(k.stage==="剪輯中") return `<span class="pill wa" style="font-size:10px">剪輯中</span>`;
+  return `<span class="pill" style="font-size:10px">${k.claimedBy?"待剪":"等他收到"}</span>`;
+}
+
+// ── 排二創：排上片日期 ＋ 取新片名 ＋ 指定剪輯 ───────────────────────
+// 這三格全是必填。少任何一格，這支片就會卡在某個沒有人會看的地方：
+// 沒日期＝月曆上看不到；沒片名＝清單上跟原片長得一模一樣；沒指定人＝沒有人知道該他剪。
+function openRmkPlan(sourceId){
+  if(dbBlocked()) return;
+  if(!canPlanRemake()){ toast("只有管理員／經理人可以排二創",true); return; }
+  const s0=vid(sourceId);
+  if(!s0){ toast("找不到這支影片",true); return; }
+  const s=rmkPlanTarget(s0);
+  const eds=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
+  if(!eds.length){ toast("成員名單裡還沒有剪輯可以指派",true); return; }
+  const done=remakesOfSrc(s.id);
+  const hist=done.length?`<div class="muted" style="font-size:12px;margin-top:10px;line-height:1.8">
+      這支已經二創過 ${done.length} 次：<br>${done.map((k,i)=>
+        `${i+1}. ${esc(zhTW(k.name||""))}・${esc(k.editor||k.claimedBy||k.assignedTo||"")}・${
+          esc(String(k.scheduledDate||"").slice(0,10))||"沒排日期"}`).join("<br>")}</div>`:"";
+  const copy=String(s.videoCopy||"");
+  showModal("排二創："+zhTW(vidTitle(s)), `
+    <div class="muted" style="font-size:13px;line-height:1.7">
+      排好之後這支會出現在指定剪輯的「每日工作」，他按 <b>認領開始剪</b> 才算拿到舊片素材、
+      才開始計剪片天數。剪完存回同一個資料夾，走原本的審片、上片流程。
+    </div>
+    <div class="card" style="background:var(--panel2);margin-top:10px">
+      <div style="font-size:13px"><b>原毛片名</b>　${esc(zhTW(s.rawName||s.name||""))||'<span class="muted">—</span>'}</div>
+      <div style="font-size:13px;margin-top:4px"><b>原始腳本</b>　${
+        esc(zhTW(copy.slice(0,60)))||'<span class="muted">—</span>'}${copy.length>60?"…":""}</div>
+      <div class="muted" style="font-size:11px;margin-top:6px">
+        這兩樣二創不會動到，也鎖起來不給改 —— 改掉就對不回原片，成效沒辦法前後比。</div>
+    </div>
+    <label style="margin-top:10px">新的片名 <span class="muted" style="font-weight:400">（這次二創要用的名字）</span></label>
+    <input id="rp_name" placeholder="例：${esc(zhTW(String(s.name||s.rawName||"").slice(0,12)))}－二創${done.length+1}">
+    <label style="margin-top:10px">上片日期</label>
+    <input type="date" id="rp_date">
+    <label style="margin-top:10px">指定剪輯</label>
+    <select id="rp_editor"><option value="">請選一個人</option>${
+      eds.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+    ${hist}`, async ()=>{
+    const name=zhTW(val("rp_name").trim());
+    const date=String(val("rp_date")||"").slice(0,10);
+    const who=String(val("rp_editor")||"").trim();
+    if(!name){ toast("要先取一個新的片名",true); return false; }
+    if(!date){ toast("要先排上片日期",true); return false; }
+    if(!who){ toast("要指定一個剪輯",true); return false; }
+    const rec=newVideoRecord({
+      channel:RMK_CH, sourceVideoId:s.id, lib:"",            // 殼一律放影片庫A，理由見上面那段
+      rawName:String(s.rawName||s.name||""),                 // 原毛片名沿用，鎖住不給改
+      name,                                                  // 新片名（排片人現取）
+      videoCopy:String(s.videoCopy||""),                     // 口播稿是同一支片的，沿用
+      driveFolder:String(s.driveFolder||"").trim(),          // 剪完存回同一個資料夾
+      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+      productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
+      tags:(s.tags||[]).slice(), subTag:(s.tags||[])[0]||"",
+      platforms:(s.platforms||[]).slice(),                   // 成效歸戶靠「上片日期＋帳號」，平台先跟著原片
+      stage:"待處理", assignedTo:who, scheduledDate:date });
+    const ok=await write("POST","/api/videos",{video:rec}, "已排給 "+who+"："+date+" 上片");
+    if(ok) render();
+    return ok!==false;
+  });
+}
+
+// ── 原片視窗的「二創」卡：第幾次、誰剪的、排哪天、比原片如何 ─────────
+function rmkVersionsCard(v){
+  if(!v||!v.id) return "";
+  if(isRemake(v)) return lineBackToSourceCard(v,
+    {head:"原片（這支是它的二創）", tail:"第 "+rmkNoOf(v)+" 次二創"});
+  const kids=remakesOfSrc(v.id); if(!kids.length) return "";
+  const age=rmkSrcAgeDays(v), sv=vidViews(v);
+  const rows=kids.map((k,i)=>{ const c=rmkCompare(k);
+    return `<tr>
+      <td data-label="第幾次">${i+1}</td>
+      <td data-label="片名"><a href="javascript:void(0)" onclick="${vidOpenFn(k)}">${esc(zhTW(k.name||k.rawName||""))}</a></td>
+      <td data-label="剪輯">${esc(k.editor||k.claimedBy||k.assignedTo||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="狀態">${rmkStagePill(k)}</td>
+      <td data-label="上片日">${esc(String(k.scheduledDate||"").slice(0,10))||'<span class="muted">—</span>'}</td>
+      <td data-label="觀看">${vidViews(k)?num(vidViews(k)):'<span class="muted">—</span>'}</td>
+      <td data-label="比原片">${c.r==null?'<span class="muted">—</span>'
+        :`<b>${pctTxt(c.r)}</b>${c.basis==="same"?`<span class="muted" style="font-size:11px">　同齡 ${RMK_CMP_DAYS} 天</span>`:""}`}</td></tr>`;
+  }).join("");
+  const allSame=kids.length>0 && kids.every(k=>rmkCompare(k).basis==="same");
+  return `<div class="card" style="background:var(--panel2)"><b>二創（${kids.length}）</b>
+    <span class="muted" style="font-size:12px">原片 ${sv?num(sv)+" 觀看":"還沒有成效數字"}${
+      age!=null?"・上片 "+age+" 天":""}</span>
+    <table class="responsive" style="margin-top:8px"><thead><tr><th>第幾次</th><th>片名</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>觀看</th><th>比原片</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    ${(()=>{ const t=rmkTrend(v); if(!t) return "";
+      return `<div style="margin-top:8px;font-size:12.5px">
+        <b>${t.vals.map(x=>pctTxt(x)).join(" → ")}</b>${
+          t.read?`<span class="muted">　${esc(t.read)}</span>`
+                :`<span class="muted">　有高有低，還看不出是題材還是剪輯</span>`}</div>`; })()}
+    ${(!allSame&&age!=null&&age>60)?`<div class="muted" style="font-size:11px;margin-top:6px">
+      ⚠ 原片那個數字是 ${age} 天累積來的，二創才剛開始跑 —— 比值天生偏低，看的時候要把這件事算進去。</div>`:""}
+  </div>`;
+}
+// ── 同齡比較：有快照才算得出來 ───────────────────────────────────
+// Meta 只給「到現在為止的累計」，所以原片（半年前上的）跟二創（上了 30 天）
+// 的數字天生不同基準。後端從 v201 開始每次同步存一個點（metricsHist），
+// 存滿之後這裡就能拿「原片第 30 天」對「二創第 30 天」。
+// 老片補不回來 —— 那種只能用累計比，畫面上會標出原片幾天。
+const RMK_CMP_DAYS=30;
+function rmkHist(v){ return Array.isArray(v&&v.metricsHist)?v.metricsHist:[]; }
+// 這支片「上片後第 n 天」的觀看。每 3 天一個點，所以取第一個 age>=n 的點。
+// ⚠️ 要**每一則貼文都有**那個點才算數：一支片在兩個帳號各發一次，只拿到其中
+//    一則的數字就去比，等於拿半支片比整支片 —— 那比沒有數字更糟。
+function rmkViewsAtAge(v, n){
+  const post={}; ((v&&v.metrics)||[]).forEach(m=>{
+    const pid=String((m||{}).postId||""); const pa=String((m||{}).postAt||"").slice(0,10);
+    if(pid&&pa) post[pid]=pa; });
+  const ids=Object.keys(post); if(!ids.length) return null;
+  const best={};
+  rmkHist(v).forEach(h=>{
+    const pid=String((h||{}).postId||""), d=String((h||{}).d||"").slice(0,10);
+    if(!post[pid]||!d) return;
+    const age=Math.round((new Date(d+"T00:00:00")-new Date(post[pid]+"T00:00:00"))/864e5);
+    if(age<n) return;
+    if(best[pid]==null||age<best[pid].age) best[pid]={age, views:+h.views||0};
+  });
+  if(Object.keys(best).length!==ids.length) return null;   // 有貼文還沒跑到第 n 天
+  return ids.reduce((s,pid)=>s+best[pid].views, 0);
+}
+// 這一支二創跟原片怎麼比。回 {r, basis, age}：
+//   basis="same"＝兩邊都有第 30 天的數字，這個比值是真的
+//   basis="total"＝只能拿累計比，age 就是原片累積了幾天（一定要寫出來）
+function rmkCompare(k){
+  const s=rmkSrcOf(k);
+  if(!s) return {r:null, basis:"", age:null};
+  const a=rmkViewsAtAge(s,RMK_CMP_DAYS), b=rmkViewsAtAge(k,RMK_CMP_DAYS);
+  if(a&&b) return {r:b/a, basis:"same", age:null};
+  return {r:rmkRatio(k), basis:"total", age:rmkSrcAgeDays(s)};
+}
+function rmkBasisNote(c){
+  if(c.basis==="same") return "同齡 "+RMK_CMP_DAYS+" 天";
+  return c.age!=null ? ("原片累積 "+c.age+" 天") : "";
+}
+
+// ── 剪輯二創成效：「你能不能比原本更好」──────────────────────────
+// 老闆：「剪輯成效一定是前原本來比較，因為我們會選出來都是比較好的，所以二剪要看的
+//        是，你能不比原本更好，如果是合理衰退，比例多少合不合理，跟其他剪輯比的是
+//        這個（好的東西給誰剪是浪費的感覺，這樣分配的人才知道怎麼配，或是有人剪很快，
+//        但都亂剪）。」
+function rmkShells(){ return (STATE.videos||[]).filter(isRemake); }
+function rmkEditorOf(k){ return String((k&&(k.editor||k.claimedBy||k.assignedTo))||""); }
+// 用中位數不用平均：一支爆片就能把一個人的平均拉到天上，那不叫穩定。
+function rmkMedian(a){
+  if(!a.length) return null;
+  const s=a.slice().sort((x,y)=>x-y), m=s.length>>1;
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+}
+function rmkEditorStats(){
+  const by={};
+  rmkShells().forEach(k=>{
+    const n=rmkEditorOf(k); if(!n) return;
+    const o=by[n]||(by[n]={name:n, rs:[], ages:[], pend:0});
+    const c=rmkCompare(k);
+    if(c.r==null){ o.pend++; return; }      // 還沒有數字：算在「進行中」，不進比值
+    o.rs.push(c.r);
+    const a=rmkSrcAgeDays(rmkSrcOf(k)); if(a!=null) o.ages.push(a);
+  });
+  return Object.keys(by).map(n=>{ const o=by[n];
+    return Object.assign(o, { n:o.rs.length, med:rmkMedian(o.rs),
+      best:o.rs.length?Math.max.apply(null,o.rs):null,
+      worst:o.rs.length?Math.min.apply(null,o.rs):null,
+      age:o.ages.length?Math.round(o.ages.reduce((a,b)=>a+b,0)/o.ages.length):null }); })
+    .sort((a,b)=>(b.med==null?-1:b.med)-(a.med==null?-1:a.med));
+}
+const pctTxt=(r)=>Math.round(r*100)+"%";
+let RMK_LIST_OPEN=false;
+function rmkListToggle(){ RMK_LIST_OPEN=!RMK_LIST_OPEN; render(); }
+function rmkPerfCard(){
+  const shells=rmkShells(); if(!shells.length) return "";
+  const st=rmkEditorStats();
+  const rows=st.map(o=>`<tr>
+      <td data-label="剪輯">${esc(o.name)}</td>
+      <td data-label="有數字的" class="pr-k">${o.n} 支${o.pend?`<span class="muted" style="font-size:11px">　進行中 ${o.pend}</span>`:""}</td>
+      <td data-label="比原片（中位數）" class="pr-v">${o.med==null?'<span class="muted">—</span>':"<b>"+pctTxt(o.med)+"</b>"}</td>
+      <td data-label="最好" class="pr-v">${o.best==null?'<span class="muted">—</span>':pctTxt(o.best)}</td>
+      <td data-label="最差" class="pr-v">${o.worst==null?'<span class="muted">—</span>':pctTxt(o.worst)}</td>
+      <td data-label="他分到的原片" class="pr-v">${o.age==null?'<span class="muted">—</span>':"平均 "+o.age+" 天"}</td></tr>`).join("");
+  const list=shells.slice().sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||"")))
+    .map(k=>{ const s=rmkSrcOf(k), c=rmkCompare(k), note=rmkBasisNote(c);
+      return `<tr style="cursor:pointer" onclick="${vidOpenFn(k)}">
+      <td data-label="原片">${s?esc(zhTW(vidTitle(s))):'<span class="muted">原片不見了</span>'}</td>
+      <td data-label="二創"><a href="javascript:void(0)">${esc(zhTW(k.name||k.rawName||""))}</a></td>
+      <td data-label="剪輯">${esc(rmkEditorOf(k))||'<span class="muted">—</span>'}</td>
+      <td data-label="狀態" class="pr-k">${rmkStagePill(k)}</td>
+      <td data-label="上片日" class="pr-k">${esc(String(k.scheduledDate||"").slice(0,10))||'<span class="muted">—</span>'}</td>
+      <td data-label="原片觀看" class="pr-v">${s&&vidViews(s)?num(vidViews(s)):'<span class="muted">—</span>'}</td>
+      <td data-label="二創觀看" class="pr-v">${vidViews(k)?num(vidViews(k)):'<span class="muted">—</span>'}</td>
+      <td data-label="比原片" class="pr-v">${c.r==null?'<span class="muted">還沒有數字</span>'
+        :`<b>${pctTxt(c.r)}</b>${note?`<span class="muted" style="font-size:11px">　${esc(note)}</span>`:""}`}</td></tr>`; }).join("");
+  const anySame=shells.some(k=>rmkCompare(k).basis==="same");
+  return `<div class="card"><b>剪輯二創成效</b>
+    <span class="muted" style="font-size:12px">比值＝二創觀看 ÷ 原片觀看；用中位數排（一支爆片不代表穩定）</span>
+    <div class="${st.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-v"><col class="pr-v"><col class="pr-v"><col class="pr-v"></colgroup>
+    <thead><tr><th>剪輯</th><th>有數字的</th><th>比原片（中位數）</th><th>最好</th><th>最差</th><th>他分到的原片</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6" class="muted">還沒有二創有成效數字</td></tr>'}</tbody></table></div>
+    ${anySame?"":`<div class="muted" style="font-size:11px;margin-top:6px">
+      ⚠ 現在的比值是拿<b>累計</b>算的：原片累積了好幾個月，二創才跑幾週，比值天生偏低。
+      「他分到的原片」那一欄就是在講這件事 —— 有人平均分到 150 天的老片，比值難看不一定是他的問題。
+      系統從現在開始存每 3 天一個點，等新片累積兩三個月，就會自動換成「同齡 ${RMK_CMP_DAYS} 天對 ${RMK_CMP_DAYS} 天」。</div>`}
+    <button class="btn sm" style="margin-top:8px" onclick="rmkListToggle()">${
+      RMK_LIST_OPEN?"收起每一支":`看每一支二創（${shells.length}）`}</button>
+    ${RMK_LIST_OPEN?`<div class="${shells.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col><col><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-v"><col class="pr-v"></colgroup>
+    <thead><tr><th>原片</th><th>二創</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>原片觀看</th><th>二創觀看</th><th>比原片</th></tr></thead>
+    <tbody>${list}</tbody></table></div>`:""}
+  </div>`;
+}
+
+// 原片的「原毛片名／原始片名」該不該鎖。
+// 老闆：「原始腳本名和原毛片名禁止修改」。鎖的理由不只是規矩 ——
+// 成效是拿這些欄位去跟平台貼文比對的，改掉名字＝那支片的成效整批對不回來。
+// 這支**自己**出去過沒有（上片日到了／已經上片）。
+// 不看它的二創 —— 鎖的理由是「平台上已經有這支的貼文在對比成效」，那是它自己的事。
+function rmkSelfAired(v){
+  if(!v) return false;
+  if(v.published || v.stage==="已上片") return true;
+  const d=String(v.scheduledDate||"").slice(0,10);
+  if(d && d<=today) return true;
+  return ((v.usageHistory)||[]).some(u=>{
+    const x=String((u||{}).date||"").slice(0,10); return !!x && x<=today; });
+}
+function rmkNameLock(v){
+  if(!v) return "";
+  // 老闆：「鎖死，是在影片上架日過後再鎖，以免要修改。」
+  // 上片之前名字怎麼改都沒關係 —— 平台上還沒有這支片的貼文，沒有東西會對不上，
+  // 而那正是最需要能改的時候（打錯字、片名臨時要換）。
+  // 上片日過了才鎖：那時候成效已經靠這幾個欄位在比對，改掉就整批對不回來。
+  if(!rmkSelfAired(v)) return "";
+  if(isRemake(v)) return "這支二創已經上片，原始片名鎖起來 —— 改掉就對不回原片了";
+  if(v.id && remakesOfSrc(v.id).length) return "這支已經上片、而且有二創，原始片名鎖住 —— 改掉成效會對不回來";
+  return "";
+}
+// 一支片被二創好幾次之後，是「題材到頂了」還是「某個人剪壞」——
+// 老闆：「如果已經剪了二創 3 次，每次都退步，那就話題不行了，還是剪輯爛。」
+// 兩者的形狀不一樣：題材到頂是**一路往下**，剪輯問題是**同一支片有高有低**。
+// 形狀不明顯就只把數字排出來，不下判斷（兩三個點本來就撐不起結論）。
+function rmkTrend(v){
+  const rs=remakesOfSrc(v&&v.id).map(k=>({k, c:rmkCompare(k)})).filter(x=>x.c.r!=null);
+  if(rs.length<2) return null;
+  const vals=rs.map(x=>x.c.r);
+  const hi=Math.max.apply(null,vals), lo=Math.min.apply(null,vals);
+  const people=new Set(rs.map(x=>rmkEditorOf(x.k)).filter(Boolean));
+  let read="";
+  if(rs.length>=3 && vals.every((x,i)=>i===0||x<vals[i-1]))
+    read="每一次都比上一次差 —— 比較像這個題材到頂了，不是哪個人剪壞";
+  else if(people.size>1 && hi>=0.5 && hi>=lo*1.8)
+    read="同一支片，有人剪到 "+pctTxt(hi)+"、有人只剩 "+pctTxt(lo)+" —— 差在剪輯，不是題材";
+  return {rows:rs, vals, read};
+}
+
+// ===== 影片成效：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+// v202 改名：分頁本來叫「影片流量」，頁面標題卻寫「平台成效」—— 同一頁兩個名字。
+// 老闆：「影片流量這個名字不好，不明意義」。三處（分頁、標題、權限表）統一成「影片成效」。
+// 影片視窗裡那張卡照舊叫「平台成效」—— 那是「這一支片在各平台的成績」，是另一件事。
 let PERF_PLAT=null;   // 選中的平台（null＝全部平台）
+let PERF_KIND=null;   // 選中的類型（null＝全部；值是 mainType，或 "（沒標）"）
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
+function perfSetKind(k){ PERF_KIND=(PERF_KIND===k)?null:k; render(); }
 function num(n){ return (+n||0).toLocaleString(); }
 function viewPerf(){
   const vids=STATE.videos||[];
@@ -6815,7 +7508,15 @@ function viewPerf(){
   // 影片排行（依選中平台，否則全部）
   const inScope=r=> !PERF_PLAT || r.platform===PERF_PLAT;
   const perVid={}; rows.filter(inScope).forEach(r=>{ const o=perVid[r.v.id]||(perVid[r.v.id]={v:r.v,views:0,likes:0}); o.views+=(+r.views||0); o.likes+=(+r.likes||0); });
-  const vRank=Object.values(perVid).sort((a,b)=>b.views-a.views).slice(0,50);
+  // 分類看的是「這支片的全部成效」，不是選中平台那一份 —— 只看一個帳號的留言率
+  // 會因為那個帳號的貼文剛好沒帶 CTA 就翻面，那不是這支片的性質。
+  const vAll=Object.values(perVid);
+  const kindOf=(o)=>vidType(o.v);
+  const kindCount={};
+  vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
+  const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
+  const vRank=vAll.filter(o=>!PERF_KIND||kindOf(o)===PERF_KIND)
+                  .sort((a,b)=>b.views-a.views).slice(0,50);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
     (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
@@ -6826,24 +7527,33 @@ function viewPerf(){
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
       <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
 
-  return `<h2>平台成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
+  return `<h2>影片成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
-    <b>尚無平台成效數據</b>
-    <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">等平台接入(Supabase 後端 + TikTok/IG/FB 授權)後，會以<b>影片標題</b>自動比對貼文，把觀看、讚等填進來，這頁就會自動出現各平台總成效、影片排行、商品排行。<br>備註：<b>「本週」</b>總成效需要每週快照(後端一併建)；<b>商品實際「銷售」</b>需另接 Shopline 訂單，這裡顯示的是觀看/觸及。</div>
+    <b>尚無影片成效數據</b>
+    <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
-  <div class="card"><b>影片排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）'}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
+  ${hasData?`<div class="row" style="gap:10px;margin-bottom:6px">${
+    kindKeys.map(k=>
+    `<button class="card" onclick="perfSetKind('${esc(jsEsc(k))}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:140px;flex:1">
+      <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
+      <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
+    }</div>`:''}
+  <div class="card"><b>影片排行${PERF_KIND?`（只看${esc(PERF_KIND)}）`:(PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）')}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
     <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
-    <table class="responsive"><thead><tr><th>#</th><th>影片</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>讚</th></tr></thead>
+    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-e"><col class="pr-p"><col class="pr-v"><col class="pr-c"></colgroup>
+    <thead><tr><th>#</th><th>影片</th><th>類型</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>留言</th></tr></thead>
     <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
       <td data-label="#">${i+1}</td>
       <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
+      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
       <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="帶貨商品">${prodCell(r.v)}</td>
-      <td data-label="觀看"><b>${num(r.views)}</b></td>
-      <td data-label="讚">${num(r.likes)}</td></tr>`).join("")||`<tr><td colspan="6" class="muted">尚無資料</td></tr>`}</tbody></table>
+      <td data-label="觀看" class="pr-v"><b>${num(r.views)}</b></td>
+      <td data-label="留言" class="pr-c">${num(vidComments(r.v))}${rateShown(r.v)?`<span class="muted" style="font-size:11px">・${vidCommentRate(r.v).toFixed(1)}‰</span>`:''}</td></tr>`).join("")||`<tr><td colspan="7" class="muted">${PERF_KIND?'這個類型還沒有影片':'尚無資料'}</td></tr>`}</tbody></table>
     </div>
   </div>
+  ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
@@ -6886,11 +7596,13 @@ function vidMetricsCard(v){
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
   const html = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
-      <b>平台成效</b>${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</div>
+      <b>平台成效</b><span class="row" style="gap:6px">${typePill(v)}${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</span></div>
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
-      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
-      :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。平台接入後，會以「影片標題」自動比對 TikTok／IG／FB 的貼文，把觀看、讚等填進這裡。</div>`}
+      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">${
+        rateShown(v)?`每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言　・　`:''
+      }更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
+      :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。同步工作會以<b>貼文文案</b>比對 IG／FB 的貼文，把觀看、讚、留言填進這裡。對不到的話，通常是這支片沒有文案、或平台上用了完全不同的行銷文案發。</div>`}
   </div>` : "";
   // 跨語言：源片列出各語言版本（中英一起看）；英文版顯示回連源片
   return html;
@@ -7024,11 +7736,16 @@ function vidImplied(){
   if(VID_UNSCHED) out.push("date");           // 勾了「只看還沒排日期的」
   return out;
 }
-// 「上片連結」只有二創殼追得到 —— 它的編輯視窗有那一格（i_pub／{p}_pub）。
-// 台灣源片的編輯視窗**根本沒有這個輸入格**，所以那個欄位對源片永遠是空的
-// （實際資料：610 支影片有 0 支填得起來）。拿一個填不了的欄位當缺漏，
-// 等於對所有人亮一個永遠熄不掉的紅字 —— 燈號就失去意義了，看到紅色也不會再有人當一回事。
-function needPostLink(v){ return isVersion(v); }
+// 「上片連結」誰該有。
+//
+// v136 當初把源片排除掉，理由是「台灣源片的編輯視窗根本沒有這個輸入格」——
+// 拿一個填不了的欄位當缺漏，等於亮一個永遠熄不掉的紅字，燈號整組失去意義。
+// 那個判斷完全正確，而且救過這個系統一次。
+//
+// v197（老闆指定）把它放回來，但**先補上了輸入格**（編輯視窗「上片後」那一區的
+// e_pub），前提才成立。順序不能反 —— 先開燈號再補格子，中間那段時間就是
+// 對 400 多支片亮著一個沒人能處理的紅字。
+function needPostLink(v){ return isVersion(v) || needsPubLink(v); }
 // v184（老闆指定）：「是寵粉或銷售的我要有地方要提醒他們，輸入商品名稱
 // 還有這個商品的官網連結」。這兩種標籤就是要導購的片 —— 沒有商品名稱與
 // 官網連結，觀眾看完不知道去哪買，那支片等於白剪。
@@ -7045,6 +7762,40 @@ function prodMissing(v){
   return !hasName && !hasUrl ? {k:"prod", zh:"缺商品與連結", en:"needs product & link"}
        : !hasName          ? {k:"prod", zh:"缺商品名稱",   en:"needs product name"}
                            : {k:"prod", zh:"缺商品官網連結", en:"needs product URL"};
+}
+// ── 缺上片連結：只提醒「還補得回來」的那幾支（v197）──────────────────
+// 正式資料實測（2026-09-11）：416 支已播出的片一支都沒有上片連結，
+// 最早可以追到五月。全部標紅的話整個月排程從五月紅到現在 —— 那就變成
+// 「全部都是第一優先＝沒有第一優先」，跟急件那顆紅燈一樣會被無視。
+//
+// 所以只標最近 PUB_LINK_DAYS 天內播出的：那段時間剪輯還記得自己發在哪一則，
+// 補得回來。更舊的靠 Meta 對接自動補（人早就忘了是哪一則，逼他猜只會填錯）。
+//
+// ⚠️ 但「不標」不等於「不算」—— 超過窗期的總數要在看板上寫出來（pubLinkBacklog），
+//    不然每天有幾支默默滑出窗期，這個洞會一直長大而且沒有人看得到。
+//    （跟 v184 那條「待審七天就消失＝幫人忘記」是同一個教訓。）
+const PUB_LINK_DAYS=14;
+function needsPubLink(v){
+  if(!v || isVersion(v)) return false;              // 版本殼走它自己那一段
+  const sch=String(v.scheduledDate||"").slice(0,10);
+  if(!sch || sch>today) return false;               // 還沒播出，不用急
+  return !String(v.publishedLink||"").trim();
+}
+function pubLinkFresh(v){
+  if(!needsPubLink(v)) return false;
+  const d=new Date(today+"T00:00:00"); d.setDate(d.getDate()-PUB_LINK_DAYS);
+  return String(v.scheduledDate).slice(0,10) >= d.toISOString().slice(0,10);
+}
+// 還缺上片連結的片，分成「還補得回來」與「已經滑出窗期」兩堆。
+// ⚠️ 用 allLibVideos（影片庫＋大流）是刻意的：上片連結是**出片面**的事，
+//    大流的成品一樣會排上片、一樣需要那條網址。生產面的數字才不准碰大流。
+//    只呼叫一次就把兩堆都算出來 —— 那道「生產面不准偷用 allLibVideos」的
+//    守門是數出現次數的，能少一次是一次。
+function pubLinkSplit(){
+  const fresh=[], old=[];
+  allLibVideos().forEach(v=>{ if(!needsPubLink(v)) return;
+    (pubLinkFresh(v)?fresh:old).push(v); });
+  return {fresh, old};
 }
 function vidMissing(v){
   if(!v) return [];
@@ -7066,11 +7817,24 @@ function vidMissing(v){
   }
   if(isDF(v)){
     // 大流放的是成品：沒有毛片這一步（它本來就不用拍），所以不能標「缺毛片」——
-    // 那會變成又一個永遠熄不掉的燈號。它只有兩件事真的可能缺：存檔連結與文案。
+    // 那會變成又一個永遠熄不掉的燈號。它只有三件事真的可能缺。
+    if(pubLinkFresh(v)) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
     if(!String(v.driveFolder||"").trim()) out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
     if(!String(v.videoCopy||"").trim())   out.push({k:"copy",  zh:"缺文案",     en:"needs script"});
     return done();
   }
+  // ── v197（老闆指定）：「缺上片連結」一般台灣片也要標 ─────────────────
+  // 本來只有二創版本殼（上面那個 isVersion 分支）在檢查這一項，一般片整段漏掉 ——
+  // 正式資料實測（2026-09-11）：**410 支已經播出的片，上片連結 100% 是空的**，
+  // 而且一支都沒被提醒過。
+  //
+  // 為什麼這件事要緊到值得一顆紅燈：那條網址是「我們這支片」對上「平台上那則貼文」
+  // 的**唯一鑰匙**。沒有它，Meta 回來的觀看數接不回任何一支片 ——
+  // 「哪支片流量好、該拿去二創」這個判斷就永遠做不了。
+  //
+  // 排在最前面（比缺文案、缺毛片還前面）是刻意的：那兩個是「還沒開工」，
+  // 這個是「已經播出去了卻沒記下來」，過了就補不回來（人會忘記發在哪一則）。
+  if(pubLinkFresh(v)) out.push({k:"pub", zh:"缺上片連結", en:"needs post link", late:true});
   if(!String(v.videoCopy||"").trim()) out.push({k:"copy", zh:"缺文案", en:"needs script"});
   if(!vidShot(v))                      out.push({k:"raw",  zh:"缺毛片",  en:"needs footage"});
   if(!sch)                             out.push({k:"date", zh:"沒排日期", en:"no date"});
@@ -7145,7 +7909,8 @@ function openVideoModal(id, edit, fromWork){
   const metricsCard=vidMetricsCard(v);
   // 一創剪輯不需要看到二創版本的狀況（減少干擾）；做二創的人與管理層才顯示
   const localizedCard = (seesIntl() ? localizedVersionsCard(v) : "")
-                      + (seesTW()   ? (shopeeVersionsCard(v) + msVersionsCard(v)) : "");
+                      + (seesTW()   ? (shopeeVersionsCard(v) + msVersionsCard(v) + rmkVersionsCard(v)) : "");
+  const rawLock=rmkNameLock(v);   // 原毛片名鎖不鎖（老闆：原始腳本名和原毛片名禁止修改）
   const usageCard = id&&usageList(v).length?`<div class="card" style="background:var(--panel2)"><b>使用紀錄（共 ${usageList(v).length} 次）</b>
       <table class="responsive"><thead><tr><th>上片日期</th><th>連結</th><th>排片人</th></tr></thead><tbody>
       ${usageList(v).map(u=>`<tr><td data-label="上片日期">${esc(u.date)}</td><td data-label="連結">${u.link?`<a href="${esc(u.link)}" target="_blank">開啟</a>`:'<span class="muted">—</span>'}</td><td data-label="排片人">${esc(u.by||"")}</td></tr>`).join("")}
@@ -7164,7 +7929,9 @@ function openVideoModal(id, edit, fromWork){
   const hasProd = prodList.length>0 || !!String(v.productUrl||"").trim();
   // 存檔資料夾從這一折搬到上面（拍毛片的人一進來就要看到，不是上片後才填），
   // 所以這裡不再拿 driveFolder 當「有沒有料」的依據。
-  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0);
+  // v197：還沒補上片連結而且已經該補了 → 這一區自己打開。
+  // 收起來的輸入格等於不存在，燈號叫人去補、點進來又找不到，比沒有還糟。
+  const hasPost = usageList(v).length>0 || (Array.isArray(v.metrics)&&v.metrics.length>0) || pubLinkFresh(v);
   // 「進階」一律收起來（都是選填、少碰的欄位）。裡面有東西時在標題上標個數字
   // 提示，這樣不用打開也知道有料 —— 比自動展開安靜，又不會讓人漏看。
   // 注意 name 不能拿來判斷：存檔時它預設會跟原始片名一樣，等於永遠有值。
@@ -7177,8 +7944,11 @@ function openVideoModal(id, edit, fromWork){
         <label style="margin-top:0">${T("編號 ／ 原始片名","Code / Raw title")}</label>
         <div class="row" style="gap:8px">
           <input id="e_code" value="${esc(vidCode(v))}" style="flex:none;width:78px;text-align:center" placeholder="${T("編號","Code")}">
-          <input id="e_raw" value="${esc(v.rawName||"")}" style="flex:1;min-width:0" placeholder="${T("原始片名","Raw title")}">
+          <input id="e_raw" value="${esc(v.rawName||"")}" placeholder="${T("原始片名","Raw title")}"
+            style="flex:1;min-width:0${rawLock?";background:var(--panel2);color:var(--muted)":""}"
+            ${rawLock?`readonly title="${esc(rawLock)}"`:""}>
         </div>
+        ${rawLock?`<div class="muted" style="font-size:11px;margin-top:4px">🔒 ${esc(rawLock)}</div>`:""}
         ${enFieldHTML("e_nameEn", T("英文片名","English title"), v.nameEn||"", "e_raw")}
       </div>
     </div>
@@ -7209,7 +7979,18 @@ function openVideoModal(id, edit, fromWork){
       ${productRows("e", v.products)}
       <label>${T("商品官網連結","Product page URL")}</label><input id="e_url" value="${esc(v.productUrl||"")}" oninput="renderEditLinks()" placeholder="https://www.tzgrotw.tw/products/...">
       <div id="e_links">${editLinksHTML(v.productUrl)}</div>`, hasProd || needsProduct(v), "e_prodfold")}
+    ${/* v197（老闆指定）：台灣源片也要有「上片連結」這一格。
+          v136 當初把「缺上片連結」的燈號從源片拿掉，理由是「那一格根本沒有地方可以填」——
+          拿填不了的欄位當缺漏＝亮一個永遠熄不掉的紅字。那個理由完全正確，
+          所以這次的順序是**先補上輸入格**，燈號才跟著回來（見 needPostLink）。
+          為什麼要緊：那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙 ——
+          沒有它，平台回來的觀看數接不回任何一支片。 */''}
     ${fold(T("上片後","After publishing"), null, `
+      <label>${T("上片連結（這支片發在平台上的那一則）","Post link (where this went live)")}</label>
+      <input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.facebook.com/... / https://www.instagram.com/...">
+      <div class="muted" style="font-size:12px;margin-top:4px">${T(
+        "貼上這支片實際發出去的那一則貼文網址。之後要對得回觀看數、判斷哪支流量好，靠的就是它。",
+        "Paste the actual post URL. This is what ties the video back to its view counts.")}</div>
       ${metricsCard}
       ${usageCard}`, hasPost)}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
@@ -7278,7 +8059,10 @@ async function saveVideo(id){
   await persistNewTags(tags);
   const mainType = tags.some(t=>["代理","招商","代理招商"].includes(t))?"代理招商"
     :((tags.some(t=>String(t).includes("寵粉"))||tags.some(t=>["帶貨","銷售"].includes(t)))?"寵粉":"");  // 無對應標籤＝不分類
-  const video={code:val("e_code").trim(), rawName:zhTW(val("e_raw")), name:zhTW(val("e_name").trim()||val("e_raw").trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
+  // 鎖住的原始片名一律回存舊值，不讀畫面上那一格。唯讀只是擋手滑，
+  // 擋不住 devtools 或舊分頁 —— 而這個欄位一改，那支片的成效就整批對不回來。
+  const rawName = rmkNameLock(v0) ? String(v0.rawName||"") : zhTW(val("e_raw"));
+  const video={code:val("e_code").trim(), rawName, name:zhTW(val("e_name").trim()||rawName.trim()), videoCopy:zhTW(val("e_vcopy").trim()), mainType,tags,subTag:tags[0]||"",
     products, productUrl,
     source:val("e_src"),
     // 階段：只有管理員／經理人那一格是真的下拉；其他人看到的是 disabled 的唯讀格
@@ -7289,6 +8073,8 @@ async function saveVideo(id){
     // v177：幾點上片（只有整點）。沒有這一格的視窗（二創殼等）不要動到舊值
     publishTime:document.getElementById("e_time") ? val("e_time") : String(v0.publishTime||""),
     driveFolder:val("e_drive"), rawLink:String(v0.rawLink||""),
+    // v197：上片連結。沒有這一格的視窗（二創殼走 i_pub／{p}_pub）不要動到舊值
+    publishedLink:document.getElementById("e_pub") ? val("e_pub").trim() : String(v0.publishedLink||""),
     // 帳號：只有英／泰源片那一格會出現；沒出現就不要動舊值（二創殼的帳號是建立時定的）
     account:document.getElementById("e_acct") ? val("e_acct").trim() : String(v0.account||""), refLink:val("e_ref").trim(), note:zhTW(val("e_note").trim()),
     // 英文欄位：人工貼回來的，一律照原樣存（不要跑簡繁轉換，那是給中文用的）
@@ -7347,6 +8133,12 @@ function lineMatch(v,k){ const L=LINES[k]; return !!L && String((v||{})[L.field]
 // v146 打開「海外可以自己拍」之後就會踩到：海外排了日期，中文月曆多算一支英文片，
 // 英文月曆卻看不到它 —— 兩邊的數字都是錯的。
 function schedLineOf(v){
+  // 二創殼跟原片走**同一本月曆**：二創就是台灣當天要出的其中一支，不像蝦皮／馬來／
+  // 英／泰那樣各有自己的行事曆。少了這一行，lineOf 會回 "remake"，這支就掉進一本
+  // 不存在的月曆 —— 排了日期卻哪裡都看不到，等於排了也不知道自己排過。
+  // 只往上找一層：二創的二創一律掛回原片（建立時就擋掉了），這裡再保險一次，
+  // 免得資料壞掉時互相指來指去把瀏覽器轉死。
+  if(isRemake(v)){ const s=vid(v.sourceVideoId); return (s&&!isRemake(s))?schedLineOf(s):"tw"; }
   const l=lineOf(v); if(l) return l;
   const o=origLangOf(v);
   return INTL_LOCALES.includes(o) ? o : "tw";
@@ -8228,13 +9020,7 @@ function msAccounts(){ return chAccounts("ms"); }
 //    任何人拿到 firebase-config.js 就讀得到 Firestore（firestore.rules
 //    開頭寫得很清楚）。老闆知道且同意：「跟現在其他頁一樣就好」。
 //    要真的擋住得先把登入換成 Google 帳號＋白名單，那是另一件事。
-function canFindAssets(){
-  if(VIEW_AS){ const p=(STATE&&STATE.users||[]).find(x=>x&&x.name===VIEW_AS);
-    return !!(p && (p.canFindAssets || ["boss","manager"].includes(p.role))); }
-  if(["boss","manager"].includes(currentRole())) return true;
-  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===currentUser());
-  return !!(u && u.canFindAssets);
-}
+function canFindAssets(){ return hasPerm("find"); }
 // 只有管理員能重建索引（那是整份換掉，不是改一筆）
 function canRebuildAssets(){ return !VIEW_AS && currentRole()==="boss"; }
 
@@ -8797,7 +9583,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事，也可以標急件">可指派</th><th title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="這個人被額外開了幾項權限；要改去「權限」那一頁">權限</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -8879,6 +9665,68 @@ function setWorkHoursCard(s){
     <div class="muted" style="font-size:12px;margin-top:6px">打卡一律成功、不會被擋；系統只把裝置、是不是手機、GPS 座標記下來，出勤報表上標出異常讓人資判斷。</div>
   </div>`;
 }
+// ── 設定 → 權限：一個人一列，一項權限一欄（v202）────────────────────
+// 老闆：「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
+//
+// 三種狀態，看得出差別才叫「明確」：
+//   職位　 ＝ 他的職位本來就有，不必勾也不給取消（要收回就改職位）
+//   打勾　 ＝ 額外開給他的（users.perms）
+//   空白　 ＝ 沒有
+//
+// 設定／成員／回收桶／操作紀錄不在這張表裡（老闆選的）：拿到設定的人可以再把權限
+// 發給別人，那等於多配一把管理員鑰匙。
+function setPermsCard(members){
+  const head=PERM_KEYS.map(k=>`<th title="${esc(PERMS[k].why)}" style="white-space:nowrap">${esc(PERMS[k].label)}</th>`).join("");
+  const rows=members.map(u=>{
+    const role=u.role||"editor";
+    const cells=PERM_KEYS.map(k=>{
+      if(permByRole(k,role))
+        return `<td data-label="${esc(PERMS[k].label)}"><span class="pill ok" style="font-size:10px">職位</span></td>`;
+      if(role==="intl" && PERMS[k].zhOnly)
+        return `<td data-label="${esc(PERMS[k].label)}"><span class="muted" style="font-size:12px">—</span></td>`;
+      return `<td data-label="${esc(PERMS[k].label)}"><input type="checkbox" ${hasPerm(k,u.name)?"checked":""}
+        style="width:auto;margin:0" onchange="setMemberPerm('${esc(jsEsc(u.name))}','${k}',this.checked)"
+        title="${esc(PERMS[k].why)}"></td>`;
+    }).join("");
+    const out=["boss","manager","hr"].includes(role)
+      ? '<span class="muted" style="font-size:12px">—</span>'
+      : `<input type="checkbox" ${u.outsourced?"checked":""} style="width:auto;margin:0"
+          onchange="setMemberOutsourced('${esc(jsEsc(u.name))}',this.checked)"
+          title="外包人員：看不到其他同事的看板與成效，也看不到月排程">`;
+    return `<tr><td data-label="名字"><b>${esc(u.name)}</b>
+      <div class="muted" style="font-size:11px">${esc(ROLE_LABEL[role]||"")}</div></td>
+      ${cells}<td data-label="外包">${out}</td></tr>`;
+  }).join("");
+  return `<div class="card"><b>權限（${members.length} 人）</b>
+    <span class="muted" style="font-size:12px">勾起來就是額外開給他的；「職位」是他的職位本來就有，要收回請改職位</span>
+    <div class="vidscroll" style="margin-top:8px">
+    <table class="responsive" style="min-width:660px"><thead><tr><th>名字</th>${head}
+      <th title="外包人員：看不到其他同事的看板與成效，也看不到月排程" style="white-space:nowrap">外包</th></tr></thead>
+    <tbody>${rows||'<tr><td class="muted">還沒有成員</td></tr>'}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.9">
+      ${PERM_KEYS.map(k=>`<b>${esc(PERMS[k].label)}</b>：${esc(PERMS[k].why)}`).join("<br>")}<br>
+      <b>外包</b>：看不到其他同事的看板與成效，也看不到月排程
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:10px">
+      設定、成員、回收桶、操作紀錄不在這張表裡 —— 拿到設定的人可以再把權限發給別人，
+      那等於多配一把管理員鑰匙。要給誰這些，只能換管理員本人。
+    </div>
+  </div>`;
+}
+// 勾／取消一項權限。存成 users.perms 陣列（職位給的不會寫進來，也不必寫）。
+function setMemberPerm(name, key, on){
+  if(!PERMS[key]){ toast("不認得這個權限："+key,true); return; }
+  const u=(STATE.users||[]).find(x=>x&&x.name===name);
+  if(!u){ toast("找不到這個成員",true); return; }
+  const cur=permsOf(u).filter(k=>PERMS[k]);          // 順便把不認得的舊值濾掉
+  const next=on ? [...new Set(cur.concat([key]))] : cur.filter(k=>k!==key);
+  // 舊旗標跟著一起動，不然「取消了卻還是有」——
+  // hasPerm 會同時看 perms 與舊旗標，只清一邊等於沒清。
+  const body={perms:next};
+  if(PERMS[key].legacy) body[PERMS[key].legacy]=!!on;
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name), body,
+    (on?"已開給 ":"已收回 ")+name+"：" + PERMS[key].label);
+}
 // 設定：對接窗口名單
 function setContactsCard(contactList, contactRows){
   return `<div class="card"><b>對接窗口名單（${contactList.length}）</b>
@@ -8920,44 +9768,24 @@ function viewSettings(){
       ${w.custom?`<button class="btn sec sm" style="padding:2px 7px;font-size:11px" onclick="setMemberHours('${esc(jsEsc(u.name))}','','')" title="改回全公司時間">↺</button>`:''}
       ${flexBox}
     </span>`; };
-  // 「可以指派剪輯工作」的旗標。主管與經理人本來就有，不用勾（勾了也沒差，所以顯示「本來就有」）。
-  const asgSel=(u)=>{
-    if(["boss","manager"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">本來就有</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)">可指派</label>`;
-  };
   // v196：「找影片」那一頁的權限（老闆：「要有權限，給權限的人才能讀」）。
   // ⚠️ 這是**介面上**的權限，跟這個系統其他頁同一個標準 —— 擋得住同事，
   //    擋不住懂技術的外人（登入是匿名的，見 firebase/firestore.rules 開頭）。
-  const findSel=(u)=>{
-    if(["boss","manager"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">本來就有</span>';
-    if((u.role||"")==="intl")
-      return '<span class="muted" style="font-size:12px">—</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.canFindAssets?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberFindAssets('${esc(jsEsc(u.name))}',this.checked)"
-        title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</label>`;
-  };
-  // v185：外包人員 —— 看不到別人的看板與成效（管理層本來就不會是外包）
-  const outSel=(u)=>{
-    if(["boss","manager","hr"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">—</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.outsourced?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberOutsourced('${esc(jsEsc(u.name))}',this.checked)"
-        title="外包人員：看不到其他同事的看板與成效">外包</label>`;
+  // 成員表只顯示「額外開了幾項」，要改去「權限」那一頁 ——
+  // 老闆：「把我其他員工的各式權限都整合給我在後台設定」。
+  // 以前三個勾勾各自散在這張表的三欄裡，加第四項就擠不下了。
+  const permCell=(u)=>{
+    const extra=PERM_KEYS.filter(k=>!permByRole(k,u.role||"editor") && hasPerm(k,u.name));
+    return `<button class="btn sec sm" style="white-space:nowrap" onclick="setSetTab('perms')"
+      title="${esc(extra.length?("額外開了："+extra.map(k=>PERMS[k].label).join("、")):"沒有額外開的權限")}"
+      >${extra.length?("額外 "+extra.length+" 項"):'<span class="muted">職位預設</span>'}</button>`;
   };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="區域">${zoneCell(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
-    <td data-label="可指派">${asgSel(u)}</td>
-    <td data-label="找影片">${findSel(u)}</td>
-    <td data-label="外包">${outSel(u)}</td>
+    <td data-label="權限">${permCell(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -9011,8 +9839,8 @@ function viewSettings(){
   //   分類  標籤這種偶爾補一個的
   //   維護  出事才用的（操作紀錄、回收桶、一次性轉檔）
   // 只有一層子分頁，不再往下分 —— 再分下去就變成「東西藏在哪一層」的猜謎。
-  const TABS=[["basic","基本"],["members","成員"+paren(members.length)],["plat","平台"],
-              ["tags","分類"],["maint","維護"]];
+  const TABS=[["basic","基本"],["members","成員"+paren(members.length)],["perms","權限"],
+              ["plat","平台"],["tags","分類"],["maint","維護"]];
   if(!TABS.some(t=>t[0]===SET_TAB)) SET_TAB="basic";
   const tabBar=`<div class="vtabs" style="margin-bottom:14px">${TABS.map(([k,label])=>
     `<button class="vtab ${SET_TAB===k?'on':''}" onclick="setSetTab('${k}')"><span>${esc(label)}</span></button>`).join("")}</div>`;
@@ -9087,6 +9915,7 @@ function viewSettings(){
   ${setContactsCard(contactList, contactRows)}`;
 
   const body = SET_TAB==="members" ? setMembersCard(members, memberRows)
+             : SET_TAB==="perms"   ? setPermsCard(members)
              : SET_TAB==="plat"    ? plat
              : SET_TAB==="tags"    ? tags
              : SET_TAB==="maint"   ? maint
@@ -9253,13 +10082,8 @@ function setMemberFlex(name, on){
     on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
 // 逐一給某個人「可以指派剪輯工作」的權限。用旗標而不是把名字寫死在程式裡：
 // 換人、多一個人、拿掉權限，在這裡勾一下就好，不必改程式重新部署。
-function setMemberAssign(name, on){
-  writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
-    on?("「"+name+"」現在可以指派剪輯工作給同事，也可以標急件"):("已收回「"+name+"」指派剪輯工作與標急件的權限")); }
-// v196：「找影片」那一頁的權限
-function setMemberFindAssets(name, on){
-  writeAdmin("PUT","/api/users/"+name,{canFindAssets:!!on},
-    on?("「"+name+"」現在可以用「找影片」搜尋素材"):("已收回「"+name+"」的「找影片」權限")); }
+// v202：工作指派／找影片的開關改走 setMemberPerm（設定→權限那一頁）——
+// 一個權限一條寫入路徑，兩條遲早會不一致。
 // v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
 function setMemberOutsourced(name, on){
   writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},

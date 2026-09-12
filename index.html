@@ -39,6 +39,19 @@
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
   .hidden{display:none !important}
+  /* 平台成效・影片排行：欄位多，寬度要給死，不然「泛流量」會被擠成直排、
+     136,419 會斷成三行（v199 第一次拿真實數字跑就是長這樣）。 */
+  table.perfrank col.pr-n{width:34px}
+  table.perfrank col.pr-k{width:74px}
+  table.perfrank col.pr-e{width:92px}
+  table.perfrank col.pr-p{width:150px}
+  table.perfrank col.pr-v{width:88px}
+  table.perfrank col.pr-c{width:96px}
+  table.perfrank td.pr-k,table.perfrank td.pr-v,table.perfrank td.pr-c{white-space:nowrap}
+  table.perfrank .pill{white-space:nowrap}
+  @media(max-width:600px){
+    table.perfrank td.pr-k,table.perfrank td.pr-v,table.perfrank td.pr-c{white-space:normal}
+  }
   /* 沒寫文案的小點：不佔位、不搶戲，但掃一眼就看得到哪幾支還缺文案 */
   .nocopy{display:inline-block;width:7px;height:7px;border-radius:50%;flex:none;
           background:#D98324;box-shadow:0 0 0 2px rgba(217,131,36,.18);
@@ -946,7 +959,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=516f1087a565"></script>
-<script type="module" src="fb.js?v=516f1087a565"></script>
+<script src="app.js?v=17c826653c78"></script>
+<script type="module" src="fb.js?v=17c826653c78"></script>
 </body>
 </html>

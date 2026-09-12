@@ -42,6 +42,19 @@ try {
   failed.push("audit-collections.js");
 }
 
+// 貼文↔影片比對（v198）：平台成效要靠它對回影片，對錯了比沒資料還糟。
+// 這支是 Python，因為同步腳本跟備份一樣跑在 Mac mini 上、共用 tools/_fs.py。
+// ubuntu-latest 與 macOS 都內建 python3；找不到就是環境壞了，要紅、不能靜靜跳過。
+try {
+  execFileSync("python3", [path.join(dir, "meta-match.py")], { stdio: "pipe" });
+  console.log("PASS  meta-match.py（貼文對回影片的比對規則）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  meta-match.py");
+  out.split("\n").filter(l => l.startsWith("FAIL")).forEach(l => console.log("        " + l));
+  failed.push("meta-match.py");
+}
+
 // 介面語言洩漏掃描：輸出「(無洩漏)」才算過
 try {
   const out = execFileSync(process.execPath, [path.join(dir, "audit-lang.js")], { encoding: "utf8" });
@@ -61,7 +74,7 @@ try {
   failed.push("check-cache-stamp.js");
 }
 
-// suites 之外的獨立檢查：node --check、audit-collections、audit-lang、check-cache-stamp
-const EXTRA_CHECKS = 4;
+// suites 之外的獨立檢查：node --check、audit-collections、meta-match、audit-lang、check-cache-stamp
+const EXTRA_CHECKS = 5;
 console.log(`\n${suites.length + EXTRA_CHECKS - failed.length} / ${suites.length + EXTRA_CHECKS} 通過`);
 if (failed.length) { console.log("失敗：" + failed.join(", ")); process.exit(1); }

@@ -86,7 +86,12 @@ const hasPost=(h)=>/上片後|After publishing/.test(h);
 //    這一折是**結構上**的空盒子，不能只靠「等有資料再說」帶過。
 { reset([v_("V1")], "小葵", "editor");
   openVideoModal("V1", true);
-  ok("剪輯：沒有「上片後」這一折", !hasPost(modalHTML));
+  // v197：這一折現在**有東西**了 —— 裡面放「上片連結」的輸入格，而剪輯正是
+  // 要填它的人（流程就是 剪完 → 審過 → 上傳雲端＋補連結）。
+  // v151 本來在擋的是「結構上的空盒子」（成效表剪輯永遠看不到），那條規矩沒有變 ——
+  // 下面「整個視窗沒有任何空盒子」照樣在盯，而且照樣綠。
+  ok("**剪輯看得到「上片後」這一折，而且裡面真的有東西可以填**",
+     hasPost(modalHTML) && /id="e_pub"/.test(modalHTML), modalHTML.slice(0,0));
   ok("剪輯：整個視窗沒有任何空盒子", !EMPTY_FOLD.test(modalHTML));
   ok("剪輯：其他該有的一折還在（商品與導購）", /商品與導購/.test(modalHTML));
   ok("剪輯：其他該有的一折還在（進階）", /進階/.test(modalHTML));
@@ -96,7 +101,8 @@ const hasPost=(h)=>/上片後|After publishing/.test(h);
 // ══════════ ③ 海外：一樣不該看到空盒子 ══════════
 { reset([v_("V1")], "Anna", "intl");
   openVideoModal("V1", true);
-  ok("海外：沒有「After publishing」這一折", !hasPost(modalHTML));
+  // 同上：海外剪輯也要貼他們發在海外帳號的那一則
+  ok("**海外也看得到，而且有輸入格**", hasPost(modalHTML) && /id="e_pub"/.test(modalHTML));
   ok("海外：整個視窗沒有任何空盒子", !EMPTY_FOLD.test(modalHTML)); }
 
 // ══════════ ④ 老闆：這一折本來就有東西，不能被順手砍掉 ══════════

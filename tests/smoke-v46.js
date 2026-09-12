@@ -50,21 +50,21 @@ ok("審過的片顯示剪輯完成", h.includes("剪輯完成") && !h.includes("
 WORK_ZONE="shopee"; POOL_FILTER="all";
 h=viewWork();
 ok("我的今日工作：待審核琥珀鍵", h.includes(">待審核</button>") || h.includes("待審核</button>"));
-// v184（老闆指定）：「現在審片不行讓剪輯自己按『審過』只有 regina 可以按」。
-// 剪輯這邊只寫「等 Regina 審」，不留一顆按不動的鍵。
-ok("**剪輯這邊沒有審過鍵**", !h.includes("editorMarkReviewed('W1')"));
-ok("**改成寫著「待審」**", h.includes(">待審<"));
+// 2026-09-11（老闆指定）：「先幫我復原回去給每一位剪輯，先讓他們可以自己按『已審核』」。
+// v184 那條「只有 Regina 按得動」復原掉了：剪輯自己就有鍵，Regina 那邊照樣也有。
+ok("**剪輯這邊有自己按得動的審過鍵**", h.includes("editorMarkReviewed('W1')"));
+ok("**而且畫成一顆鍵，不是按不動的「待審」字樣**", h.includes("✓ 審過") && !h.includes(">待審<"));
 { localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
   const hr=workReviewCard("小葵");
   localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
-  ok("Regina 那邊才有鍵", hr.includes("editorMarkReviewed('W1')") && hr.includes("✓ 審過")); }
+  ok("Regina 那邊也還有鍵", hr.includes("editorMarkReviewed('W1')") && hr.includes("✓ 審過")); }
 
-// 審過鍵寫入通過（v184：只有 Regina 按得動，所以用她的身分驗）
+// 審過鍵寫入通過（2026-09-11 復原後是剪輯自己按，所以用剪輯的身分驗）
 { const calls=[]; global.window.DB={ set:async()=>{}, update:async(c,id,p)=>{calls.push([c,id,p]);}, del:async()=>{}, scheduleSet:async()=>{}, setSettings:async()=>{} };
-  localStorage.setItem("ecdr_user","Regina"); localStorage.setItem("ecdr_role","manager");
+  localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
   (async()=>{ await editorMarkReviewed("W1");
     const hit=calls.find(([c,id,p])=>c==="videos"&&id==="W1"&&p.reviewStatus==="通過");
-    ok("審過鍵寫入 reviewStatus=通過＋審核人", !!hit && hit[2].reviewedBy==="Regina");
+    ok("審過鍵寫入 reviewStatus=通過＋審核人", !!hit && hit[2].reviewedBy==="小葵");
 
     // 完成確認文案提到待審核
     let msg=""; global.confirm=(m)=>{msg=m; return false;};

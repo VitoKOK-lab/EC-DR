@@ -69,11 +69,18 @@ function reset(vids, users){
 }
 
 // ══════════ ① 「等 Regina 審」改成「待審」 ══════════
+// 2026-09-11 老闆決定復原成「每一位剪輯自己按」，所以剪輯那邊看到的是一顆鍵；
+// 「待審」這個字樣只剩按不動的情況（員工視角唯讀預覽）才會出現。這一條原本在盯的是
+// 「不要再寫落落長的『等 Regina 審』」，所以改用那個情境驗同一件事。
 { reset([ v_("W1",{editor:"小葵",claimedBy:"小葵"}) ]); as("小葵","editor");
   const c=workReviewCard("小葵");
-  ok("**寫的是「待審」**", c.includes(">待審<"), (c.match(/pill wa[^>]*>[^<]*/g)||[]).slice(0,3));
+  ok("剪輯自己有審過鍵（2026-09-11 老闆指定復原）", c.includes("editorMarkReviewed('W1')"));
   ok("不再寫落落長的「等 Regina 審」", !c.includes("等 Regina 審"));
-  ok("剪輯還是沒有審過鍵（v184 那條沒被弄壞）", !c.includes("editorMarkReviewed('W1')")); }
+  as("Regina","manager"); VIEW_AS="小葵";
+  const p=workReviewCard("小葵");
+  ok("**按不動的時候寫的是「待審」**", p.includes(">待審<"), (p.match(/pill wa[^>]*>[^<]*/g)||[]).slice(0,3));
+  ok("按不動的時候也不寫「等 Regina 審」", !p.includes("等 Regina 審"));
+  VIEW_AS=null; }
 
 // ══════════ ② 審完才能上架 ══════════
 // 老闆：「審核過關，他是必要的，要審完才算完成，才能上架」
@@ -151,8 +158,12 @@ function reset(vids, users){
     ok("主管照樣看得到外包人員那張卡（他要管他）", b.includes("陳鋒")); }
   // 旗標是可以在設定裡勾的，不是把名字寫死
   { reset(); as("管理員","boss");
+    // v202：三個散在成員表的勾勾整合到「權限」那一頁了（老闆：「把各式權限都整合
+    // 給我在後台設定」）。規矩沒變 —— 還是要能在設定裡勾，不能把名字寫死。
+    SET_TAB="perms";
     const st=viewSettings();
-    ok("**成員管理有「外包」這一欄**", st.includes(">外包</th>") || st.includes("外包</th>"), st.includes("外包"));
+    SET_TAB="basic";
+    ok("**權限頁有「外包」這一欄**", st.includes(">外包</th>") || st.includes("外包</th>"), st.includes("外包"));
     ok("**每個同仁都勾得起來**", /setMemberOutsourced\('陳鋒',this\.checked\)/.test(st));
     ok("陳鋒那一格是勾起來的", /value="陳鋒"|陳鋒/.test(st) && st.includes("checked"));
     ok("管理層那一列不給勾（他們不可能是外包）",

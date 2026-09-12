@@ -295,7 +295,15 @@ function lastSlot(){
   ok("齊全的大流片完全不長燈號", missingPill(full)==="");
   ok("大流不標「缺毛片」（它本來就不用拍）", !missingPill(d_("9",{rawLink:"",driveFolder:"http://d",videoCopy:"有"})).includes("缺毛片"));
   ok("大流不標「沒排日期」（還沒排是正常的，不是缺漏）", !missingPill(d_("9",{scheduledDate:null,driveFolder:"http://d",videoCopy:"有"})).includes("沒排日期"));
-  ok("大流不標「缺上片連結」", !missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3)})).includes("缺上片連結"));
+  // v197（老闆指定）：大流的片一樣會排上片，一樣需要那條「發在哪一則」的網址。
+  // ⚠️ 這條之所以以前是反過來的，理由跟 v136 一樣 —— 大流的編輯視窗（dfFormHTML）
+  //    沒有那一格。v197 先在 dfFormHTML 補上 df_pub，燈號才跟著回來。
+  ok("**大流過了上片日沒貼連結 → 要標「缺上片連結」**",
+     missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3)})).includes("缺上片連結"));
+  ok("**貼了就熄掉**",
+     !missingPill(d_("9",{driveFolder:"http://d",videoCopy:"有",scheduledDate:D(-3),publishedLink:"https://www.facebook.com/x"})).includes("缺上片連結"));
+  ok("**大流的編輯視窗真的有那一格**（沒有就是叫人做不到的事）",
+     /id="df_pub"/.test(APP), (APP.match(/id="df_pub"[^>]*/)||[])[0]);
   ok("大流沒填存檔連結要標出來（那是它真的該有的）",
      missingPill(d_("9",{driveFolder:"",videoCopy:"有"})).includes("缺存檔連結"));
   ok("大流沒填文案也要標出來", missingPill(d_("9",{driveFolder:"http://d",videoCopy:""})).includes("缺文案"));
@@ -323,7 +331,10 @@ function lastSlot(){
 // ══════════ ⑩ 原始碼：生產面不准偷用 allLibVideos ══════════
 { const CODE=APP.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n");
   const uses=(CODE.match(/allLibVideos\(\)/g)||[]).length;
-  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=5);
+  // 上限 5→6（v201）：二創建議的候選池 rmkAll() 多用了一處。
+  // 那是出片／再利用面 —— 大流有 11 支合格的片，而公司做過的 5 次二創全在大流，
+  // 不加進來等於建議選單看不到真正在被二創的那個庫。生產面的數字一個都沒動。
+  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=6);
   ok("decorate 有把大流抽出去", /st\.videosDF=st\.videos\.filter\(isDF\)/.test(CODE));
   ok("抽出去之後 STATE.videos 真的只剩 A", /st\.videos=st\.videos\.filter\(v=>!isDF\(v\)\)/.test(CODE)); }
 

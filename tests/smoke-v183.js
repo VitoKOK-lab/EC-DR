@@ -379,8 +379,9 @@ function reset(tasks){
       assignedTo:"",scheduledDate:null,publishTime:"",finishedAt:T0+"T10:00:00",publishedLink:"",
       driveFolder:"",productUrl:"",note:"",mainType:"",source:"官方IP",refLink:"",reviewStatus:"",
       locale:"",channel:"",origLang:"",account:"",tags:[],products:[],usageHistory:[],metrics:[]});
-    // v184：審過鍵只有 Regina 有 —— 這一段驗的是「長清單收不收得起來」，
-    // 所以用她的身分看（剪輯那邊那一列是「等 Regina 審」，沒有鍵可以量）。
+    // 用 Regina 的身分看。v184 時是因為只有她有鍵；2026-09-11 老闆把鍵復原給
+    // 每一位剪輯之後，兩邊都有鍵了，這一段驗的是「長清單收不收得起來」，
+    // 跟誰在看無關，所以就不動它（也順便守住「Regina 那邊也要有鍵」）。
     reset(); STATE.videos=vs; LAST_RAW.videos=vs; STATE=decorate(LAST_RAW); as("Regina","manager");
     return workReviewCard("小葵"); };
     const few=mk(3), many=mk(20);

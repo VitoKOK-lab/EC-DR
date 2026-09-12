@@ -106,7 +106,9 @@ ok("**canFindAssets 的員工視角分支只讀被預覽的那一筆**",
 // 路由白名單：沒放行的話「設定裡勾了沒反應」而且不會有任何錯誤訊息
 ok("PUT /api/users 的白名單有放行 canFindAssets",
    /body\.canFindAssets!=null\) patch\.canFindAssets=!!body\.canFindAssets/.test(APP));
-ok("設定→成員那一欄畫得出來", /setMemberFindAssets\('/.test(APP) && /找影片<\/label>/.test(APP));
+// v202：整合到「設定→權限」那一張表了（老闆：「把各式權限都整合給我在後台設定」）
+ok("設定→權限那一欄畫得出來", /setMemberPerm\('\$\{esc\(jsEsc\(u\.name\)\)\}','\$\{k\}'/.test(APP)
+   && /find:  \{ label:"找影片"/.test(APP));
 
 // ══════════ ② CSV 解析：引號、逗號、換行、BOM ══════════
 { const rows=csvParse('﻿a,b,c\n1,"帶,逗號",3\n4,"帶""引號""",6\n7,"跨\n行",9\n');

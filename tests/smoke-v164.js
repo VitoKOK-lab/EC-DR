@@ -190,36 +190,45 @@ const U=(o)=>Object.assign({name:"泓儒",role:"editor"},o||{});
   ok("被授權的人指派得動", !!w, WRITES);
   ok("指派給對的人", w && w[3].assignedTo==="小葵", w&&w[3]); }
 
-// 設定頁：老闆勾得到
+// 設定 → 權限：老闆勾得到（v202 從成員表整合到「權限」那一頁）
 { reset([], "管理員","boss", [{name:"泓儒",role:"editor"},{name:"管理員",role:"boss"},{name:"Regina",role:"manager"}]);
-  const h=viewSettings();
-  ok("成員表有「可指派」這一欄", h.includes("可指派"), (h.match(/<th[^>]*>可指派<\/th>/)||[])[0]);
-  ok("剪輯那一列有勾選框", /setMemberAssign\('泓儒',this\.checked\)/.test(h), h.slice(0,200));
-  // 管理員本來就不在這張表裡（只列 STAFF_ROLES＋經理人），所以「本來就有」實際會出現的是經理人
-  ok("管理員不在成員表裡（這張表本來就不列他）", !/setMemberAssign\('管理員'/.test(h));
-  ok("經理人那一列寫「本來就有」，不給勾（勾了也沒差）",
-     /Regina[\s\S]{0,700}本來就有/.test(h) && !/setMemberAssign\('Regina'/.test(h),
-     (h.match(/Regina[\s\S]{0,700}?<\/tr>/)||[])[0]); }
+  SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";
+  ok("權限頁有「工作指派」這一欄", h.includes("工作指派"), (h.match(/<th[^>]*>工作指派<\/th>/)||[])[0]);
+  ok("剪輯那一列有勾選框", /setMemberPerm\('泓儒','assign',this\.checked\)/.test(h), h.slice(0,200));
+  // 管理員本來就不在這張表裡（只列 STAFF_ROLES＋經理人），所以「職位」實際會出現的是經理人
+  ok("管理員不在這張表裡（本來就不列他）", !/setMemberPerm\('管理員'/.test(h));
+  ok("經理人那一列寫「職位」，不給勾（勾了也沒差）",
+     /Regina[\s\S]{0,900}職位/.test(h) && !/setMemberPerm\('Regina','assign'/.test(h),
+     (h.match(/Regina[\s\S]{0,900}?<\/tr>/)||[])[0]); }
 { reset([], "管理員","boss", [{name:"泓儒",role:"editor",canAssign:true},{name:"管理員",role:"boss"}]);
-  ok("已經有權限的顯示成勾起來", /setMemberAssign\('泓儒'[\s\S]{0,10}/.test(viewSettings())
-     && /checked[^>]*onchange="setMemberAssign\('泓儒'|setMemberAssign\('泓儒'[\s\S]{0,80}/.test(viewSettings()));
-  const h=viewSettings();
-  const cell=(h.match(/<input type="checkbox" checked[^>]*setMemberAssign\('泓儒'[^>]*>/)||[])[0];
-  ok("——checked 真的在那顆勾選框上", !!cell, (h.match(/<input type="checkbox"[^>]*setMemberAssign[^>]*>/)||[])[0]); }
+  SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";
+  const cell=(h.match(/<input type="checkbox" checked[^>]*setMemberPerm\('泓儒','assign'[^>]*>/)||[])[0];
+  ok("舊旗標 canAssign 照樣顯示成勾起來（資料庫不用搬）", !!cell,
+     (h.match(/<input type="checkbox"[^>]*setMemberPerm\('泓儒','assign'[^>]*>/)||[])[0]); }
+{ reset([], "管理員","boss", [{name:"泓儒",role:"editor",perms:["assign"]},{name:"管理員",role:"boss"}]);
+  SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";
+  ok("新的 perms 陣列也顯示成勾起來",
+     /<input type="checkbox" checked[^>]*setMemberPerm\('泓儒','assign'/.test(h)); }
 
 { reset([], "管理員","boss");
-  setMemberAssign("泓儒", true); await new Promise(r=>setTimeout(r,20));
+  setMemberPerm("泓儒", "assign", true); await new Promise(r=>setTimeout(r,20));
   const w=WRITES.find(x=>x[0]==="update"&&x[1]==="users");
   ok("勾起來會寫 users", !!w, WRITES);
-  ok("只寫 canAssign 這一個欄位，別的不碰", w && Object.keys(w[3]).join()==="canAssign", w&&w[3]);
-  ok("值是 true", w && w[3].canAssign===true); }
-{ reset([], "管理員","boss");
-  setMemberAssign("泓儒", false); await new Promise(r=>setTimeout(r,20));
+  ok("perms 寫進去了", w && Array.isArray(w[3].perms) && w[3].perms.includes("assign"), w&&w[3]);
+  // 舊旗標要一起動：hasPerm 兩邊都看，只清一邊等於沒清（取消了卻還是有）
+  ok("舊旗標 canAssign 也跟著設成 true", w && w[3].canAssign===true, w&&w[3]);
+  ok("只碰 perms 與那一個舊旗標，別的欄位不動",
+     w && Object.keys(w[3]).sort().join()==="canAssign,perms", w&&w[3]); }
+{ reset([], "管理員","boss", [{name:"泓儒",role:"editor",canAssign:true},{name:"管理員",role:"boss"}]);
+  setMemberPerm("泓儒", "assign", false); await new Promise(r=>setTimeout(r,20));
   const w=WRITES.find(x=>x[0]==="update"&&x[1]==="users");
-  ok("取消勾選寫 false", w && w[3].canAssign===false, w&&w[3]); }
+  ok("取消時舊旗標也要清掉（只清一邊的話他還是有權限）",
+     w && w[3].canAssign===false && !(w[3].perms||[]).includes("assign"), w&&w[3]); }
 // 路由的欄位白名單：沒列進去的話會被默默丟掉（勾了沒反應、也不會報錯）
 { ok("PUT /api/users 的白名單有放行 canAssign",
-     /body\.canAssign!=null\) patch\.canAssign=!!body\.canAssign/.test(APP), "路由沒放行 canAssign"); }
+     /body\.canAssign!=null\) patch\.canAssign=!!body\.canAssign/.test(APP), "路由沒放行 canAssign");
+  ok("白名單也要放行 perms（v202）——忘了加就是「勾了沒反應」",
+     /body\.perms!=null\) patch\.perms=/.test(APP), "路由沒放行 perms"); }
 
 // v195（老闆指定）：這個權限現在給的是「派片」那一組事 —— 指派 ＋ 標急件。
 // 老闆問「鴻儒怎麼沒有急件的按鈕」，決定有「可指派」的人就能標：

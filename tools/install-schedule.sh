@@ -10,6 +10,8 @@
 # 會裝兩個工作：
 #   com.ecdr.backup       每天 03:00 跑備份（失敗會跳通知）
 #   com.ecdr.healthcheck  每天 09:00 檢查「備份有沒有默默停掉」
+#   com.ecdr.metasync     每天 03:30 叫起來，上次成功不到 3 天就自己跳過
+#                         （設定檔 ~/.ecdr-meta.json 不存在就不安裝這一個）
 #
 # 用 launchd 不用 cron 的原因：Mac 在排程時間睡著的話，
 # cron 會直接跳過那一次，launchd 會在喚醒後補跑。
@@ -21,8 +23,14 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENTS="$HOME/Library/LaunchAgents"
 BK_LABEL="com.ecdr.backup"
 HC_LABEL="com.ecdr.healthcheck"
+MS_LABEL="com.ecdr.metasync"
 BK_PLIST="$AGENTS/$BK_LABEL.plist"
 HC_PLIST="$AGENTS/$HC_LABEL.plist"
+MS_PLIST="$AGENTS/$MS_LABEL.plist"
+META_CONF="$HOME/.ecdr-meta.json"
+MS_HOUR=3
+MS_MINUTE=30
+MS_EVERY=3
 LOG_DIR="$HOME/EC-DR-Backups/_logs"
 
 HOUR=3
@@ -67,6 +75,9 @@ if [ "$MODE" = "uninstall" ]; then
     echo "========================================"
     unload_one "$BK_LABEL" "$BK_PLIST"; rm -f "$BK_PLIST"; ok "已移除每日備份"
     unload_one "$HC_LABEL" "$HC_PLIST"; rm -f "$HC_PLIST"; ok "已移除健康檢查"
+    if [ -f "$MS_PLIST" ]; then
+        unload_one "$MS_LABEL" "$MS_PLIST"; rm -f "$MS_PLIST"; ok "已移除平台成效同步"
+    fi
     echo ""
     echo "  已經備份好的檔案不會被刪，仍在 $HOME/EC-DR-Backups"
     echo "  之後要備份就手動跑：python3 tools/backup.py"
@@ -77,7 +88,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "status" ]; then
     echo ""
-    echo "自動備份排程狀態"
+    echo "自動排程狀態"
     echo "========================================"
     for L in "$BK_LABEL" "$HC_LABEL"; do
         if launchctl list 2>/dev/null | grep -q "$L"; then
@@ -167,16 +178,59 @@ cat > "$HC_PLIST" <<PLIST
 </plist>
 PLIST
 
-for f in "$BK_PLIST" "$HC_PLIST"; do
+# 平台成效同步：只有設定好權杖才裝。沒設定就裝，等於每天默默失敗一次。
+PLISTS=("$BK_PLIST" "$HC_PLIST")
+if [ -f "$META_CONF" ]; then
+    chmod +x "$REPO/tools/meta-scheduled.sh" 2>/dev/null || true
+    cat > "$MS_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$MS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$REPO/tools/meta-scheduled.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>EC_DR_META_EVERY</key><string>$MS_EVERY</string>
+  </dict>
+  <key>WorkingDirectory</key><string>$REPO</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>$MS_HOUR</integer>
+    <key>Minute</key><integer>$MS_MINUTE</integer>
+  </dict>
+  <key>StandardOutPath</key><string>$LOG_DIR/launchd-metasync.out</string>
+  <key>StandardErrorPath</key><string>$LOG_DIR/launchd-metasync.err</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
+PLIST
+    PLISTS+=("$MS_PLIST")
+    printf "  平台成效：每天 %02d:%02d 叫起來，上次成功不到 %d 天就跳過\n" "$MS_HOUR" "$MS_MINUTE" "$MS_EVERY"
+else
+    echo "  平台成效：跳過（找不到 $META_CONF，先跑 python3 tools/meta_setup.py）"
+fi
+
+for f in "${PLISTS[@]}"; do
     plutil -lint "$f" >/dev/null 2>&1 || die "$f 格式有問題"
 done
 ok "設定檔已寫入並通過格式檢查"
 
 unload_one "$BK_LABEL" "$BK_PLIST"
 unload_one "$HC_LABEL" "$HC_PLIST"
+[ -f "$MS_PLIST" ] && unload_one "$MS_LABEL" "$MS_PLIST"
 load_one "$BK_PLIST" || die "載入備份排程失敗。可能需要到「系統設定 → 隱私權與安全性」允許終端機執行。"
 load_one "$HC_PLIST" || die "載入健康檢查失敗。"
-ok "兩個排程都已載入"
+if [ -f "$MS_PLIST" ]; then
+    load_one "$MS_PLIST" || die "載入平台成效同步失敗。"
+    ok "三個排程都已載入"
+else
+    ok "兩個排程都已載入"
+fi
 
 echo ""
 echo "========================================"
@@ -184,6 +238,11 @@ echo "✅ 設定完成"
 echo ""
 printf "   每天 %02d:%02d 自動備份，失敗會跳 macOS 通知\n" "$HOUR" "$MINUTE"
 printf "   每天 %02d:00 檢查備份有沒有默默停掉\n" "$HC_HOUR"
+if [ -f "$MS_PLIST" ]; then
+    printf "   每天 %02d:%02d 叫平台成效同步起來（上次成功不到 %d 天就自己跳過）\n" \
+        "$MS_HOUR" "$MS_MINUTE" "$MS_EVERY"
+    echo "   同步紀錄：$LOG_DIR/meta-sync.log"
+fi
 echo ""
 echo "   看狀態：bash tools/install-schedule.sh --status"
 echo "   要移除：bash tools/install-schedule.sh --uninstall"
