@@ -58,13 +58,13 @@ const ROLE_TABS = {
   // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
   //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
   //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
-  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片成效"]],
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"],["perf","影片成效"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],
+  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"]],
   intl:    [["work","My Day"],["board","Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","每日工作"],["board","看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
@@ -441,7 +441,9 @@ const PERMS = {
   attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
            why:"打卡紀錄、遲到早退、月報表" },
   df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
-           why:"成品庫與二創建議" },
+           why:"過渡期的成品庫（舊片直接建檔）" },
+  remake:{ label:"二創", roles:["boss","manager","editor"], tab:"remake", zhOnly:true,
+           why:"挑片、排二創、看進行中的、看剪輯成效" },
   lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
@@ -1334,7 +1336,7 @@ function render(){
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   // v196：素材索引 4.8 MB，只有真的打開「找影片」的人才下載，一次連線只下載一次。
   try{ needAssets(); }catch(e){}
-  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, remake:viewRemake, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -6589,7 +6591,6 @@ function viewVideosDF(){
   const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
   const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
   return `<h2>影片庫大流</h2>
-  ${remakeCard()}
   <div class="card">
     <div class="muted" style="font-size:13px;line-height:1.7">
       這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
@@ -7405,6 +7406,62 @@ function rmkEditorStats(){
 const pctTxt=(r)=>Math.round(r*100)+"%";
 let RMK_LIST_OPEN=false;
 function rmkListToggle(){ RMK_LIST_OPEN=!RMK_LIST_OPEN; render(); }
+// ── 進行中的二創：排下去了、還沒上片的那幾支 ────────────────────────
+// 排片人排完就看不到後續了，這張卡就是給他看的：交出去幾天了、對方收了沒。
+// 「等他收到」卡最久的那幾支最值得看 —— 排了沒人收，等於沒排。
+function rmkWipCard(){
+  const wip=rmkShells().filter(k=>!(k.published||k.stage==="已上片"))
+    .sort((a,b)=>String(a.scheduledDate||"9999").localeCompare(String(b.scheduledDate||"9999")));
+  if(!wip.length) return "";
+  const rows=wip.map(k=>{ const s=rmkSrcOf(k);
+    const d=String(k.scheduledDate||"").slice(0,10);
+    const left=d?Math.round((new Date(d+"T00:00:00")-new Date(today+"T00:00:00"))/864e5):null;
+    const gotAt=String(k.claimedAt||"").slice(0,10);
+    const days=gotAt?Math.round((new Date(today+"T00:00:00")-new Date(gotAt+"T00:00:00"))/864e5):null;
+    return `<tr style="cursor:pointer" onclick="${vidOpenFn(k)}">
+      <td data-label="二創"><a href="javascript:void(0)">${esc(zhTW(k.name||k.rawName||""))}</a></td>
+      <td data-label="原片">${s?esc(zhTW(vidTitle(s))):'<span class="muted">原片不見了</span>'}</td>
+      <td data-label="剪輯">${esc(rmkEditorOf(k))||'<span class="muted">—</span>'}</td>
+      <td data-label="狀態" class="pr-k">${rmkStagePill(k)}${
+        days!=null?`<span class="muted" style="font-size:11px">　剪 ${days} 天</span>`:""}</td>
+      <td data-label="上片日" class="pr-k">${d?esc(d):'<span class="muted">—</span>'}${
+        left==null?"":`<span class="muted" style="font-size:11px">　${
+          left>0?("還有 "+left+" 天"):(left===0?"就是今天":("過了 "+(-left)+" 天"))}</span>`}</td></tr>`;
+  }).join("");
+  const late=wip.filter(k=>!k.claimedBy && String(k.scheduledDate||"")<=today).length;
+  return `<div class="card"><b>進行中的二創（${wip.length}）</b>
+    <span class="muted" style="font-size:12px">排下去了、還沒上片的</span>
+    ${late?`<div class="muted" style="font-size:12px;margin-top:6px;color:var(--red)">
+      ⚠ 其中 ${late} 支上片日到了還沒人按「收到」—— 排了沒人收，等於沒排</div>`:""}
+    <div class="${wip.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col><col><col><col class="pr-k"><col class="pr-k"></colgroup>
+    <thead><tr><th>二創</th><th>原片</th><th>剪輯</th><th>狀態</th><th>上片日</th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>`;
+}
+// ── 二創：自己一頁（v203）──────────────────────────────────────────
+// 老闆：「我這裡是新的頁面新的表單，跟原本的大流量不要有關係，未來這邊用的順手了，
+//        我會直接把大流量那一整頁直接刪掉」
+//        「現在舊的那一個大流量頁面，那邊的資料不是那麼準確」
+//
+// 二創本來掛在「大流量影片」那一頁上（建議卡）跟「影片成效」那一頁上（剪輯成效）。
+// 那一頁是過渡期的東西 —— 以前沒進系統的舊片直接建檔放那裡，欄位是人工填的，
+// 資料本來就不準；成效引擎接起來之後它就沒有存在的必要了。
+// 二創長在它上面的話，那一頁一刪，二創就跟著陪葬。
+//
+// ⚠️ 「大流量」這件事本身（找出高流量的片拿來再用）是核心，沒有被移除 ——
+//    二創建議的候選池照樣含大流的片（公司做過的 5 次二創全部都在大流）。
+//    搬走的只是**畫面**，不是資料。
+function viewRemake(){
+  if(!hasPerm("remake")) return `<h2>二創</h2><div class="card"><p class="muted">這個分頁沒有開放給你。</p></div>`;
+  const card=remakeCard();
+  return `<h2>二創</h2>
+  ${card||`<div class="card"><b>還沒有可以推薦的片</b>
+    <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
+      二創建議是拿<b>平台真實成效</b>排的（觀看、留言），要等 Mac mini 的同步跑過、
+      影片有成效數字之後才會出現。跟「大流量影片」那一頁人工填的資料無關。</div></div>`}
+  ${rmkWipCard()}
+  ${rmkPerfCard()}`;
+}
 function rmkPerfCard(){
   const shells=rmkShells(); if(!shells.length) return "";
   const st=rmkEditorStats();
@@ -7553,7 +7610,6 @@ function viewPerf(){
       <td data-label="留言" class="pr-c">${num(vidComments(r.v))}${rateShown(r.v)?`<span class="muted" style="font-size:11px">・${vidCommentRate(r.v).toFixed(1)}‰</span>`:''}</td></tr>`).join("")||`<tr><td colspan="7" class="muted">${PERF_KIND?'這個類型還沒有影片':'尚無資料'}</td></tr>`}</tbody></table>
     </div>
   </div>
-  ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>

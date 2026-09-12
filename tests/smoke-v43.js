@@ -48,8 +48,8 @@ const tabs=myTabs().map(t=>t[0]);
 // v181：儀表板＋流程中控＋團隊看板併成一個「看板」（board）
 // v196：多了「找影片」（Google Drive 素材搜尋）。經理人本來就有這個權限，
 //       所以她的分頁多一個 —— 一般同仁要在「設定 → 成員」勾了才有。
-ok("manager 分頁＝chat/board/videos/videosDF/cal/assets",
-   JSON.stringify(tabs)===JSON.stringify(["chat","board","videos","videosDF","cal","assets"]), tabs);
+ok("manager 分頁＝chat/board/videos/videosDF/remake/cal/assets",
+   JSON.stringify(tabs)===JSON.stringify(["chat","board","videos","videosDF","remake","cal","assets"]), tabs);
 // v178：「溝通」排到最前面（每天最先要處理的是有沒有人找你），
 // 儀表板變成第二個。她的落地頁還是儀表板，只是前面多了一個。
 ok("溝通排第一、看板緊接著（她的落地頁）", tabs[0]==="chat" && tabs[1]==="board", tabs);

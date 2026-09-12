@@ -280,6 +280,68 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   ok(!rmkRowsHTML().includes("上次二創"), "也不要硬擠一個 0% 上去");
 }
 
+// ══════════ ⑰b 二創自己一頁，不長在「大流量影片」上（v203）══════════
+// 老闆：「我這裡是新的頁面新的表單，跟原本的大流量不要有關係，未來這邊用的順手了，
+//        我會直接把大流量那一整頁直接刪掉」「舊的那一個大流量頁面，那邊的資料不是那麼準確」
+// 二創長在那一頁上的話，那頁一刪，二創就跟著陪葬。
+{ const 候選 = V({ id: "P2", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+  mount([候選], "管理員", "boss");
+  const df = viewVideosDF(), rm = viewRemake();
+  ok(!df.includes("二創建議"), "**大流量那一頁不再有二創建議**（那頁以後要整頁刪掉）");
+  ok(rm.includes("二創建議") && rm.includes("可二創的片"), "二創建議搬到二創那一頁了");
+  ok(rm.includes("排二創"), "排二創的鍵也在那一頁");
+  ok(!viewPerf().includes("剪輯二創成效"), "剪輯二創成效也從影片成效那頁搬走了");
+  ok(df.includes("影片庫大流"), "大流量那一頁本身沒被動到（老闆：那是核心，不是叫你移除）"); }
+// 三張卡都要真的長在那一頁上 —— 只測卡片本身回傳什麼是不夠的，
+// 那樣把 viewRemake 裡那一行拿掉，測試照樣綠。
+{ const s = V({ id: "SS", name: "原片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+  const 做完 = V({ id: "KK", name: "做完的二創", channel: "remake", sourceVideoId: "SS", stage: "已上片",
+                  published: true, editor: "阿剪", scheduledDate: D(30), metrics: M(20000, 30, D(30)), createdAt: "2026-08-01" });
+  const 在做 = V({ id: "KW", name: "在做的二創", channel: "remake", sourceVideoId: "SS",
+                  assignedTo: "阿二", scheduledDate: D(-3), createdAt: "2026-08-02" });
+  mount([s, 做完, 在做], "管理員", "boss");
+  const rm = viewRemake();
+  ok(rm.includes("二創建議"), "① 建議卡在那一頁上");
+  ok(rm.includes("進行中的二創") && rm.includes("在做的二創"), "② 進行中那張卡在那一頁上");
+  ok(rm.includes("剪輯二創成效") && rm.includes("阿剪"), "③ 剪輯成效那張卡也在那一頁上"); }
+// 「大流量」這件事本身是核心 —— 候選池照樣含大流的片，搬走的只是畫面
+{ const 大流片 = V({ id: "DF9", name: "大流的強片", lib: "大流", scheduledDate: D(100), metrics: M(60476, 80, D(100)) });
+  mount([大流片], "管理員", "boss");
+  ok(viewRemake().includes("大流的強片"), "**大流的片照樣被推薦**（搬的是畫面，不是資料）"); }
+// 搬家不能改變誰看得到
+{ const 候選 = V({ id: "P3", name: "片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+  ["boss", "manager", "editor"].forEach(r => {
+    mount([候選], "某人", r);
+    ok(hasPerm("remake"), `${r} 看得到二創那一頁（跟以前看得到二創建議的是同一批人）`);
+  });
+  mount([候選], "某人", "cs");
+  ok(!hasPerm("remake"), "不剪片的職位看不到");
+  ok(viewRemake().includes("沒有開放給你"), "而且擋在頁面上，不只是分頁不顯示"); }
+// 還沒有成效的時候不要留一片空白 —— 要講清楚為什麼是空的
+{ mount([V({ id: "N1", name: "還沒有成效的片" })], "管理員", "boss");
+  const rm = viewRemake();
+  ok(rm.includes("還沒有可以推薦的片") && rm.includes("平台真實成效"), "沒有成效時講清楚原因");
+  ok(rm.includes("大流量"), "而且說明跟大流量那頁的人工資料無關"); }
+
+// ══════════ ⑰c 進行中的二創 ══════════
+// 排片人排完就看不到後續了 —— 這張卡是給他看「交出去幾天了、對方收了沒」
+{ const s = V({ id: "S9", name: "原片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+  const 等收 = V({ id: "W1", name: "等收的二創", channel: "remake", sourceVideoId: "S9",
+                  assignedTo: "阿剪", scheduledDate: D(3), createdAt: "2026-08-01" });
+  const 剪中 = V({ id: "W2", name: "剪中的二創", channel: "remake", sourceVideoId: "S9", stage: "剪輯中",
+                  editor: "阿二", claimedBy: "阿二", claimedAt: D(4) + "T09:00:00", scheduledDate: D(-5), createdAt: "2026-08-02" });
+  const 上完 = V({ id: "W3", name: "上完的二創", channel: "remake", sourceVideoId: "S9", stage: "已上片",
+                  published: true, editor: "阿三", scheduledDate: D(20), createdAt: "2026-08-03" });
+  mount([s, 等收, 剪中, 上完], "管理員", "boss");
+  const c = rmkWipCard();
+  ok(c.includes("等收的二創") && c.includes("剪中的二創"), "還沒上片的都列出來");
+  ok(!c.includes("上完的二創"), "已經上片的不列（那是成效那張卡的事）");
+  ok(c.includes("剪 4 天"), "看得到剪了幾天");
+  ok(c.includes("上片日到了還沒人按「收到」"), "**上片日到了還沒人按「收到」要喊出來**");
+  ok(c.includes("1 支上片日到了"), "而且數得出來是幾支");
+  mount([s, 上完], "管理員", "boss");
+  ok(rmkWipCard() === "", "全部上完就不要留一張空卡"); }
+
 // ══════════ ⑱ 排二創走「工作指派」權限，不是職位 ══════════
 // 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
 // 那個權限系統裡本來就有（設定→成員的勾勾，users.canAssign），泓儒早就打勾了。
