@@ -58,13 +58,13 @@ const ROLE_TABS = {
   // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
   //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
   //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
-  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"],["perf","影片成效"]],
+  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片成效"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["remake","二創"],["cal","月排程"]],
+  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],
   intl:    [["work","My Day"],["board","Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","每日工作"],["board","看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
   // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
@@ -434,16 +434,19 @@ const PERMS = {
            why:"指派毛片給剪輯、排二創、標急件" },
   find:  { label:"找影片",   roles:["boss","manager"], legacy:"canFindAssets",
            why:"搜尋 Google Drive 素材庫" },
-  perf:  { label:"影片成效", roles:["boss"], tab:"perf", zhOnly:true,
-           why:"各平台累計觀看、影片排行、帶貨商品排行、剪輯二創成效" },
+  // ⚠️ v204 **刻意**放寬：本來只有 boss。二創那一頁被拆掉之後，二創建議與「排二創」
+  //    都搬進了影片成效的影片排行 —— 還維持 boss only 的話，經理人與剪輯就連
+  //    「哪支片該再剪」都看不到，而老闆要的正是小主管能指派。
+  //    放寬後的範圍＝原本二創那一頁的範圍（boss／manager／editor），不多不少。
+  //    多看到的是平台累計觀看與帶貨商品排行；要收回去在「設定→權限」逐人取消即可。
+  perf:  { label:"影片成效", roles:["boss","manager","editor"], tab:"perf", zhOnly:true,
+           why:"各平台累計觀看、影片排行（含二創建議與排二創）、帶貨商品排行、剪輯二創成效" },
   output:{ label:"剪輯產出", roles:["boss","hr"], tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
   attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
            why:"打卡紀錄、遲到早退、月報表" },
   df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
            why:"過渡期的成品庫（舊片直接建檔）" },
-  remake:{ label:"二創", roles:["boss","manager","editor"], tab:"remake", zhOnly:true,
-           why:"挑片、排二創、看進行中的、看剪輯成效" },
   lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
@@ -1336,7 +1339,7 @@ function render(){
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   // v196：素材索引 4.8 MB，只有真的打開「找影片」的人才下載，一次連線只下載一次。
   try{ needAssets(); }catch(e){}
-  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, remake:viewRemake, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -4371,7 +4374,10 @@ function viewFlow(){
   // 「待你審片」擺在毛片庫存的下一個 —— 原本在整頁最後面，滑到那裡的人不多，
   // 結果剪輯剪完的片一直沒人審。預設仍然摺疊（標題上的數字就說得完該不該點開）。
   return `<h2>流程中控 <span class="muted" style="font-size:13px">${today}</span></h2>
-  ${focus}${msgInboxCard()}${runwayCard}${stockCard}${reviewQueueCard}
+  ${/* v204：「進行中的二創」從二創那一頁搬過來。它是生產面的事（誰收到了沒、
+        上片日到了還沒人按收到），跟成效無關 —— 成效那半邊留在影片成效頁。
+        擺在「待你審片」後面：兩張都是「有人卡住了要去戳他」的卡。 */''}
+  ${focus}${msgInboxCard()}${runwayCard}${stockCard}${reviewQueueCard}${rmkWipCard()}
   <h3 style="margin:18px 0 10px">團隊交辦＆回報</h3>
   ${staffCards||'<p class="muted">還沒有成員</p>'}`;
 }
@@ -7027,7 +7033,27 @@ function rmkDaysSince(v){
 function rmkTimeK(v){ const g=rmkDaysSince(v);
   if(g==null) return 0; if(g<RMK_COOL_DAYS) return 0;
   return g<60?0.6:g<90?0.85:1.0; }
-function rmkUsedK(v){ return ({1:1,2:0.7,3:0.4})[rmkAired(v).length]||0; }
+// 用過越多次，再推薦的價值越低 —— 但**不歸零**。
+// 老闆：「用過幾次 不要四個就歸 0，還是能用，只是上面要註明一個小數字，已經用過幾次。」
+// 一支片出過 4 次不代表它死了，只是該排在沒用過的後面。真正要擋的是「剛用過」
+// （rmkTimeK 的 30 天冷卻）—— 那是時間問題，不是次數問題。
+// 所以 4 次以後繼續遞減（每多一次 ×0.6），但踩在 RMK_USED_FLOOR 上：永遠排得出來，
+// 只是排在後面。次數本身用 rmkUsedBadge 標在片名旁邊，讓人自己判斷還要不要再用。
+const RMK_USED_FLOOR=0.1;
+function rmkUsedK(v){
+  const n=rmkAired(v).length;
+  if(n<=0) return 0;                        // 還沒出過，談不上「再利用」
+  const base=({1:1,2:0.7,3:0.4})[n];
+  if(base!=null) return base;
+  return Math.max(RMK_USED_FLOOR, 0.4*Math.pow(0.6, n-3));
+}
+// 用過次數的小標，掛在片名旁邊。用過 1 次不標 —— 多數片都是 1 次，每列都標等於沒標。
+function rmkUsedBadge(v){
+  const n=rmkAired(v).length;
+  if(n<2) return "";
+  return `<span class="pill${n>=4?" wa":""}" style="font-size:10px;padding:1px 7px;margin-left:5px"
+    title="這支片已經出過 ${n} 次（含它的二創）">${n}</span>`;
+}
 // 百分位：比自己低的算 1 分、一樣的算半分。同分的片不會因為排序順序而分高下。
 function rmkPct(sorted, x){
   let lo=0, eq=0; sorted.forEach(a=>{ if(a<x) lo++; else if(a===x) eq++; });
@@ -7081,74 +7107,16 @@ function rmkRank(pool){
 function rmkWhyNot(r){
   if(r.gap==null) return "還沒排過上片日";
   if(r.gap<RMK_COOL_DAYS) return `${r.gap} 天前才用過`;
-  if(r.used>=4) return `已經用過 ${r.used} 次`;
+  // v204 起「用過 4 次」不再是不推薦的理由（老闆指定）—— 它只會被 rmkUsedK 壓到
+  // 後面，並在片名旁邊標一個小數字。這裡要是還留著那一行，會變成分數 > 0 的片
+  // 被寫上「已經用過 4 次」當不推薦理由，自相矛盾。
   if(!vidViews(r.v)) return "還沒有成效數字";
   if(vidViews(r.v)<RMK_MIN_VIEWS) return `觀看只有 ${num(vidViews(r.v))}`;
   return "";
 }
 let RMK_Q="";
 function rmkSetQ(x){ RMK_Q=x; const el=document.getElementById("rmk_rows");
-  if(el) el.innerHTML=rmkRowsHTML(); }
-// 清單那一塊單獨拆出來 —— 打字的時候只重畫這一塊，不要整頁 render
-// （整頁重畫會讓輸入框失焦，打一個字就要重點一次）
-function rmkRowsHTML(){
-  const q=String(RMK_Q||"").trim();
-  const canPlan=canPlanRemake();   // 排二創是管理員／經理人的事，剪輯只是看得到建議
-  const all = q ? rmkRank(rmkSearchPool(q)) : rmkRank();
-  // 搜尋時一律**照觀看排**，不照二創分數排。
-  // 老闆：「他還是要能被排列出來（如果我要找強片為了某個品項銷售）。」
-  // 有搜尋＝他在找「這個商品最強的那支片」，不是在找「現在最適合二創的片」。
-  // 照分數排的話，一支二創過三次的 10 萬觀看強片會沉到一堆沒人看過的新片下面。
-  // 二創狀態照樣標在旁邊（rmkWhyNot），只標不擋。
-  if(q) all.sort((a,b)=> (vidViews(b.v)-vidViews(a.v)) || (vidComments(b.v)-vidComments(a.v)));
-  const live=all.filter(r=>r.score>0), rest=all.filter(r=>!r.score);
-  const show = q ? all.slice(0,40) : live.slice(0, RMK_OPEN?30:8);
-  const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
-      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a>${
-        r.score?"":`<span class="muted" style="font-size:11px">　${esc(rmkWhyNot(r))}</span>`}</td>
-      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
-      <td data-label="帶貨商品">${((r.v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)).join("、"))||'<span class="muted">—</span>'}</td>
-      <td data-label="觀看" class="pr-v">${vidViews(r.v)?`<b>${num(vidViews(r.v))}</b>`:'<span class="muted">—</span>'}</td>
-      <td data-label="留言" class="pr-c">${vidViews(r.v)?num(vidComments(r.v)):''}</td>
-      <td data-label="多久沒用" class="pr-v">${r.gap==null?'<span class="muted">—</span>':r.gap+" 天"}</td>
-      <td data-label="用過" class="pr-k">${r.used} 次</td>
-      <td data-label="上次誰剪" class="pr-e">${(()=>{ const L=rmkLastCut(r.v);
-        return (esc(L.who)||'<span class="muted">—</span>')
-          + (L.c?`<span class="muted" style="font-size:11px">　上次二創 ${pctTxt(L.c.r)}</span>`:""); })()}</td>
-      ${canPlan?`<td data-label=""><button class="btn sm" style="white-space:nowrap"
-        onclick="event.stopPropagation();openRmkPlan('${r.v.id}')"
-        title="排上片日期、取新片名、指定剪輯">排二創</button></td>`:""}</tr>`;
-  if(!show.length){
-    return `<div class="muted" style="font-size:13px;padding:10px 0">${
-      q ? `找不到「${esc(q)}」。試試商品名、片名裡的關鍵字，或文案裡的一句話。`
-        : "<b>現在沒有推薦的片</b> —— 多半是成效資料還太新（剛用過的片先不推薦），等舊片的成效補進來就會有。"}</div>`;
-  }
-  return `<div class="muted" style="font-size:12px;margin-bottom:6px">${
-      q ? `找到 ${all.length} 支${all.length>40?"（列前 40 支）":""}，${live.length} 支現在就可以二創`
-        : `候選 ${all.length} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上）${rest.length?`，其中 ${rest.length} 支現在先不推薦`:""}`
-    }</div>
-    <div class="${show.length>10?'vidscroll':''}">
-    <table class="responsive perfrank"><colgroup><col><col class="pr-k"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-k"><col class="pr-e">${canPlan?'<col class="pr-k">':''}</colgroup>
-    <thead><tr><th>影片</th><th>類型</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>用過</th><th>上次誰剪</th>${canPlan?"<th></th>":""}</tr></thead>
-    <tbody>${show.map(row).join("")}</tbody></table></div>
-    ${(!q && live.length>8)?`<button class="btn sm" style="margin-top:8px" onclick="rmkToggle()">${RMK_OPEN?"只看前 8 支":`看全部 ${live.length} 支`}</button>`:""}`;
-}
-function remakeCard(){
-  if(!rmkAll().some(v=>vidViews(v)>0)) return "";
-  return `<div class="card">
-    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <b>二創建議</b>
-      <span class="muted" style="font-size:12px">依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比</span>
-    </div>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
-             oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
-    </div>
-    <div id="rmk_rows" style="margin-top:8px">${rmkRowsHTML()}</div>
-  </div>`;
-}
-let RMK_OPEN=false;
-function rmkToggle(){ RMK_OPEN=!RMK_OPEN; render(); }
+  if(el) el.innerHTML=perfRankRowsHTML(); }
 
 // ===================================================================
 // 二創流程（第三步・v201）
@@ -7451,17 +7419,6 @@ function rmkWipCard(){
 // ⚠️ 「大流量」這件事本身（找出高流量的片拿來再用）是核心，沒有被移除 ——
 //    二創建議的候選池照樣含大流的片（公司做過的 5 次二創全部都在大流）。
 //    搬走的只是**畫面**，不是資料。
-function viewRemake(){
-  if(!hasPerm("remake")) return `<h2>二創</h2><div class="card"><p class="muted">這個分頁沒有開放給你。</p></div>`;
-  const card=remakeCard();
-  return `<h2>二創</h2>
-  ${card||`<div class="card"><b>還沒有可以推薦的片</b>
-    <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.8">
-      二創建議是拿<b>平台真實成效</b>排的（觀看、留言），要等 Mac mini 的同步跑過、
-      影片有成效數字之後才會出現。跟「大流量影片」那一頁人工填的資料無關。</div></div>`}
-  ${rmkWipCard()}
-  ${rmkPerfCard()}`;
-}
 function rmkPerfCard(){
   const shells=rmkShells(); if(!shells.length) return "";
   const st=rmkEditorStats();
@@ -7555,8 +7512,108 @@ let PERF_KIND=null;   // 選中的類型（null＝全部；值是 mainType，或
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
 function perfSetKind(k){ PERF_KIND=(PERF_KIND===k)?null:k; render(); }
 function num(n){ return (+n||0).toLocaleString(); }
+// 影片排行的排法：views＝依觀看｜remake＝依二創建議（v204 把二創建議併進這張表）
+let PERF_SORT="views";
+function perfSetSort(s){ PERF_SORT=(s==="remake")?"remake":"views"; render(); }
+function prodCell(v){ const ps=((v&&v.products)||[]).filter(p=>p&&p.name).map(p=>esc(p.name));
+  return ps.length?ps.join("、"):'<span class="muted">—</span>'; }
+// ── 影片排行（v204：原本的「二創建議」整張併進來了）──────────────────
+// 老闆：「二創理論上不就該和影片成效是一樣的嗎？只是多了一個『二創』的按鍵，
+//        還有小主管能夠指派，然後指派後還能新增回原片的影片資料裡面。」
+// 所以不再有獨立的二創建議表 —— 同一張排行，換一個排法而已：
+//   ① 有搜尋　　→ 池子放寬成整個影片庫（不限成效、不限 5,000），照觀看排。
+//                  「先有商品再找能用的影片」要的是**能用**的片，不是成效好的片。
+//   ② 依二創建議 → 排法與池子跟原本那張表**一字不動**（rmkRank 的預設池）。
+//                  熱度是百分位，池子一換分數就全變，所以絕不能拿全庫去算。
+//   ③ 依觀看　　→ 原本影片排行的行為（預設）。
+// 表格單獨拆成一個函式，是為了搜尋框打字時只重畫這一塊；整頁 render 會讓輸入框
+// 失焦，打一個字就要重點一次（這是原本二創那頁 rmk_rows 的作法，照搬過來）。
+function perfRankCard(){
+  const byRmk=!String(RMK_Q||"").trim() && PERF_SORT==="remake";
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>影片排行${PERF_KIND?`（只看${esc(PERF_KIND)}）`:(PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）')}</b>
+      <div class="row" style="gap:6px;align-items:center">
+        <button class="btn sm${byRmk?" sec":""}" onclick="perfSetSort('views')">依觀看</button>
+        <button class="btn sm${byRmk?"":" sec"}" onclick="perfSetSort('remake')">依二創建議</button>
+      </div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">${byRmk
+      ? "依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比。片名旁邊的小數字＝這支已經出過幾次（含它的二創）"
+      : "依觀看排，前 50 名。點影片看跨平台明細與帶貨"}</div>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
+             oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
+    </div>
+    <div id="rmk_rows" style="margin-top:8px">${perfRankRowsHTML()}</div>
+  </div>`;
+}
+function perfRankRowsHTML(){
+  const q=String(RMK_Q||"").trim();
+  const canPlan=canPlanRemake();   // 排二創是「工作指派」權限的事，剪輯只是看得到建議
+  const inScope=m=> !PERF_PLAT || m.platform===PERF_PLAT;
+  const rowsOf=v=>(Array.isArray(v&&v.metrics)?v.metrics:[]).filter(inScope);
+  const sViews=v=>rowsOf(v).reduce((a,m)=>a+(+m.views||0),0);
+  const sCmts =v=>rowsOf(v).reduce((a,m)=>a+(+m.comments||0),0);
+  const byRmk=!q && PERF_SORT==="remake";
+  let list;
+  if(q){
+    // 搜尋時照觀看排（老闆：「我要找強片為了某個品項銷售」），但二創狀態照樣標在
+    // 旁邊 —— **只標不擋**。所以還是走 rmkRank 拿到 r，只是把順序換掉；
+    // 分數是在搜尋池裡算的百分位，跟推薦模式的池子本來就不是同一個。
+    list=rmkRank(rmkSearchPool(q))
+      .sort((a,b)=>(sViews(b.v)-sViews(a.v))||(sCmts(b.v)-sCmts(a.v)))
+      .map(r=>({v:r.v, r}));
+  }else if(byRmk){
+    list=rmkRank().map(r=>({v:r.v, r}));
+  }else{
+    list=allLibVideos().filter(v=>!v.deleted && rowsOf(v).length)
+      .sort((a,b)=>sViews(b)-sViews(a)).map(v=>({v}));
+  }
+  const total=list.length;
+  const show=list.filter(o=>!PERF_KIND||vidType(o.v)===PERF_KIND).slice(0,50);
+  const cols=canPlan?10:9;
+  // ⚠️ rmkLastCut 在「這支從來沒二創過」的時候會退回原片自己的剪輯 —— 那在原本
+  //    「上次誰剪」那一欄是對的，但這一欄叫「上次二創」，印出來會變成「昱丞剪過
+  //    這支的二創」，而他根本沒剪過。沒有二創就留一個破折號。
+  const body=show.map((o,i)=>{ const v=o.v, gap=rmkDaysSince(v), vw=sViews(v),
+      L=remakesOfSrc(v.id).length?rmkLastCut(v):{who:"",c:null},
+      why=(o.r && !o.r.score)?rmkWhyNot(o.r):"";
+    return `<tr style="cursor:pointer" onclick="${vidOpenFn(v)}">
+      <td data-label="#">${i+1}</td>
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(v))}</a>${rmkUsedBadge(v)}${
+        why?`<span class="muted" style="font-size:11px">　${esc(why)}</span>`:""}</td>
+      <td data-label="類型" class="pr-k">${typePill(v)}</td>
+      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="帶貨商品">${prodCell(v)}</td>
+      <td data-label="觀看" class="pr-v">${vw?`<b>${num(vw)}</b>`:'<span class="muted">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${vw?num(sCmts(v)):''}${
+        rateShown(v)?`<span class="muted" style="font-size:11px">・${vidCommentRate(v).toFixed(1)}‰</span>`:''}</td>
+      <td data-label="多久沒用" class="pr-v">${gap==null?'<span class="muted">—</span>':gap+" 天"}</td>
+      <td data-label="上次二創" class="pr-e">${(esc(L.who)||'<span class="muted">—</span>')
+        + (L.c?`<span class="muted" style="font-size:11px">　${pctTxt(L.c.r)}</span>`:"")}</td>
+      ${canPlan?`<td data-label="">${isVersion(v)?'<span class="muted" style="font-size:11px">版本片</span>'
+        :`<button class="btn sm" style="white-space:nowrap" onclick="event.stopPropagation();openRmkPlan('${v.id}')"
+           title="排上片日期、取新片名、指定剪輯">排二創</button>`}</td>`:""}</tr>`;
+  }).join("");
+  const note=q
+    ? `找到 ${total} 支${total>50?"（列前 50 支）":""}　—— 搜尋時不限成效、不限觀看，照觀看排`
+    : (byRmk?`候選 ${total} 支（觀看 ${num(RMK_MIN_VIEWS)} 以上、排過上片日）`:"");
+  return `${note?`<div class="muted" style="font-size:12px;margin-bottom:6px">${note}</div>`:""}
+    <div class="${show.length>10?'vidscroll':''}">
+    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-e"><col class="pr-p"><col class="pr-v"><col class="pr-c"><col class="pr-v"><col class="pr-e">${canPlan?'<col class="pr-k">':''}</colgroup>
+    <thead><tr><th>#</th><th>影片</th><th>類型</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>留言</th><th>多久沒用</th><th>上次二創</th>${canPlan?"<th></th>":""}</tr></thead>
+    <tbody>${body||`<tr><td colspan="${cols}" class="muted">${
+      q?`找不到「${esc(q)}」。試試商品名、片名裡的關鍵字，或文案裡的一句話。`
+       :(PERF_KIND?'這個類型還沒有影片':'尚無資料')}</td></tr>`}</tbody></table></div>`;
+}
 function viewPerf(){
-  const vids=STATE.videos||[];
+  // ⚠️ v204：這裡本來讀 STATE.videos，也就是**看不到大流那半邊**。
+  // 正式資料實測：大流 47 支裡有 13 支有成效數字，觀看合計 1,467,885 ——
+  // 那 146 萬從來沒被算進平台總覽，那 13 支也從來沒排進影片排行。
+  // 成效是出片面不是生產面（毛片庫存、待認領、剪輯 KPI 才不准兩庫相加），
+  // 所以這裡該用 allLibVideos()。二創建議本來就用它，合併後兩邊才對得起來。
+  const vids=allLibVideos();
   const rows=[]; vids.forEach(v=>{ (Array.isArray(v.metrics)?v.metrics:[]).forEach(m=>rows.push(Object.assign({v},m))); });
   const hasData=rows.length>0;
   // 平台彙總（累計）
@@ -7572,13 +7629,10 @@ function viewPerf(){
   const kindCount={};
   vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
   const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
-  const vRank=vAll.filter(o=>!PERF_KIND||kindOf(o)===PERF_KIND)
-                  .sort((a,b)=>b.views-a.views).slice(0,50);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
     (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
   const pRank=Object.entries(prod).sort((a,b)=>b[1].views-a[1].views).slice(0,50);
-  const prodCell=(v)=>{ const ps=(v.products||[]).filter(p=>p&&p.name).map(p=>esc(p.name)); return ps.length?ps.join("、"):'<span class="muted">—</span>'; };
 
   const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
@@ -7596,20 +7650,8 @@ function viewPerf(){
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
       <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
     }</div>`:''}
-  <div class="card"><b>影片排行${PERF_KIND?`（只看${esc(PERF_KIND)}）`:(PERF_PLAT?`（${esc(PERF_PLAT)}）`:'（全平台）')}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依觀看排序，點影片看跨平台明細與帶貨</span>
-    <div class="${vRank.length>10?'vidscroll':''}" style="margin-top:8px">
-    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-e"><col class="pr-p"><col class="pr-v"><col class="pr-c"></colgroup>
-    <thead><tr><th>#</th><th>影片</th><th>類型</th><th>剪輯</th><th>帶貨商品</th><th>觀看</th><th>留言</th></tr></thead>
-    <tbody>${vRank.map((r,i)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
-      <td data-label="#">${i+1}</td>
-      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(r.v))}</a></td>
-      <td data-label="類型" class="pr-k">${typePill(r.v)}</td>
-      <td data-label="剪輯">${esc(r.v.editor||r.v.claimedBy||"")||'<span class="muted">—</span>'}</td>
-      <td data-label="帶貨商品">${prodCell(r.v)}</td>
-      <td data-label="觀看" class="pr-v"><b>${num(r.views)}</b></td>
-      <td data-label="留言" class="pr-c">${num(vidComments(r.v))}${rateShown(r.v)?`<span class="muted" style="font-size:11px">・${vidCommentRate(r.v).toFixed(1)}‰</span>`:''}</td></tr>`).join("")||`<tr><td colspan="7" class="muted">${PERF_KIND?'這個類型還沒有影片':'尚無資料'}</td></tr>`}</tbody></table>
-    </div>
-  </div>
+  ${perfRankCard()}
+  ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
