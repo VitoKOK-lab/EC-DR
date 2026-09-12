@@ -1140,16 +1140,26 @@ def main():
     # 那 9 則誤配已經寫進資料庫了 —— 因為它印在寫入流程的中間。
     # 發現問題卻擋不住問題，那個警告等於沒有。
     if hogs and not args.force:
-        print("\n⛔ 有 %d 支疑似誤配，**這次不寫入**。" % len(hogs))
-        print("   先用 --explain <影片id> 把那幾則叫出來看，確認之後再決定：")
-        print("     是誤配 → 跟我說，我修比對規則")
-        print("     其實是對的 → 加 --force 再跑一次")
-        return 2
+        print("\n⛔ 這 %d 支疑似誤配，**跳過不寫**（其餘照常寫）：" % len(hogs))
+        for _, vid in hogs:
+            print("     %-16s %s" % (vid, str(byvid.get(vid, {}).get("name") or "")[:34]))
+        print("   想看它們到底對到什麼：--explain <影片id>")
+        print("   確認其實是對的：加 --force 再跑一次，就會連它們一起寫。")
 
     # 4. 寫回去
+    # ⚠️ 可疑的那幾支**跳過**，不要為了它們擋住其餘全部。
+    #
+    # 這一段的歷史：
+    #   第一版警告印在寫入**後面** → 發現問題卻擋不住問題，等於沒有警告。
+    #   第二版改成整支中止 → 2026-09-12 為了 2 支可疑的，擋住另外 166 支正確的，
+    #                        老闆得多跑一趟，而那 166 支的數字本來就是對的。
+    #   現在：可疑的跳過、其餘照寫，兩件事分開。--force 才會連可疑的一起寫。
+    skip = set(vid for _, vid in hogs) if not args.force else set()
     final = []
     today_str = _fs.taipei_now()[:10]
     for vid, e in plan.items():
+        if vid in skip:
+            continue
         final.append({"videoId": vid,
                       "metrics": merge_metrics(byvid.get(vid, {}).get("metrics"), e["rows"]),
                       # 快照：每次同步替還在追蹤期內的貼文記一個點，之後才有
@@ -1157,7 +1167,8 @@ def main():
                       "hist": merge_hist(byvid.get(vid, {}).get("metricsHist"), e["rows"], today_str),
                       "fillLink": e["fillLink"]})
     done, failed = write_back(cfg_fb, token, final, args.fill_links)
-    print("\n寫入完成：%d 支成功、%d 支失敗" % (done, failed))
+    print("\n寫入完成：%d 支成功、%d 支失敗%s"
+          % (done, failed, ("（另外跳過 %d 支疑似誤配的）" % len(skip)) if skip else ""))
     try:
         write_log(cfg_fb, token,
                   "後台同步平台成效 %d 支" % done,

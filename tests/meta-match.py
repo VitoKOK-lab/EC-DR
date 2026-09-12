@@ -461,6 +461,20 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 疑似誤配：跳過那幾支，不要擋住其餘全部（v202）—")
+# 這一段的歷史，三個版本：
+#   ① 警告印在寫入**後面** → 發現問題卻擋不住問題，等於沒有警告
+#   ② 整支中止 → 2026-09-12 為了 2 支可疑的，擋住另外 166 支正確的
+#   ③ 現在：可疑的跳過、其餘照寫。--force 才連可疑的一起寫。
+ok("skip = set(vid for _, vid in hogs) if not args.force else set()" in SYNC_SRC,
+   "可疑的那幾支收進 skip（--force 時才清空）")
+ok("        if vid in skip:\n            continue" in SYNC_SRC,
+   "組寫入清單時真的跳過它們")
+ok("跳過不寫**（其餘照常寫）" in SYNC_SRC, "而且訊息要講清楚是「跳過」不是「全部不寫」")
+ok("return 2" not in SYNC_SRC.split("⛔ 這 %d 支疑似誤配")[1][:400],
+   "**不再整支中止** —— 166 支正確的不該被 2 支可疑的擋住")
+ok("另外跳過 %d 支疑似誤配的" in SYNC_SRC, "寫完要回報跳過了幾支，不能默默跳過")
+
 print("— 疑似誤配要擋得住寫入，不是事後才講 —")
 # 2026-09-11：畫面印了「⚠⚠ 對到 9 則，先不要 --write」，
 # 但那句話是在寫入流程中間印的 —— 講的時候已經寫進去了。
@@ -474,9 +488,14 @@ ok(hasattr(_p.parse_args([]), "force"), "（前提）有 --force 這個開關")
 src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                         "tools", "meta_sync.py"), encoding="utf-8").read()
 i_hog = src.index("if hogs and not args.force:")
+i_skip = src.index("skip = set(vid for _, vid in hogs)")
 i_write = src.index("done, failed = write_back(")
-ok(i_hog < i_write, "擋下來的判斷要排在 write_back 前面（不然擋了也來不及）")
-ok("return 2" in src[i_hog:i_write], "而且是直接結束，不是印一行然後照寫")
+ok(i_hog < i_write and i_skip < i_write,
+   "判斷與排除都要排在 write_back 前面（不然擋了也來不及）")
+# v202 起不再整支中止，改成「可疑的跳過、其餘照寫」。但**一定要真的被排除** ——
+# 只印一行警告然後照寫，就回到最早那個「發現問題卻擋不住問題」的版本。
+ok("if vid in skip:" in src[i_skip:i_write],
+   "可疑的那幾支要真的被排除掉，不是印一行警告然後照寫")
 
 print("— 翻頁撞到上限要大聲講 —")
 # 2026-09-11 抓 180 天，粉專回了**剛好 2,000 則** —— 那不是剛好這麼多，
