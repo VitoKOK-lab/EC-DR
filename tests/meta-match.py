@@ -285,6 +285,34 @@ S.write_back({}, "tok", [{"videoId": "V2", "metrics": [], "fillLink": ""}], Fals
 ok("metricsHist" not in _SENT[-1][0], "沒算快照的時候不要送一個空的去蓋掉本來有的")
 S._fs._patch, S._fs.docs_base = _realpatch, _realbase
 
+print("— 對到很多則：是磁鐵，還是同一支片重發？（v202）—")
+# 原本只看「對到幾則」，超過 8 則就喊誤配。那個數字是照 734 則那次大磁鐵訂的。
+# 結果一支寵粉商品片在兩個平台、半年內重發 11 次也被喊成誤配，還擋住寫入。
+# 老闆：「這可不該會重覆，如果重覆他就是同一支片，可能重覆發了。」
+#
+# 磁鐵跟重發的**形狀**不一樣，看形狀比看數量準。
+CTA_LONG = "留言藍寶石小編私訊您詳情謝謝大家支持記得追蹤不要錯過喔"
+磁鐵們 = ["今天寵粉的是編號%03d的天然寶石數量有限要買要快" % i + CTA_LONG for i in range(20)]
+重發們 = ["國民珠寶商泰熙爾汗寵粉啦大牌都用的寶石肯定可以收市價3萬克拉價格今天不用一折留言帝王獲取下單連結"] * 11
+微調們 = [x + ("第%d波" % i if i else "") for i, x in enumerate(重發們)]
+DROP = set(M.shingles(M.normalize(CTA_LONG)))
+ok(M.looks_like_reposts(重發們, DROP)[0], "11 則一模一樣 → 是同一支片重發，不要喊誤配")
+ok(M.looks_like_reposts(微調們, DROP)[0], "每次結尾微調一下也還是重發")
+ok(not M.looks_like_reposts(磁鐵們, DROP)[0], "20 則不同商品共用一句招呼語 → 是磁鐵，要喊")
+# ⚠️ 一定要先扣掉罐頭句再比。招呼語一長，不扣的話磁鐵會被墊到 0.57 —— 反過來被判成重發。
+ok(M.looks_like_reposts(磁鐵們)[1] > M.looks_like_reposts(磁鐵們, DROP)[1],
+   "不扣罐頭句的話，磁鐵的相似度會被招呼語墊高")
+ok(M.looks_like_reposts(磁鐵們)[0] and not M.looks_like_reposts(磁鐵們, DROP)[0],
+   "**而且會高到翻面**（不扣＝誤判成重發，扣了才判得對）—— 所以扣罐頭句不是可有可無")
+ok(M.looks_like_reposts(重發們, DROP)[1] - M.looks_like_reposts(磁鐵們, DROP)[1] > 0.4,
+   "扣完之後兩種形狀中間空得很開，門檻怎麼動都不會翻面")
+ok(M.looks_like_reposts([])[0] and M.looks_like_reposts(["短"])[0],
+   "一則以下不亂喊（沒有東西可比就不要判它有罪）")
+# 接進同步腳本了嗎 —— 只在函式裡做對沒有用
+ok("looks_like_reposts" in SYNC_SRC and "reposts" in SYNC_SRC,
+   "同步腳本真的有用這條，不是只算則數")
+ok("index.boilerplate" in SYNC_SRC, "而且有把罐頭句傳進去")
+
 print("— FB Reels 的播放數在「影片」上，不在「貼文」上（v202）—")
 # 老闆看畫面問「fb 怎麼才 5636」。正式資料：FB 290 則裡 288 則是 Reels，
 # 觀看合計 5,962（178 則是 0），可是同一批有 85,806 個讚 ——

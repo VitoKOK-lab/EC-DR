@@ -1000,9 +1000,38 @@ def main():
     # 一支片頂多是「每個帳號各發一次、偶爾重播」，連上兩個帳號的話個位數就滿了。
     # 2026-09-11 有一支對到 734 則（磁鐵是小編的固定招呼語），就是這樣被抓到的。
     # 這條線不擋寫入 —— 它只負責讓人一眼看到不對勁，判斷還是人做。
+    # ⚠️ 「對到幾則」只能當**觸發條件**，不能當判斷。
+    #
+    # 2026-09-12 踩到：一支寵粉商品片在兩個平台、半年內重發 11 次，被這條喊成誤配
+    # 而擋住寫入。11 跟 734（那次真的大磁鐵）是兩回事。老闆講得很清楚：
+    # 「這可不該會重覆，如果重覆他就是同一支片，可能重覆發了。」
+    #
+    # 磁鐵跟重發的**形狀**不一樣，看形狀比看數量準：
+    #     磁鐵：那堆貼文彼此的文案都不一樣（幾百個不同商品，只共用一句招呼語）
+    #     重發：那堆貼文彼此幾乎一模一樣（同一支片、同一段文案，發了 11 次）
+    # 所以則數超標之後再看一次「那幾則彼此像不像」，像的就放行。
+    # （相似度一定要先扣掉罐頭句再算 —— 見 meta_match.looks_like_reposts。）
     TOO_MANY = max(8, len(set(p["account"] for p in posts)) * 4)
-    hogs = sorted([(len(e["rows"]), vid) for vid, e in plan.items() if len(e["rows"]) > TOO_MANY],
-                  reverse=True)
+    caps_of = {}
+    for m in matched:
+        if id(m["post"]) in wanted_ids:
+            caps_of.setdefault(m["videoId"], []).append(m["post"].get("caption"))
+    hogs, reposts = [], []
+    for vid, e in plan.items():
+        if len(e["rows"]) <= TOO_MANY:
+            continue
+        same, sim = meta_match.looks_like_reposts(caps_of.get(vid) or [], index.boilerplate)
+        (reposts if same else hogs).append((len(e["rows"]), vid, sim))
+    hogs = sorted(hogs, reverse=True)
+    reposts = sorted(reposts, reverse=True)
+    if reposts:
+        print("\n  這幾支對到很多則，但那幾則的文案彼此幾乎一樣＝**同一支片重發**，不是誤配：")
+        for cnt, vid, sim in reposts[:8]:
+            ds = sorted(r["postAt"][:10] for r in plan[vid]["rows"] if r.get("postAt"))
+            print("     %-16s %-24s 重發 %d 次　%s～%s　彼此相似度 %.2f"
+                  % (vid, str(byvid.get(vid, {}).get("name") or "")[:24], cnt,
+                     ds[0] if ds else "", ds[-1] if ds else "", sim))
+    hogs = [(c, v) for c, v, _ in hogs]
     if hogs:
         print("\n⚠⚠ 這幾支對到的則數多到不合理（超過 %d 則），幾乎一定是誤配：" % TOO_MANY)
         for cnt, vid in hogs[:10]:
