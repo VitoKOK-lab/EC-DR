@@ -188,6 +188,10 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
   //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
   if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","找影片"]);
+  // v202：職位沒給、但在權限表上被勾起來的分頁，補進來。
+  // 海外剪輯（intl）一律不補 —— 這幾頁整頁是中文的，給了就是中文漏進英文介面。
+  if(currentRole()!=="intl") PERM_KEYS.forEach(k=>{ const P=PERMS[k];
+    if(P.tab && hasPerm(k) && !t.some(x=>x[0]===P.tab)) t.push([P.tab, P.label]); });
   if(isOwner()){ t.push(["settings","設定"]); } return t; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
@@ -406,7 +410,67 @@ function allLibVideos(){
   ALLLIB_A=a; ALLLIB_D=d; return ALLLIB;
 }
 // 誰看得到「影片庫大流」：管理員、經理人、剪輯（海外不做大流）
-function seesDF(){ return ["boss","manager","editor"].includes(currentRole()); }
+// ===================================================================
+// 權限（v202）
+// ===================================================================
+// 老闆：「這個功能要開權限，現在我的後台都沒有做好，權限還沒有明確可以依照人員新增。」
+//
+// 以前：職位決定一切，只有三個旗標（canAssign／canFindAssets／outsourced）能逐人開。
+// 結果是 ——「想讓 Regina 看『影片流量』，只能把她升成管理員」，連設定、成員、
+// 回收桶、操作紀錄一起給出去。中間沒有檔位。
+//
+// 現在：每一項功能一個 key。職位給一批預設，users.perms 再逐人補，兩邊取聯集。
+// 所有判斷一律走 hasPerm() —— 不要各寫一份條件，不然改了一邊，另一邊會默默不一樣
+// （canMarkUrgent 共用 canAssignWork 就是這個理由，v195 已經吃過一次虧）。
+//
+// ⚠️ 設定／成員／回收桶／操作紀錄**刻意不在這張表裡**（老闆選的）：
+//    拿到設定的人可以再把權限發給別人，那等於多配一把管理員鑰匙。
+//    那一項照舊只認 isOwner()。
+//
+// ⚠️ 職位預設值必須跟改這段之前**一模一樣** —— 這裡動一個字，就會有人突然
+//    多看到或少看到一整頁，而且不會有任何錯誤訊息。
+const PERMS = {
+  assign:{ label:"工作指派", roles:["boss","manager"], legacy:"canAssign",
+           why:"指派毛片給剪輯、排二創、標急件" },
+  find:  { label:"找影片",   roles:["boss","manager"], legacy:"canFindAssets",
+           why:"搜尋 Google Drive 素材庫" },
+  perf:  { label:"影片流量", roles:["boss"], tab:"perf", zhOnly:true,
+           why:"平台成效、影片排行、剪輯二創成效" },
+  output:{ label:"剪輯產出", roles:["boss","hr"], tab:"output", zhOnly:true,
+           why:"誰做完幾支、審過沒、檔案在哪" },
+  attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
+           why:"打卡紀錄、遲到早退、月報表" },
+  df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
+           why:"成品庫與二創建議" },
+  lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
+           why:"全隊交辦、備片存量、成效" },
+};
+const PERM_KEYS = Object.keys(PERMS);
+function permsOf(u){ return Array.isArray(u&&u.perms) ? u.perms : []; }
+// 這個人有沒有這一項。職位給的 ∪ 逐人給的 ∪ 舊旗標。
+// 沒有指名就看「現在畫面上是誰」—— 員工視角要看**被預覽的那個人**的權限，
+// 不是看管理員自己的，不然預覽出來的畫面是假的。currentUser() 已經處理了 VIEW_AS。
+function hasPerm(key, name){
+  const P=PERMS[key]; if(!P) return false;
+  const who = name || currentUser();
+  const u = (STATE&&STATE.users||[]).find(x=>x&&x.name===who) || null;
+  if(!u){
+    // 名單裡找不到這個人。只有「就是現在登入的本人、而且不是在預覽別人」時，
+    // 才退回 currentRole()（資料還沒載完的那一瞬間要照舊能用）。
+    //
+    // ⚠️ 預覽一個名單上沒有的名字**絕對不能**退回 currentRole()：
+    //    那個函式找不到人時會讀 localStorage 裡**管理員自己**的職位，
+    //    於是預覽就借到了管理員權限。tests/smoke-v196.js 在守這一條。
+    if(name || VIEW_AS) return false;
+    return (P.roles||[]).includes(currentRole());
+  }
+  if((P.roles||[]).includes(u.role||"editor")) return true;
+  if(permsOf(u).indexOf(key)>=0) return true;
+  return !!(P.legacy && u[P.legacy]);   // 舊旗標照樣算數，資料庫不用搬
+}
+// 這一項是職位本來就給的嗎（設定畫面用：那種不必勾，也不給取消）
+function permByRole(key, role){ return ((PERMS[key]||{}).roles||[]).includes(role); }
+function seesDF(){ return hasPerm("df"); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
 // 選過的帳號記在 localStorage。**「有沒有選過」跟「選了哪一家」是兩件事** ——
@@ -506,6 +570,9 @@ async function route(method, path, body){
       if(body.canAssign!=null) patch.canAssign=!!body.canAssign;
       // v196：可以看「找影片」那一頁
       if(body.canFindAssets!=null) patch.canFindAssets=!!body.canFindAssets;
+      // v202：逐人權限（設定→權限那張表）。⚠️ 跟上面幾個一樣，這裡是白名單 ——
+      //       忘了加就是「勾了沒反應」，而且不會有任何錯誤訊息。
+      if(body.perms!=null) patch.perms=(Array.isArray(body.perms)?body.perms:[]).map(String);
       // v185：外包人員（老闆：「陳鋒（原李浩），這是外包的人員，不要讓他看到
       // 公司其他人的看板，和成效」）。用旗標不是把名字寫死 —— 換人、多一個人
       // 在設定裡勾一下就好。
@@ -5356,7 +5423,7 @@ let OUT_FILTER="all";                 // all｜ok 審過｜wait 還沒審｜back
 // 要「檢查某個人這個月做了什麼」得先在裡面找到他。主管與人資每個月的動作是
 // 「一個人一個人看」，所以介面就照那個動作分兩層。
 let OUT_WHO="";
-function canSeeOutput(){ return ["boss","hr"].includes(currentRole()); }
+function canSeeOutput(){ return hasPerm("output"); }
 function setOutFilter(k){ OUT_FILTER=OUT_FILTER===k?"all":k; render(); }
 // 點某個人 → 進他的清單。預設就停在「審過」那一格 —— 主管與人資要檢查的
 // 是「這個月審過的成品」，不是全部。其他幾格還在，一按就切。
@@ -6036,11 +6103,7 @@ function unmarkShot(id){ const v=vid(id)||{};
 // ⚠️ 這個權限給的是「派片」那一組事：指派剪輯工作＋標急件（v195 老闆加的）。
 //    **不含**看薪資、改設定、主管看板那些。要再擴張請明確再開一個旗標，
 //    不要偷偷讓它變成半個管理員。
-function canAssignWork(){
-  if(VIEW_AS) return false;
-  if(["boss","manager"].includes(currentRole())) return true;
-  return isSubLead();
-}
+function canAssignWork(){ return !VIEW_AS && hasPerm("assign"); }
 // ── 小主管（v178）─────────────────────────────────────────────────
 // 老闆：「regina 還有鴻儒，干脆把鴻儒變成小主管，但他不用看到儀表版」
 //
@@ -6061,9 +6124,9 @@ function isSubLead(){
 }
 // 誰看得到「主管版」的團隊看板（多出：交辦追蹤全隊、備片存量、成效）
 // ⚠️ 小主管不在裡面 —— 他只管指派影片，不看管理面的東西。
-function seesLeadBoard(){
-  return !VIEW_AS && ["boss","manager","hr"].includes(currentRole());
-}
+// 海外剪輯一律不給 —— 主管看板整頁是中文的。畫面上勾不到，但「勾不到」不等於
+// 「資料裡不會有」（舊資料、手改、將來多一個入口），所以這裡再擋一道。
+function seesLeadBoard(){ return !VIEW_AS && currentRole()!=="intl" && hasPerm("lead"); }
 // v195：小主管（canAssign）也能標 —— 跟 canAssignWork() 同一批人，刻意共用同一個定義，
 //       不要各寫一份條件，不然哪天改了一邊，另一邊會默默不一樣。
 function canMarkUrgent(){ return canAssignWork(); }
@@ -8954,13 +9017,7 @@ function msAccounts(){ return chAccounts("ms"); }
 //    任何人拿到 firebase-config.js 就讀得到 Firestore（firestore.rules
 //    開頭寫得很清楚）。老闆知道且同意：「跟現在其他頁一樣就好」。
 //    要真的擋住得先把登入換成 Google 帳號＋白名單，那是另一件事。
-function canFindAssets(){
-  if(VIEW_AS){ const p=(STATE&&STATE.users||[]).find(x=>x&&x.name===VIEW_AS);
-    return !!(p && (p.canFindAssets || ["boss","manager"].includes(p.role))); }
-  if(["boss","manager"].includes(currentRole())) return true;
-  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===currentUser());
-  return !!(u && u.canFindAssets);
-}
+function canFindAssets(){ return hasPerm("find"); }
 // 只有管理員能重建索引（那是整份換掉，不是改一筆）
 function canRebuildAssets(){ return !VIEW_AS && currentRole()==="boss"; }
 
@@ -9523,7 +9580,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="把工作分給誰：指派毛片給剪輯、排二創、標急件">工作指派</th><th title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="這個人被額外開了幾項權限；要改去「權限」那一頁">權限</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -9605,6 +9662,68 @@ function setWorkHoursCard(s){
     <div class="muted" style="font-size:12px;margin-top:6px">打卡一律成功、不會被擋；系統只把裝置、是不是手機、GPS 座標記下來，出勤報表上標出異常讓人資判斷。</div>
   </div>`;
 }
+// ── 設定 → 權限：一個人一列，一項權限一欄（v202）────────────────────
+// 老闆：「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
+//
+// 三種狀態，看得出差別才叫「明確」：
+//   職位　 ＝ 他的職位本來就有，不必勾也不給取消（要收回就改職位）
+//   打勾　 ＝ 額外開給他的（users.perms）
+//   空白　 ＝ 沒有
+//
+// 設定／成員／回收桶／操作紀錄不在這張表裡（老闆選的）：拿到設定的人可以再把權限
+// 發給別人，那等於多配一把管理員鑰匙。
+function setPermsCard(members){
+  const head=PERM_KEYS.map(k=>`<th title="${esc(PERMS[k].why)}" style="white-space:nowrap">${esc(PERMS[k].label)}</th>`).join("");
+  const rows=members.map(u=>{
+    const role=u.role||"editor";
+    const cells=PERM_KEYS.map(k=>{
+      if(permByRole(k,role))
+        return `<td data-label="${esc(PERMS[k].label)}"><span class="pill ok" style="font-size:10px">職位</span></td>`;
+      if(role==="intl" && PERMS[k].zhOnly)
+        return `<td data-label="${esc(PERMS[k].label)}"><span class="muted" style="font-size:12px">—</span></td>`;
+      return `<td data-label="${esc(PERMS[k].label)}"><input type="checkbox" ${hasPerm(k,u.name)?"checked":""}
+        style="width:auto;margin:0" onchange="setMemberPerm('${esc(jsEsc(u.name))}','${k}',this.checked)"
+        title="${esc(PERMS[k].why)}"></td>`;
+    }).join("");
+    const out=["boss","manager","hr"].includes(role)
+      ? '<span class="muted" style="font-size:12px">—</span>'
+      : `<input type="checkbox" ${u.outsourced?"checked":""} style="width:auto;margin:0"
+          onchange="setMemberOutsourced('${esc(jsEsc(u.name))}',this.checked)"
+          title="外包人員：看不到其他同事的看板與成效，也看不到月排程">`;
+    return `<tr><td data-label="名字"><b>${esc(u.name)}</b>
+      <div class="muted" style="font-size:11px">${esc(ROLE_LABEL[role]||"")}</div></td>
+      ${cells}<td data-label="外包">${out}</td></tr>`;
+  }).join("");
+  return `<div class="card"><b>權限（${members.length} 人）</b>
+    <span class="muted" style="font-size:12px">勾起來就是額外開給他的；「職位」是他的職位本來就有，要收回請改職位</span>
+    <div class="vidscroll" style="margin-top:8px">
+    <table class="responsive" style="min-width:660px"><thead><tr><th>名字</th>${head}
+      <th title="外包人員：看不到其他同事的看板與成效，也看不到月排程" style="white-space:nowrap">外包</th></tr></thead>
+    <tbody>${rows||'<tr><td class="muted">還沒有成員</td></tr>'}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.9">
+      ${PERM_KEYS.map(k=>`<b>${esc(PERMS[k].label)}</b>：${esc(PERMS[k].why)}`).join("<br>")}<br>
+      <b>外包</b>：看不到其他同事的看板與成效，也看不到月排程
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:10px">
+      設定、成員、回收桶、操作紀錄不在這張表裡 —— 拿到設定的人可以再把權限發給別人，
+      那等於多配一把管理員鑰匙。要給誰這些，只能換管理員本人。
+    </div>
+  </div>`;
+}
+// 勾／取消一項權限。存成 users.perms 陣列（職位給的不會寫進來，也不必寫）。
+function setMemberPerm(name, key, on){
+  if(!PERMS[key]){ toast("不認得這個權限："+key,true); return; }
+  const u=(STATE.users||[]).find(x=>x&&x.name===name);
+  if(!u){ toast("找不到這個成員",true); return; }
+  const cur=permsOf(u).filter(k=>PERMS[k]);          // 順便把不認得的舊值濾掉
+  const next=on ? [...new Set(cur.concat([key]))] : cur.filter(k=>k!==key);
+  // 舊旗標跟著一起動，不然「取消了卻還是有」——
+  // hasPerm 會同時看 perms 與舊旗標，只清一邊等於沒清。
+  const body={perms:next};
+  if(PERMS[key].legacy) body[PERMS[key].legacy]=!!on;
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name), body,
+    (on?"已開給 ":"已收回 ")+name+"：" + PERMS[key].label);
+}
 // 設定：對接窗口名單
 function setContactsCard(contactList, contactRows){
   return `<div class="card"><b>對接窗口名單（${contactList.length}）</b>
@@ -9646,45 +9765,24 @@ function viewSettings(){
       ${w.custom?`<button class="btn sec sm" style="padding:2px 7px;font-size:11px" onclick="setMemberHours('${esc(jsEsc(u.name))}','','')" title="改回全公司時間">↺</button>`:''}
       ${flexBox}
     </span>`; };
-  // 「可以指派剪輯工作」的旗標。主管與經理人本來就有，不用勾（勾了也沒差，所以顯示「本來就有」）。
-  const asgSel=(u)=>{
-    if(["boss","manager"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">本來就有</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)"
-        title="把工作分給誰：指派毛片、排二創、標急件">工作指派</label>`;
-  };
   // v196：「找影片」那一頁的權限（老闆：「要有權限，給權限的人才能讀」）。
   // ⚠️ 這是**介面上**的權限，跟這個系統其他頁同一個標準 —— 擋得住同事，
   //    擋不住懂技術的外人（登入是匿名的，見 firebase/firestore.rules 開頭）。
-  const findSel=(u)=>{
-    if(["boss","manager"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">本來就有</span>';
-    if((u.role||"")==="intl")
-      return '<span class="muted" style="font-size:12px">—</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.canFindAssets?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberFindAssets('${esc(jsEsc(u.name))}',this.checked)"
-        title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</label>`;
-  };
-  // v185：外包人員 —— 看不到別人的看板與成效（管理層本來就不會是外包）
-  const outSel=(u)=>{
-    if(["boss","manager","hr"].includes(u.role||"editor"))
-      return '<span class="muted" style="font-size:12px">—</span>';
-    return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
-      <input type="checkbox" ${u.outsourced?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberOutsourced('${esc(jsEsc(u.name))}',this.checked)"
-        title="外包人員：看不到其他同事的看板與成效">外包</label>`;
+  // 成員表只顯示「額外開了幾項」，要改去「權限」那一頁 ——
+  // 老闆：「把我其他員工的各式權限都整合給我在後台設定」。
+  // 以前三個勾勾各自散在這張表的三欄裡，加第四項就擠不下了。
+  const permCell=(u)=>{
+    const extra=PERM_KEYS.filter(k=>!permByRole(k,u.role||"editor") && hasPerm(k,u.name));
+    return `<button class="btn sec sm" style="white-space:nowrap" onclick="setSetTab('perms')"
+      title="${esc(extra.length?("額外開了："+extra.map(k=>PERMS[k].label).join("、")):"沒有額外開的權限")}"
+      >${extra.length?("額外 "+extra.length+" 項"):'<span class="muted">職位預設</span>'}</button>`;
   };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>
     <td data-label="角色">${roleSel(u)}</td>
     <td data-label="區域">${zoneCell(u)}</td>
     <td data-label="上下班">${whSel(u)}</td>
-    <td data-label="可指派">${asgSel(u)}</td>
-    <td data-label="找影片">${findSel(u)}</td>
-    <td data-label="外包">${outSel(u)}</td>
+    <td data-label="權限">${permCell(u)}</td>
     <td data-label=""><button class="btn sm sec" onclick="renameMember('${esc(jsEsc(u.name))}')">改名</button>
       <button class="btn sm sec" onclick="resetMemberPw('${esc(jsEsc(u.name))}')">重設密碼</button>
       <button class="btn sm danger" onclick="delMember('${esc(jsEsc(u.name))}')">刪除</button></td>
@@ -9738,8 +9836,8 @@ function viewSettings(){
   //   分類  標籤這種偶爾補一個的
   //   維護  出事才用的（操作紀錄、回收桶、一次性轉檔）
   // 只有一層子分頁，不再往下分 —— 再分下去就變成「東西藏在哪一層」的猜謎。
-  const TABS=[["basic","基本"],["members","成員"+paren(members.length)],["plat","平台"],
-              ["tags","分類"],["maint","維護"]];
+  const TABS=[["basic","基本"],["members","成員"+paren(members.length)],["perms","權限"],
+              ["plat","平台"],["tags","分類"],["maint","維護"]];
   if(!TABS.some(t=>t[0]===SET_TAB)) SET_TAB="basic";
   const tabBar=`<div class="vtabs" style="margin-bottom:14px">${TABS.map(([k,label])=>
     `<button class="vtab ${SET_TAB===k?'on':''}" onclick="setSetTab('${k}')"><span>${esc(label)}</span></button>`).join("")}</div>`;
@@ -9814,6 +9912,7 @@ function viewSettings(){
   ${setContactsCard(contactList, contactRows)}`;
 
   const body = SET_TAB==="members" ? setMembersCard(members, memberRows)
+             : SET_TAB==="perms"   ? setPermsCard(members)
              : SET_TAB==="plat"    ? plat
              : SET_TAB==="tags"    ? tags
              : SET_TAB==="maint"   ? maint
@@ -9980,13 +10079,8 @@ function setMemberFlex(name, on){
     on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
 // 逐一給某個人「可以指派剪輯工作」的權限。用旗標而不是把名字寫死在程式裡：
 // 換人、多一個人、拿掉權限，在這裡勾一下就好，不必改程式重新部署。
-function setMemberAssign(name, on){
-  writeAdmin("PUT","/api/users/"+name,{canAssign:!!on},
-    on?("「"+name+"」現在可以指派剪輯工作給同事，也可以標急件"):("已收回「"+name+"」指派剪輯工作與標急件的權限")); }
-// v196：「找影片」那一頁的權限
-function setMemberFindAssets(name, on){
-  writeAdmin("PUT","/api/users/"+name,{canFindAssets:!!on},
-    on?("「"+name+"」現在可以用「找影片」搜尋素材"):("已收回「"+name+"」的「找影片」權限")); }
+// v202：工作指派／找影片的開關改走 setMemberPerm（設定→權限那一頁）——
+// 一個權限一條寫入路徑，兩條遲早會不一致。
 // v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
 function setMemberOutsourced(name, on){
   writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},

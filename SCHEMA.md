@@ -201,6 +201,10 @@
 | `devices` | object[] | 用過的打卡裝置 `{id, ua, mobile, firstAt}`。**第一次用就自動記起來，不需要核准**；換新裝置時出勤頁會提醒人資 |
 | `craft` | string | **已停用（v115 起改用分區，見上）**。舊值：`orig`／`derived`／`both`。程式不再讀它，但 `app.js` 的 `PUT /api/users/:name` 仍原樣寫回（欄位保留不動），之後要回頭還救得到 |
 | `intlLocale` | string | 海外剪輯綁定語言 | `en`／`th`／`ms`（僅 `role=intl` 用；未設定＝`en`）。帳號綁語言：只做/只看該語言 |
+| `perms` | string[] | **逐人額外開的權限**（v202）：`assign`／`find`／`perf`／`output`／`attend`／`df`／`lead`。只存「職位沒給、額外開給他」的那幾項；職位本來就有的不寫進來。詳見下方「逐人權限」 |
+| `canAssign` | boolean | 工作指派（**舊旗標**，v202 併進 `perms.assign`）。`hasPerm()` 兩邊都看，資料庫不用搬；`setMemberPerm()` 改這一項時會把它一起動 —— 只清一邊等於沒清 |
+| `canFindAssets` | boolean | 找影片（**舊旗標**，v202 併進 `perms.find`），同上 |
+| `outsourced` | boolean | 外包人員：看不到其他同事的看板與成效，也看不到月排程。這是**限制**不是授權，所以獨立一欄、不進 `perms` |
 | `isDefault` | boolean | 系統預設旗標 |
 
 > 管理員（Vito）以「🔒 管理員登入」進入，不需建 user 文件。
@@ -934,6 +938,58 @@ slots: [{ videoId, reused:true, by, at, time, ver }]   // ver 省略或 1 ＝原
 二創跟原片同 id，同一天排原片＋第 2 版就會少一列，月曆上的「已排 N」也跟看得到的列數對不上。
 現在每一格各自列一列，並把 `slotIdx` 帶給 `moveReuse()`／`unscheduleReuse()` ——
 不指名第幾格的話，搬天與移出永遠動到第一格。
+
+## 逐人權限（v202）
+
+老闆：「這個功能要開權限，現在我的後台都沒有做好，權限還沒有明確可以依照人員新增。」
+「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
+
+以前職位決定一切，只有三個旗標（`canAssign`／`canFindAssets`／`outsourced`）能逐人開。
+結果是：**想讓 Regina 看「影片流量」，只能把她升成管理員** —— 連設定、成員、回收桶、
+操作紀錄一起給出去，中間沒有檔位。
+
+現在每一項功能一個 key，寫在 `app.js` 的 `PERMS`：
+
+| key | 名字 | 職位預設 | 有分頁 |
+|---|---|---|---|
+| `assign` | 工作指派 | boss, manager | — |
+| `find` | 找影片 | boss, manager | `assets` |
+| `perf` | 影片流量 | boss | `perf` |
+| `output` | 剪輯產出 | boss, hr | `output` |
+| `attend` | 出勤 | boss, hr | `attend` |
+| `df` | 大流量影片 | boss, manager, editor | `videosDF` |
+| `lead` | 主管看板 | boss, manager, hr | — |
+
+判斷一律走 `hasPerm(key, name?)`：**職位給的 ∪ `users.perms` 逐人給的 ∪ 舊旗標**。
+不要各寫一份條件 —— 改了一邊，另一邊會默默不一樣（v195 的 `canMarkUrgent` 已經吃過一次虧）。
+
+`users.perms` 是字串陣列，只存「額外開的」；職位給的不寫進去也不必寫。
+舊的三個旗標照樣算數，**資料庫不用搬**；`setMemberPerm()` 改一項時會把對應的舊旗標
+一起動 —— `hasPerm` 兩邊都看，只清一邊等於沒清（取消了他還是有權限）。
+
+### ⚠️ 職位預設值不能動
+
+`tests/smoke-v202.js` 第 ① 段把改這套**之前**的七組名單抄在測試裡，逐一比對七項 × 十個職位。
+這裡動一個字，就會有人突然多看到或少看到一整頁，而且不會有任何錯誤訊息。
+
+### ⚠️ 預覽名單上沒有的人 → 一項權限都沒有
+
+`currentRole()` 找不到人時會讀 localStorage 裡**管理員自己**的職位。所以 `hasPerm` 只有在
+「就是現在登入的本人、而且不是在預覽別人」時才退回 `currentRole()`，其餘一律回 false ——
+否則員工視角預覽一個不存在的名字就借到了管理員權限（`tests/smoke-v196.js` 在守這一條）。
+
+### ⚠️ 海外剪輯（intl）不給中文頁
+
+`zhOnly` 標出來的五項（影片流量／剪輯產出／出勤／大流量影片／主管看板）整頁是中文的，
+權限頁上海外那一列不給勾。**前四項有分頁，`myTabs()` 本來就擋；`lead` 沒有分頁，
+所以第一版漏掉了** —— `seesLeadBoard()` 因此再擋一道：畫面上勾不到，不等於資料裡不會有。
+
+### 設定／成員／回收桶／操作紀錄不在這張表裡
+
+老闆選的。拿到設定的人可以再把權限發給別人，那等於多配一把管理員鑰匙。
+那一項照舊只認 `isOwner()`（比對 `ADMIN_NAME`，不是職位）。
+
+---
 
 ## 二創流程（v201，第三步）
 

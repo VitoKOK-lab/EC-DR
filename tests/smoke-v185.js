@@ -158,8 +158,12 @@ function reset(vids, users){
     ok("主管照樣看得到外包人員那張卡（他要管他）", b.includes("陳鋒")); }
   // 旗標是可以在設定裡勾的，不是把名字寫死
   { reset(); as("管理員","boss");
+    // v202：三個散在成員表的勾勾整合到「權限」那一頁了（老闆：「把各式權限都整合
+    // 給我在後台設定」）。規矩沒變 —— 還是要能在設定裡勾，不能把名字寫死。
+    SET_TAB="perms";
     const st=viewSettings();
-    ok("**成員管理有「外包」這一欄**", st.includes(">外包</th>") || st.includes("外包</th>"), st.includes("外包"));
+    SET_TAB="basic";
+    ok("**權限頁有「外包」這一欄**", st.includes(">外包</th>") || st.includes("外包</th>"), st.includes("外包"));
     ok("**每個同仁都勾得起來**", /setMemberOutsourced\('陳鋒',this\.checked\)/.test(st));
     ok("陳鋒那一格是勾起來的", /value="陳鋒"|陳鋒/.test(st) && st.includes("checked"));
     ok("管理層那一列不給勾（他們不可能是外包）",
