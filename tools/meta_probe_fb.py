@@ -36,18 +36,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from meta_sync import (_call, _insight_values, _paged, MetaError,  # noqa: E402
                        DEFAULT_CONFIG)
 
-# 候選指標。分三群，印的時候分開看比較清楚：
-#   新的（2024 併過之後）／舊的（可能還活著）／Reels 專用
-CANDIDATES = [
-    ("新", ["views", "post_impressions", "post_impressions_unique",
-            "post_impressions_organic", "post_impressions_paid"]),
-    ("舊", ["post_video_views", "post_video_views_unique",
-            "post_video_views_organic", "post_video_views_paid",
-            "post_video_complete_views_30s", "post_video_avg_time_watched"]),
-    ("Reels", ["blue_reels_play_count", "post_video_social_actions",
-               "fb_reels_total_plays", "post_video_view_time"]),
-    ("對照組", ["post_reactions_by_type_total", "post_clicks"]),
-]
+# 第一輪（2026-09-12，8 則）的結論，留著當紀錄：
+#   views / post_impressions / blue_reels_play_count  → **這個物件上根本沒有**（8 則全要不到）
+#   post_video_views 那一族                            → 要得到，但對 Reels 回接近 0 的垃圾
+# 正式資料佐證：FB 290 則裡 288 則是 Reels，其中 178 則觀看是 0，最大只有 2,020，
+# 而同一批貼文有 85,806 個讚 —— 有一則 1,152 個讚只有 148 觀看。那不是成績，是壞數字。
+#
+# 所以第二輪不再猜名字：**叫 Meta 自己把它有的列出來**。
+# Reels 的播放數不在「貼文」物件上，要往下找它附掛的**影片物件**
+# （attachments.target.id 或 object_id），那裡才有 video_insights。
+LEGACY = ["post_video_views", "post_reactions_by_type_total", "post_clicks"]
 
 
 def main():
@@ -72,44 +70,65 @@ def main():
         tok = acc.get("pageToken") or token
         print("\n═══ %s ═══" % acc["name"])
         rows = _paged("%s/posts" % acc["pageId"], tok,
-                      {"fields": "id,message,created_time,permalink_url,"
-                                 "attachments{media_type,type}"}, since)
+                      {"fields": "id,message,created_time,permalink_url,object_id,"
+                                 "attachments{media_type,type,target}"}, since)
         rows = rows[:args.n]
         if not rows:
             print("  這段期間沒有貼文。")
             continue
 
-        # 哪些指標在「至少一則」上回得了數字 —— 這才是我們要的答案
+        # 不再猜名字：叫 Meta 自己把它有的列出來
         works = {}
         for r in rows:
             pid = r.get("id")
             att = ((r.get("attachments") or {}).get("data") or [{}])[0]
             kind = att.get("media_type") or att.get("type") or "?"
-            print("\n  %s  %s  %s" % (str(r.get("created_time"))[:10], kind,
-                                      (r.get("message") or "")[:28].replace("\n", " ")))
-            for group, mets in CANDIDATES:
-                got = []
-                for m in mets:
-                    try:
-                        d = _call("%s/insights" % pid, tok, {"metric": m})
-                    except MetaError as e:
-                        msg = str(e)
-                        got.append("%s ✗%s" % (m, "(空)" if "valid insights" not in msg else ""))
-                        continue
-                    vals = _insight_values(d)
-                    if m in vals:
-                        got.append("%s = %s" % (m, "{:,}".format(vals[m])))
-                        works.setdefault(m, 0)
-                        works[m] += 1
-                    else:
-                        got.append("%s ✗(回空的)" % m)
-                ok_only = [g for g in got if "=" in g]
-                print("    %-6s %s" % (group, "　".join(ok_only) if ok_only else "（一個都要不到）"))
+            vid_id = ((att.get("target") or {}).get("id")) or r.get("object_id") or ""
+            print("\n  %s  %-8s %s" % (str(r.get("created_time"))[:10], kind,
+                                       (r.get("message") or "")[:26].replace("\n", " ")))
+
+            # ① 貼文物件：它自己說有哪些（不帶 metric 就是「全部給我」）
+            for path, label in [("%s/insights" % pid, "貼文")] + (
+                    [("%s/video_insights" % vid_id, "影片")] if vid_id else []):
+                try:
+                    d = _call(path, tok, {})
+                except MetaError as e:
+                    print("    %s　要不到：%s" % (label, str(e)[:88]))
+                    continue
+                vals = _insight_values(d)
+                if not vals:
+                    print("    %s　回了空的" % label)
+                    continue
+                show = sorted(vals.items(), key=lambda kv: -kv[1])[:8]
+                print("    %s　%s" % (label, "　".join("%s=%s" % (k, "{:,}".format(v)) for k, v in show)))
+                for k, v in vals.items():
+                    o = works.setdefault(k, {"n": 0, "nz": 0, "max": 0})
+                    o["n"] += 1
+                    if v > 0:
+                        o["nz"] += 1
+                    o["max"] = max(o["max"], v)
+            if not vid_id:
+                print("    （這則沒有附掛影片，所以沒有影片物件可問）")
+
+            # ② 舊的那幾個照樣量一次，好跟上面對照
+            got = []
+            for m in LEGACY:
+                try:
+                    vals = _insight_values(_call("%s/insights" % pid, tok, {"metric": m}))
+                except MetaError:
+                    continue
+                if m in vals:
+                    got.append("%s=%s" % (m, "{:,}".format(vals[m])))
+            if got:
+                print("    舊的　%s" % "　".join(got))
 
         print("\n  ── %s：哪些指標要得到（%d 則裡有幾則回得了數字）──" % (acc["name"], len(rows)))
         if works:
-            for m, n in sorted(works.items(), key=lambda kv: -kv[1]):
-                print("     %-34s %d / %d 則" % (m, n, len(rows)))
+            print("     %-34s %s  %s  %s" % ("指標", "有回", "不是0", "最大值"))
+            for m, o in sorted(works.items(), key=lambda kv: (-kv[1]["nz"], -kv[1]["max"])):
+                print("     %-34s %2d 則  %2d 則  %s" % (m, o["n"], o["nz"], "{:,}".format(o["max"])))
+            print("\n     ⭐ 要找的是「不是 0 的則數多、最大值合理」那一個 ——")
+            print("        你的 Reels 有上千個讚，播放數不可能只有兩三百。")
         else:
             print("     一個都要不到 —— 那就不是指標名字的問題，回報給我看。")
     print("\n（只讀，資料庫一個字都沒動。）")
