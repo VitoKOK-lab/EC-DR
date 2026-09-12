@@ -164,11 +164,11 @@ ok(!rmkNameLock(vid("P1")), "沒有二創的一般片 → 照樣可以改");
 { const 候選 = V({ id: "S2", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
   mount([候選], "管理員", "boss");
   ok(canPlanRemake(), "管理員可以排");
-  ok(rmkRowsHTML().includes("openRmkPlan('S2')"), "管理員的建議清單上有「排二創」");
+  ok(perfRankRowsHTML().includes("openRmkPlan('S2')"), "管理員的建議清單上有「排二創」");
   mount([候選], "阿剪", "editor");
   ok(!canPlanRemake(), "剪輯不能排");
-  ok(!rmkRowsHTML().includes("openRmkPlan("), "剪輯看得到建議，但沒有「排二創」那顆鍵");
-  ok(rmkRowsHTML().includes("可二創的片"), "剪輯照樣看得到建議本身"); }
+  ok(!perfRankRowsHTML().includes("openRmkPlan("), "剪輯看得到建議，但沒有「排二創」那顆鍵");
+  ok(perfRankRowsHTML().includes("可二創的片"), "剪輯照樣看得到建議本身"); }
 
 // ══════════ ⑬ 清單上分得出哪一支是二創 ══════════
 mount([原片, 二創]);
@@ -267,17 +267,31 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
                  editor: "阿二", createdAt: "2026-07-01", metrics: [] });
   mount([s, k1, k2], "管理員", "boss");
   ok(Math.round(rmkLastResult(vid("S8")).r * 100) === 20, "取最近一支**有數字**的（最新那支還在剪，不算它 0 分）");
-  ok(rmkRowsHTML().includes("上次二創 20%"), "寫在建議清單的「上次誰剪」旁邊");
+  ok(perfRankRowsHTML().includes('data-label="上次二創"') && perfRankRowsHTML().includes("20%"),
+     "寫在影片排行的「上次二創」那一欄");
   // 人跟數字一定要是同一支、同一個人。第一版分開取，畫面上出現「阿二　上次二創 20%」——
   // 那 20% 是阿剪剪的，阿二那支還在剪。同一格裡兩個數字指到不同的人，看的人一定誤會。
   ok(rmkLastEditor(vid("S8")) === "阿剪", "有成績的話，「上次誰剪」也要跟著指到剪出那個成績的人");
-  ok(/阿剪<span class="muted"[^>]*>　上次二創 20%/.test(rmkRowsHTML()), "畫面上這兩個字連在一起，不會各指各的");
+  ok(/阿剪<span class="muted"[^>]*>　20%/.test(perfRankRowsHTML()), "畫面上這兩個字連在一起，不會各指各的");
   mount([s, k2], "管理員", "boss");
   ok(rmkLastEditor(vid("S8")) === "阿二" && rmkLastResult(vid("S8")) === null,
      "都還沒有成績 → 顯示最近被指派的那個人，但不給數字");
+  // 在真的瀏覽器上看出來的：rmkLastCut 在「從來沒二創過」時會退回**原片自己的剪輯**。
+  // 那在原本「上次誰剪」那一欄是對的，但這一欄叫「上次二創」—— 印出來會變成
+  // 「昱丞剪過這支的二創」，而他根本沒剪過，旁邊「剪輯」那欄還印著同一個名字。
+  { const 沒二創過 = V({ id: "NR", name: "從來沒二創過的片", editor: "昱丞",
+                        scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+    mount([沒二創過], "管理員", "boss");
+    const h = perfRankRowsHTML();
+    ok(h.includes("從來沒二創過的片"), "（對照）這支有排進來");
+    ok(/data-label="上次二創" class="pr-e"><span class="muted">—<\/span>/.test(h),
+       "從來沒二創過 → 「上次二創」留破折號，不要印原片剪輯的名字");
+    ok(h.includes(">昱丞</td>") || /data-label="剪輯">昱丞/.test(h), "「剪輯」那欄照樣是他（那一欄本來就該有名字）"); }
   mount([原片], "管理員", "boss");
   ok(rmkLastResult(vid("S1")) === null, "沒有二創過就沒有這個數字");
-  ok(!rmkRowsHTML().includes("上次二創"), "也不要硬擠一個 0% 上去");
+  // 這支有二創、但那支還沒有成績 → 人要顯示，數字不能硬擠一個 0% 上去
+  ok(!/data-label="上次二創" class="pr-e">[^<]*<span class="muted" style/.test(perfRankRowsHTML()),
+     "沒有成績就只顯示人，不要硬擠一個 0% 上去");
 }
 
 // ══════════ ⑰b 二創自己一頁，不長在「大流量影片」上（v203）══════════
@@ -286,42 +300,38 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
 // 二創長在那一頁上的話，那頁一刪，二創就跟著陪葬。
 { const 候選 = V({ id: "P2", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
   mount([候選], "管理員", "boss");
-  const df = viewVideosDF(), rm = viewRemake();
+  const df = viewVideosDF(), pf = viewPerf();
   ok(!df.includes("二創建議"), "**大流量那一頁不再有二創建議**（那頁以後要整頁刪掉）");
-  ok(rm.includes("二創建議") && rm.includes("可二創的片"), "二創建議搬到二創那一頁了");
-  ok(rm.includes("排二創"), "排二創的鍵也在那一頁");
-  ok(!viewPerf().includes("剪輯二創成效"), "剪輯二創成效也從影片成效那頁搬走了");
+  ok(pf.includes("可二創的片") && pf.includes("依二創建議"), "二創建議併進「影片成效」的影片排行了");
+  ok(pf.includes("排二創"), "排二創的鍵就在那張排行上（老闆：只是多了一個『二創』的按鍵）");
   ok(df.includes("影片庫大流"), "大流量那一頁本身沒被動到（老闆：那是核心，不是叫你移除）"); }
-// 三張卡都要真的長在那一頁上 —— 只測卡片本身回傳什麼是不夠的，
-// 那樣把 viewRemake 裡那一行拿掉，測試照樣綠。
+// 三塊東西都要真的長在它該長的那一頁上 —— 只測卡片本身回傳什麼是不夠的，
+// 那樣把 viewPerf／viewFlow 裡那一行拿掉，測試照樣綠。
 { const s = V({ id: "SS", name: "原片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
   const 做完 = V({ id: "KK", name: "做完的二創", channel: "remake", sourceVideoId: "SS", stage: "已上片",
                   published: true, editor: "阿剪", scheduledDate: D(30), metrics: M(20000, 30, D(30)), createdAt: "2026-08-01" });
   const 在做 = V({ id: "KW", name: "在做的二創", channel: "remake", sourceVideoId: "SS",
                   assignedTo: "阿二", scheduledDate: D(-3), createdAt: "2026-08-02" });
   mount([s, 做完, 在做], "管理員", "boss");
-  const rm = viewRemake();
-  ok(rm.includes("二創建議"), "① 建議卡在那一頁上");
-  ok(rm.includes("進行中的二創") && rm.includes("在做的二創"), "② 進行中那張卡在那一頁上");
-  ok(rm.includes("剪輯二創成效") && rm.includes("阿剪"), "③ 剪輯成效那張卡也在那一頁上"); }
+  const pf = viewPerf(), fl = viewFlow();
+  ok(pf.includes("影片排行") && pf.includes("原片"), "① 建議（影片排行）在影片成效那一頁");
+  ok(pf.includes("剪輯二創成效") && pf.includes("阿剪"), "② 剪輯二創成效也在影片成效那一頁");
+  ok(fl.includes("進行中的二創") && fl.includes("在做的二創"), "③ 進行中的二創搬到看板（那是生產面，不是成效）");
+  ok(!pf.includes("進行中的二創"), "而且不要兩邊都放一份 —— 生產面的事只留在看板"); }
 // 「大流量」這件事本身是核心 —— 候選池照樣含大流的片，搬走的只是畫面
 { const 大流片 = V({ id: "DF9", name: "大流的強片", lib: "大流", scheduledDate: D(100), metrics: M(60476, 80, D(100)) });
   mount([大流片], "管理員", "boss");
-  ok(viewRemake().includes("大流的強片"), "**大流的片照樣被推薦**（搬的是畫面，不是資料）"); }
-// 搬家不能改變誰看得到
+  ok(viewPerf().includes("大流的強片"), "**大流的片照樣被推薦**（搬的是畫面，不是資料）");
+  ok(viewPerf().includes("60,476"), "而且它的觀看也算進影片成效了 —— 以前那一頁根本看不到大流"); }
+// 搬家不能改變誰看得到：二創那一頁的範圍（boss／manager／editor）原封不動搬到 perf
 { const 候選 = V({ id: "P3", name: "片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
   ["boss", "manager", "editor"].forEach(r => {
     mount([候選], "某人", r);
-    ok(hasPerm("remake"), `${r} 看得到二創那一頁（跟以前看得到二創建議的是同一批人）`);
+    ok(hasPerm("perf"), `${r} 看得到影片成效（跟以前看得到二創建議的是同一批人）`);
   });
   mount([候選], "某人", "cs");
-  ok(!hasPerm("remake"), "不剪片的職位看不到");
-  ok(viewRemake().includes("沒有開放給你"), "而且擋在頁面上，不只是分頁不顯示"); }
-// 還沒有成效的時候不要留一片空白 —— 要講清楚為什麼是空的
-{ mount([V({ id: "N1", name: "還沒有成效的片" })], "管理員", "boss");
-  const rm = viewRemake();
-  ok(rm.includes("還沒有可以推薦的片") && rm.includes("平台真實成效"), "沒有成效時講清楚原因");
-  ok(rm.includes("大流量"), "而且說明跟大流量那頁的人工資料無關"); }
+  ok(!hasPerm("perf"), "不剪片的職位看不到");
+  ok(typeof PERMS.remake === "undefined", "「二創」不再是一個獨立權限（它就是影片成效的一部分）"); }
 
 // ══════════ ⑰c 進行中的二創 ══════════
 // 排片人排完就看不到後續了 —— 這張卡是給他看「交出去幾天了、對方收了沒」
@@ -342,6 +352,35 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   mount([s, 上完], "管理員", "boss");
   ok(rmkWipCard() === "", "全部上完就不要留一張空卡"); }
 
+// ══════════ ⑰d 同一支片發了三次，要分得出來（v203）══════════
+// 老闆看影片視窗的成效卡，三列都寫「FB 粉專（Zanagems）」，問「出現三個一樣的
+// 平台、帳號，什麼意思」。那是同一支片在同一個粉專發了三次，不是重複資料 ——
+// 卡上沒有發文日就分不出來。
+//
+// ⚠️ 這不只是好看的問題：分不出重發，就會把真的重發當成誤配去刪掉。
+//    2026-09-12 我就是這樣刪掉了 7 列真資料。
+{ const 三次 = V({ id: "M3", name: "發了三次的片", metrics: [
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 645, likes: 8, comments: 7,
+      postAt: "2026-09-12T12:00:00", postId: "p3", link: "https://www.facebook.com/reel/3/" },
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 8014, likes: 105, comments: 47,
+      postAt: "2026-09-08T12:00:00", postId: "p2", link: "https://www.facebook.com/reel/2/" },
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 1, likes: 50, comments: 38,
+      postAt: "2026-08-10T12:00:00", postId: "p1", link: "" }] });
+  mount([三次], "管理員", "boss");
+  const c = vidMetricsCard(vid("M3"));
+  ok(c.includes("<th>發文日</th>"), "成效卡上有「發文日」這一欄");
+  ok(c.includes("2026-09-12") && c.includes("2026-09-08") && c.includes("2026-08-10"),
+     "三則的日期都列出來");
+  ok(c.indexOf("2026-09-12") < c.indexOf("2026-08-10"), "新的排前面");
+  ok(c.includes("同一支片發了 3 次"), "直接寫明這是同一支片發了幾次");
+  ok(/<a href="https:\/\/www\.facebook\.com\/reel\/2\/"[^>]*>2026-09-08<\/a>/.test(c),
+     "有連結的日期點得開那則貼文（要查是不是同一支片就靠它）");
+  ok(c.includes("總觀看 8,660"), "總數照舊（645+8014+1）"); }
+{ mount([V({ id: "M1", name: "只發一次", metrics: [
+    { platform: "IG", account: "IG a", views: 100, postAt: "2026-09-01T00:00:00", postId: "x" }] })],
+    "管理員", "boss");
+  ok(!vidMetricsCard(vid("M1")).includes("同一支片發了"), "只發一次就不要多那一句"); }
+
 // ══════════ ⑱ 排二創走「工作指派」權限，不是職位 ══════════
 // 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
 // 那個權限系統裡本來就有（設定→成員的勾勾，users.canAssign），泓儒早就打勾了。
@@ -349,7 +388,7 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
 { const 候選 = V({ id: "S3", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
   mount([候選], "小主管", "editor");
   ok(canAssignWork() && canPlanRemake(), "剪輯身分但有「工作指派」權限 → 排得了二創");
-  ok(rmkRowsHTML().includes("openRmkPlan('S3')"), "他的建議清單上看得到「排二創」");
+  ok(perfRankRowsHTML().includes("openRmkPlan('S3')"), "他的建議清單上看得到「排二創」");
   mount([候選], "阿剪", "editor");
   ok(!canPlanRemake(), "沒有那個權限的剪輯就不行");
   mount([候選], "管理員", "boss");
@@ -423,11 +462,13 @@ let PLAN_MODAL = null;
   mount([強片用過多次, 弱片很新], "管理員", "boss");
   const r = rmkRank(rmkSearchPool("歐泊"));
   ok(r.length === 2, "兩支都搜得到");
-  ok(r.find(x => x.v.id === "Q1").score === 0, "強片用過 4 次 → 二創分數是 0（確實不建議再剪）");
+  // v204 老闆改的：用過 4 次不再歸零 —— 還是能用，只是排在後面、旁邊標一個小數字。
+  ok(r.find(x => x.v.id === "Q1").score > 0, "強片用過 4 次 → **還是推薦得出來**（不再歸零）");
   RMK_Q = "歐泊";
-  const html = rmkRowsHTML();
+  const html = perfRankRowsHTML();
   ok(html.indexOf("歐泊大爆片") < html.indexOf("歐泊小片"), "但搜尋時它照樣排在前面（要找的是強片，不是最該二創的片）");
-  ok(html.includes("已經用過 4 次"), "同時把「為什麼不建議再剪」標出來 —— 只標不擋");
+  ok(html.includes(">4<"), "旁邊標一個小數字「4」，讓人自己判斷還要不要再榨這一支");
+  ok(!html.includes("已經用過 4 次"), "不再寫「已經用過 4 次」當不推薦的理由（它現在是推薦得出來的）");
   RMK_Q = ""; }
 
 // ══════════ ㉒ 存檔的時候也不准改到原始片名 ══════════

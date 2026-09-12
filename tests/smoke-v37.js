@@ -43,7 +43,7 @@ function tryRender(label){ try{ render(); ok(label, viewEl.innerHTML.length>50);
 localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","editor");
 let tabs=myTabs().map(t=>t[0]);
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
-ok("editor tabs = work/board/videos/videosDF/remake/cal", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","videosDF","remake","cal"]), tabs);
+ok("editor tabs = work/board/videos/videosDF/cal/perf", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","videosDF","cal","perf"]), tabs);
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
 ok("intl tabs identical ids", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","cal"]), tabs);

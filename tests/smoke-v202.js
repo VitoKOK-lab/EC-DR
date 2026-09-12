@@ -59,18 +59,24 @@ const U = (name, role, extra) => Object.assign({ name, role }, extra || {});
 //   perf 分頁      只有 boss（ROLE_TABS）
 //   remake        v203 新增，跟 df 一樣（搬家不能改變誰看得到）
 //   output/attend  boss ＋ hr（ROLE_TABS）
+//
+// ⚠️ v204 **刻意**動了兩項，其餘六項一個字都不准變：
+//   remake 整個拿掉 —— 二創那一頁併進「影片成效」了，不再是獨立權限。
+//   perf   ["boss"] → ["boss","manager","editor"] —— 二創建議與「排二創」都搬進
+//          影片成效，還維持 boss only 的話，經理人與剪輯會連「哪支片該再剪」都
+//          看不到，而老闆要的正是小主管能指派。放寬後的範圍＝原本 remake 的範圍，
+//          不多不少；要收回去在「設定→權限」逐人取消即可。
 const WAS = {
   df:     ["boss", "manager", "editor"],
-  // v203：二創自成一頁。預設值刻意跟 df 一樣 —— 二創建議本來就掛在大流量那一頁上，
-  // 搬出來自成一頁的時候，誰看得到不能變，不然會有人今天有、明天沒有。
-  remake: ["boss", "manager", "editor"],
   output: ["boss", "hr"],
   attend: ["boss", "hr"],
   assign: ["boss", "manager"],
   find:   ["boss", "manager"],
   lead:   ["boss", "manager", "hr"],
-  perf:   ["boss"],
+  perf:   ["boss", "manager", "editor"],
 };
+// 二創不再是一個權限 —— 這條會擋住「哪天有人手滑把它加回來，變成兩套定義」
+ok("「二創」不再是獨立權限（它就是影片成效的一部分）", typeof PERMS.remake === "undefined");
 const ROLES = ["boss", "manager", "editor", "intl", "hr", "cs", "mkt", "svc", "ship", "pick"];
 Object.keys(WAS).forEach(key => {
   ROLES.forEach(role => {
@@ -88,14 +94,16 @@ ok("**設定不在權限表裡**（老闆選的）", !PERM_KEYS.includes("settin
 ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settings","設定"\]\); \}/.test(APP));
 
 // ══════════ ② 逐人開：職位沒給的，勾了就有 ══════════
+// v204 起「影片成效」預設就給經理人與剪輯了，所以這裡改拿「剪輯產出」當例子 ——
+// 要測「職位沒給、勾了就有」，例子本身必須是那個職位真的沒有的東西。
 { reset([U("Regina", "manager")], "Regina", "manager");
-  ok("（對照）經理人本來看不到影片成效", !hasPerm("perf"));
-  ok("（對照）分頁也沒有", !myTabs().some(t => t[0] === "perf"), myTabs().map(t => t[0]));
-  reset([U("Regina", "manager", { perms: ["perf"] })], "Regina", "manager");
-  ok("勾了「影片成效」就看得到", hasPerm("perf"));
-  ok("而且分頁真的長出來", myTabs().some(t => t[0] === "perf"), myTabs().map(t => t[0]));
-  ok("分頁名字是權限表上那個名字", (myTabs().find(t => t[0] === "perf") || [])[1] === PERMS.perf.label);
-  ok("沒勾的還是沒有", !hasPerm("output")); }
+  ok("（對照）經理人本來看不到剪輯產出", !hasPerm("output"));
+  ok("（對照）分頁也沒有", !myTabs().some(t => t[0] === "output"), myTabs().map(t => t[0]));
+  reset([U("Regina", "manager", { perms: ["output"] })], "Regina", "manager");
+  ok("勾了「剪輯產出」就看得到", hasPerm("output"));
+  ok("而且分頁真的長出來", myTabs().some(t => t[0] === "output"), myTabs().map(t => t[0]));
+  ok("分頁名字是權限表上那個名字", (myTabs().find(t => t[0] === "output") || [])[1] === PERMS.output.label);
+  ok("沒勾的還是沒有", !hasPerm("attend")); }
 { reset([U("小葵", "editor", { perms: ["assign"] })], "小葵", "editor");
   ok("一般剪輯被開了「工作指派」→ 排得了二創", canAssignWork() && canPlanRemake());
   ok("也標得了急件（跟指派共用同一個開關）", canMarkUrgent()); }
@@ -109,9 +117,9 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 
 // ══════════ ④ 員工視角：看被預覽那個人的權限，不是看自己的 ══════════
 { reset([U("管理員", "boss"), U("小葵", "editor")], "管理員", "boss");
-  ok("（對照）管理員自己看得到影片成效", hasPerm("perf"));
+  ok("（對照）管理員自己看得到剪輯產出", hasPerm("output"));
   VIEW_AS = "小葵";
-  ok("預覽小葵 → 看不到影片成效（不然預覽出來的是假畫面）", !hasPerm("perf"));
+  ok("預覽小葵 → 看不到剪輯產出（不然預覽出來的是假畫面）", !hasPerm("output"));
   VIEW_AS = null; }
 // ⚠️ 要預覽一個**真的有**指派權限的人才測得到「預覽是唯讀」——
 //    預覽一個本來就沒權限的人，把 !VIEW_AS 拿掉照樣是 false，那條斷言是空的。
@@ -135,7 +143,7 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 
 // ══════════ ⑤ 指名問別人的權限 ══════════
 { reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["output"] })], "管理員", "boss");
-  ok("問得到別人有沒有", hasPerm("output", "小葵") && !hasPerm("perf", "小葵"));
+  ok("問得到別人有沒有", hasPerm("output", "小葵") && !hasPerm("attend", "小葵"));
   ok("名單上沒有的人 → 沒有權限（不會退回問的人自己的職位）",
      PERM_KEYS.every(k => !hasPerm(k, "查無此人")), PERM_KEYS.filter(k => hasPerm(k, "查無此人"))); }
 
@@ -160,20 +168,22 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 // ══════════ ⑦ 設定 → 權限那一頁 ══════════
 { reset([U("管理員", "boss"), U("Regina", "manager"), U("小葵", "editor"), U("阿包", "editor", { outsourced: true })], "管理員", "boss");
   SET_TAB = "perms"; const h = viewSettings(); SET_TAB = "basic";
-  ok("七項全部都在表頭上", PERM_KEYS.every(k => h.includes(">" + PERMS[k].label + "</th>")),
+  ok("每一項都在表頭上", PERM_KEYS.every(k => h.includes(">" + PERMS[k].label + "</th>")),
      PERM_KEYS.filter(k => !h.includes(">" + PERMS[k].label + "</th>")));
   ok("每個人一列", h.includes("Regina") && h.includes("小葵") && h.includes("阿包"));
   ok("職位本來就有的顯示「職位」，不給勾",
      /Regina[\s\S]{0,900}職位/.test(h) && !/setMemberPerm\('Regina','df'/.test(h));
-  ok("職位沒給的才有勾選框", /setMemberPerm\('小葵','perf',this\.checked\)/.test(h));
+  ok("職位沒給的才有勾選框", /setMemberPerm\('小葵','output',this\.checked\)/.test(h));
   ok("「外包」也整合進來了", h.includes(">外包</th>") && /setMemberOutsourced\('阿包'/.test(h));
   ok("每一項都寫出它到底能做什麼", PERM_KEYS.every(k => h.includes(PERMS[k].why)),
      PERM_KEYS.filter(k => !h.includes(PERMS[k].why)));
   ok("有講清楚設定為什麼不在這裡", h.includes("管理員鑰匙")); }
-{ reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["perf", "output"] })], "管理員", "boss");
+// 例子改成 output／attend：v204 之後 perf 是剪輯的職位預設，那格會顯示「職位」不給勾，
+// 拿它當「逐人勾起來」的例子測不到東西。
+{ reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["output", "lead"] })], "管理員", "boss");
   SET_TAB = "perms"; const h = viewSettings(); SET_TAB = "basic";
   ok("已經開的顯示成勾起來",
-     /<input type="checkbox" checked[^>]*setMemberPerm\('小葵','perf'/.test(h));
+     /<input type="checkbox" checked[^>]*setMemberPerm\('小葵','output'/.test(h));
   ok("沒開的不勾", /<input type="checkbox" [^>]*setMemberPerm\('小葵','attend'/.test(h)
      && !/<input type="checkbox" checked[^>]*setMemberPerm\('小葵','attend'/.test(h));
   SET_TAB = "members"; const m = viewSettings(); SET_TAB = "basic";

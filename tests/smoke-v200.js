@@ -58,7 +58,13 @@ mount([用一次, 用三次, 用五次]);
 r = rmkRank();
 const sc = id => r.find(x => x.v.id === id).score;
 ok(sc("C") > sc("D") && sc("D") > 0, "用過 3 次的分數比用過 1 次的低，但還在");
-ok(sc("E") === 0, "用過 5 次的不推薦了");
+// v204 老闆改的：「用過幾次 不要四個就歸 0，還是能用，只是上面要註明一個小數字，
+// 已經用過幾次。」—— 所以 5 次還是排得出來，只是排在後面，次數標在片名旁邊。
+ok(sc("E") > 0, "用過 5 次的**還是推薦得出來**（不再歸零）");
+ok(sc("D") > sc("E"), "但排在用過 3 次的後面");
+ok(rmkUsedBadge(用五次).includes(">5<"), "片名旁邊標出「5」，讓人自己判斷還要不要再用");
+ok(rmkUsedBadge(用一次) === "", "用過 1 次不標 —— 多數片都是 1 次，每列都標等於沒標");
+ok(rmkUsedBadge(用五次).includes("wa"), "用過 4 次以上的小數字要醒目（提醒這支已經榨很多次了）");
 
 // ══════════ 熱度在「同類型」裡比 ══════════
 // 老闆退回過「用留言率分類」：留言是我們引導出來的。所以寵粉片的留言
@@ -88,7 +94,7 @@ ok(rmkSearchPool("  歐泊  ").length === 4, "前後空白不影響");
 ok(rmkSearchPool("").length === 0, "沒打字就不是在搜尋（回空的，走推薦模式）");
 
 RMK_Q = "歐泊";
-let html = rmkRowsHTML();
+let html = perfRankRowsHTML();
 ok(html.includes("片L") && html.includes("還沒有成效數字"), "搜到沒成效的，要標出來為什麼不推薦");
 ok(html.includes("片N") && html.includes("3 天前才用過"), "搜到冷卻中的，也要標出來");
 ok(!html.includes("片Z"), "不相干的不會混進搜尋結果");
@@ -96,16 +102,17 @@ ok(html.indexOf("片J") < html.indexOf("片L"), "可以二創的排在前面");
 ok(html.includes("兔耳星芒"), "帶貨商品要看得到（先有商品找片，這一欄就是重點）");
 
 RMK_Q = "找不到的東西";
-ok(rmkRowsHTML().includes("找不到"), "搜不到要講話，不要給一張空表");
+ok(perfRankRowsHTML().includes("找不到"), "搜不到要講話，不要給一張空表");
 
-// ══════════ 整張卡 ══════════
+// ══════════ 整張卡（v204：併進「影片成效」的影片排行，不再是獨立的二創建議卡）══════════
 RMK_Q = "";
 mount([久沒用, 剛用過]);
-html = remakeCard();
-ok(html.includes("二創建議") && html.includes("rmk_q"), "卡片有標題也有搜尋框");
+html = perfRankCard();
+ok(html.includes("影片排行") && html.includes("rmk_q"), "卡片有標題也有搜尋框");
 ok(html.includes("先有商品"), "搜尋框的提示直接講那個用法");
+ok(html.includes("依觀看") && html.includes("依二創建議"), "兩種排法都給得出來（同一張表，換排法而已）");
 mount([V({ id: "P", name: "沒成效", scheduledDate: D(100) })]);
-ok(remakeCard() === "", "整個影片庫都還沒有成效數字時，這張卡不出現（不要放一張空卡在那裡）");
+ok(perfRankCard().includes("尚無資料"), "整個影片庫都還沒有成效數字時，講「尚無資料」，不要排一張假的榜");
 
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);

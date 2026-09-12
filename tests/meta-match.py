@@ -243,6 +243,8 @@ ok(m[0]["videoId"] == "V3" and u[0]["why"], "對不上的那一疊每一筆都�
 # （meta_sync 只 import 標準函式庫與 _fs，離線 import 安全）
 # ---------------------------------------------------------------------------
 import meta_sync as S   # noqa: E402
+SYNC_SRC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "tools", "meta_sync.py"), encoding="utf-8").read()
 
 print("— 成效併檔 —")
 old = [{"platform": "IG", "account": "IG 官方", "views": 100, "postId": "P1"}]
@@ -282,6 +284,66 @@ _SENT[:] = []
 S.write_back({}, "tok", [{"videoId": "V2", "metrics": [], "fillLink": ""}], False)
 ok("metricsHist" not in _SENT[-1][0], "沒算快照的時候不要送一個空的去蓋掉本來有的")
 S._fs._patch, S._fs.docs_base = _realpatch, _realbase
+
+print("— 對到很多則：是磁鐵，還是同一支片重發？（v202）—")
+# 原本只看「對到幾則」，超過 8 則就喊誤配。那個數字是照 734 則那次大磁鐵訂的。
+# 結果一支寵粉商品片在兩個平台、半年內重發 11 次也被喊成誤配，還擋住寫入。
+# 老闆：「這可不該會重覆，如果重覆他就是同一支片，可能重覆發了。」
+#
+# 磁鐵跟重發的**形狀**不一樣，看形狀比看數量準。
+CTA_LONG = "留言藍寶石小編私訊您詳情謝謝大家支持記得追蹤不要錯過喔"
+磁鐵們 = ["今天寵粉的是編號%03d的天然寶石數量有限要買要快" % i + CTA_LONG for i in range(20)]
+重發們 = ["國民珠寶商泰熙爾汗寵粉啦大牌都用的寶石肯定可以收市價3萬克拉價格今天不用一折留言帝王獲取下單連結"] * 11
+微調們 = [x + ("第%d波" % i if i else "") for i, x in enumerate(重發們)]
+DROP = set(M.shingles(M.normalize(CTA_LONG)))
+ok(M.looks_like_reposts(重發們, DROP)[0], "11 則一模一樣 → 是同一支片重發，不要喊誤配")
+ok(M.looks_like_reposts(微調們, DROP)[0], "每次結尾微調一下也還是重發")
+ok(not M.looks_like_reposts(磁鐵們, DROP)[0], "20 則不同商品共用一句招呼語 → 是磁鐵，要喊")
+# ⚠️ 一定要先扣掉罐頭句再比。招呼語一長，不扣的話磁鐵會被墊到 0.57 —— 反過來被判成重發。
+ok(M.looks_like_reposts(磁鐵們)[1] > M.looks_like_reposts(磁鐵們, DROP)[1],
+   "不扣罐頭句的話，磁鐵的相似度會被招呼語墊高")
+ok(M.looks_like_reposts(磁鐵們)[0] and not M.looks_like_reposts(磁鐵們, DROP)[0],
+   "**而且會高到翻面**（不扣＝誤判成重發，扣了才判得對）—— 所以扣罐頭句不是可有可無")
+ok(M.looks_like_reposts(重發們, DROP)[1] - M.looks_like_reposts(磁鐵們, DROP)[1] > 0.4,
+   "扣完之後兩種形狀中間空得很開，門檻怎麼動都不會翻面")
+ok(M.looks_like_reposts([])[0] and M.looks_like_reposts(["短"])[0],
+   "一則以下不亂喊（沒有東西可比就不要判它有罪）")
+# 接進同步腳本了嗎 —— 只在函式裡做對沒有用
+ok("looks_like_reposts" in SYNC_SRC and "reposts" in SYNC_SRC,
+   "同步腳本真的有用這條，不是只算則數")
+ok("index.boilerplate" in SYNC_SRC, "而且有把罐頭句傳進去")
+
+print("— FB Reels 的播放數在「影片」上，不在「貼文」上（v202）—")
+# 老闆看畫面問「fb 怎麼才 5636」。正式資料：FB 290 則裡 288 則是 Reels，
+# 觀看合計 5,962（178 則是 0），可是同一批有 85,806 個讚 ——
+# 有一則 1,152 個讚只有 148 觀看。那不是成績差，是量錯了東西。
+#
+# 拿正式帳號一個一個問出來的：貼文物件上根本沒有 views／post_impressions／
+# blue_reels_play_count，post_video_views 有但對 Reels 一律回 0；
+# 影片物件上才有 fb_reels_total_plays＝709（=636 初次 + 73 重播）。
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/reel/1001718832939453/"}) == "1001718832939453",
+   "Reels 網址拆得出影片 id")
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/Zanagems/videos/2917234645310015/"}) == "2917234645310015",
+   "一般影片網址也拆得出來")
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/Zanagems/posts/123"}) == "",
+   "圖文貼文沒有影片 id（那種本來就沒有播放數）")
+ok(S.fb_video_id({"permalink": ""}) == "" and S.fb_video_id(None) == "",
+   "沒有網址不會爆掉")
+# ⚠️ 順序就是優先序：Reels 的總播放要排在 post_video_views 前面，
+#    不然又會拿到那個對 Reels 一律回 0 的舊指標。
+ok(S.VIEW_KEYS.index("fb_reels_total_plays") < S.VIEW_KEYS.index("post_video_views"),
+   "總播放排在 post_video_views 前面（後者對 Reels 一律回 0）")
+ok(S.VIEW_KEYS.index("blue_reels_play_count") < S.VIEW_KEYS.index("post_video_views"),
+   "初次播放也排在它前面（總播放要不到時的備援）")
+ok("fb_reels_total_plays" in S.FB_VIDEO_METRICS and "blue_reels_play_count" in S.FB_VIDEO_METRICS,
+   "要跟影片物件要的指標裡有這兩個")
+# 程式碼層級：影片物件那一次呼叫真的有打出去
+ok("video_insights" in SYNC_SRC and "fb_video_id(p)" in SYNC_SRC,
+   "add_insights 真的會去問影片物件")
+# 圖文貼文沒有播放數是正常的，不可以標成「抓不到」——
+# 標了會讓它永遠掛在「要查」的名單上，變成熄不掉的紅字（v136 那類病）
+ok('not (p["platform"] == "FB" and not vid_id)' in SYNC_SRC,
+   "圖文貼文的 0 不算「抓不到」")
 
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
@@ -399,6 +461,20 @@ ok(S.needs_insights({"comments": 1}, {"id": "A"}, "2026-09-11", 5, 5000, 30, {"A
 ok(not S.needs_insights({"comments": 1}, {"id": "C"}, "2026-09-11", 5, 5000, 30, {"A"})[0],
    "不是嫌疑的就不用多花這次呼叫")
 
+print("— 疑似誤配：跳過那幾支，不要擋住其餘全部（v202）—")
+# 這一段的歷史，三個版本：
+#   ① 警告印在寫入**後面** → 發現問題卻擋不住問題，等於沒有警告
+#   ② 整支中止 → 2026-09-12 為了 2 支可疑的，擋住另外 166 支正確的
+#   ③ 現在：可疑的跳過、其餘照寫。--force 才連可疑的一起寫。
+ok("skip = set(vid for _, vid in hogs) if not args.force else set()" in SYNC_SRC,
+   "可疑的那幾支收進 skip（--force 時才清空）")
+ok("        if vid in skip:\n            continue" in SYNC_SRC,
+   "組寫入清單時真的跳過它們")
+ok("跳過不寫**（其餘照常寫）" in SYNC_SRC, "而且訊息要講清楚是「跳過」不是「全部不寫」")
+ok("return 2" not in SYNC_SRC.split("⛔ 這 %d 支疑似誤配")[1][:400],
+   "**不再整支中止** —— 166 支正確的不該被 2 支可疑的擋住")
+ok("另外跳過 %d 支疑似誤配的" in SYNC_SRC, "寫完要回報跳過了幾支，不能默默跳過")
+
 print("— 疑似誤配要擋得住寫入，不是事後才講 —")
 # 2026-09-11：畫面印了「⚠⚠ 對到 9 則，先不要 --write」，
 # 但那句話是在寫入流程中間印的 —— 講的時候已經寫進去了。
@@ -412,9 +488,14 @@ ok(hasattr(_p.parse_args([]), "force"), "（前提）有 --force 這個開關")
 src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                         "tools", "meta_sync.py"), encoding="utf-8").read()
 i_hog = src.index("if hogs and not args.force:")
+i_skip = src.index("skip = set(vid for _, vid in hogs)")
 i_write = src.index("done, failed = write_back(")
-ok(i_hog < i_write, "擋下來的判斷要排在 write_back 前面（不然擋了也來不及）")
-ok("return 2" in src[i_hog:i_write], "而且是直接結束，不是印一行然後照寫")
+ok(i_hog < i_write and i_skip < i_write,
+   "判斷與排除都要排在 write_back 前面（不然擋了也來不及）")
+# v202 起不再整支中止，改成「可疑的跳過、其餘照寫」。但**一定要真的被排除** ——
+# 只印一行警告然後照寫，就回到最早那個「發現問題卻擋不住問題」的版本。
+ok("if vid in skip:" in src[i_skip:i_write],
+   "可疑的那幾支要真的被排除掉，不是印一行警告然後照寫")
 
 print("— 翻頁撞到上限要大聲講 —")
 # 2026-09-11 抓 180 天，粉專回了**剛好 2,000 則** —— 那不是剛好這麼多，
@@ -513,10 +594,21 @@ print("— API 版本與已廢除的指標 —")
 # 要一個那個版本沒有的指標，又去要兩個已經被廢掉的。
 ok(int(S.GRAPH_VER.lstrip("v").split(".")[0]) >= 22,
    "API 版本至少要 v22（views 這個指標從 v22 才有）")
-ok(S.IG_METRICS[0] == "views" and S.FB_METRICS[0] == "views",
-   "兩邊都以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
-ok(S.VIEW_KEYS[0] == "views" and "post_impressions" in S.VIEW_KEYS,
-   "舊名稱留在後面當備援（老貼文還抓得到），但排在 views 後面")
+ok(S.IG_METRICS[0] == "views", "IG 以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
+# v202：FB 粉專貼文**沒有** views —— 2026-09-12 拿正式帳號一個一個問過，
+# 回 "(#100) The value must be a valid insights metric"。把它留在清單裡不是沒代價：
+# _insights 先整批問，有一個無效就整批失敗、退回一個一個問，每則從 1 次變 4 次呼叫。
+ok("views" not in S.FB_METRICS and "post_impressions" not in S.FB_METRICS,
+   "FB 清單裡不留已經證實無效的指標（留著會讓整批問失敗，呼叫數變 4 倍）")
+ok(all(m not in S.FB_VIDEO_METRICS for m in ("post_impressions_unique", "views")),
+   "影片那邊同理")
+# v202：FB Reels 的總播放插到最前面（見下面那一段）。VIEW_KEYS 是兩個平台共用的
+# 一張優先序表，但 fb_reels_* 只有 FB 影片會回、views 只有 IG 會回，互不干擾。
+# 這條原本寫死 VIEW_KEYS[0]=="views"，那是拿當時的排序當代理指標；
+# 真正的要求是「已經廢掉的舊名稱要排在還活著的後面」。
+ok(S.VIEW_KEYS.index("views") < S.VIEW_KEYS.index("post_video_views")
+   and S.VIEW_KEYS.index("views") < S.VIEW_KEYS.index("post_impressions"),
+   "已經廢掉的舊名稱留在後面當備援，排在 views 後面")
 
 print("— 抓不到觀看數 ≠ 沒人看 —")
 # 官方文件：「if insights data you are requesting does not exist or is currently

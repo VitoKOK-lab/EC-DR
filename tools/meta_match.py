@@ -373,6 +373,52 @@ def match_post(post, index):
             "candidates": sorted(best)}
 
 
+SAME_MIN = 0.50       # 彼此相似度超過這個 → 是同一支片重發，不是磁鐵
+SAME_SAMPLE = 12      # 最多抽這麼多則兩兩比（734 則全比是 27 萬次，沒必要）
+
+
+def looks_like_reposts(captions, drop=None):
+    """這一堆貼文，是「同一支片重發很多次」還是「磁鐵吸來的一堆不同貼文」？
+
+    ⚠️ 這一條的由來（2026-09-12）：
+    原本只看「對到幾則」，超過 8 則就喊誤配。那個數字是照著 734 則那次大磁鐵訂的。
+    結果一支寵粉商品片在兩個平台、半年內重發 11 次，也被喊成誤配 ——
+    11 跟 734 是兩回事，而老闆說：「這可不該會重覆，如果重覆他就是同一支片，
+    可能重覆發了。」
+
+    磁鐵跟重發的**形狀**本來就不一樣，看形狀比看數量準：
+        磁鐵：那堆貼文**彼此的文案都不一樣**（幾百個不同商品，只共用一句招呼語）
+        重發：那堆貼文**彼此幾乎一模一樣**（同一支片、同一段文案，發了 11 次）
+
+    所以拿兩兩相似度（Jaccard）的中位數來看，不看則數。
+    ⚠️ 一定要先把**罐頭句扣掉**再比（drop＝index.boilerplate）。
+    不扣的話，磁鐵那堆貼文因為共用一長串招呼語，相似度會被墊到 0.49，
+    跟門檻 0.50 只差一點點 —— 那種邊界不能拿來當判斷。
+    扣掉之後磁鐵那堆彼此幾乎不剩共同的段（接近 0），重發還是接近 1，
+    中間空得很開，怎麼動門檻都不會翻面。
+
+    回傳 (是不是重發, 中位數相似度)。
+    """
+    caps = [normalize(c) for c in (captions or [])]
+    caps = [c for c in caps if len(c) >= MIN_CHARS]
+    if len(caps) < 2:
+        return True, 1.0            # 一則以下無所謂，不要亂喊
+    drop = drop or set()
+    sets = [set(shingles(c)) - drop for c in caps[:SAME_SAMPLE]]
+    sets = [x for x in sets if x]
+    if len(sets) < 2:
+        return True, 1.0
+    sims = []
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            inter = len(sets[i] & sets[j])
+            union = len(sets[i] | sets[j])
+            sims.append(inter / float(union) if union else 0.0)
+    sims.sort()
+    mid = sims[len(sims) // 2] if len(sims) % 2 else (sims[len(sims) // 2 - 1] + sims[len(sims) // 2]) / 2.0
+    return mid >= SAME_MIN, mid
+
+
 def match_all(posts, videos):
     """整批比對。回傳 (matched, unmatched, index)。
 

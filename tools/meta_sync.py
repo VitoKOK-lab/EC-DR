@@ -49,6 +49,7 @@ name 要跟系統裡「上片平台」那張清單的寫法一樣，成效頁才
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -77,11 +78,49 @@ DEFAULT_CONFIG = os.path.expanduser("~/.ecdr-meta.json")
 # 不是偶發。舊名稱留在清單後面當備援：真的碰到老貼文時還抓得到，
 # 抓不到也只會被記進 missing，不會讓整支掛掉。
 IG_METRICS = ["views", "reach", "likes", "comments", "shares", "saved"]
-FB_METRICS = ["views", "post_reactions_by_type_total",
-              "post_impressions", "post_video_views"]
+# ⚠️ FB 粉專貼文**沒有** views／post_impressions（2026-09-12 拿正式帳號一個一個問過，
+#    回 "(#100) The value must be a valid insights metric"）。留在清單裡不是沒代價：
+#    _insights 會先「整批問」，清單裡有一個無效的就整批失敗，退回去**一個一個問** ——
+#    每則 FB 貼文從 1 次呼叫變成 4 次，而問成效本來就是整支腳本最慢的一段。
+#    哪天 Meta 真的補上了再加回來。
+FB_METRICS = ["post_reactions_by_type_total", "post_video_views"]
 
-# 哪些指標算「觀看數」。順序就是優先序。
-VIEW_KEYS = ["views", "post_video_views", "post_impressions", "reach"]
+# FB Reels 的播放數**不在貼文物件上，在貼文底下那支影片上**（v202 實測，2026-09-12）。
+#
+# 老闆看畫面問「fb 怎麼才 5636」。查下去：FB 290 則裡 288 則是 Reels，
+# 觀看合計 5,962（178 則是 0，最大 2,020），可是同一批貼文有 85,806 個讚 ——
+# 有一則 1,152 個讚只有 148 觀看。那不是成績差，是量錯了東西。
+#
+# 拿正式帳號一個一個問（tools/meta_probe_fb.py）問出來的答案：
+#   貼文物件上：views／post_impressions／blue_reels_play_count  → **根本沒有這些指標**
+#              post_video_views                                 → 有，但對 Reels 一律回 0
+#   影片物件上（/{video_id}/video_insights）：
+#              fb_reels_total_plays   = 709 / 273     ← 總播放
+#              blue_reels_play_count  = 636 / 255     ← 初次播放
+#              fb_reels_replay_count  =  73 /  18     ← 重播
+#              post_impressions_unique= 603 / 258     ← 觸及
+#   636 + 73 = 709、255 + 18 = 273 —— 加得起來，所以 total_plays 就是總播放。
+#
+# 影片 id 從貼文網址拆：facebook.com/reel/<數字>/ 那串就是。
+# ⚠️ 不要改用 attachments 去問 —— /posts 清單與單則都會被擋成
+#    「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated
+#      for versions v3.3 and higher」。2026-09-12 試過，整支掛掉。
+# post_impressions_unique 刻意不列：指名要它會被回 "(#100) ... valid insights metric"
+# （雖然「全部給我」的時候它回得出來）。列進來會讓整批問失敗、退回一個一個問。
+FB_VIDEO_METRICS = ["fb_reels_total_plays", "blue_reels_play_count",
+                    "fb_reels_replay_count"]
+RE_FB_VIDEO = re.compile(r"/(?:reel|videos?)/(\d+)")
+
+
+def fb_video_id(post):
+    """從 FB 貼文的網址拆出影片 id；不是影片貼文就回空字串。"""
+    m = RE_FB_VIDEO.search(str((post or {}).get("permalink") or ""))
+    return m.group(1) if m else ""
+
+
+# 哪些指標算「觀看數」。順序就是優先序 —— Reels 的總播放排第一。
+VIEW_KEYS = ["fb_reels_total_plays", "blue_reels_play_count",
+             "views", "post_video_views", "post_impressions", "reach"]
 
 
 class MetaError(Exception):
@@ -382,6 +421,11 @@ def add_insights(posts, cfg, token, verbose=False):
         tok = chosen.get(p["account"]) or token
         ins = _insights("%s/insights" % p["id"], tok,
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
+        # FB 影片貼文：播放數在**影片物件**上，貼文物件上沒有（見 FB_VIDEO_METRICS 那段）
+        vid_id = fb_video_id(p) if p["platform"] == "FB" else ""
+        if vid_id:
+            ins.update(_insights("%s/video_insights" % vid_id, tok,
+                                 FB_VIDEO_METRICS, missing))
         # ⚠️ 官方文件：「if insights data you are requesting does not exist or is
         #    currently unavailable the API will return an **empty data set
         #    instead of 0**.」
@@ -390,7 +434,10 @@ def add_insights(posts, cfg, token, verbose=False):
         #    這裡分開記：抓不到就標 viewsMissing，不要假裝它是 0。
         view = next((ins[k] for k in VIEW_KEYS if k in ins), None)
         p["views"] = int(view or 0)
-        p["viewsMissing"] = view is None
+        # 圖文／連結貼文本來就沒有播放數，那不是「抓不到」——
+        # 標成 viewsMissing 會讓它一直出現在「要查」的名單上，變成永遠熄不掉的紅字。
+        p["viewsMissing"] = (view is None) and not (p["platform"] == "FB" and not vid_id)
+        p["notVideo"] = bool(p["platform"] == "FB" and not vid_id)
         if p["platform"] == "IG":
             p["shares"] = ins.get("shares", p.get("shares", 0))
         else:
@@ -953,9 +1000,38 @@ def main():
     # 一支片頂多是「每個帳號各發一次、偶爾重播」，連上兩個帳號的話個位數就滿了。
     # 2026-09-11 有一支對到 734 則（磁鐵是小編的固定招呼語），就是這樣被抓到的。
     # 這條線不擋寫入 —— 它只負責讓人一眼看到不對勁，判斷還是人做。
+    # ⚠️ 「對到幾則」只能當**觸發條件**，不能當判斷。
+    #
+    # 2026-09-12 踩到：一支寵粉商品片在兩個平台、半年內重發 11 次，被這條喊成誤配
+    # 而擋住寫入。11 跟 734（那次真的大磁鐵）是兩回事。老闆講得很清楚：
+    # 「這可不該會重覆，如果重覆他就是同一支片，可能重覆發了。」
+    #
+    # 磁鐵跟重發的**形狀**不一樣，看形狀比看數量準：
+    #     磁鐵：那堆貼文彼此的文案都不一樣（幾百個不同商品，只共用一句招呼語）
+    #     重發：那堆貼文彼此幾乎一模一樣（同一支片、同一段文案，發了 11 次）
+    # 所以則數超標之後再看一次「那幾則彼此像不像」，像的就放行。
+    # （相似度一定要先扣掉罐頭句再算 —— 見 meta_match.looks_like_reposts。）
     TOO_MANY = max(8, len(set(p["account"] for p in posts)) * 4)
-    hogs = sorted([(len(e["rows"]), vid) for vid, e in plan.items() if len(e["rows"]) > TOO_MANY],
-                  reverse=True)
+    caps_of = {}
+    for m in matched:
+        if id(m["post"]) in wanted_ids:
+            caps_of.setdefault(m["videoId"], []).append(m["post"].get("caption"))
+    hogs, reposts = [], []
+    for vid, e in plan.items():
+        if len(e["rows"]) <= TOO_MANY:
+            continue
+        same, sim = meta_match.looks_like_reposts(caps_of.get(vid) or [], index.boilerplate)
+        (reposts if same else hogs).append((len(e["rows"]), vid, sim))
+    hogs = sorted(hogs, reverse=True)
+    reposts = sorted(reposts, reverse=True)
+    if reposts:
+        print("\n  這幾支對到很多則，但那幾則的文案彼此幾乎一樣＝**同一支片重發**，不是誤配：")
+        for cnt, vid, sim in reposts[:8]:
+            ds = sorted(r["postAt"][:10] for r in plan[vid]["rows"] if r.get("postAt"))
+            print("     %-16s %-24s 重發 %d 次　%s～%s　彼此相似度 %.2f"
+                  % (vid, str(byvid.get(vid, {}).get("name") or "")[:24], cnt,
+                     ds[0] if ds else "", ds[-1] if ds else "", sim))
+    hogs = [(c, v) for c, v, _ in hogs]
     if hogs:
         print("\n⚠⚠ 這幾支對到的則數多到不合理（超過 %d 則），幾乎一定是誤配：" % TOO_MANY)
         for cnt, vid in hogs[:10]:
@@ -1064,16 +1140,26 @@ def main():
     # 那 9 則誤配已經寫進資料庫了 —— 因為它印在寫入流程的中間。
     # 發現問題卻擋不住問題，那個警告等於沒有。
     if hogs and not args.force:
-        print("\n⛔ 有 %d 支疑似誤配，**這次不寫入**。" % len(hogs))
-        print("   先用 --explain <影片id> 把那幾則叫出來看，確認之後再決定：")
-        print("     是誤配 → 跟我說，我修比對規則")
-        print("     其實是對的 → 加 --force 再跑一次")
-        return 2
+        print("\n⛔ 這 %d 支疑似誤配，**跳過不寫**（其餘照常寫）：" % len(hogs))
+        for _, vid in hogs:
+            print("     %-16s %s" % (vid, str(byvid.get(vid, {}).get("name") or "")[:34]))
+        print("   想看它們到底對到什麼：--explain <影片id>")
+        print("   確認其實是對的：加 --force 再跑一次，就會連它們一起寫。")
 
     # 4. 寫回去
+    # ⚠️ 可疑的那幾支**跳過**，不要為了它們擋住其餘全部。
+    #
+    # 這一段的歷史：
+    #   第一版警告印在寫入**後面** → 發現問題卻擋不住問題，等於沒有警告。
+    #   第二版改成整支中止 → 2026-09-12 為了 2 支可疑的，擋住另外 166 支正確的，
+    #                        老闆得多跑一趟，而那 166 支的數字本來就是對的。
+    #   現在：可疑的跳過、其餘照寫，兩件事分開。--force 才會連可疑的一起寫。
+    skip = set(vid for _, vid in hogs) if not args.force else set()
     final = []
     today_str = _fs.taipei_now()[:10]
     for vid, e in plan.items():
+        if vid in skip:
+            continue
         final.append({"videoId": vid,
                       "metrics": merge_metrics(byvid.get(vid, {}).get("metrics"), e["rows"]),
                       # 快照：每次同步替還在追蹤期內的貼文記一個點，之後才有
@@ -1081,7 +1167,8 @@ def main():
                       "hist": merge_hist(byvid.get(vid, {}).get("metricsHist"), e["rows"], today_str),
                       "fillLink": e["fillLink"]})
     done, failed = write_back(cfg_fb, token, final, args.fill_links)
-    print("\n寫入完成：%d 支成功、%d 支失敗" % (done, failed))
+    print("\n寫入完成：%d 支成功、%d 支失敗%s"
+          % (done, failed, ("（另外跳過 %d 支疑似誤配的）" % len(skip)) if skip else ""))
     try:
         write_log(cfg_fb, token,
                   "後台同步平台成效 %d 支" % done,

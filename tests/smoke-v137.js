@@ -334,7 +334,11 @@ function lastSlot(){
   // 上限 5→6（v201）：二創建議的候選池 rmkAll() 多用了一處。
   // 那是出片／再利用面 —— 大流有 11 支合格的片，而公司做過的 5 次二創全在大流，
   // 不加進來等於建議選單看不到真正在被二創的那個庫。生產面的數字一個都沒動。
-  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=6);
+  // 上限 6→8（v204）：「影片成效」那一頁本來讀 STATE.videos，也就是看不到大流。
+  // 正式資料實測：大流 47 支裡有 13 支有成效數字，觀看合計 1,467,885 ——
+  // 那 146 萬從來沒被算進平台總覽。成效是出片面，兩處（viewPerf 的資料源、
+  // 影片排行的清單）都該用兩庫相加。生產面的數字一樣一個都沒動。
+  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=8);
   ok("decorate 有把大流抽出去", /st\.videosDF=st\.videos\.filter\(isDF\)/.test(CODE));
   ok("抽出去之後 STATE.videos 真的只剩 A", /st\.videos=st\.videos\.filter\(v=>!isDF\(v\)\)/.test(CODE)); }
 
