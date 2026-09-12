@@ -30,6 +30,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -69,9 +70,12 @@ def main():
     for acc in fbs:
         tok = acc.get("pageToken") or token
         print("\n═══ %s ═══" % acc["name"])
+        # ⚠️ 不要在 /posts 這個清單上要 attachments 的子欄位 ——
+        #    Meta 會擋成「(#12) deprecate_post_aggregated_fields_for_attachement
+        #    is deprecated for versions v3.3 and higher」，整支掛掉。
+        #    2026-09-12 加了 target 進去就是這樣炸的。附件要**逐則單獨問**。
         rows = _paged("%s/posts" % acc["pageId"], tok,
-                      {"fields": "id,message,created_time,permalink_url,object_id,"
-                                 "attachments{media_type,type,target}"}, since)
+                      {"fields": "id,message,created_time,permalink_url"}, since)
         rows = rows[:args.n]
         if not rows:
             print("  這段期間沒有貼文。")
@@ -81,11 +85,24 @@ def main():
         works = {}
         for r in rows:
             pid = r.get("id")
-            att = ((r.get("attachments") or {}).get("data") or [{}])[0]
-            kind = att.get("media_type") or att.get("type") or "?"
-            vid_id = ((att.get("target") or {}).get("id")) or r.get("object_id") or ""
-            print("\n  %s  %-8s %s" % (str(r.get("created_time"))[:10], kind,
-                                       (r.get("message") or "")[:26].replace("\n", " ")))
+            link = str(r.get("permalink_url") or "")
+            print("\n  %s  %s" % (str(r.get("created_time"))[:10],
+                                  (r.get("message") or "")[:30].replace("\n", " ")))
+            kind, vid_id = "?", ""
+            try:
+                det = _call(pid, tok, {"fields": "object_id,attachments{media_type,type,target}"})
+                att = ((det.get("attachments") or {}).get("data") or [{}])[0]
+                kind = att.get("media_type") or att.get("type") or "?"
+                vid_id = str(((att.get("target") or {}).get("id")) or det.get("object_id") or "")
+            except MetaError as e:
+                print("    （問不到附件：%s）" % str(e)[:70])
+            if not vid_id:
+                # 退而求其次：Reels 網址裡那串數字就是影片 id
+                m = re.search(r"/reel/(\d+)", link) or re.search(r"/videos?/(\d+)", link)
+                if m:
+                    vid_id = m.group(1)
+                    kind = kind if kind != "?" else "reel(從網址)"
+            print("    型別 %s　影片 id %s" % (kind, vid_id or "（找不到）"))
 
             # ① 貼文物件：它自己說有哪些（不帶 metric 就是「全部給我」）
             for path, label in [("%s/insights" % pid, "貼文")] + (
