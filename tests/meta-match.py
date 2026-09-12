@@ -243,6 +243,8 @@ ok(m[0]["videoId"] == "V3" and u[0]["why"], "對不上的那一疊每一筆都�
 # （meta_sync 只 import 標準函式庫與 _fs，離線 import 安全）
 # ---------------------------------------------------------------------------
 import meta_sync as S   # noqa: E402
+SYNC_SRC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "tools", "meta_sync.py"), encoding="utf-8").read()
 
 print("— 成效併檔 —")
 old = [{"platform": "IG", "account": "IG 官方", "views": 100, "postId": "P1"}]
@@ -282,6 +284,38 @@ _SENT[:] = []
 S.write_back({}, "tok", [{"videoId": "V2", "metrics": [], "fillLink": ""}], False)
 ok("metricsHist" not in _SENT[-1][0], "沒算快照的時候不要送一個空的去蓋掉本來有的")
 S._fs._patch, S._fs.docs_base = _realpatch, _realbase
+
+print("— FB Reels 的播放數在「影片」上，不在「貼文」上（v202）—")
+# 老闆看畫面問「fb 怎麼才 5636」。正式資料：FB 290 則裡 288 則是 Reels，
+# 觀看合計 5,962（178 則是 0），可是同一批有 85,806 個讚 ——
+# 有一則 1,152 個讚只有 148 觀看。那不是成績差，是量錯了東西。
+#
+# 拿正式帳號一個一個問出來的：貼文物件上根本沒有 views／post_impressions／
+# blue_reels_play_count，post_video_views 有但對 Reels 一律回 0；
+# 影片物件上才有 fb_reels_total_plays＝709（=636 初次 + 73 重播）。
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/reel/1001718832939453/"}) == "1001718832939453",
+   "Reels 網址拆得出影片 id")
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/Zanagems/videos/2917234645310015/"}) == "2917234645310015",
+   "一般影片網址也拆得出來")
+ok(S.fb_video_id({"permalink": "https://www.facebook.com/Zanagems/posts/123"}) == "",
+   "圖文貼文沒有影片 id（那種本來就沒有播放數）")
+ok(S.fb_video_id({"permalink": ""}) == "" and S.fb_video_id(None) == "",
+   "沒有網址不會爆掉")
+# ⚠️ 順序就是優先序：Reels 的總播放要排在 post_video_views 前面，
+#    不然又會拿到那個對 Reels 一律回 0 的舊指標。
+ok(S.VIEW_KEYS.index("fb_reels_total_plays") < S.VIEW_KEYS.index("post_video_views"),
+   "總播放排在 post_video_views 前面（後者對 Reels 一律回 0）")
+ok(S.VIEW_KEYS.index("blue_reels_play_count") < S.VIEW_KEYS.index("post_video_views"),
+   "初次播放也排在它前面（總播放要不到時的備援）")
+ok("fb_reels_total_plays" in S.FB_VIDEO_METRICS and "blue_reels_play_count" in S.FB_VIDEO_METRICS,
+   "要跟影片物件要的指標裡有這兩個")
+# 程式碼層級：影片物件那一次呼叫真的有打出去
+ok("video_insights" in SYNC_SRC and "fb_video_id(p)" in SYNC_SRC,
+   "add_insights 真的會去問影片物件")
+# 圖文貼文沒有播放數是正常的，不可以標成「抓不到」——
+# 標了會讓它永遠掛在「要查」的名單上，變成熄不掉的紅字（v136 那類病）
+ok('not (p["platform"] == "FB" and not vid_id)' in SYNC_SRC,
+   "圖文貼文的 0 不算「抓不到」")
 
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
@@ -515,8 +549,13 @@ ok(int(S.GRAPH_VER.lstrip("v").split(".")[0]) >= 22,
    "API 版本至少要 v22（views 這個指標從 v22 才有）")
 ok(S.IG_METRICS[0] == "views" and S.FB_METRICS[0] == "views",
    "兩邊都以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
-ok(S.VIEW_KEYS[0] == "views" and "post_impressions" in S.VIEW_KEYS,
-   "舊名稱留在後面當備援（老貼文還抓得到），但排在 views 後面")
+# v202：FB Reels 的總播放插到最前面（見下面那一段）。VIEW_KEYS 是兩個平台共用的
+# 一張優先序表，但 fb_reels_* 只有 FB 影片會回、views 只有 IG 會回，互不干擾。
+# 這條原本寫死 VIEW_KEYS[0]=="views"，那是拿當時的排序當代理指標；
+# 真正的要求是「已經廢掉的舊名稱要排在還活著的後面」。
+ok(S.VIEW_KEYS.index("views") < S.VIEW_KEYS.index("post_video_views")
+   and S.VIEW_KEYS.index("views") < S.VIEW_KEYS.index("post_impressions"),
+   "已經廢掉的舊名稱留在後面當備援，排在 views 後面")
 
 print("— 抓不到觀看數 ≠ 沒人看 —")
 # 官方文件：「if insights data you are requesting does not exist or is currently

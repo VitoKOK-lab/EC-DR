@@ -49,6 +49,7 @@ name 要跟系統裡「上片平台」那張清單的寫法一樣，成效頁才
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -80,8 +81,40 @@ IG_METRICS = ["views", "reach", "likes", "comments", "shares", "saved"]
 FB_METRICS = ["views", "post_reactions_by_type_total",
               "post_impressions", "post_video_views"]
 
-# 哪些指標算「觀看數」。順序就是優先序。
-VIEW_KEYS = ["views", "post_video_views", "post_impressions", "reach"]
+# FB Reels 的播放數**不在貼文物件上，在貼文底下那支影片上**（v202 實測，2026-09-12）。
+#
+# 老闆看畫面問「fb 怎麼才 5636」。查下去：FB 290 則裡 288 則是 Reels，
+# 觀看合計 5,962（178 則是 0，最大 2,020），可是同一批貼文有 85,806 個讚 ——
+# 有一則 1,152 個讚只有 148 觀看。那不是成績差，是量錯了東西。
+#
+# 拿正式帳號一個一個問（tools/meta_probe_fb.py）問出來的答案：
+#   貼文物件上：views／post_impressions／blue_reels_play_count  → **根本沒有這些指標**
+#              post_video_views                                 → 有，但對 Reels 一律回 0
+#   影片物件上（/{video_id}/video_insights）：
+#              fb_reels_total_plays   = 709 / 273     ← 總播放
+#              blue_reels_play_count  = 636 / 255     ← 初次播放
+#              fb_reels_replay_count  =  73 /  18     ← 重播
+#              post_impressions_unique= 603 / 258     ← 觸及
+#   636 + 73 = 709、255 + 18 = 273 —— 加得起來，所以 total_plays 就是總播放。
+#
+# 影片 id 從貼文網址拆：facebook.com/reel/<數字>/ 那串就是。
+# ⚠️ 不要改用 attachments 去問 —— /posts 清單與單則都會被擋成
+#    「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated
+#      for versions v3.3 and higher」。2026-09-12 試過，整支掛掉。
+FB_VIDEO_METRICS = ["fb_reels_total_plays", "blue_reels_play_count",
+                    "fb_reels_replay_count", "post_impressions_unique"]
+RE_FB_VIDEO = re.compile(r"/(?:reel|videos?)/(\d+)")
+
+
+def fb_video_id(post):
+    """從 FB 貼文的網址拆出影片 id；不是影片貼文就回空字串。"""
+    m = RE_FB_VIDEO.search(str((post or {}).get("permalink") or ""))
+    return m.group(1) if m else ""
+
+
+# 哪些指標算「觀看數」。順序就是優先序 —— Reels 的總播放排第一。
+VIEW_KEYS = ["fb_reels_total_plays", "blue_reels_play_count",
+             "views", "post_video_views", "post_impressions", "reach"]
 
 
 class MetaError(Exception):
@@ -382,6 +415,11 @@ def add_insights(posts, cfg, token, verbose=False):
         tok = chosen.get(p["account"]) or token
         ins = _insights("%s/insights" % p["id"], tok,
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
+        # FB 影片貼文：播放數在**影片物件**上，貼文物件上沒有（見 FB_VIDEO_METRICS 那段）
+        vid_id = fb_video_id(p) if p["platform"] == "FB" else ""
+        if vid_id:
+            ins.update(_insights("%s/video_insights" % vid_id, tok,
+                                 FB_VIDEO_METRICS, missing))
         # ⚠️ 官方文件：「if insights data you are requesting does not exist or is
         #    currently unavailable the API will return an **empty data set
         #    instead of 0**.」
@@ -390,7 +428,10 @@ def add_insights(posts, cfg, token, verbose=False):
         #    這裡分開記：抓不到就標 viewsMissing，不要假裝它是 0。
         view = next((ins[k] for k in VIEW_KEYS if k in ins), None)
         p["views"] = int(view or 0)
-        p["viewsMissing"] = view is None
+        # 圖文／連結貼文本來就沒有播放數，那不是「抓不到」——
+        # 標成 viewsMissing 會讓它一直出現在「要查」的名單上，變成永遠熄不掉的紅字。
+        p["viewsMissing"] = (view is None) and not (p["platform"] == "FB" and not vid_id)
+        p["notVideo"] = bool(p["platform"] == "FB" and not vid_id)
         if p["platform"] == "IG":
             p["shares"] = ins.get("shares", p.get("shares", 0))
         else:

@@ -1111,6 +1111,34 @@ slots: [{ videoId, reused:true, by, at, time, ver }]   // ver 省略或 1 ＝原
 擺在旁邊，原片累積 155 天、二創才跑 30 天，比值天生就難看 —— 看得到年齡，才分得出
 「這個剪輯不行」還是「這支本來就比得不公平」。超過 60 天的原片在卡片下方直接寫白話警語。
 
+### ⚠️ FB Reels 的播放數在「影片」上，不在「貼文」上（v202）
+
+老闆看畫面問「fb 怎麼才 5636」。查正式資料：
+
+| | 貼文 | 觀看合計 | 讚 |
+|---|---|---|---|
+| IG | 139 則 | 2,704,555 | 64,546 |
+| FB | 290 則（**288 則是 Reels**） | **5,962**（178 則是 0） | **85,241** |
+
+有一則 **1,152 個讚只有 148 觀看** —— 那不是成績差，是量錯了東西。
+
+拿正式帳號一個一個問（`tools/meta_probe_fb.py`）問出來的：
+
+| 問哪裡 | 結果 |
+|---|---|
+| 貼文物件 `/{post_id}/insights` | `views`／`post_impressions`／`blue_reels_play_count` **根本沒有**；`post_video_views` 有，但對 Reels **一律回 0** |
+| 影片物件 `/{video_id}/video_insights` | `fb_reels_total_plays`＝709／273（總播放）<br>`blue_reels_play_count`＝636／255（初次）<br>`fb_reels_replay_count`＝73／18（重播）<br>`post_impressions_unique`＝603／258（觸及） |
+
+**636＋73＝709、255＋18＝273** —— 加得起來，所以 `fb_reels_total_plays` 就是總播放。
+
+影片 id 從貼文網址拆（`facebook.com/reel/<數字>/`）。
+⚠️ **不要改用 `attachments` 去問** —— `/posts` 清單與單則都會被擋成
+「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated for versions v3.3 and higher」，
+整支腳本會掛掉（2026-09-12 試過）。
+
+圖文／連結貼文本來就沒有播放數，那**不算「抓不到」**（`viewsMissing` 為假、另標 `notVideo`）——
+標成抓不到會讓它一直掛在「要查」的名單上，變成永遠熄不掉的紅字。
+
 ### 成效歸戶：先認家族，再用上片日期分（v201）
 
 二創沿用原片的腳本與原毛片名，文案幾乎一模一樣 —— 用文字永遠分不出哪則貼文是誰發的。
