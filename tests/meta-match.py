@@ -547,8 +547,14 @@ print("— API 版本與已廢除的指標 —")
 # 要一個那個版本沒有的指標，又去要兩個已經被廢掉的。
 ok(int(S.GRAPH_VER.lstrip("v").split(".")[0]) >= 22,
    "API 版本至少要 v22（views 這個指標從 v22 才有）")
-ok(S.IG_METRICS[0] == "views" and S.FB_METRICS[0] == "views",
-   "兩邊都以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
+ok(S.IG_METRICS[0] == "views", "IG 以 views 為主（它是 impressions／plays／video_views 的合併後繼者）")
+# v202：FB 粉專貼文**沒有** views —— 2026-09-12 拿正式帳號一個一個問過，
+# 回 "(#100) The value must be a valid insights metric"。把它留在清單裡不是沒代價：
+# _insights 先整批問，有一個無效就整批失敗、退回一個一個問，每則從 1 次變 4 次呼叫。
+ok("views" not in S.FB_METRICS and "post_impressions" not in S.FB_METRICS,
+   "FB 清單裡不留已經證實無效的指標（留著會讓整批問失敗，呼叫數變 4 倍）")
+ok(all(m not in S.FB_VIDEO_METRICS for m in ("post_impressions_unique", "views")),
+   "影片那邊同理")
 # v202：FB Reels 的總播放插到最前面（見下面那一段）。VIEW_KEYS 是兩個平台共用的
 # 一張優先序表，但 fb_reels_* 只有 FB 影片會回、views 只有 IG 會回，互不干擾。
 # 這條原本寫死 VIEW_KEYS[0]=="views"，那是拿當時的排序當代理指標；

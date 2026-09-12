@@ -78,8 +78,12 @@ DEFAULT_CONFIG = os.path.expanduser("~/.ecdr-meta.json")
 # 不是偶發。舊名稱留在清單後面當備援：真的碰到老貼文時還抓得到，
 # 抓不到也只會被記進 missing，不會讓整支掛掉。
 IG_METRICS = ["views", "reach", "likes", "comments", "shares", "saved"]
-FB_METRICS = ["views", "post_reactions_by_type_total",
-              "post_impressions", "post_video_views"]
+# ⚠️ FB 粉專貼文**沒有** views／post_impressions（2026-09-12 拿正式帳號一個一個問過，
+#    回 "(#100) The value must be a valid insights metric"）。留在清單裡不是沒代價：
+#    _insights 會先「整批問」，清單裡有一個無效的就整批失敗，退回去**一個一個問** ——
+#    每則 FB 貼文從 1 次呼叫變成 4 次，而問成效本來就是整支腳本最慢的一段。
+#    哪天 Meta 真的補上了再加回來。
+FB_METRICS = ["post_reactions_by_type_total", "post_video_views"]
 
 # FB Reels 的播放數**不在貼文物件上，在貼文底下那支影片上**（v202 實測，2026-09-12）。
 #
@@ -101,8 +105,10 @@ FB_METRICS = ["views", "post_reactions_by_type_total",
 # ⚠️ 不要改用 attachments 去問 —— /posts 清單與單則都會被擋成
 #    「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated
 #      for versions v3.3 and higher」。2026-09-12 試過，整支掛掉。
+# post_impressions_unique 刻意不列：指名要它會被回 "(#100) ... valid insights metric"
+# （雖然「全部給我」的時候它回得出來）。列進來會讓整批問失敗、退回一個一個問。
 FB_VIDEO_METRICS = ["fb_reels_total_plays", "blue_reels_play_count",
-                    "fb_reels_replay_count", "post_impressions_unique"]
+                    "fb_reels_replay_count"]
 RE_FB_VIDEO = re.compile(r"/(?:reel|videos?)/(\d+)")
 
 
