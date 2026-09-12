@@ -10,8 +10,8 @@
 // 差別只有兩件：跟原片走同一本月曆、片名由排片人現取。
 const fs = require("fs");
 const path = require("path");
-let src = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8")
-  .replace(/^let /gm, "").replace(/^const /gm, "");
+const APP_SRC = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+let src = APP_SRC.replace(/^let /gm, "").replace(/^const /gm, "");
 const $ = {};
 global.document = {
   getElementById: id => $[id] || null,
@@ -37,7 +37,8 @@ function mount(vids, who, role) {
   ROLE = role || "boss";
   global.window.DB = { videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
   global.localStorage.getItem = k => (k === "ecdr_role" ? ROLE : (who || "管理員"));
-  LAST_RAW = { users: [{ name: "管理員", role: "boss" }, { name: "阿剪", role: "editor" }, { name: "阿二", role: "editor" }],
+  LAST_RAW = { users: [{ name: "管理員", role: "boss" }, { name: "阿剪", role: "editor" }, { name: "阿二", role: "editor" },
+                       { name: "小主管", role: "editor", canAssign: true }],
     settings: { dailyTarget: 4, videoTags: [], sources: [], postPlatforms: [], intlAccounts: [],
                 shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [] },
     schedule: {}, tasks: {}, shifts: {}, logs: [], deletedVideos: [], videos: vids };
@@ -279,10 +280,111 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   ok(!rmkRowsHTML().includes("上次二創"), "也不要硬擠一個 0% 上去");
 }
 
-// ══════════ ⑱ 存檔的時候也不准改到原始片名 ══════════
+// ══════════ ⑱ 排二創走「工作指派」權限，不是職位 ══════════
+// 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
+// 那個權限系統裡本來就有（設定→成員的勾勾，users.canAssign），泓儒早就打勾了。
+// 排二創跟指派毛片是同一件事，共用同一個開關 —— 兩份定義遲早會不一致。
+{ const 候選 = V({ id: "S3", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+  mount([候選], "小主管", "editor");
+  ok(canAssignWork() && canPlanRemake(), "剪輯身分但有「工作指派」權限 → 排得了二創");
+  ok(rmkRowsHTML().includes("openRmkPlan('S3')"), "他的建議清單上看得到「排二創」");
+  mount([候選], "阿剪", "editor");
+  ok(!canPlanRemake(), "沒有那個權限的剪輯就不行");
+  mount([候選], "管理員", "boss");
+  ok(canPlanRemake(), "管理員本來就有");
+  ok(/canPlanRemake\(\)\{ return canAssignWork\(\); \}/.test(APP_SRC),
+     "而且是直接接到 canAssignWork，不是另外抄一份名單"); }
+
+// ══════════ ⑱b 排二創那個視窗：字要對，三格都要擋 ══════════
+// 老闆：「這裡不叫毛片，就是舊片素材。」—— 二創拿到的是已經上過片的成品，
+// 不是剛拍回來的毛片，講錯會讓剪輯以為還要等攝影給檔案。
+let PLAN_MODAL = null;
+{ mount([原片], "管理員", "boss");
+  const _sm = showModal;
+  showModal = (t, h, cb) => { PLAN_MODAL = { t, h, cb }; };
+  openRmkPlan("S1");
+  showModal = _sm;
+  ok(PLAN_MODAL && PLAN_MODAL.t.includes("排二創"), "視窗開得起來");
+  ok(PLAN_MODAL.h.includes("舊片素材"), "講「拿到舊片素材」");
+  ok(!PLAN_MODAL.h.includes("拿到毛片"), "不講「拿到毛片」—— 二創拿的是成品，不是毛片");
+  ok(PLAN_MODAL.h.includes("原毛片名"), "但原片那一欄照樣叫「原毛片名」（那本來就是毛片的名字）");
+}
+
+// ══════════ ⑲ 上片日過了才鎖名字 ══════════
+// 老闆：「鎖死，是在影片上架日過後再鎖，以免要修改。」
+// 上片前平台上還沒有這支的貼文，沒有東西會對不上 —— 那正是最需要能改的時候。
+{ const 原 = V({ id: "S4", name: "原片", rawName: "原毛片名", scheduledDate: D(155), metrics: M(100000, 200, D(155)) });
+  const 還沒上 = V({ id: "R4", name: "二創", channel: "remake", sourceVideoId: "S4",
+                    scheduledDate: D(-10), createdAt: "2026-09-01" });   // 排在 10 天後
+  mount([原, 還沒上]);
+  ok(!rmkSelfAired(vid("R4")), "排在未來 → 還沒上片");
+  ok(rmkNameLock(vid("R4")) === "", "還沒上片的二創：名字改得動（打錯字還來得及）");
+  const 已上 = Object.assign({}, 還沒上, { scheduledDate: D(3) });
+  mount([原, 已上]);
+  ok(rmkSelfAired(vid("R4")) && rmkNameLock(vid("R4")), "上片日過了 → 鎖起來");
+  const 未上原片 = V({ id: "S5b", name: "還沒上的新片", rawName: "raw", scheduledDate: D(-5) });
+  const 它的二創 = V({ id: "R5b", channel: "remake", sourceVideoId: "S5b", scheduledDate: D(-3) });
+  mount([未上原片, 它的二創]);
+  ok(rmkNameLock(vid("S5b")) === "", "原片自己都還沒上片 → 也還不鎖");
+  // 已上片但沒排日期的（大流那種）也算出去過
+  mount([V({ id: "P8", name: "大流成品", rawName: "raw", stage: "已上片", published: true }),
+         V({ id: "R8b", channel: "remake", sourceVideoId: "P8", scheduledDate: D(2) })]);
+  ok(rmkNameLock(vid("P8")), "沒排日期但已經上片的（大流成品）照樣鎖"); }
+
+// ══════════ ⑳ 一路退步是題材，有高有低是剪輯 ══════════
+// 老闆：「如果已經剪了二創 3 次，每次都退步，那就話題不行了，還是剪輯爛。」
+{ const src = V({ id: "T1", name: "題材片", metrics: MP(100000, D(200), "t1") });
+  const k = (id, who, vw, at) => V({ id, name: id, channel: "remake", sourceVideoId: "T1",
+    editor: who, createdAt: at, metrics: MP(vw, D(60), "p" + id) });
+  mount([src, k("a", "阿剪", 60000, "2026-05-01"), k("b", "阿二", 45000, "2026-06-01"), k("c", "阿三", 30000, "2026-07-01")]);
+  let t = rmkTrend(vid("T1"));
+  ok(t.vals.map(x => Math.round(x * 100)).join("/") === "60/45/30", "三次的比值照順序排出來");
+  // ⚠️ 這裡本來寫 includes("題材") —— 是空的：另一句「差在剪輯，不是題材」也含「題材」
+  //    兩個字，把判斷改壞了測試照樣綠。要比對只有這一句才有的字。
+  ok(t.read.includes("題材到頂"), "一路往下 → 講題材，不是講人");
+  ok(!t.read.includes("差在剪輯"), "而且不會同時又說是剪輯的問題");
+  ok(rmkVersionsCard(vid("T1")).includes("60% → 45% → 30%"), "原片視窗上直接看得到這條線");
+  mount([src, k("a", "阿剪", 70000, "2026-05-01"), k("b", "阿二", 20000, "2026-06-01"), k("c", "阿三", 65000, "2026-07-01")]);
+  t = rmkTrend(vid("T1"));
+  ok(t.read.includes("差在剪輯"), "同一支片有人 70% 有人 20% → 講剪輯，不是講題材");
+  ok(!t.read.includes("題材到頂"), "而且不會同時又說是題材的問題");
+  mount([src, k("a", "阿剪", 52000, "2026-05-01"), k("b", "阿二", 48000, "2026-06-01")]);
+  ok(rmkTrend(vid("T1")).read === "", "兩支差不多 → 不下判斷（兩三個點撐不起結論）");
+  mount([src, k("a", "阿剪", 52000, "2026-05-01")]);
+  ok(rmkTrend(vid("T1")) === null, "只有一支根本沒有趨勢可言"); }
+
+// ══════════ ㉑ 搜尋的時候照觀看排，不照二創分數排 ══════════
+// 老闆：「他還是要能被排列出來（如果我要找強片為了某個品項銷售）。」
+{ const 強片用過多次 = V({ id: "Q1", name: "歐泊大爆片", scheduledDate: D(200),
+    metrics: M(200000, 500, D(200)), usageHistory: [{ date: D(150) }, { date: D(100) }, { date: D(50) }] });
+  const 弱片很新 = V({ id: "Q2", name: "歐泊小片", scheduledDate: D(100), metrics: M(6000, 20, D(100)) });
+  mount([強片用過多次, 弱片很新], "管理員", "boss");
+  const r = rmkRank(rmkSearchPool("歐泊"));
+  ok(r.length === 2, "兩支都搜得到");
+  ok(r.find(x => x.v.id === "Q1").score === 0, "強片用過 4 次 → 二創分數是 0（確實不建議再剪）");
+  RMK_Q = "歐泊";
+  const html = rmkRowsHTML();
+  ok(html.indexOf("歐泊大爆片") < html.indexOf("歐泊小片"), "但搜尋時它照樣排在前面（要找的是強片，不是最該二創的片）");
+  ok(html.includes("已經用過 4 次"), "同時把「為什麼不建議再剪」標出來 —— 只標不擋");
+  RMK_Q = ""; }
+
+// ══════════ ㉒ 存檔的時候也不准改到原始片名 ══════════
 // 畫面上設 readonly 只擋得住手滑，擋不住 devtools、也擋不住一個開了三天的舊分頁。
 // 真正要擋的是寫進資料庫那一刻 —— 這個欄位一改，那支片的成效就整批對不回來。
 (async () => {
+  // 排二創的三格必填：少任何一格，這支片都會卡在沒有人會看的地方
+  // （沒日期＝月曆看不到、沒片名＝清單上跟原片一樣、沒指定人＝沒人知道該他剪）
+  { let TOASTS = []; const _ts = toast;
+    toast = (m) => { TOASTS.push(String(m)); };
+    const tryPlan = async (n, d, w) => { TOASTS = [];
+      $.rp_name = { value: n }; $.rp_date = { value: d }; $.rp_editor = { value: w };
+      await PLAN_MODAL.cb(); return TOASTS.join("|"); };
+    ok((await tryPlan("", "2026-10-01", "阿剪")).includes("片名"), "沒取新片名 → 擋下來");
+    ok((await tryPlan("新片名", "", "阿剪")).includes("上片日期"), "沒排上片日期 → 擋下來");
+    ok((await tryPlan("新片名", "2026-10-01", "")).includes("指定一個剪輯"), "沒指定剪輯 → 擋下來");
+    toast = _ts;
+    delete $.rp_name; delete $.rp_date; delete $.rp_editor; }
+
   const 送出 = async (v, rawIn) => {
     const f = { e_code: "001", e_raw: rawIn, e_name: "新標題", e_vcopy: "稿", e_url: "", e_src: "",
                 e_stage: "待處理", e_editor: "", e_date: "", e_drive: "", e_ref: "", e_note: "",

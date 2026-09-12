@@ -7031,8 +7031,12 @@ function rmkRowsHTML(){
   const q=String(RMK_Q||"").trim();
   const canPlan=canPlanRemake();   // 排二創是管理員／經理人的事，剪輯只是看得到建議
   const all = q ? rmkRank(rmkSearchPool(q)) : rmkRank();
-  // 搜尋時：有分數的排前面，其餘照成效排（冷卻中的也要看得到，但要標出來）
-  if(q) all.sort((a,b)=> (b.score-a.score) || (vidViews(b.v)-vidViews(a.v)));
+  // 搜尋時一律**照觀看排**，不照二創分數排。
+  // 老闆：「他還是要能被排列出來（如果我要找強片為了某個品項銷售）。」
+  // 有搜尋＝他在找「這個商品最強的那支片」，不是在找「現在最適合二創的片」。
+  // 照分數排的話，一支二創過三次的 10 萬觀看強片會沉到一堆沒人看過的新片下面。
+  // 二創狀態照樣標在旁邊（rmkWhyNot），只標不擋。
+  if(q) all.sort((a,b)=> (vidViews(b.v)-vidViews(a.v)) || (vidComments(b.v)-vidComments(a.v)));
   const live=all.filter(r=>r.score>0), rest=all.filter(r=>!r.score);
   const show = q ? all.slice(0,40) : live.slice(0, RMK_OPEN?30:8);
   const row=(r)=>`<tr style="cursor:pointer" onclick="${vidOpenFn(r.v)}">
@@ -7102,8 +7106,12 @@ function rmkToggle(){ RMK_OPEN=!RMK_OPEN; render(); }
 //    decorate 切到 videosDF 去了 —— 殼放大流＝被指派的剪輯永遠看不到自己有工作。
 const RMK_CH="remake";
 function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoId||"")); }
-// 誰可以排二創（老闆選的：管理員＋經理人，跟現在排月排程的是同一批人）
-function canPlanRemake(){ return ["boss","manager"].includes(currentRole()); }
+// 誰可以排二創 —— 走既有的「工作指派」權限（canAssignWork），不另外發明一套。
+// 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
+// 那個權限系統裡已經有了：設定→成員的「工作指派」勾勾（users.canAssign），
+// 泓儒早就打勾了。排二創跟指派毛片本來就是同一件事（把工作分給誰），
+// 共用同一個開關，換人的時候只要改一個地方 —— 兩份定義遲早會不一致。
+function canPlanRemake(){ return canAssignWork(); }
 // 原片 → 它的二創。建一次表，不要每問一支就掃一次全庫 ——
 // 排序那裡是「每支片都問一次」，掃全庫的話 1,045 支就變成一百萬次比對。
 // 快取靠陣列本身的身分認（跟 allLibVideos 同一招）：資料一換就自動重建。
@@ -7186,7 +7194,7 @@ function openRmkPlan(sourceId){
   const copy=String(s.videoCopy||"");
   showModal("排二創："+zhTW(vidTitle(s)), `
     <div class="muted" style="font-size:13px;line-height:1.7">
-      排好之後這支會出現在指定剪輯的「每日工作」，他按 <b>認領開始剪</b> 才算拿到毛片、
+      排好之後這支會出現在指定剪輯的「每日工作」，他按 <b>認領開始剪</b> 才算拿到舊片素材、
       才開始計剪片天數。剪完存回同一個資料夾，走原本的審片、上片流程。
     </div>
     <div class="card" style="background:var(--panel2);margin-top:10px">
@@ -7251,6 +7259,11 @@ function rmkVersionsCard(v){
       age!=null?"・上片 "+age+" 天":""}</span>
     <table class="responsive" style="margin-top:8px"><thead><tr><th>第幾次</th><th>片名</th><th>剪輯</th><th>狀態</th><th>上片日</th><th>觀看</th><th>比原片</th></tr></thead>
     <tbody>${rows}</tbody></table>
+    ${(()=>{ const t=rmkTrend(v); if(!t) return "";
+      return `<div style="margin-top:8px;font-size:12.5px">
+        <b>${t.vals.map(x=>pctTxt(x)).join(" → ")}</b>${
+          t.read?`<span class="muted">　${esc(t.read)}</span>`
+                :`<span class="muted">　有高有低，還看不出是題材還是剪輯</span>`}</div>`; })()}
     ${(!allSame&&age!=null&&age>60)?`<div class="muted" style="font-size:11px;margin-top:6px">
       ⚠ 原片那個數字是 ${age} 天累積來的，二創才剛開始跑 —— 比值天生偏低，看的時候要把這件事算進去。</div>`:""}
   </div>`;
@@ -7374,10 +7387,43 @@ function rmkPerfCard(){
 // 原片的「原毛片名／原始片名」該不該鎖。
 // 老闆：「原始腳本名和原毛片名禁止修改」。鎖的理由不只是規矩 ——
 // 成效是拿這些欄位去跟平台貼文比對的，改掉名字＝那支片的成效整批對不回來。
+// 這支**自己**出去過沒有（上片日到了／已經上片）。
+// 不看它的二創 —— 鎖的理由是「平台上已經有這支的貼文在對比成效」，那是它自己的事。
+function rmkSelfAired(v){
+  if(!v) return false;
+  if(v.published || v.stage==="已上片") return true;
+  const d=String(v.scheduledDate||"").slice(0,10);
+  if(d && d<=today) return true;
+  return ((v.usageHistory)||[]).some(u=>{
+    const x=String((u||{}).date||"").slice(0,10); return !!x && x<=today; });
+}
 function rmkNameLock(v){
-  if(isRemake(v)) return "二創沿用原片的原始片名，不給改 —— 改掉就對不回原片了";
-  if(v&&v.id&&remakesOfSrc(v.id).length) return "這支已經有二創，原始片名鎖住 —— 改掉成效會對不回來";
+  if(!v) return "";
+  // 老闆：「鎖死，是在影片上架日過後再鎖，以免要修改。」
+  // 上片之前名字怎麼改都沒關係 —— 平台上還沒有這支片的貼文，沒有東西會對不上，
+  // 而那正是最需要能改的時候（打錯字、片名臨時要換）。
+  // 上片日過了才鎖：那時候成效已經靠這幾個欄位在比對，改掉就整批對不回來。
+  if(!rmkSelfAired(v)) return "";
+  if(isRemake(v)) return "這支二創已經上片，原始片名鎖起來 —— 改掉就對不回原片了";
+  if(v.id && remakesOfSrc(v.id).length) return "這支已經上片、而且有二創，原始片名鎖住 —— 改掉成效會對不回來";
   return "";
+}
+// 一支片被二創好幾次之後，是「題材到頂了」還是「某個人剪壞」——
+// 老闆：「如果已經剪了二創 3 次，每次都退步，那就話題不行了，還是剪輯爛。」
+// 兩者的形狀不一樣：題材到頂是**一路往下**，剪輯問題是**同一支片有高有低**。
+// 形狀不明顯就只把數字排出來，不下判斷（兩三個點本來就撐不起結論）。
+function rmkTrend(v){
+  const rs=remakesOfSrc(v&&v.id).map(k=>({k, c:rmkCompare(k)})).filter(x=>x.c.r!=null);
+  if(rs.length<2) return null;
+  const vals=rs.map(x=>x.c.r);
+  const hi=Math.max.apply(null,vals), lo=Math.min.apply(null,vals);
+  const people=new Set(rs.map(x=>rmkEditorOf(x.k)).filter(Boolean));
+  let read="";
+  if(rs.length>=3 && vals.every((x,i)=>i===0||x<vals[i-1]))
+    read="每一次都比上一次差 —— 比較像這個題材到頂了，不是哪個人剪壞";
+  else if(people.size>1 && hi>=0.5 && hi>=lo*1.8)
+    read="同一支片，有人剪到 "+pctTxt(hi)+"、有人只剩 "+pctTxt(lo)+" —— 差在剪輯，不是題材";
+  return {rows:rs, vals, read};
 }
 
 // ===== 平台成效（管理員／經理人）：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
@@ -9477,7 +9523,7 @@ function setMembersCard(members, memberRows){
     <div class="muted" style="font-size:12px;margin-top:4px">權限：<b>管理員</b>＝最高(改設定、成員、回收桶、紀錄)；<b>經理人</b>＝可指派工作/影片、看排程與影片庫；<b>剪輯</b>＝接案剪片（含蝦皮/馬來二創區）；<b>巴基斯坦</b>＝全英文介面，挑台灣已上傳舊片做英/泰版上傳海外 TikTok；<b>行銷／客服／出貨／員工</b>＝只做交辦工作與每日匯報，不碰影片；<b>選品行銷</b>＝比照員工（選品配對工作台重新設計中）；<b>人資</b>＝只看團隊看板，不能操作。</div>
     ${/* v176：27 個人在手機上就是 27 張小卡，這張卡原本 7851px。
            平常來設定頁是為了改某一項設定，不是為了看整份名單 —— 名單改成點開再看。 */''}
-    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="勾了就能指派剪輯工作給同事，也可以標急件">可指派</th><th title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
+    ${fold("成員名單", members.length, `<table class="responsive" style="margin-top:8px"><thead><tr><th>名字</th><th>角色</th><th>區域</th><th>上下班</th><th title="把工作分給誰：指派毛片給剪輯、排二創、標急件">工作指派</th><th title="可以用「找影片」搜尋 Google Drive 素材索引">找影片</th><th title="外包人員：看不到其他同事的看板與成效">外包</th><th></th></tr></thead>
     <tbody>${memberRows||`<tr><td class="muted">尚無成員</td></tr>`}</tbody></table>`)}
     <div class="row" style="gap:8px;margin-top:12px"><input id="mb_name" placeholder="新增成員名字" style="flex:1;min-width:130px">
       <select id="mb_role" style="width:auto">${STAFF_ROLES.concat("manager").map(r=>`<option value="${r}">${esc(ROLE_LABEL[r])}</option>`).join("")}</select>
@@ -9606,7 +9652,8 @@ function viewSettings(){
       return '<span class="muted" style="font-size:12px">本來就有</span>';
     return `<label class="row" style="gap:4px;align-items:center;font-size:11px;white-space:nowrap;margin:0">
       <input type="checkbox" ${u.canAssign?"checked":""} style="width:auto;margin:0"
-        onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)">可指派</label>`;
+        onchange="setMemberAssign('${esc(jsEsc(u.name))}',this.checked)"
+        title="把工作分給誰：指派毛片、排二創、標急件">工作指派</label>`;
   };
   // v196：「找影片」那一頁的權限（老闆：「要有權限，給權限的人才能讀」）。
   // ⚠️ 這是**介面上**的權限，跟這個系統其他頁同一個標準 —— 擋得住同事，
