@@ -57,9 +57,13 @@ const U = (name, role, extra) => Object.assign({ name, role }, extra || {});
 //   canFindAssets ["boss","manager"] ＋ canFindAssets 旗標
 //   seesLeadBoard ["boss","manager","hr"]
 //   perf 分頁      只有 boss（ROLE_TABS）
+//   remake        v203 新增，跟 df 一樣（搬家不能改變誰看得到）
 //   output/attend  boss ＋ hr（ROLE_TABS）
 const WAS = {
   df:     ["boss", "manager", "editor"],
+  // v203：二創自成一頁。預設值刻意跟 df 一樣 —— 二創建議本來就掛在大流量那一頁上，
+  // 搬出來自成一頁的時候，誰看得到不能變，不然會有人今天有、明天沒有。
+  remake: ["boss", "manager", "editor"],
   output: ["boss", "hr"],
   attend: ["boss", "hr"],
   assign: ["boss", "manager"],
@@ -76,7 +80,7 @@ Object.keys(WAS).forEach(key => {
        hasPerm(key) === want, { key, role, got: hasPerm(key) });
   });
 });
-ok("PERMS 的七項就是上面那七項，沒有多也沒有少",
+ok("PERMS 的每一項都在上面那張表裡，沒有多也沒有少（新增一項就要回來補預設值）",
    PERM_KEYS.slice().sort().join() === Object.keys(WAS).sort().join(), PERM_KEYS);
 // 設定不能從權限表發出去 —— 拿到設定的人可以再把權限給別人，那是第二把管理員鑰匙
 ok("**設定不在權限表裡**（老闆選的）", !PERM_KEYS.includes("settings") && !/settings:\s*\{/.test(
