@@ -342,6 +342,35 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   mount([s, 上完], "管理員", "boss");
   ok(rmkWipCard() === "", "全部上完就不要留一張空卡"); }
 
+// ══════════ ⑰d 同一支片發了三次，要分得出來（v203）══════════
+// 老闆看影片視窗的成效卡，三列都寫「FB 粉專（Zanagems）」，問「出現三個一樣的
+// 平台、帳號，什麼意思」。那是同一支片在同一個粉專發了三次，不是重複資料 ——
+// 卡上沒有發文日就分不出來。
+//
+// ⚠️ 這不只是好看的問題：分不出重發，就會把真的重發當成誤配去刪掉。
+//    2026-09-12 我就是這樣刪掉了 7 列真資料。
+{ const 三次 = V({ id: "M3", name: "發了三次的片", metrics: [
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 645, likes: 8, comments: 7,
+      postAt: "2026-09-12T12:00:00", postId: "p3", link: "https://www.facebook.com/reel/3/" },
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 8014, likes: 105, comments: 47,
+      postAt: "2026-09-08T12:00:00", postId: "p2", link: "https://www.facebook.com/reel/2/" },
+    { platform: "FB", account: "FB 粉專（Zanagems）", views: 1, likes: 50, comments: 38,
+      postAt: "2026-08-10T12:00:00", postId: "p1", link: "" }] });
+  mount([三次], "管理員", "boss");
+  const c = vidMetricsCard(vid("M3"));
+  ok(c.includes("<th>發文日</th>"), "成效卡上有「發文日」這一欄");
+  ok(c.includes("2026-09-12") && c.includes("2026-09-08") && c.includes("2026-08-10"),
+     "三則的日期都列出來");
+  ok(c.indexOf("2026-09-12") < c.indexOf("2026-08-10"), "新的排前面");
+  ok(c.includes("同一支片發了 3 次"), "直接寫明這是同一支片發了幾次");
+  ok(/<a href="https:\/\/www\.facebook\.com\/reel\/2\/"[^>]*>2026-09-08<\/a>/.test(c),
+     "有連結的日期點得開那則貼文（要查是不是同一支片就靠它）");
+  ok(c.includes("總觀看 8,660"), "總數照舊（645+8014+1）"); }
+{ mount([V({ id: "M1", name: "只發一次", metrics: [
+    { platform: "IG", account: "IG a", views: 100, postAt: "2026-09-01T00:00:00", postId: "x" }] })],
+    "管理員", "boss");
+  ok(!vidMetricsCard(vid("M1")).includes("同一支片發了"), "只發一次就不要多那一句"); }
+
 // ══════════ ⑱ 排二創走「工作指派」權限，不是職位 ══════════
 // 老闆：「要新增一個權限『工作指派』（目前是管理員和泓儒能做，以後可能會換人）。」
 // 那個權限系統裡本來就有（設定→成員的勾勾，users.canAssign），泓儒早就打勾了。

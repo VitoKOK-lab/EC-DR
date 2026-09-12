@@ -7653,9 +7653,16 @@ function vidMetricsCard(v){
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
   const html = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
       <b>平台成效</b><span class="row" style="gap:6px">${typePill(v)}${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</span></div>
-    ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
-      ${mx.map(m=>`<tr><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
-      </tbody></table><div class="muted" style="font-size:11px;margin-top:4px">${
+    ${/* ⚠️ 一定要有「發文日」這一欄。老闆看到三列都寫「FB 粉專（Zanagems）」問
+          「出現三個一樣的平台、帳號，什麼意思」—— 那其實是同一支片在同一個粉專
+          發了三次（8/10、9/08、9/12），不是重複資料。沒有日期就分不出來。
+          這一欄不只是好看：分不出重發，就會把真的重發當成誤配去刪掉 ——
+          2026-09-12 我就是這樣刪掉了 7 列真資料。 */''}
+    ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>發文日</th><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
+      ${mx.slice().sort((a,b)=>String(b.postAt||"").localeCompare(String(a.postAt||""))).map(m=>`<tr><td data-label="發文日" style="white-space:nowrap">${
+        m.link?`<a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer" title="點開這則貼文">${esc(String(m.postAt||"").slice(0,10))||"—"}</a>`
+              :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
+      </tbody></table>${mx.length>1?`<div class="muted" style="font-size:11px;margin-top:4px">同一支片發了 ${mx.length} 次（每一列是一則貼文，點日期可以開那則）</div>`:""}<div class="muted" style="font-size:11px;margin-top:4px">${
         rateShown(v)?`每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言　・　`:''
       }更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。同步工作會以<b>貼文文案</b>比對 IG／FB 的貼文，把觀看、讚、留言填進這裡。對不到的話，通常是這支片沒有文案、或平台上用了完全不同的行銷文案發。</div>`}
