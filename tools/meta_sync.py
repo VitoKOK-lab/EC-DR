@@ -180,12 +180,19 @@ def _call(path, token, params=None, tries=4):
                 continue
             raise MetaError("Graph API %s：%s（code=%s subcode=%s）" % (
                 path, err.get("message", body[:200]), code, err.get("error_subcode")))
-        except urllib.error.URLError as e:
+        except OSError as e:
+            # ⚠️ 這裡以前只攔 urllib.error.URLError，結果 2026-09-13 被
+            #    **socket.timeout** 打穿 —— 那是「連上了但讀不到資料」，
+            #    Python 不會把它包成 URLError，直接往上拋，整支腳本用一頁
+            #    看不懂的 traceback 掛掉，而且已經跑掉的進度全部白費。
+            #    （備份那支 _fs._open 攔的是 except Exception，所以從來沒踩到。）
+            #    OSError 是 URLError、socket.timeout、ConnectionResetError
+            #    的共同祖先，一次攔乾淨。
             last = e
             if i < tries - 1:
                 time.sleep(3 * (i + 1))
                 continue
-            raise MetaError("連不上 Graph API：%s" % e)
+            raise MetaError("連不上 Graph API（重試 %d 次都失敗）：%s" % (tries, e))
     raise MetaError("Graph API 重試都失敗：%s" % last)
 
 
@@ -372,7 +379,7 @@ def list_all(cfg, since_ts):
     if not token:
         raise MetaError("沒有 token：請在設定檔寫 token，或設環境變數 META_TOKEN")
     check_token(token)
-    posts = []
+    posts, failed = [], []
     for acc in cfg.get("accounts") or []:
         name = acc.get("name") or "(沒有名字的帳號)"
         try:
@@ -381,10 +388,11 @@ def list_all(cfg, since_ts):
                    else list_fb(acc, token, since_ts))
         except MetaError as e:
             print("  ⚠ %s 抓不到：%s" % (name, e))
+            failed.append(name)
             continue
         print("  %s　%d 則" % (name, len(got)))
         posts.extend(got)
-    return token, posts
+    return token, posts, failed
 
 
 def pick_token(sample, candidates, metrics):
@@ -1107,7 +1115,7 @@ def main():
                 return 0
 
     # 1. 拿貼文清單（便宜）—— 這一段還不問成效
-    cfg, meta_token = None, None
+    cfg, meta_token, failed_accounts = None, None, []
     if args.from_file:
         posts = json.load(open(args.from_file, encoding="utf-8"))
         print("\n用檔案裡的 %d 則貼文（沒有連網）" % len(posts))
@@ -1117,7 +1125,7 @@ def main():
             return 2
         cfg = json.load(open(args.config, encoding="utf-8"))
         print("\n抓貼文清單（還不問成效）：")
-        meta_token, posts = list_all(cfg, since)
+        meta_token, posts, failed_accounts = list_all(cfg, since)
     if not posts:
         print("\n沒有抓到任何貼文，結束。")
         return 1
@@ -1471,10 +1479,19 @@ def main():
         report_status(cfg_fb, fb_token, info)
         # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——
         # 不寫的話畫面上會一直掛著上一次的舊清單，建過檔的片還留在「未建檔」裡。
-        try:
-            report_unfiled(cfg_fb, fb_token, unfiled, args.days)
-        except Exception as e:
-            print("  ⚠ 未建檔清單寫不進去：%s" % e)
+        # ⚠️ 有帳號抓不到就**不要覆寫**未建檔清單。
+        #    那張清單是整批重算、整份覆寫的 —— 少了一個帳號的貼文，
+        #    重算出來的是殘缺的一份，蓋上去等於把完整的那份弄丟，
+        #    而畫面上看不出少了東西。成效那邊沒有這個問題（merge_metrics
+        #    會保留沒對到的舊列），只有這張清單是全有全無。
+        if failed_accounts:
+            print("  ⚠ %s 這次抓不到，未建檔清單**不覆寫**（免得把完整的那份蓋成殘缺的）"
+                  % "、".join(failed_accounts))
+        else:
+            try:
+                report_unfiled(cfg_fb, fb_token, unfiled, args.days)
+            except Exception as e:
+                print("  ⚠ 未建檔清單寫不進去：%s" % e)
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 狀態回報寫不進去：%s" % e)
     if not failed:
