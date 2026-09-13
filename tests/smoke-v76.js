@@ -22,6 +22,9 @@ Object.defineProperty(global,"navigator",{configurable:true,writable:true,
 global.confirm=()=>true; global.prompt=()=>null;
 let calls=[], toasts=[];
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 // v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
 // 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
 SET_TAB="members";
@@ -43,7 +46,9 @@ const PWAT="2020-01-01T00:00:00";
 function reset(shifts, settings, users){
   calls=[]; toasts=[]; fields={}; ATT_YM=null;
   STATE={ users: (users||[{name:"小葵",role:"editor",craft:"orig",pw:"x",pwSet:true},{name:"阿明",role:"editor",craft:"orig",pw:"x",pwSet:true},
-                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"}])
+                         {name:"小美",role:"cs",pw:"x",pwSet:true},{name:"HR小姐",role:"hr",pw:"x",pwSet:true},{name:"管理員",role:"boss"},
+                         // v207：職位不給預設權限了，下面要測「經理人交辦」就得把她真的放進名單
+                         {name:"Regina",role:"manager",pw:"x",pwSet:true}])
                  .map(u=>Object.assign({pwAt:PWAT, pwHash:"pbkdf2$1$dGVzdHNhbHR0ZXN0c2E9$dGVzdA=="}, u)),
     settings: Object.assign({dailyTarget:4,videoTags:[],sources:["s"],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:[],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01"}, settings||{}),

@@ -49,6 +49,9 @@ const FIXED_NOW=Date.parse("2026-06-17T04:30:00Z");
     static now(){ return FIXED_NOW; }
   }; }
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n, x===undefined?"":JSON.stringify(x).slice(0,300));} }

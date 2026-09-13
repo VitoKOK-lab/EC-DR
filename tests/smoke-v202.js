@@ -6,8 +6,13 @@
 // 以前只有三個旗標能逐人開，其他全綁在職位上 —— 想讓 Regina 看「影片成效」，
 // 只能把她升成管理員，連設定、成員、回收桶一起給出去。
 //
-// ⚠️ 這一支最重要的是**第 ① 段**：職位預設值必須跟改這套之前一模一樣。
-//    這裡錯一個字，就會有人突然多看到或少看到一整頁，而且不會有任何錯誤訊息。
+// v207 再走一步（老闆：「不要有人有任何預設的權限，都要可以勾選的。」）：
+// **職位一個權限都不給**，全部要在「設定 → 權限」逐人勾。
+//
+// ⚠️ 這一支最重要的是**第 ① 段**：職位不准偷偷帶回任何預設值。
+//    這裡破一個洞，就會有人突然多看到一整頁，而且權限表上完全看不出來。
+// ⚠️ 這一支**不准** require tests/perm-fixture.js —— 那個檔就是在把舊的職位預設
+//    補回其他測試的假資料上，用在這裡等於把這一整段測掉。
 const fs = require("fs"), path = require("path");
 const APP = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 let src = APP.replace(/^let /gm, "").replace(/^const /gm, "");
@@ -49,48 +54,37 @@ function reset(users, who, role) {
 }
 const U = (name, role, extra) => Object.assign({ name, role }, extra || {});
 
-// ══════════ ① 職位預設值：必須跟改這套之前一模一樣 ══════════
-// 改之前的原始定義（抄自 v201 的程式碼，這是這一段存在的全部意義）：
-//   seesDF        ["boss","manager","editor"]
-//   canSeeOutput  ["boss","hr"]
-//   canAssignWork ["boss","manager"] ＋ canAssign 旗標
-//   canFindAssets ["boss","manager"] ＋ canFindAssets 旗標
-//   seesLeadBoard ["boss","manager","hr"]
-//   perf 分頁      只有 boss（ROLE_TABS）
-//   remake        v203 新增，跟 df 一樣（搬家不能改變誰看得到）
-//   output/attend  boss ＋ hr（ROLE_TABS）
+// ══════════ ① 職位不給任何預設權限 ══════════
+// 老闆：「不要有人有任何預設的權限，都要可以勾選的。」
 //
-// ⚠️ v204 **刻意**動了兩項，其餘六項一個字都不准變：
-//   remake 整個拿掉 —— 二創那一頁併進「影片成效」了，不再是獨立權限。
-//   perf   ["boss"] → ["boss","manager","editor"] —— 二創建議與「排二創」都搬進
-//          影片成效，還維持 boss only 的話，經理人與剪輯會連「哪支片該再剪」都
-//          看不到，而老闆要的正是小主管能指派。放寬後的範圍＝原本 remake 的範圍，
-//          不多不少；要收回去在「設定→權限」逐人取消即可。
-const WAS = {
-  df:     ["boss", "manager", "editor"],
-  output: ["boss", "hr"],
-  attend: ["boss", "hr"],
-  assign: ["boss", "manager"],
-  find:   ["boss", "manager"],
-  lead:   ["boss", "manager", "hr"],
-  perf:   ["boss", "manager", "editor"],
-  // v206 新增：商品主檔。刻意**不**跟著 perf 開給剪輯 ——
-  // 看得到帶貨商品排行，不代表能改主檔（改錯會讓兩個商品黏在一起、或一段歷史斷掉）。
-  prod:   ["boss", "manager"],
-};
+// 這一段就是那句話的全部：每一項權限 × 每一個職位，沒勾就是沒有。
+// 勾了才有 —— 而且是同一個人、同一個職位，只差 users.perms 裡多了那個 key。
 // 二創不再是一個權限 —— 這條會擋住「哪天有人手滑把它加回來，變成兩套定義」
 ok("「二創」不再是獨立權限（它就是影片成效的一部分）", typeof PERMS.remake === "undefined");
 const ROLES = ["boss", "manager", "editor", "intl", "hr", "cs", "mkt", "svc", "ship", "pick"];
-Object.keys(WAS).forEach(key => {
+PERM_KEYS.forEach(key => {
   ROLES.forEach(role => {
     reset([U("阿某", role)], "阿某", role);
-    const want = WAS[key].includes(role);
-    ok(`職位預設沒變：${role} 的「${PERMS[key].label}」＝${want ? "有" : "沒有"}`,
-       hasPerm(key) === want, { key, role, got: hasPerm(key) });
+    ok(`職位不給預設：${role} 沒被勾就沒有「${PERMS[key].label}」`,
+       hasPerm(key) === false, { key, role });
+    // 中文頁不給海外剪輯，那是另一條規矩（第 ⑥ 段），這裡就不重複測
+    if (role === "intl" && PERMS[key].zhOnly) return;
+    reset([U("阿某", role, { perms: [key] })], "阿某", role);
+    ok(`勾起來就有：${role} 的「${PERMS[key].label}」`, hasPerm(key) === true, { key, role });
   });
 });
-ok("PERMS 的每一項都在上面那張表裡，沒有多也沒有少（新增一項就要回來補預設值）",
-   PERM_KEYS.slice().sort().join() === Object.keys(WAS).sort().join(), PERM_KEYS);
+// 程式碼層面再釘一次：PERMS 裡不准再出現 roles，ROLE_TABS 裡不准再出現那四頁。
+// 沒有這兩條，下一個人「順手」加回去，上面那一整段照樣全綠（因為假資料裡沒有那個職位）。
+ok("**PERMS 裡不准再有 roles**（那就是職位預設）",
+   PERM_KEYS.every(k => PERMS[k].roles === undefined) &&
+   !/roles\s*:/.test((APP.match(/const PERMS = \{[\s\S]*?\n\};/) || [""])[0]));
+ok("**權限管得到的分頁不准寫回 ROLE_TABS**（寫回去就是偷偷給一個預設值）",
+   (() => { const rt = (APP.match(/const ROLE_TABS = \{[\s\S]*?\n\};/) || [""])[0];
+     return PERM_KEYS.filter(k => PERMS[k].tab).every(k => !rt.includes('"' + PERMS[k].tab + '"')); })(),
+   (APP.match(/const ROLE_TABS = \{[\s\S]*?\n\};/) || [""])[0].slice(0, 400));
+// 那個補丁檔是給「不是在測權限」的煙霧測試用的；用在這裡等於把這一整段測掉
+ok("這一支沒有去 require 那個補丁檔（用了就會把「職位不給預設」整段測掉）",
+   !/require\(["'][^"']*perm-fixture/.test(fs.readFileSync(__filename, "utf8")));
 // 設定不能從權限表發出去 —— 拿到設定的人可以再把權限給別人，那是第二把管理員鑰匙
 ok("**設定不在權限表裡**（老闆選的）", !PERM_KEYS.includes("settings") && !/settings:\s*\{/.test(
    (APP.match(/const PERMS = \{[\s\S]*?\n\};/) || [""])[0]));
@@ -140,9 +134,20 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
   VIEW_AS = null; }
 // ⚠️ 這一條在守 smoke-v196 那個坑：currentRole() 找不到人時會退回 localStorage 裡
 //    **管理員自己**的職位，所以預覽一個不存在的名字會借到管理員權限。
-{ reset([U("管理員", "boss")], "管理員", "boss");
-  ok("沒在預覽、自己也還沒載進名單時，照舊用職位判斷（資料載入中的那一瞬間）",
-     hasPerm("perf")); }
+// v207：管理員＝最高權限，而且是比對**名字**不是職位 ——
+// 比對職位的話，「把誰改成 boss，誰就變成管理員」。
+{ reset([], "管理員", "boss");
+  ok("管理員就算還沒載進名單，照樣全部都有（資料載入中的那一瞬間也要能用）",
+     PERM_KEYS.every(k => hasPerm(k)), PERM_KEYS.filter(k => !hasPerm(k)));
+  reset([U("阿某", "boss")], "阿某", "boss");
+  ok("**別人掛 boss 也不會變成管理員**（比對的是名字，不是職位）",
+     PERM_KEYS.every(k => !hasPerm(k)), PERM_KEYS.filter(k => hasPerm(k)));
+  // ⚠️ 這一條在守「名單裡找不到這個人」那一行：以前它會退回 currentRole()，
+  //    而 currentRole() 找不到人時讀的是 localStorage 裡的職位 —— 等於自己說自己是誰。
+  //    沒有這一條，把那一行改成「退回職位」照樣全綠（上面那幾條都有指名或在預覽）。
+  reset([], "小葵", "editor");
+  ok("**自己也還沒載進名單時，一項都沒有**（不准退回職位 —— 那是自己說自己是誰）",
+     PERM_KEYS.every(k => !hasPerm(k)), PERM_KEYS.filter(k => hasPerm(k))); }
 
 // ══════════ ⑤ 指名問別人的權限 ══════════
 { reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["output"] })], "管理員", "boss");
@@ -161,6 +166,15 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 // 權限頁上海外剪輯那一列的「主管看板」是可以勾的，勾下去就是中文漏進英文介面。
 { reset([U("Ali", "intl", { perms: ["lead"] })], "Ali", "intl");
   ok("**海外剪輯就算資料裡有 lead，也看不到主管看板**", !seesLeadBoard()); }
+// 上面兩條都是靠各自那一段的 currentRole()!=="intl" 擋下來的 —— 擋板在 hasPerm 裡也要有一份，
+// 不然哪天多一個中文功能、寫的人忘了加那一句，就直接漏出去了。
+{ reset([U("Ali", "intl", { perms: PERM_KEYS.slice(), canAssign: true, canFindAssets: true })], "Ali", "intl");
+  const zh = PERM_KEYS.filter(k => PERMS[k].zhOnly);
+  ok("**hasPerm 自己就擋掉海外剪輯的中文頁**（不是靠各處的 currentRole() 各擋一份）",
+     zh.length >= 5 && zh.every(k => !hasPerm(k)), zh.filter(k => hasPerm(k)));
+  ok("（對照）不是中文頁的那幾項照樣給他",
+     PERM_KEYS.filter(k => !PERMS[k].zhOnly).every(k => hasPerm(k)),
+     PERM_KEYS.filter(k => !PERMS[k].zhOnly && !hasPerm(k))); }
 { reset([U("管理員", "boss"), U("Ali", "intl"), U("小葵", "editor")], "管理員", "boss");
   SET_TAB = "perms"; const h = viewSettings(); SET_TAB = "basic";
   ok("權限頁上海外剪輯那一列，中文頁那幾項一律不給勾",
@@ -174,13 +188,35 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
   ok("每一項都在表頭上", PERM_KEYS.every(k => h.includes(">" + PERMS[k].label + "</th>")),
      PERM_KEYS.filter(k => !h.includes(">" + PERMS[k].label + "</th>")));
   ok("每個人一列", h.includes("Regina") && h.includes("小葵") && h.includes("阿包"));
-  ok("職位本來就有的顯示「職位」，不給勾",
-     /Regina[\s\S]{0,900}職位/.test(h) && !/setMemberPerm\('Regina','df'/.test(h));
+  // v207：沒有「職位」那一檔了 —— 每一格都是勾選框（管理員那一列除外，他是最高權限）
+  ok("**每一個人、每一項都是勾選框**（老闆：「都要可以勾選的」）",
+     ["Regina", "小葵", "阿包"].every(n => PERM_KEYS.every(k =>
+       h.includes(`setMemberPerm('${n}','${k}',this.checked)`))),
+     ["Regina", "小葵", "阿包"].map(n => PERM_KEYS.filter(k =>
+       !h.includes(`setMemberPerm('${n}','${k}',this.checked)`))));
+  ok("表上沒有「職位」那一檔了（有的話就是還有預設值）", !h.includes(">職位</span>"));
+  // ⚠️ 不能只看 h.includes("最高") —— 卡片下面的說明也寫著「是最高權限」，
+  //    那樣把整列拿掉照樣是綠的。要認那顆標籤，而且每一欄都要有一顆。
+  ok("管理員自己一列，每一項都標「最高」，而且不給勾",
+     (h.match(/>最高</g) || []).length === PERM_KEYS.length && !/setMemberPerm\('管理員'/.test(h),
+     (h.match(/>最高</g) || []).length);
   ok("職位沒給的才有勾選框", /setMemberPerm\('小葵','output',this\.checked\)/.test(h));
   ok("「外包」也整合進來了", h.includes(">外包</th>") && /setMemberOutsourced\('阿包'/.test(h));
   ok("每一項都寫出它到底能做什麼", PERM_KEYS.every(k => h.includes(PERMS[k].why)),
      PERM_KEYS.filter(k => !h.includes(PERMS[k].why)));
-  ok("有講清楚設定為什麼不在這裡", h.includes("管理員鑰匙")); }
+  ok("有講清楚設定為什麼不在這裡", h.includes("管理員鑰匙"));
+  // 手機上勾不到＝這一頁沒用。桌機要 660px 才點得準，手機轉成直列卡片後那個寬度必須讓開，
+  // 不然九欄的勾選框整排被推到畫面外（量過：表格 660px、容器只有 334px）。
+  // ⚠️ 手機那一段在 index.html 裡比桌機那兩條**早**出現，所以只能靠選擇器權重壓過去 ——
+  //    寫成同名的 table.permtable{min-width:0} 會被後面的 660px 蓋掉，而且畫面上看不出來。
+  const HTML = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  ok("權限表用的是 class 不是行內的 min-width（行內樣式手機上蓋不掉）",
+     h.includes('class="responsive permtable"') && h.includes("permwrap") && !/min-width:660px/.test(h));
+  ok("**手機上那個 660px 有讓開**（不然九欄的勾選框整排在畫面外）",
+     /table\.responsive\.permtable\{min-width:0\}/.test(HTML) &&
+     /\.vidscroll\.permwrap\{[^}]*overflow:visible/.test(HTML));
+  ok("（前提）桌機的 660px 還在，而且排在手機那一條後面",
+     HTML.indexOf("table.permtable{min-width:660px}") > HTML.indexOf("table.responsive.permtable{min-width:0}")); }
 // 例子改成 output／attend：v204 之後 perf 是剪輯的職位預設，那格會顯示「職位」不給勾，
 // 拿它當「逐人勾起來」的例子測不到東西。
 { reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["output", "lead"] })], "管理員", "boss");
@@ -190,7 +226,7 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
   ok("沒開的不勾", /<input type="checkbox" [^>]*setMemberPerm\('小葵','attend'/.test(h)
      && !/<input type="checkbox" checked[^>]*setMemberPerm\('小葵','attend'/.test(h));
   SET_TAB = "members"; const m = viewSettings(); SET_TAB = "basic";
-  ok("成員表上看得到「額外幾項」，但改要去權限頁", m.includes("額外 2 項") && m.includes("setSetTab('perms')")); }
+  ok("成員表上看得到「開了幾項」，但改要去權限頁", m.includes("開了 2 項") && m.includes("setSetTab('perms')")); }
 
 // ══════════ ⑧ 寫入：perms 與舊旗標要一起動 ══════════
 (async () => {

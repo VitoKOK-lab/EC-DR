@@ -480,9 +480,52 @@ g = S.unfiled_groups([_P(LONG, comments=10, pid="a"), _P(LONG, comments=10, pid=
 ok(len(g[0].get("posts") or []) == 2, "每一組留著它底下的貼文（要問觀看數時用得到）")
 ok("def unfiled_fill_views(" in SYNC_SRC,
    "問觀看數是**另外一個函式**（平常的每日同步不能多花幾百次呼叫）")
-ok('ap.add_argument("--unfiled-views"' in SYNC_SRC, "--unfiled-views 這個旗標真的存在")
-ok("if unfiled and args.unfiled_views and not args.from_file:" in SYNC_SRC,
+# v207：改成**預設就問**。老闆要「排序和排行放在一起」——
+# 未建檔的貼文要跟系統裡的片排同一個榜，沒有觀看數就排不進去（views 0 會全沉底）。
+ok('ap.add_argument("--no-unfiled-views"' in SYNC_SRC,
+   "關掉的旗標是 --no-unfiled-views（**預設就會問**，不是要人記得加）")
+ok('ap.add_argument("--unfiled-views"' not in SYNC_SRC,
+   "舊的 --unfiled-views 已經不在（不要留兩個意思相反的旗標）")
+ok("if unfiled and not args.no_unfiled_views and not args.from_file:" in SYNC_SRC,
    "而且真的接到流程上（不然寫了函式沒人呼叫）")
+
+# ── 2026-09-13 的事故：178 支全部寫入失敗（v207）──────────────────────
+# 那一次 --write 跑完，**0 支成功、178 支失敗**，每一支都是
+# HTTP 401 UNAUTHENTICATED。資料庫沒被寫壞（一支都沒寫進去），但整趟白跑。
+#
+# 兩個原因，都是我的：
+#   ① 問觀看數沒有上限 → 問了 10,091 則（我估「四五百」）
+#      分組是用文案前 60 字當 key，小編的罐頭開頭會把一大堆不同的貼文黏成一組
+#   ② 跑太久 → Firebase 的匿名 idToken（1 小時）在寫之前就過期了
+ok("token = _fs.sign_in(cfg_fb)" in SYNC_SRC.split("done, failed = write_back")[0].split("# 4. 寫回去")[-1],
+   "**寫之前重新登入** —— 長時間的同步會讓權杖過期，那一次 178 支全部 401")
+ok("MAX_PER_GROUP = 15" in SYNC_SRC,
+   "一組超過 15 則就不問（那不是一支片重發，是罐頭句黏成一坨）")
+ok("MAX_ASK = 600" in SYNC_SRC,
+   "**問觀看數的總數要封頂** —— 沒有上限那次問了 10,091 則")
+ok("if len(reps) + len(ps) > MAX_ASK:" in SYNC_SRC, "封頂真的有被用")
+ok("if len(ps) > MAX_PER_GROUP:" in SYNC_SRC, "每組上限也真的有被用")
+# ── 網路逾時不能把整支打掛（v207）──────────────────────────────────
+# 2026-09-13：抓 IG 清單時 socket.timeout，整支腳本用一頁 traceback 掛掉，
+# 而且前面抓的一萬多則全部白費。_call 明明有重試，但它只攔
+# urllib.error.URLError —— socket.timeout 是「連上了但讀不到」，
+# Python 不會把它包成 URLError，直接穿過去。
+# （備份那支 _fs._open 攔的是 except Exception，所以從來沒踩到。）
+ok("except OSError as e:" in SYNC_SRC,
+   "**_call 要攔 OSError** —— URLError、socket.timeout、ConnectionResetError 的共同祖先")
+ok("except urllib.error.URLError as e:" not in SYNC_SRC,
+   "不要只攔 URLError（socket.timeout 不是它的子類）")
+# 一個帳號抓不到 → 跳過那個帳號，其餘照跑；但未建檔清單不准覆寫
+ok("failed.append(name)" in SYNC_SRC and "return token, posts, failed" in SYNC_SRC,
+   "抓不到的帳號要記下來，不是默默跳過")
+ok("if failed_accounts:" in SYNC_SRC and
+   "未建檔清單**不覆寫**" in SYNC_SRC,
+   "**有帳號抓不到就不覆寫未建檔清單** —— 那張清單是整份覆寫的，"
+   "少一個帳號就會把完整的那份蓋成殘缺的（成效沒這問題，merge_metrics 會留舊列）")
+
+ok("asked = set(id(p) for p in reps)" in SYNC_SRC and
+   "if not all(id(p) in asked for p in g[\"posts\"]):" in SYNC_SRC,
+   "**沒問完的那幾組 views 留 0**，不要拿半套的數字當成那一組的觀看（畫面會顯示「—」）")
 
 # ── 印出來的樣子（v206）──────────────────────────────────────────────
 # 2026-09-13 正式資料上印出「留言 4.5 KB」「留言合計 78.9 KB」——

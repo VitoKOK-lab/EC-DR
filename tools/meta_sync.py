@@ -180,12 +180,19 @@ def _call(path, token, params=None, tries=4):
                 continue
             raise MetaError("Graph API %s：%s（code=%s subcode=%s）" % (
                 path, err.get("message", body[:200]), code, err.get("error_subcode")))
-        except urllib.error.URLError as e:
+        except OSError as e:
+            # ⚠️ 這裡以前只攔 urllib.error.URLError，結果 2026-09-13 被
+            #    **socket.timeout** 打穿 —— 那是「連上了但讀不到資料」，
+            #    Python 不會把它包成 URLError，直接往上拋，整支腳本用一頁
+            #    看不懂的 traceback 掛掉，而且已經跑掉的進度全部白費。
+            #    （備份那支 _fs._open 攔的是 except Exception，所以從來沒踩到。）
+            #    OSError 是 URLError、socket.timeout、ConnectionResetError
+            #    的共同祖先，一次攔乾淨。
             last = e
             if i < tries - 1:
                 time.sleep(3 * (i + 1))
                 continue
-            raise MetaError("連不上 Graph API：%s" % e)
+            raise MetaError("連不上 Graph API（重試 %d 次都失敗）：%s" % (tries, e))
     raise MetaError("Graph API 重試都失敗：%s" % last)
 
 
@@ -372,7 +379,7 @@ def list_all(cfg, since_ts):
     if not token:
         raise MetaError("沒有 token：請在設定檔寫 token，或設環境變數 META_TOKEN")
     check_token(token)
-    posts = []
+    posts, failed = [], []
     for acc in cfg.get("accounts") or []:
         name = acc.get("name") or "(沒有名字的帳號)"
         try:
@@ -381,10 +388,11 @@ def list_all(cfg, since_ts):
                    else list_fb(acc, token, since_ts))
         except MetaError as e:
             print("  ⚠ %s 抓不到：%s" % (name, e))
+            failed.append(name)
             continue
         print("  %s　%d 則" % (name, len(got)))
         posts.extend(got)
-    return token, posts
+    return token, posts, failed
 
 
 def pick_token(sample, candidates, metrics):
@@ -946,12 +954,39 @@ def unfiled_fill_views(groups, cfg, token, verbose=False):
     只問清單上這 200 組裡的貼文（每組通常 1～3 則），大約四五百次，
     而且只有在人真的要挖舊片的時候才跑。
     """
-    reps = [p for g in groups for p in g["posts"]]
+    # ⚠️ 這裡一定要有上限。2026-09-13 沒有上限，結果問了 **10,091 則** ——
+    #    我當時估「每組 8 則、共四五百次」，但分組是用文案前 60 字當 key，
+    #    小編的罐頭開頭（「留言『喜歡』獲取下單連結…」）會把一大堆不同的貼文
+    #    黏成同一組，平均變成 50 則。那一次跑太久，Firebase 權杖過期，
+    #    178 支全部寫入失敗。
+    #
+    #    兩道閘：
+    #      ① 一組超過 MAX_PER_GROUP 則＝那不是「一支片重發」，是罐頭句黏成一坨，
+    #         跳過不問（它的觀看數本來就不會是同一支片的）
+    #      ② 總數封頂 MAX_ASK，超過就不問了 —— 排行上那幾組顯示「—」，
+    #         總比整批寫不進去好
+    MAX_PER_GROUP = 15          # V166 真的重發過 10 次，15 已經很寬
+    MAX_ASK = 600
+    reps, skipped = [], 0
+    for g in groups:
+        ps = g["posts"]
+        if len(ps) > MAX_PER_GROUP:
+            skipped += 1
+            continue
+        if len(reps) + len(ps) > MAX_ASK:
+            break
+        reps.extend(ps)
+    if skipped:
+        print("\n  （%d 組底下的貼文超過 %d 則，多半是罐頭開頭黏成一坨，不問觀看數）"
+              % (skipped, MAX_PER_GROUP))
     if not reps:
         return
-    print("\n  順便問這 %d 則的觀看數（--unfiled-views）：" % len(reps))
+    print("\n  順便問這 %d 則未建檔貼文的觀看數（要關掉用 --no-unfiled-views）：" % len(reps))
     add_insights(reps, cfg, token, verbose)
+    asked = set(id(p) for p in reps)
     for g in groups:
+        if not all(id(p) in asked for p in g["posts"]):
+            continue            # 這一組沒問完，views 留 0（畫面會顯示「—」）
         g["views"] = sum(int(p.get("views") or 0) for p in g["posts"])
         best = -1
         for p in g["posts"]:
@@ -1039,8 +1074,13 @@ def main():
                     help="一支片達標之後，繼續追蹤幾天（預設 30）")
     ap.add_argument("--write", action="store_true", help="真的寫進資料庫（預設只看不寫）")
     ap.add_argument("--fill-links", action="store_true", help="順便把空的上片連結補回去")
-    ap.add_argument("--unfiled-views", action="store_true",
-                    help="替「未在資料庫裡的影片」清單問真正的觀看數（多花幾百次呼叫）")
+    # ⚠️ v207 改成**預設就問**。老闆：「我要原本的成效排行…排序和排行放在一起」——
+    #    未建檔的貼文要跟系統裡的片排在同一個榜上，沒有觀看數就排不進去
+    #    （它們的 views 是 0，會全部沉到最底下，等於沒排）。
+    #    代價是每次同步多四五百次呼叫（只問清單上那 200 組底下的貼文，
+    #    不是那一萬七千則）。真的嫌慢再用 --no-unfiled-views 關掉。
+    ap.add_argument("--no-unfiled-views", action="store_true",
+                    help="不要替未建檔的貼文問觀看數（省幾百次呼叫，但它們排不進排行）")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
     ap.add_argument("--from-file", default="", help="用存好的 JSON 重跑比對，不連網")
     ap.add_argument("--videos-file", default="",
@@ -1075,7 +1115,7 @@ def main():
                 return 0
 
     # 1. 拿貼文清單（便宜）—— 這一段還不問成效
-    cfg, token = None, None
+    cfg, meta_token, failed_accounts = None, None, []
     if args.from_file:
         posts = json.load(open(args.from_file, encoding="utf-8"))
         print("\n用檔案裡的 %d 則貼文（沒有連網）" % len(posts))
@@ -1085,13 +1125,18 @@ def main():
             return 2
         cfg = json.load(open(args.config, encoding="utf-8"))
         print("\n抓貼文清單（還不問成效）：")
-        token, posts = list_all(cfg, since)
+        meta_token, posts, failed_accounts = list_all(cfg, since)
     if not posts:
         print("\n沒有抓到任何貼文，結束。")
         return 1
 
     # 2. 讀影片庫
-    cfg_fb, token = None, None
+    # ⚠️ 兩個權杖，兩個名字，不要都叫 token。
+    #    meta_token ＝ Meta Graph API 的；fb_token ＝ Firebase 的（1 小時會過期）。
+    #    以前兩個都叫 token，這一行把 Meta 那個蓋掉，後面 add_insights 就收到
+    #    Firebase 的權杖 —— 沒炸只是因為 add_insights 會先試設定檔裡的粉專權杖。
+    #    粉專權杖哪天失效，錯誤訊息會完全看不懂。
+    cfg_fb, fb_token = None, None
     if args.videos_file:
         if args.write:
             print("\n--videos-file 是拿備份檔重跑比對用的，不能配 --write。")
@@ -1100,8 +1145,8 @@ def main():
         videos = raw.get("videos") if isinstance(raw, dict) else raw
     else:
         cfg_fb = _fs.load_config()
-        token = _fs.sign_in(cfg_fb)
-        videos = [_fs.doc_to_plain(d) for d in _fs.fetch_collection(cfg_fb, token, "videos")]
+        fb_token = _fs.sign_in(cfg_fb)
+        videos = [_fs.doc_to_plain(d) for d in _fs.fetch_collection(cfg_fb, fb_token, "videos")]
     for v in videos:
         v["id"] = v.get("id") or v.get("_id")
     print("\n影片庫 %d 支" % len(videos))
@@ -1137,7 +1182,7 @@ def main():
     if want and not args.from_file:
         print("\n問成效（一則一次呼叫，這段最慢）：")
         sys.stdout.write("  ")
-        add_insights(want, cfg, token, args.verbose)
+        add_insights(want, cfg, meta_token, args.verbose)
 
     if args.save_posts:
         json.dump(posts, open(args.save_posts, "w", encoding="utf-8"),
@@ -1339,8 +1384,8 @@ def main():
     # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
     # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
     unfiled = unfiled_groups(unmatched)
-    if unfiled and args.unfiled_views and not args.from_file:
-        unfiled_fill_views(unfiled, cfg, token, args.verbose)
+    if unfiled and not args.no_unfiled_views and not args.from_file:
+        unfiled_fill_views(unfiled, cfg, meta_token, args.verbose)
     if unfiled:
         tot_c = sum(g["comments"] for g in unfiled)
         tot_v = sum(g["views"] for g in unfiled)
@@ -1353,7 +1398,7 @@ def main():
         print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
         print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
         if not tot_v:
-            print("   （觀看數要加 --unfiled-views 才會去問；留言數是抓清單時就有的，不用花呼叫）")
+            print("   （這次沒問觀看數：不是 --no-unfiled-views 就是 --from-file）")
         for g in unfiled[:12]:
             # ⚠️ 日期要帶年份。只印月-日的話，跨年的區間會長成「06-24～02-22」，
             #    看起來像最早比最晚還晚。2026-09-13 的輸出就是這樣。
@@ -1406,11 +1451,21 @@ def main():
                       # 「原片第 30 天」可以跟「二創第 30 天」比（見 merge_hist）
                       "hist": merge_hist(byvid.get(vid, {}).get("metricsHist"), e["rows"], today_str),
                       "fillLink": e["fillLink"]})
-    done, failed = write_back(cfg_fb, token, final, args.fill_links)
+    # ⚠️ 寫之前**重新登入**。
+    #    Firebase 的匿名 idToken 只有 1 小時。同步一開始登入拿權杖，中間可能花
+    #    一兩個小時在問 Meta（2026-09-13 那次問了 10,091 則），等到要寫的時候
+    #    權杖早就過期 —— 178 支**全部** 401 UNAUTHENTICATED，一支都沒寫進去。
+    #    重新登入只是一次呼叫，而且做的事跟使用者開網頁完全一樣。
+    #    ⚠️ 後面寫 logs 與 metaSyncStatus 也要用這個新的權杖，不要用舊的。
+    try:
+        fb_token = _fs.sign_in(cfg_fb)
+    except Exception as e:                                      # noqa: BLE001
+        print("  ⚠ 寫入前重新登入失敗：%s" % e)
+    done, failed = write_back(cfg_fb, fb_token, final, args.fill_links)
     print("\n寫入完成：%d 支成功、%d 支失敗%s"
           % (done, failed, ("（另外跳過 %d 支疑似誤配的）" % len(skip)) if skip else ""))
     try:
-        write_log(cfg_fb, token,
+        write_log(cfg_fb, fb_token,
                   "後台同步平台成效 %d 支" % done,
                   "範圍 %s 起；貼文 %d 則、對上 %d、對不上 %d%s"
                   % (since, len(posts), len(matched), len(unmatched),
@@ -1421,13 +1476,22 @@ def main():
             "failed": failed, "hits": len(hits), "posts": len(posts),
             "matched": len(matched), "days": args.days}
     try:
-        report_status(cfg_fb, token, info)
+        report_status(cfg_fb, fb_token, info)
         # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——
         # 不寫的話畫面上會一直掛著上一次的舊清單，建過檔的片還留在「未建檔」裡。
-        try:
-            report_unfiled(cfg_fb, token, unfiled, args.days)
-        except Exception as e:
-            print("  ⚠ 未建檔清單寫不進去：%s" % e)
+        # ⚠️ 有帳號抓不到就**不要覆寫**未建檔清單。
+        #    那張清單是整批重算、整份覆寫的 —— 少了一個帳號的貼文，
+        #    重算出來的是殘缺的一份，蓋上去等於把完整的那份弄丟，
+        #    而畫面上看不出少了東西。成效那邊沒有這個問題（merge_metrics
+        #    會保留沒對到的舊列），只有這張清單是全有全無。
+        if failed_accounts:
+            print("  ⚠ %s 這次抓不到，未建檔清單**不覆寫**（免得把完整的那份蓋成殘缺的）"
+                  % "、".join(failed_accounts))
+        else:
+            try:
+                report_unfiled(cfg_fb, fb_token, unfiled, args.days)
+            except Exception as e:
+                print("  ⚠ 未建檔清單寫不進去：%s" % e)
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 狀態回報寫不進去：%s" % e)
     if not failed:
