@@ -407,6 +407,83 @@ ok(not out4[0].get("viewsMissing"), "全新的一列也一樣，不會被健檢�
 ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
    "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
 
+# ── 未在資料庫裡的影片：unfiled_groups 的**行為**（v206）─────────────────
+# ⚠️ 這一段被我自己刪掉過一次（f961a20）—— 清「重複段落」時把新的那份刪了，
+#    舊的那份也早就不在，結果 unfiled_groups 有整整一輪一條測試都沒有，
+#    而我還在拿它跑突變測試說「全綠」。刪測試之前先確認刪的是哪一份。
+def _P(cap, comments=20, views=0, at="2025-03-11", plat="FB", pid="p", link="L"):
+    """一則**對不到影片**的貼文，形狀跟真實資料一樣。
+
+    ⚠️ views 預設 0，而且是故意的。同步只對「對得上影片」的貼文去問成效，
+       對不上的那一萬七千則**從來沒被問過**，views 就是 0。
+       2026-09-13 我第一版的測試自己塞 views=9000 進去，所以沒測出
+       「門檻用觀看數 → 清單永遠是空的」這個錯。
+       測試資料要長得跟資料真正到達的樣子一樣，不是長得跟我希望的樣子一樣。
+    """
+    return {"post": {"platform": plat, "at": at + "T10:00:00", "caption": cap,
+                     "views": views, "comments": comments, "permalink": link, "id": pid},
+            "why": "文案對不上任何一支"}
+
+LONG = "這是一段夠長的貼文文案用來當比對的依據不要太短"      # > MIN_CHARS
+g = S.unfiled_groups([_P(LONG, comments=20)])
+ok(len(g) == 1 and g[0]["comments"] == 20, "一則達標的貼文 → 一組")
+ok(g[0]["views"] == 0, "**觀看是 0，因為根本沒去問** —— 這就是真實資料的樣子")
+
+# ★ 這一條是核心：用觀看數當門檻，清單永遠是空的
+ok(len(S.unfiled_groups([_P(LONG, comments=50, views=0)])) == 1,
+   "**觀看 0 但留言 50 → 照樣進清單**（用觀看當門檻的話，這裡會是空的）")
+ok(S.UNFILED_MIN_COMMENTS == 5, "門檻是留言 5 則 —— 跟達標條件的另一半同一條線")
+ok(S.unfiled_groups([_P(LONG, comments=4, views=99999)]) == [],
+   "**留言 4 則就是不收，觀看再高也一樣**（門檻真的是留言數，不是觀看數）")
+ok(len(S.unfiled_groups([_P(LONG, comments=5, views=0)])) == 1, "剛好 5 則收進來")
+
+# 同一支片重發，留言要加起來才過門檻
+g = S.unfiled_groups([_P(LONG, comments=3, pid="a"), _P(LONG, comments=3, pid="b")])
+ok(len(g) == 1 and g[0]["n"] == 2 and g[0]["comments"] == 6,
+   "同一支片重發兩次算一組，留言相加（3+3 才過門檻）")
+
+# 排序：照留言，而且觀看全是 0 也要排得出來
+g = S.unfiled_groups([_P("甲的文案內容夠長才進得了比對的門檻編號甲", comments=10, pid="a"),
+                      _P("乙的文案內容夠長才進得了比對的門檻編號乙", comments=90, pid="b"),
+                      _P("丙的文案內容夠長才進得了比對的門檻編號丙", comments=50, pid="c")])
+ok([x["comments"] for x in g] == [90, 50, 10],
+   "**照留言數排**（改成照觀看排的話，全是 0，等於沒排）")
+
+# 上限真的有截
+many = [_P("第%d支影片的文案內容不一樣所以會分成不同組別編號%d" % (i, i), comments=10 + i, pid=str(i))
+        for i in range(S.UNFILED_MAX + 30)]
+res = S.unfiled_groups(many)
+ok(len(res) == S.UNFILED_MAX,
+   "**超過上限就截掉**（%d 組進去只留 %d 組）" % (len(many), S.UNFILED_MAX))
+ok(res[0]["comments"] == 10 + S.UNFILED_MAX + 29, "而且留下的是留言最多的那些")
+
+# 文案太短的不收（建了檔也對不回來）
+ok(S.unfiled_groups([_P("太短", comments=9999)]) == [], "文案太短不收，留言再多也一樣")
+# 「分不出是哪一支」不是沒建檔
+amb = _P(LONG, comments=9999); amb["candidates"] = ["V1", "V2"]
+ok(S.unfiled_groups([amb]) == [], "「有好幾支長得一樣」的不算未建檔（那是比對問題）")
+
+# 連結：有觀看數時取觀看最高的那一則（兩種順序都要對，不然「取第一則」也會通過）
+g = S.unfiled_groups([_P(LONG, comments=10, views=8000, pid="a", link="高"),
+                      _P(LONG, comments=10, views=3000, pid="b", link="低")])
+ok(g[0]["link"] == "高", "連結取**觀看最高**的那一則，不是最後一則")
+g = S.unfiled_groups([_P(LONG, comments=10, views=3000, pid="a", link="低"),
+                      _P(LONG, comments=10, views=8000, pid="b", link="高")])
+ok(g[0]["link"] == "高", "順序反過來也一樣（不是「取第一則」也不是「取最後一則」）")
+
+# 日期範圍
+g = S.unfiled_groups([_P(LONG, comments=10, at="2025-06-02"), _P(LONG, comments=10, at="2025-03-11")])
+ok(g[0]["first"] == "2025-03-11" and g[0]["last"] == "2025-06-02", "最早與最晚的發文日都記下來")
+
+# 每一組要留著它底下的貼文，--unfiled-views 才問得到觀看數
+g = S.unfiled_groups([_P(LONG, comments=10, pid="a"), _P(LONG, comments=10, pid="b")])
+ok(len(g[0].get("posts") or []) == 2, "每一組留著它底下的貼文（要問觀看數時用得到）")
+ok("def unfiled_fill_views(" in SYNC_SRC,
+   "問觀看數是**另外一個函式**（平常的每日同步不能多花幾百次呼叫）")
+ok('ap.add_argument("--unfiled-views"' in SYNC_SRC, "--unfiled-views 這個旗標真的存在")
+ok("if unfiled and args.unfiled_views and not args.from_file:" in SYNC_SRC,
+   "而且真的接到流程上（不然寫了函式沒人呼叫）")
+
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
 # 那個比值就不是在比剪輯，是在比誰的數字比較新。
