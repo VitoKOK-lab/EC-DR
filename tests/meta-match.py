@@ -394,6 +394,16 @@ ok(S.merge_metrics([{"postId": "ok1", "views": 5000, "likes": 100}], [NEWROW])[0
 out2 = S.merge_metrics([OLDROW], [{"postId": "old1", "views": 13402, "likes": 182}])
 ok(len(out2) == 1 and out2[0]["views"] == 13402 and not out2[0].get("viewsMissing"),
    "這次有重問到 → 用新數字，不標問不到")
+# ⚠️ 上面那條**抓不到**「連這次重問到的也一起標」這個錯 ——
+#    因為 13402 > 182，健檢本來就不會標它。要測「有沒有跳過這次拿到的」，
+#    新資料本身就得是「觀看 < 讚」的形狀。
+#    這一輪同步問到什麼就是什麼，健檢只負責**這次沒問到、只能沿用舊值**的那些。
+out3 = S.merge_metrics([OLDROW],
+                       [{"postId": "old1", "views": 10, "likes": 50, "viewsMissing": False}])
+ok(out3[0]["views"] == 10 and out3[0].get("viewsMissing") is False,
+   "**這次問到的就算數字難看也照用** —— 健檢只管沒被重問的舊列，不覆寫這一輪的判斷")
+out4 = S.merge_metrics([], [{"postId": "n1", "views": 3, "likes": 99}])
+ok(not out4[0].get("viewsMissing"), "全新的一列也一樣，不會被健檢標記")
 ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
    "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
 
