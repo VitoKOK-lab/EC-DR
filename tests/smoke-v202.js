@@ -74,6 +74,9 @@ const WAS = {
   find:   ["boss", "manager"],
   lead:   ["boss", "manager", "hr"],
   perf:   ["boss", "manager", "editor"],
+  // v206 新增：商品主檔。刻意**不**跟著 perf 開給剪輯 ——
+  // 看得到帶貨商品排行，不代表能改主檔（改錯會讓兩個商品黏在一起、或一段歷史斷掉）。
+  prod:   ["boss", "manager"],
 };
 // 二創不再是一個權限 —— 這條會擋住「哪天有人手滑把它加回來，變成兩套定義」
 ok("「二創」不再是獨立權限（它就是影片成效的一部分）", typeof PERMS.remake === "undefined");

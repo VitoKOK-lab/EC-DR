@@ -447,6 +447,10 @@ const PERMS = {
            why:"打卡紀錄、遲到早退、月報表" },
   df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
            why:"過渡期的成品庫（舊片直接建檔）" },
+  // v206：商品主檔。改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉，
+  //       所以不跟著「影片成效」一起開給剪輯 —— 看得到排行，不代表能動主檔。
+  prod:  { label:"商品主檔", roles:["boss","manager"], zhOnly:true,
+           why:"建檔、改名、換官網連結、標下架、把重複的兩筆合併" },
   lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
@@ -7558,20 +7562,72 @@ function prodLink(p, v){
   if(ps.length===1) return url;                                   // 只有一個商品，那就是它
   return prodPageName(url).trim()===String((p&&p.name)||"").trim() ? url : "";
 }
+// 網址正規化：尾巴的 / 、查詢字串、# 片段都不算身分的一部分
+// （同一頁常被複製成好幾種形狀）。中文有沒有編碼過也要一致。
+function prodUrlKey(u){
+  const s=String(u||"").split("#")[0].split("?")[0].replace(/\/+$/,"");
+  if(!s) return "";
+  let d=s; try{ d=decodeURIComponent(s); }catch(e){}
+  return d.toLowerCase();
+}
+
+// ── 商品主檔（v206）──────────────────────────────────────────────────
+// 老闆：「很有可能官網會變更…若是以後官網的連結失去了，可能官網的商品下架了，
+//        但是已經建檔的排序名單我還是希望能夠找得到、能夠在上面，只是可以註明
+//        已下架，讓我可以再次新增商品再次販售，然後可以保持是同一個連貫的紀錄。」
+//
+// 他戳到 v205 的弱點：我把**連結當成商品的身分證**，而連結會變。
+// 連結一換，系統就當成新商品，舊紀錄接不起來 —— 正是他擔心的事。
+// 身分不能是會變的東西，只能是一個不會變的編號。
+//
+// ⚠️ products 這個集合**早就存在**（選品配對 v138 建的，v175 把工作台整頁拿掉、
+//    集合留著，正式資料只有 2 筆測試資料）。rules 與備份清單也早就涵蓋 ——
+//    所以是接上去，不是另開一個。欄位沿用既有的 name/sku/officialUrl/
+//    shoplineLink/image，再加 aliases／oldUrls／status／offAt。
+//
+// ⚠️ **影片那邊不加 pid**。主檔的「現用名字＋別名」和「現用連結＋舊連結」
+//    已經足夠把影片認回來了，不必去動一百多筆影片文件。
+//    換連結＝把舊的推進 oldUrls；改名＝把舊的推進 aliases；合併＝把另一筆的
+//    名字與連結全部收過來再刪掉它 —— 三個動作都只寫主檔那一筆。
+function prodAll(){ return (STATE&&STATE.products)||[]; }
+function prodById(id){ return prodAll().find(x=>x&&x.id===id)||null; }
+function prodIsOff(m){ return !!(m && m.status==="off"); }
+function prodNames(m){ return [String((m&&m.name)||"").trim()].concat(((m&&m.aliases)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
+function prodUrls(m){ return [String((m&&m.officialUrl)||"").trim()].concat(((m&&m.oldUrls)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
+// 連結→主檔、名字→主檔。快取靠陣列身分認（跟 rmkIndex 同一招）。
+let PDX=null, PDX_SRC=null;
+function prodIndex(){
+  const a=prodAll();
+  if(PDX && PDX_SRC===a) return PDX;
+  const byUrl={}, byName={};
+  a.forEach(m=>{ if(!m||!m.id) return;
+    prodUrls(m).forEach(u=>{ const k=prodUrlKey(u); if(k && !byUrl[k]) byUrl[k]=m; });
+    prodNames(m).forEach(n=>{ if(n && !byName[n]) byName[n]=m; }); });
+  PDX={byUrl, byName}; PDX_SRC=a; return PDX;
+}
+// 這一筆商品屬於主檔的哪一個？連結優先（名字會被寫成好幾種寫法，連結不會）。
+function prodMasterOf(p, v){
+  const ix=prodIndex();
+  const u=prodUrlKey(prodLink(p, v));
+  if(u && ix.byUrl[u]) return ix.byUrl[u];
+  return ix.byName[String((p&&p.name)||"").trim()] || null;
+}
 function prodKey(p, v){
+  const m=prodMasterOf(p, v);
+  if(m) return "m:"+m.id;                 // 建檔了就用編號 —— 連結怎麼換都接得起來
   const u=prodLink(p, v);
   if(!u) return "n:"+String((p&&p.name)||"").trim();
-  // 網址尾巴的 / 、查詢字串、# 片段都不算身分的一部分（同一頁常被複製成好幾種形狀）
-  return "u:"+u.split("#")[0].split("?")[0].replace(/\/+$/,"").toLowerCase();
+  return "u:"+prodUrlKey(u);
 }
 // 點商品 → 哪些影片賣過它
 function openProdVids(key){
   const hits=[];
   allLibVideos().forEach(v=>{ if(v.deleted) return;
     (v.products||[]).forEach(p=>{ if(p&&p.name&&prodKey(p,v)===key) hits.push({v,p}); }); });
-  if(!hits.length){ toast("找不到這個商品的影片",true); return; }
-  const names=[...new Set(hits.map(h=>h.p.name))];
-  const link=(hits.map(h=>prodLink(h.p,h.v)).find(Boolean))||"";
+  const m=String(key||"").startsWith("m:") ? prodById(key.slice(2)) : null;
+  if(!hits.length && !m){ toast("找不到這個商品的影片",true); return; }
+  const names=[...new Set((m?prodNames(m):[]).concat(hits.map(h=>h.p.name)))];
+  const link=(m&&String(m.officialUrl||"").trim())||(hits.map(h=>prodLink(h.p,h.v)).find(Boolean))||"";
   hits.sort((a,b)=>vidViews(b.v)-vidViews(a.v));
   const rows=hits.map(h=>{ const v=h.v, d=rmkAired(v);
     return `<tr style="cursor:pointer" onclick="closeModal();${jsEsc(vidOpenFn(v))}">
@@ -7583,7 +7639,12 @@ function openProdVids(key){
       <td data-label="售價" class="pr-v">${h.p.salePrice?num(h.p.salePrice):(h.p.price?`<span class="muted">${num(h.p.price)}</span>`:'<span class="muted">—</span>')}</td></tr>`;
   }).join("");
   const total=hits.reduce((a,h)=>a+vidViews(h.v),0);
-  showModal(names[0], `
+  showModal((m&&m.name)||names[0], `
+    ${m?`<div class="muted" style="font-size:12px;margin-bottom:6px">商品編號 <b>${esc(m.id)}</b>${
+        m.sku?`　貨號 ${esc(m.sku)}`:""}${
+        prodIsOff(m)?` <span class="pill wa" style="font-size:10px">已下架${m.offAt?"（"+esc(String(m.offAt).slice(0,10))+"）":""}</span>`
+                    :` <span class="pill ok" style="font-size:10px">在售</span>`}</div>`
+      :`<div class="muted" style="font-size:12px;margin-bottom:6px">還沒建檔 —— 建了檔之後，官網換網址或下架都不會弄丟這段紀錄。</div>`}
     ${/* ⚠️ 同一個連結底下出現好幾個名字，有兩種可能，而且我們分不出來：
           ①同一個東西的不同寫法（那就對了，正是老闆要的合併）
           ②有人貼錯網址（正式資料上 90 個連結裡有 1 個是這種，其中一個商品名叫「十十十十」）
@@ -7602,7 +7663,113 @@ function openProdVids(key){
     <div class="${hits.length>10?'vidscroll':''}">
     <table class="responsive perfrank"><colgroup><col><col class="pr-e"><col class="pr-k"><col class="pr-v"><col class="pr-c"><col class="pr-v"></colgroup>
     <thead><tr><th>影片</th><th>剪輯</th><th>最近出片</th><th>觀看</th><th>留言</th><th>售價</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`);
+    <tbody>${rows}</tbody></table></div>
+    ${prodAdminHTML(m, key, names, link)}`);
+}
+// 誰能動主檔：改錯會讓排行上兩個商品黏在一起，或一段歷史斷掉 —— 不是人人都該碰。
+function canEditProducts(){ return !VIEW_AS && hasPerm("prod"); }
+// 商品彈窗底下那一塊管理區。沒權限的人整塊看不到（看得到但按不動最讓人火大）。
+function prodAdminHTML(m, key, names, link){
+  if(!canEditProducts()) return "";
+  const others=prodAll().filter(x=>x&&x.id&&(!m||x.id!==m.id))
+    .sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  if(!m){
+    return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>建檔</b>
+      <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.7">
+        建檔之後這個商品就有一個**不會變的編號**。之後官網換網址、下架、重新上架，
+        都只是改這一筆的內容 —— 排行上的紀錄一路連著，不會斷。</div>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <input id="pd_new_name" value="${esc(names[0]||"")}" placeholder="商品名稱" style="flex:2;min-width:150px">
+        <input id="pd_new_sku" placeholder="貨號（選填）" style="flex:1;min-width:100px">
+      </div>
+      <input id="pd_new_url" value="${esc(link)}" placeholder="官網連結（選填）" style="margin-top:6px">
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn sm" onclick="prodCreate('${esc(jsEsc(key))}')">建檔</button>
+        ${names.length>1?`<span class="muted" style="font-size:11px">其餘 ${names.length-1} 個寫法會存成別名，之後照樣認得回來</span>`:""}
+      </div></div>`;
+  }
+  return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>管理這個商品</b>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <input id="pd_name" value="${esc(m.name||"")}" placeholder="商品名稱" style="flex:2;min-width:150px">
+      <input id="pd_sku" value="${esc(m.sku||"")}" placeholder="貨號（選填）" style="flex:1;min-width:100px">
+    </div>
+    <input id="pd_url" value="${esc(m.officialUrl||"")}" placeholder="官網連結" style="margin-top:6px">
+    <div class="muted" style="font-size:11px;margin-top:4px">
+      改名字或換網址，舊的會自動留成別名／舊連結 —— 用舊寫法建檔的影片照樣認得回來。
+      ${(m.aliases||[]).length?`<br>別名：${esc((m.aliases||[]).join("、"))}`:""}
+      ${(m.oldUrls||[]).length?`<br>舊連結：${esc((m.oldUrls||[]).map(prettyUrl).join("　"))}`:""}
+    </div>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="prodSave('${esc(jsEsc(m.id))}')">儲存</button>
+      ${prodIsOff(m)
+        ? `<button class="btn sm sec" onclick="prodSetOff('${esc(jsEsc(m.id))}',false)">重新上架</button>`
+        : `<button class="btn sm sec" onclick="prodSetOff('${esc(jsEsc(m.id))}',true)">標為已下架</button>`}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:10px">
+      同一個商品被建成兩筆？選另一筆合併過來 —— 它的名字、別名、舊連結全部收進這一筆，
+      兩段歷史接成一段。</div>
+    <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap">
+      <select id="pd_merge" style="flex:1;min-width:170px">
+        <option value="">（選一筆要合併進來的商品）</option>
+        ${others.map(x=>`<option value="${esc(x.id)}">${esc(x.name||x.id)}${prodIsOff(x)?"（已下架）":""}</option>`).join("")}
+      </select>
+      <button class="btn sm sec" onclick="prodMerge('${esc(jsEsc(m.id))}')">合併進來</button>
+    </div></div>`;
+}
+function prodCreate(key){
+  if(dbBlocked()) return;
+  const name=(val("pd_new_name")||"").trim();
+  if(!name){ toast("請填商品名稱",true); return; }
+  // 這個 key 底下用過的所有寫法都收成別名 —— 不然改天有人用舊寫法建檔就認不回來
+  const seen=new Set(); const alias=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    (v.products||[]).forEach(p=>{ if(p&&p.name&&prodKey(p,v)===key){
+      const n=String(p.name).trim(); if(n && n!==name && !seen.has(n)){ seen.add(n); alias.push(n); } } }); });
+  const id=uid("PD");
+  const rec={id, name, sku:(val("pd_new_sku")||"").trim(), officialUrl:(val("pd_new_url")||"").trim(),
+             shoplineLink:"", image:"", aliases:alias, oldUrls:[], status:"on", offAt:"",
+             assignedCurator:"", activeVideoId:"",
+             createdAt:nowIso(), updatedAt:nowIso(), createdBy:currentUser()};
+  dbWrite("set","products",id,rec,{action:"商品建檔",target:name}).then(ok=>{ if(ok){ closeModal(); toast("已建檔 "+name); } });
+}
+function prodSave(id){
+  if(dbBlocked()) return;
+  const m=prodById(id); if(!m) return;
+  const name=(val("pd_name")||"").trim();
+  if(!name){ toast("請填商品名稱",true); return; }
+  const url=(val("pd_url")||"").trim();
+  // ⚠️ 舊名字與舊網址一定要留著。丟掉的話，用舊寫法建檔的影片下一秒就對不回來了 ——
+  //    那正是老闆擔心的「紀錄斷掉」。
+  const aliases=(m.aliases||[]).slice();
+  if(m.name && m.name!==name && aliases.indexOf(m.name)<0) aliases.push(m.name);
+  const oldUrls=(m.oldUrls||[]).slice();
+  if(m.officialUrl && m.officialUrl!==url && oldUrls.indexOf(m.officialUrl)<0) oldUrls.push(m.officialUrl);
+  dbUpdate("products", id, {name, sku:(val("pd_sku")||"").trim(), officialUrl:url,
+                            aliases, oldUrls, updatedAt:nowIso()},
+           {action:"商品改資料", target:name}).then(ok=>{ if(ok){ closeModal(); toast("已儲存"); } });
+}
+function prodSetOff(id, off){
+  if(dbBlocked()) return;
+  const m=prodById(id); if(!m) return;
+  dbUpdate("products", id, {status:off?"off":"on", offAt:off?nowIso():"", updatedAt:nowIso()},
+           {action:off?"商品標下架":"商品重新上架", target:m.name||id})
+    .then(ok=>{ if(ok){ closeModal(); toast(off?"已標為下架（紀錄照樣留著）":"已重新上架"); } });
+}
+function prodMerge(keepId){
+  if(dbBlocked()) return;
+  const gone=val("pd_merge"); if(!gone){ toast("先選一筆要合併進來的商品",true); return; }
+  const a=prodById(keepId), b=prodById(gone);
+  if(!a||!b||a.id===b.id) return;
+  if(!confirm(`把「${b.name||b.id}」併進「${a.name||a.id}」？\n\n` +
+              `「${b.name||b.id}」那一筆會被刪掉，它的名字、別名、舊連結全部收進「${a.name||a.id}」，\n` +
+              `兩邊的影片紀錄接成一段。這個動作不能復原。`)) return;
+  const aliases=[...new Set((a.aliases||[]).concat(prodNames(b)).filter(n=>n&&n!==a.name))];
+  const oldUrls=[...new Set((a.oldUrls||[]).concat(prodUrls(b)).filter(u=>u&&u!==a.officialUrl))];
+  dbUpdate("products", a.id, {aliases, oldUrls, updatedAt:nowIso()},
+           {action:"商品合併", target:(b.name||b.id)+" → "+(a.name||a.id)})
+    .then(ok=>{ if(!ok) return;
+      return dbDel("products", b.id, {action:"商品合併後刪除", target:b.name||b.id})
+        .then(()=>{ closeModal(); toast("已合併"); }); });
 }
 
 // 影片排行的排法：views＝依觀看｜remake＝依二創建議（v204 把二創建議併進這張表）
@@ -7726,9 +7893,11 @@ function viewPerf(){
   // v205 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
     (v.products||[]).forEach(p=>{ if(!p||!p.name) return; const k=prodKey(p,v);
-      const o=prod[k]||(prod[k]={views:0,vids:new Set(),names:new Set(),link:""});
+      const o=prod[k]||(prod[k]={views:0,vids:new Set(),names:new Set(),link:"",m:prodMasterOf(p,v)});
       o.views+=vv; o.vids.add(v.id); o.names.add(p.name);
       if(!o.link && prodLink(p,v)) o.link=prodLink(p,v); }); });
+  // 已下架的商品**照樣排進來**（老闆指定：「排序名單我還是希望能夠找得到」）——
+  // 只是在名字旁邊標一個「已下架」。下架的是官網那一頁，不是這裡的歷史紀錄。
   const pRank=Object.entries(prod).sort((a,b)=>b[1].views-a[1].views).slice(0,50);
 
   const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
@@ -7755,7 +7924,8 @@ function viewPerf(){
     <tbody>${pRank.map((e,i)=>{ const o=e[1], names=[...o.names];
       return `<tr style="cursor:pointer" onclick="openProdVids('${esc(jsEsc(e[0]))}')" title="點開看哪些影片賣過它">
       <td data-label="#">${i+1}</td>
-      <td data-label="商品"><a href="javascript:void(0)"><b>${esc(names[0])}</b></a>${
+      <td data-label="商品"><a href="javascript:void(0)"><b>${esc((o.m&&o.m.name)||names[0])}</b></a>${
+        prodIsOff(o.m)?` <span class="pill wa" style="font-size:10px" title="官網已下架；這裡的紀錄照樣留著">已下架</span>`:""}${
         names.length>1?`<span class="muted" style="font-size:11px">　也寫成：${esc(names.slice(1).join("、"))}</span>`:""}${
         o.link?` <a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="開官網商品頁" style="font-size:11px">官網 ↗</a>`:""}</td>
       <td data-label="出現影片">${o.vids.size} 支</td>

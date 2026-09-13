@@ -33,7 +33,7 @@ const V = (o) => Object.assign({ id: "X", name: "", rawName: "", videoCopy: "", 
   editor: "", claimedBy: "", assignedTo: "", createdAt: "" }, o);
 const M = (views, comments, postAt) => [{ platform: "IG", account: "IG a", views, comments, likes: 0, postAt: (postAt || D(10)) + "T00:00:00" }];
 
-function mount(vids, who, role) {
+function mount(vids, who, role, prods) {
   ROLE = role || "boss";
   global.window.DB = { videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
   global.localStorage.getItem = k => (k === "ecdr_role" ? ROLE : (who || "管理員"));
@@ -41,7 +41,8 @@ function mount(vids, who, role) {
                        { name: "小主管", role: "editor", canAssign: true }],
     settings: { dailyTarget: 4, videoTags: [], sources: [], postPlatforms: [], intlAccounts: [],
                 shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [] },
-    schedule: {}, tasks: {}, shifts: {}, logs: [], deletedVideos: [], videos: vids };
+    schedule: {}, tasks: {}, shifts: {}, logs: [], deletedVideos: [], videos: vids,
+    products: prods || [], matches: [] };
   STATE = decorate(LAST_RAW); RMK_Q = ""; RMK_OPEN = false;
 }
 
@@ -176,6 +177,162 @@ ok((APP.match(/salePrice:p\.salePrice\|\|"",link:p\.link\|\|""/g) || []).length 
   ok(S4.inner.includes(">" + U + "倫敦藍 ↗<"), "**畫面上看到的是中文**");
   ok(S4.inner.includes('href="' + U + "%E5%80%AB%E6%95%A6%E8%97%8D" + '"'),
      "但 href 用原樣（解碼過的不一定連得過去）"); }
+
+// ═══════════════════════════════════════════════════════════════════
+// 商品主檔（v206）
+// ═══════════════════════════════════════════════════════════════════
+// 老闆：「很有可能官網會變更…若是以後官網的連結失去了，可能官網的商品下架了，
+//        但是已經建檔的排序名單我還是希望能夠找得到、能夠在上面，只是可以註明
+//        已下架，讓我可以再次新增商品再次販售，然後可以保持是同一個連貫的紀錄。」
+//
+// 他戳到 v205 的弱點：把**連結當身分證**，而連結會變。
+// ⚠️ products 這個集合早就存在（選品配對 v138 建的，v175 把工作台拿掉、集合留著），
+//    所以是接上去，不是另開一個。
+
+const PD = (o) => Object.assign({ id: "PD1", name: "", sku: "", officialUrl: "", shoplineLink: "",
+  image: "", aliases: [], oldUrls: [], status: "on", offAt: "", createdAt: "", updatedAt: "" }, o);
+
+// ══════════ ① 建了檔，身分就是編號，不再是連結 ══════════
+{ const v0 = V({ id: "V1", name: "片", productUrl: U + "四葉草手鍊",
+                 products: [{ name: "幸運守護｜四葉草手鍊" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  mount([v0], "管理員", "boss", [PD({ id: "PDa", name: "幸運守護｜四葉草手鍊", officialUrl: U + "四葉草手鍊" })]);
+  ok(prodKey(vid("V1").products[0], vid("V1")) === "m:PDa", "**建了檔就用編號當身分**，不再是連結");
+  ok(prodMasterOf(vid("V1").products[0], vid("V1")).id === "PDa", "認得回主檔那一筆"); }
+
+// ══════════ ② 官網換網址 → 舊連結留著，紀錄接得起來 ══════════
+{ const 舊片 = V({ id: "O1", name: "去年賣它的片", productUrl: U + "舊網址",
+                  products: [{ name: "某商品" }], metrics: M(50000, 100, D(200)), scheduledDate: D(200) });
+  const 新片 = V({ id: "N2", name: "今年賣它的片", productUrl: U + "新網址",
+                  products: [{ name: "某商品（改版）" }], metrics: M(20000, 40, D(10)), scheduledDate: D(10) });
+  // 主檔：現用是新網址，舊網址收在 oldUrls；現用名字是新的，舊名字收在 aliases
+  const m = PD({ id: "PDb", name: "某商品（改版）", officialUrl: U + "新網址",
+                 aliases: ["某商品"], oldUrls: [U + "舊網址"] });
+  mount([舊片, 新片], "管理員", "boss", [m]);
+  ok(prodKey(vid("O1").products[0], vid("O1")) === "m:PDb", "**換網址之前的那支片，照樣認得回來**");
+  ok(prodKey(vid("N2").products[0], vid("N2")) === "m:PDb", "換網址之後的那支也是");
+  ok(prodKey(vid("O1").products[0], vid("O1")) === prodKey(vid("N2").products[0], vid("N2")),
+     "**兩段歷史接成一段**（老闆要的「連貫的紀錄」）");
+  let S = null; showModal = (t, inner) => { S = { t, inner }; };
+  openProdVids("m:PDb");
+  ok(S.inner.includes("去年賣它的片") && S.inner.includes("今年賣它的片"),
+     "點開看得到換網址前後的所有影片");
+  ok(S.inner.includes("70,000"), "觀看合計跨越換網址前後（50,000 + 20,000）"); }
+
+// ══════════ ③ 下架了，排行上照樣找得到 ══════════
+{ const v1 = V({ id: "F1", name: "賣下架品的片", productUrl: U + "停售的東西",
+                 products: [{ name: "停售的東西" }], metrics: M(77000, 150), scheduledDate: D(40) });
+  const m = PD({ id: "PDc", name: "停售的東西", officialUrl: U + "停售的東西",
+                 status: "off", offAt: "2026-09-01T00:00:00" });
+  mount([v1], "管理員", "boss", [m]);
+  ok(prodIsOff(prodById("PDc")), "狀態是已下架");
+  const h = viewPerf();
+  ok(h.includes("停售的東西"), "**已下架的商品照樣排在帶貨商品排行上**（老闆指定）");
+  ok(h.includes("已下架"), "而且標出來");
+  ok(h.includes("77,000"), "它的觀看數照樣算");
+  let S = null; showModal = (t, inner) => { S = { t, inner }; };
+  openProdVids("m:PDc");
+  ok(S.inner.includes("已下架"), "點開也看得到狀態");
+  ok(S.inner.includes("賣下架品的片"), "賣過它的影片一支都沒少"); }
+
+// ══════════ ④ 沒建檔的照舊（不要因為主檔空的就整個壞掉）══════════
+{ const v2 = V({ id: "U1", name: "片", productUrl: U + "還沒建檔的",
+                 products: [{ name: "還沒建檔的" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  mount([v2], "管理員", "boss", []);
+  ok(prodKey(vid("U1").products[0], vid("U1")).startsWith("u:"), "主檔沒有這一筆 → 退回用連結");
+  ok(prodMasterOf(vid("U1").products[0], vid("U1")) === null, "而且講清楚是沒有，不要回一個假的");
+  let S = null; showModal = (t, inner) => { S = { t, inner }; };
+  openProdVids(prodKey(vid("U1").products[0], vid("U1")));
+  ok(S.inner.includes("還沒建檔"), "點開時說明還沒建檔");
+  ok(S.inner.includes("建檔"), "而且給得出建檔的入口"); }
+
+// ══════════ ⑤ 誰能動主檔 ══════════
+{ const v3 = V({ id: "R1", name: "片", products: [{ name: "某商品" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  const m = PD({ id: "PDd", name: "某商品" });
+  let S = null; showModal = (t, inner) => { S = { t, inner }; };
+  mount([v3], "管理員", "boss", [m]);
+  openProdVids("m:PDd");
+  ok(S.inner.includes("管理這個商品"), "老闆看得到管理區");
+  mount([v3], "Regina", "manager", [m]);
+  openProdVids("m:PDd");
+  ok(S.inner.includes("管理這個商品"), "經理人也看得到");
+  mount([v3], "阿剪", "editor", [m]);
+  openProdVids("m:PDd");
+  ok(!S.inner.includes("管理這個商品"),
+     "**剪輯看得到排行，但動不了主檔**（看得到卻按不動最讓人火大，所以整塊藏起來）");
+  ok(S.inner.includes("賣過它"), "但他照樣看得到哪些影片賣過它");
+  mount([v3], "管理員", "boss", [m]);
+  VIEW_AS = "阿剪";
+  openProdVids("m:PDd");
+  ok(!S.inner.includes("管理這個商品"), "員工視角預覽時也不給（全站唯讀的規矩）");
+  VIEW_AS = null; }
+
+// ══════════ ⑥ 改名／換網址：舊的一定要留著 ══════════
+{ const m = PD({ id: "PDe", name: "舊名字", officialUrl: U + "舊網址", aliases: [], oldUrls: [] });
+  const v4 = V({ id: "S1", name: "片", products: [{ name: "舊名字" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  mount([v4], "管理員", "boss", [m]);
+  const WROTE = [];
+  closeModal = () => {}; toast = () => {};   // 假 DOM 沒有 modalRoot／toast 節點；收尾不是這一段要測的
+  dbUpdate = (coll, id, patch) => { WROTE.push({ coll, id, patch }); return Promise.resolve(true); };
+  $.pd_name = { value: "新名字" }; $.pd_sku = { value: "" }; $.pd_url = { value: U + "新網址" };
+  prodSave("PDe");
+  const w = WROTE[0];
+  ok(w && w.coll === "products" && w.id === "PDe", "寫到主檔那一筆");
+  ok(w.patch.name === "新名字" && w.patch.officialUrl === U + "新網址", "換成新的");
+  ok(w.patch.aliases.indexOf("舊名字") >= 0,
+     "**舊名字留成別名**（丟掉的話，用舊寫法建檔的影片下一秒就對不回來）");
+  ok(w.patch.oldUrls.indexOf(U + "舊網址") >= 0, "**舊網址留成舊連結**（同上）"); }
+
+// ══════════ ⑦ 合併：兩筆變一筆，名字與網址全收過來 ══════════
+{ const a = PD({ id: "PDf", name: "留下的", officialUrl: U + "留下的網址", aliases: ["留下的別名"] });
+  const b = PD({ id: "PDg", name: "併掉的", officialUrl: U + "併掉的網址", aliases: ["併掉的別名"],
+                 oldUrls: [U + "併掉的舊網址"] });
+  const v5 = V({ id: "T1", name: "片", products: [{ name: "留下的" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  mount([v5], "管理員", "boss", [a, b]);
+  const WROTE = [], DELED = [];
+  closeModal = () => {}; toast = () => {};
+  dbUpdate = (coll, id, patch) => { WROTE.push({ coll, id, patch }); return Promise.resolve(true); };
+  dbDel = (coll, id) => { DELED.push({ coll, id }); return Promise.resolve(true); };
+  global.confirm = () => true;
+  $.pd_merge = { value: "PDg" };
+  prodMerge("PDf");
+  const w = WROTE[0];
+  ok(w && w.id === "PDf", "寫到「留下的」那一筆");
+  ["併掉的", "併掉的別名"].forEach(n =>
+    ok(w.patch.aliases.indexOf(n) >= 0, `「${n}」收進別名`));
+  [U + "併掉的網址", U + "併掉的舊網址"].forEach(u =>
+    ok(w.patch.oldUrls.indexOf(u) >= 0, `「${prettyUrl(u)}」收進舊連結`));
+  ok(w.patch.aliases.indexOf("留下的") < 0, "自己的現用名字不會變成自己的別名");
+  return_check: {
+    ok(DELED.length === 0, "（同步階段還沒刪，刪是在寫成功之後）");
+  } }
+
+// ══════════ ⑧ 建檔會把用過的所有寫法收成別名 ══════════
+{ const v6 = V({ id: "W1", name: "片一", productUrl: U + "同一個東西",
+                 products: [{ name: "寫法甲" }], metrics: M(9000, 20), scheduledDate: D(40) });
+  const v7 = V({ id: "W2", name: "片二", productUrl: U + "同一個東西",
+                 products: [{ name: "寫法乙" }], metrics: M(5000, 10), scheduledDate: D(40) });
+  const v8 = V({ id: "W3", name: "大流也賣過", lib: "大流", productUrl: U + "同一個東西",
+                 products: [{ name: "寫法丙" }], metrics: M(3000, 8), scheduledDate: D(40) });
+  mount([v6, v7, v8], "管理員", "boss", []);
+  const WROTE = [];
+  closeModal = () => {}; toast = () => {};
+  dbWrite = (op, coll, id, payload) => { WROTE.push({ op, coll, id, payload }); return Promise.resolve(true); };
+  $.pd_new_name = { value: "寫法甲" }; $.pd_new_sku = { value: "A1" }; $.pd_new_url = { value: U + "同一個東西" };
+  prodCreate(prodKey(vid("W1").products[0], vid("W1")));
+  const w = WROTE[0];
+  ok(w && w.op === "set" && w.coll === "products", "建檔是新增一筆主檔");
+  ok(w.payload.name === "寫法甲" && w.payload.sku === "A1", "名稱與貨號存下來");
+  ok(w.payload.status === "on", "預設是在售");
+  ok(w.payload.aliases.indexOf("寫法乙") >= 0, "其他寫法收成別名");
+  ok(w.payload.aliases.indexOf("寫法丙") >= 0,
+     "**大流那邊用的寫法也要收**（漏了，那支片之後就認不回來）");
+  ok(w.payload.aliases.indexOf("寫法甲") < 0, "現用名字不會重複收成自己的別名"); }
+
+// ══════════ ⑨ 集合本來就有，不要另開一個 ══════════
+ok(/products/.test(fs.readFileSync(__dirname + "/../firebase/firestore.rules", "utf8")),
+   "firestore.rules 已經涵蓋 products（v138 就有了）");
+ok(/"products"/.test(fs.readFileSync(__dirname + "/../tools/_fs.py", "utf8")),
+   "備份清單也涵蓋（沒列到就是靜悄悄地不備份）");
 
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);
