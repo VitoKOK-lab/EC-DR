@@ -1107,7 +1107,7 @@ def main():
                 return 0
 
     # 1. 拿貼文清單（便宜）—— 這一段還不問成效
-    cfg, token = None, None
+    cfg, meta_token = None, None
     if args.from_file:
         posts = json.load(open(args.from_file, encoding="utf-8"))
         print("\n用檔案裡的 %d 則貼文（沒有連網）" % len(posts))
@@ -1117,13 +1117,18 @@ def main():
             return 2
         cfg = json.load(open(args.config, encoding="utf-8"))
         print("\n抓貼文清單（還不問成效）：")
-        token, posts = list_all(cfg, since)
+        meta_token, posts = list_all(cfg, since)
     if not posts:
         print("\n沒有抓到任何貼文，結束。")
         return 1
 
     # 2. 讀影片庫
-    cfg_fb, token = None, None
+    # ⚠️ 兩個權杖，兩個名字，不要都叫 token。
+    #    meta_token ＝ Meta Graph API 的；fb_token ＝ Firebase 的（1 小時會過期）。
+    #    以前兩個都叫 token，這一行把 Meta 那個蓋掉，後面 add_insights 就收到
+    #    Firebase 的權杖 —— 沒炸只是因為 add_insights 會先試設定檔裡的粉專權杖。
+    #    粉專權杖哪天失效，錯誤訊息會完全看不懂。
+    cfg_fb, fb_token = None, None
     if args.videos_file:
         if args.write:
             print("\n--videos-file 是拿備份檔重跑比對用的，不能配 --write。")
@@ -1132,8 +1137,8 @@ def main():
         videos = raw.get("videos") if isinstance(raw, dict) else raw
     else:
         cfg_fb = _fs.load_config()
-        token = _fs.sign_in(cfg_fb)
-        videos = [_fs.doc_to_plain(d) for d in _fs.fetch_collection(cfg_fb, token, "videos")]
+        fb_token = _fs.sign_in(cfg_fb)
+        videos = [_fs.doc_to_plain(d) for d in _fs.fetch_collection(cfg_fb, fb_token, "videos")]
     for v in videos:
         v["id"] = v.get("id") or v.get("_id")
     print("\n影片庫 %d 支" % len(videos))
@@ -1169,7 +1174,7 @@ def main():
     if want and not args.from_file:
         print("\n問成效（一則一次呼叫，這段最慢）：")
         sys.stdout.write("  ")
-        add_insights(want, cfg, token, args.verbose)
+        add_insights(want, cfg, meta_token, args.verbose)
 
     if args.save_posts:
         json.dump(posts, open(args.save_posts, "w", encoding="utf-8"),
@@ -1372,7 +1377,7 @@ def main():
     # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
     unfiled = unfiled_groups(unmatched)
     if unfiled and not args.no_unfiled_views and not args.from_file:
-        unfiled_fill_views(unfiled, cfg, token, args.verbose)
+        unfiled_fill_views(unfiled, cfg, meta_token, args.verbose)
     if unfiled:
         tot_c = sum(g["comments"] for g in unfiled)
         tot_v = sum(g["views"] for g in unfiled)
@@ -1445,14 +1450,14 @@ def main():
     #    重新登入只是一次呼叫，而且做的事跟使用者開網頁完全一樣。
     #    ⚠️ 後面寫 logs 與 metaSyncStatus 也要用這個新的權杖，不要用舊的。
     try:
-        token = _fs.sign_in(cfg_fb)
+        fb_token = _fs.sign_in(cfg_fb)
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 寫入前重新登入失敗：%s" % e)
-    done, failed = write_back(cfg_fb, token, final, args.fill_links)
+    done, failed = write_back(cfg_fb, fb_token, final, args.fill_links)
     print("\n寫入完成：%d 支成功、%d 支失敗%s"
           % (done, failed, ("（另外跳過 %d 支疑似誤配的）" % len(skip)) if skip else ""))
     try:
-        write_log(cfg_fb, token,
+        write_log(cfg_fb, fb_token,
                   "後台同步平台成效 %d 支" % done,
                   "範圍 %s 起；貼文 %d 則、對上 %d、對不上 %d%s"
                   % (since, len(posts), len(matched), len(unmatched),
@@ -1463,11 +1468,11 @@ def main():
             "failed": failed, "hits": len(hits), "posts": len(posts),
             "matched": len(matched), "days": args.days}
     try:
-        report_status(cfg_fb, token, info)
+        report_status(cfg_fb, fb_token, info)
         # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——
         # 不寫的話畫面上會一直掛著上一次的舊清單，建過檔的片還留在「未建檔」裡。
         try:
-            report_unfiled(cfg_fb, token, unfiled, args.days)
+            report_unfiled(cfg_fb, fb_token, unfiled, args.days)
         except Exception as e:
             print("  ⚠ 未建檔清單寫不進去：%s" % e)
     except Exception as e:                                      # noqa: BLE001
