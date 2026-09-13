@@ -484,6 +484,18 @@ ok('ap.add_argument("--unfiled-views"' in SYNC_SRC, "--unfiled-views 這個旗�
 ok("if unfiled and args.unfiled_views and not args.from_file:" in SYNC_SRC,
    "而且真的接到流程上（不然寫了函式沒人呼叫）")
 
+# ── 印出來的樣子（v206）──────────────────────────────────────────────
+# 2026-09-13 正式資料上印出「留言 4.5 KB」「留言合計 78.9 KB」——
+# 因為我拿 _fs.human() 去格式化留言數，而那是**檔案大小**的格式化（B/KB/MB/GB）。
+ok("_fs.human(g[\"comments\"])" not in SYNC_SRC and "_fs.human(tot_c)" not in SYNC_SRC,
+   "**留言數不准用 _fs.human()** —— 那是檔案大小的格式化，會印出「4.5 KB」")
+ok('"{:,}".format(tot_c)' in SYNC_SRC and '"{:,}".format(g["comments"])' in SYNC_SRC,
+   "數量用千分位")
+ok("_fs.human(g[\"views\"])" not in SYNC_SRC, "觀看數也一樣，不用檔案大小的格式化")
+# 日期區間要帶年份，不然跨年的會長成「06-24～02-22」，看起來像最早比最晚還晚
+ok('g["first"][:4] != g["last"][:4]' in SYNC_SRC,
+   "**跨年的日期區間要印出年份**（不然「2025-06-24～2026-02-22」會變成「06-24～02-22」）")
+
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
 # 那個比值就不是在比剪輯，是在比誰的數字比較新。

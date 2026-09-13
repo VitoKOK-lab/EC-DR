@@ -1344,19 +1344,25 @@ def main():
     if unfiled:
         tot_c = sum(g["comments"] for g in unfiled)
         tot_v = sum(g["views"] for g in unfiled)
+        # ⚠️ 不要用 _fs.human() —— 那是**檔案大小**的格式化（B/KB/MB/GB）。
+        #    2026-09-13 拿它印留言數，畫面上就出現「留言 4.5 KB」。
+        #    數量用千分位就好。
         print("\n── 未在資料庫裡、但有人看的舊片：%d 支（留言合計 %s%s）──"
-              % (len(unfiled), _fs.human(tot_c),
-                 "、觀看合計 " + _fs.human(tot_v) if tot_v else ""))
+              % (len(unfiled), "{:,}".format(tot_c),
+                 "、觀看合計 {:,}".format(tot_v) if tot_v else ""))
         print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
         print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
         if not tot_v:
             print("   （觀看數要加 --unfiled-views 才會去問；留言數是抓清單時就有的，不用花呼叫）")
         for g in unfiled[:12]:
-            print("   留言 %5s　%s%3s 則　%s～%s　%s"
-                  % (_fs.human(g["comments"]),
-                     ("觀看 %9s　" % _fs.human(g["views"])) if g["views"] else "",
-                     g["n"], g["first"][5:], g["last"][5:],
-                     g["cap"][:28].replace("\n", " ")))
+            # ⚠️ 日期要帶年份。只印月-日的話，跨年的區間會長成「06-24～02-22」，
+            #    看起來像最早比最晚還晚。2026-09-13 的輸出就是這樣。
+            span = ("%s～%s" % (g["first"], g["last"])) if g["first"][:4] != g["last"][:4] \
+                else ("%s～%s" % (g["first"], g["last"][5:]))
+            print("   留言 %6s　%s%3s 則　%-21s %s"
+                  % ("{:,}".format(g["comments"]),
+                     ("觀看 %9s　" % "{:,}".format(g["views"])) if g["views"] else "",
+                     g["n"], span, g["cap"][:28].replace("\n", " ")))
         if len(unfiled) > 12:
             print("   …另外還有 %d 支（畫面上看得到全部）" % (len(unfiled) - 12))
     else:
