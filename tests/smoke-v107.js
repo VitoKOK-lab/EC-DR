@@ -26,6 +26,9 @@ global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 let calls=[], toasts=[];
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 // v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
 // 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
 SET_TAB="members";

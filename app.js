@@ -58,17 +58,22 @@ const ROLE_TABS = {
   // v181：儀表板＋流程中控＋團隊看板 → 一個「看板」（三頁在手機上合計 45 個螢幕，
   //       而且同一個人的卡片同時出現在三頁）。操作紀錄與回收桶收進「設定」——
   //       兩個都是偶爾才用的維護工具，不該佔導覽列。老闆 11 個分頁 → 8 個。
-  boss:    [["board","看板"],["output","剪輯產出"],["attend","出勤"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"],["perf","影片成效"]],
+  //
+  // ⚠️ v207 起，「影片成效／剪輯產出／出勤／大流量影片」**不准寫在這裡** ——
+  //    老闆：「不要有人有任何預設的權限，都要可以勾選的。」那四頁改由 PERMS 的
+  //    勾選決定（myTabs 在下面補進來）。寫回這裡等於偷偷給一個預設值，
+  //    而且權限頁上完全看不出來。這裡只剩「每個人本來就要有的基本頁」。
+  boss:    [["board","看板"],["videos","影片庫"],["cal","月排程"]],
   // 經理人也有儀表板（老闆要求）。儀表板上的卡片本來就各自分角色：
   // 員工視角只有主管看得到、指派毛片看 canAssignWork()，所以直接給整頁是安全的。
   // 放第一個 —— 她最常用的多選交辦卡就在那上面。
-  manager: [["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
+  manager: [["board","看板"],["videos","影片庫"],["cal","月排程"]],   // 經理人（Regina）：流程中控（備片警示＋指派＋交辦回報）＋影片庫＋月排程；管理員看得到同一頁
   // 台灣剪輯與巴基斯坦剪輯分頁完全相同（只差介面語言）；二創區已整合進「上班計畫」的「建立二創版本」卡
-  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["videosDF","大流量影片"],["cal","月排程"]],
+  editor:  [["work","每日工作"],["board","看板"],["videos","影片庫"],["cal","月排程"]],
   intl:    [["work","My Day"],["board","Board"],["videos","Library"],["cal","Schedule"]],
   cs:      [["work","每日工作"],["board","看板"]],   // 不剪片的職位：只做交辦工作與每日匯報
-  // 人資：團隊看板（交辦狀況＋成效）＋剪輯成效（誰做完幾支、審過沒、檔案在哪）＋出勤（打卡、遲到早退、月報表）
-  hr:      [["board","看板"],["output","剪輯產出"],["attend","出勤"]],
+  // 人資：看板是基本頁；剪輯產出與出勤改成在權限頁勾（v207）
+  hr:      [["board","看板"]],
 };
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
@@ -188,11 +193,18 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
   //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
   if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","找影片"]);
-  // v202：職位沒給、但在權限表上被勾起來的分頁，補進來。
+  // v202：在權限表上被勾起來的分頁，補進來。
   // 海外剪輯（intl）一律不補 —— 這幾頁整頁是中文的，給了就是中文漏進英文介面。
   if(currentRole()!=="intl") PERM_KEYS.forEach(k=>{ const P=PERMS[k];
     if(P.tab && hasPerm(k) && !t.some(x=>x[0]===P.tab)) t.push([P.tab, P.label]); });
-  if(isOwner()){ t.push(["settings","設定"]); } return t; }
+  if(isOwner()){ t.push(["settings","設定"]); }
+  // v207：分頁順序由 TAB_ORDER 決定，不是由「誰先被 push 進來」決定。
+  // 權限改成逐人勾之後，同樣一個人今天勾兩項、明天勾三項，導覽列就會換位置 ——
+  // 每天在用的人是靠位置點的，位置會跳比少一頁還難用。
+  return t.slice().sort((a,b)=>tabPos(a[0])-tabPos(b[0])); }
+// 導覽列的固定順序。不在表上的排到最後（順序照舊，不會被吃掉）。
+const TAB_ORDER = ["chat","work","board","output","attend","videos","videosDF","cal","assets","perf","settings"];
+function tabPos(k){ const i=TAB_ORDER.indexOf(k); return i<0 ? TAB_ORDER.length : i; }
 function nowIso(){ return new Date(Date.now()+288e5).toISOString().slice(0,19); } // 台灣時間 UTC+8
 function weekdayZh(ds){ return "日一二三四五六"[new Date((ds||today)+"T00:00:00").getDay()]; }
 function durationMin(a,b){ const s=new Date(a), e=new Date(b||nowIso()); if(isNaN(s)||isNaN(e)||e<s) return null; return Math.round((e-s)/60000); }
@@ -419,7 +431,12 @@ function allLibVideos(){
 // 結果是 ——「想讓 Regina 看『影片成效』，只能把她升成管理員」，連設定、成員、
 // 回收桶、操作紀錄一起給出去。中間沒有檔位。
 //
-// 現在：每一項功能一個 key。職位給一批預設，users.perms 再逐人補，兩邊取聯集。
+// 現在（v207）：每一項功能一個 key，而且**職位一律不給任何預設**。
+// 老闆：「不要有人有任何預設的權限，都要可以勾選的。」
+//   ── 想給誰什麼，就去「設定 → 權限」把那一格勾起來，勾了才有，沒勾就是沒有。
+//   ── 唯一的例外是管理員本人（ADMIN_NAME）：他是最高權限，全部都有，也不出現在表上。
+//      （不然第一次設定會變成沒有人給得了權限，包含他自己。）
+//
 // 所有判斷一律走 hasPerm() —— 不要各寫一份條件，不然改了一邊，另一邊會默默不一樣
 // （canMarkUrgent 共用 canAssignWork 就是這個理由，v195 已經吃過一次虧）。
 //
@@ -427,58 +444,51 @@ function allLibVideos(){
 //    拿到設定的人可以再把權限發給別人，那等於多配一把管理員鑰匙。
 //    那一項照舊只認 isOwner()。
 //
-// ⚠️ 職位預設值必須跟改這段之前**一模一樣** —— 這裡動一個字，就會有人突然
-//    多看到或少看到一整頁，而且不會有任何錯誤訊息。
+// ⚠️ ROLE_TABS 裡也不准再放這張表管得到的分頁（perf／output／attend／videosDF）——
+//    放回去等於偷偷給一個預設值，而且畫面上完全看不出來。
 const PERMS = {
-  assign:{ label:"工作指派", roles:["boss","manager"], legacy:"canAssign",
+  assign:{ label:"工作指派", legacy:"canAssign",
            why:"指派毛片給剪輯、排二創、標急件" },
-  find:  { label:"找影片",   roles:["boss","manager"], legacy:"canFindAssets",
+  find:  { label:"找影片",   legacy:"canFindAssets",
            why:"搜尋 Google Drive 素材庫" },
-  // ⚠️ v204 **刻意**放寬：本來只有 boss。二創那一頁被拆掉之後，二創建議與「排二創」
-  //    都搬進了影片成效的影片排行 —— 還維持 boss only 的話，經理人與剪輯就連
-  //    「哪支片該再剪」都看不到，而老闆要的正是小主管能指派。
-  //    放寬後的範圍＝原本二創那一頁的範圍（boss／manager／editor），不多不少。
-  //    多看到的是平台累計觀看與帶貨商品排行；要收回去在「設定→權限」逐人取消即可。
-  perf:  { label:"影片成效", roles:["boss","manager","editor"], tab:"perf", zhOnly:true,
+  perf:  { label:"影片成效", tab:"perf", zhOnly:true,
            why:"各平台累計觀看、影片排行（含二創建議與排二創）、帶貨商品排行、剪輯二創成效" },
-  output:{ label:"剪輯產出", roles:["boss","hr"], tab:"output", zhOnly:true,
+  output:{ label:"剪輯產出", tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
-  attend:{ label:"出勤",     roles:["boss","hr"], tab:"attend", zhOnly:true,
+  attend:{ label:"出勤",     tab:"attend", zhOnly:true,
            why:"打卡紀錄、遲到早退、月報表" },
-  df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
+  df:    { label:"大流量影片", tab:"videosDF", zhOnly:true,
            why:"過渡期的成品庫（舊片直接建檔）" },
-  // v206：商品主檔。改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉，
-  //       所以不跟著「影片成效」一起開給剪輯 —— 看得到排行，不代表能動主檔。
-  prod:  { label:"商品主檔", roles:["boss","manager"], zhOnly:true,
+  // v206：商品主檔。改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉。
+  prod:  { label:"商品主檔", zhOnly:true,
            why:"建檔、改名、換官網連結、標下架、把重複的兩筆合併" },
-  lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
+  lead:  { label:"主管看板", zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
 const PERM_KEYS = Object.keys(PERMS);
 function permsOf(u){ return Array.isArray(u&&u.perms) ? u.perms : []; }
-// 這個人有沒有這一項。職位給的 ∪ 逐人給的 ∪ 舊旗標。
+// 這個人有沒有這一項。**只認逐人給的**（users.perms ∪ 舊旗標），職位不給任何東西。
 // 沒有指名就看「現在畫面上是誰」—— 員工視角要看**被預覽的那個人**的權限，
 // 不是看管理員自己的，不然預覽出來的畫面是假的。currentUser() 已經處理了 VIEW_AS。
 function hasPerm(key, name){
   const P=PERMS[key]; if(!P) return false;
   const who = name || currentUser();
+  // 管理員＝最高權限。他不在權限表上，也不需要誰來勾他。
+  // ⚠️ 一定要比對**名字**不是職位：職位是可以在設定裡改的，比對職位就等於
+  //    「把誰改成 boss，誰就變成管理員」。
+  if(who===ADMIN_NAME) return true;
   const u = (STATE&&STATE.users||[]).find(x=>x&&x.name===who) || null;
-  if(!u){
-    // 名單裡找不到這個人。只有「就是現在登入的本人、而且不是在預覽別人」時，
-    // 才退回 currentRole()（資料還沒載完的那一瞬間要照舊能用）。
-    //
-    // ⚠️ 預覽一個名單上沒有的名字**絕對不能**退回 currentRole()：
-    //    那個函式找不到人時會讀 localStorage 裡**管理員自己**的職位，
-    //    於是預覽就借到了管理員權限。tests/smoke-v196.js 在守這一條。
-    if(name || VIEW_AS) return false;
-    return (P.roles||[]).includes(currentRole());
-  }
-  if((P.roles||[]).includes(u.role||"editor")) return true;
+  // 名單裡找不到這個人 → 什麼都沒有。
+  // ⚠️ 這裡**絕對不能**退回 currentRole()：那個函式找不到人時會讀 localStorage 裡
+  //    管理員自己的職位，於是預覽一個不存在的名字就借到了管理員權限。
+  //    tests/smoke-v196.js 在守這一條。
+  if(!u) return false;
+  // 中文頁不給海外剪輯 —— 給了就是中文漏進英文介面（audit-lang 會抓）。
+  // 權限頁上那幾格本來就不給勾，這裡是第二道：舊旗標或手改資料庫也擋得住。
+  if(P.zhOnly && (u.role||"editor")==="intl") return false;
   if(permsOf(u).indexOf(key)>=0) return true;
   return !!(P.legacy && u[P.legacy]);   // 舊旗標照樣算數，資料庫不用搬
 }
-// 這一項是職位本來就給的嗎（設定畫面用：那種不必勾，也不給取消）
-function permByRole(key, role){ return ((PERMS[key]||{}).roles||[]).includes(role); }
 function seesDF(){ return hasPerm("df"); }
 function brandName(id){ const b=brandList().find(x=>x.id===String(id||"")); return b?b.name:String(id||""); }
 function brandMulti(){ return brandList().length>1; }        // 只有一家時整組 UI 不出現
@@ -10183,23 +10193,27 @@ function setWorkHoursCard(s){
     <div class="muted" style="font-size:12px;margin-top:6px">打卡一律成功、不會被擋；系統只把裝置、是不是手機、GPS 座標記下來，出勤報表上標出異常讓人資判斷。</div>
   </div>`;
 }
-// ── 設定 → 權限：一個人一列，一項權限一欄（v202）────────────────────
+// ── 設定 → 權限：一個人一列，一項權限一欄（v202；v207 全面改成勾選）──────
 // 老闆：「不是『管理員』是權限，把我其他員工的各式權限都整合給我在後台設定。」
+//       「不要有人有任何預設的權限，都要可以勾選的。」
 //
-// 三種狀態，看得出差別才叫「明確」：
-//   職位　 ＝ 他的職位本來就有，不必勾也不給取消（要收回就改職位）
-//   打勾　 ＝ 額外開給他的（users.perms）
+// 只有兩種狀態，看得出差別才叫「明確」：
+//   打勾　 ＝ 開給他的（users.perms）
 //   空白　 ＝ 沒有
+// 沒有「職位」那一檔了 —— 職位不再送任何權限，全部要人動手勾。
+// 唯一的例外是管理員本人：最高權限，不出現在這張表上（見第一行的說明）。
 //
 // 設定／成員／回收桶／操作紀錄不在這張表裡（老闆選的）：拿到設定的人可以再把權限
 // 發給別人，那等於多配一把管理員鑰匙。
 function setPermsCard(members){
   const head=PERM_KEYS.map(k=>`<th title="${esc(PERMS[k].why)}" style="white-space:nowrap">${esc(PERMS[k].label)}</th>`).join("");
+  const adminRow=`<tr><td data-label="名字"><b>${esc(ADMIN_DISPLAY)}</b>
+    <div class="muted" style="font-size:11px">管理員</div></td>
+    ${PERM_KEYS.map(k=>`<td data-label="${esc(PERMS[k].label)}"><span class="pill ok" style="font-size:10px">最高</span></td>`).join("")}
+    <td data-label="外包"><span class="muted" style="font-size:12px">—</span></td></tr>`;
   const rows=members.map(u=>{
     const role=u.role||"editor";
     const cells=PERM_KEYS.map(k=>{
-      if(permByRole(k,role))
-        return `<td data-label="${esc(PERMS[k].label)}"><span class="pill ok" style="font-size:10px">職位</span></td>`;
       if(role==="intl" && PERMS[k].zhOnly)
         return `<td data-label="${esc(PERMS[k].label)}"><span class="muted" style="font-size:12px">—</span></td>`;
       return `<td data-label="${esc(PERMS[k].label)}"><input type="checkbox" ${hasPerm(k,u.name)?"checked":""}
@@ -10215,23 +10229,25 @@ function setPermsCard(members){
       <div class="muted" style="font-size:11px">${esc(ROLE_LABEL[role]||"")}</div></td>
       ${cells}<td data-label="外包">${out}</td></tr>`;
   }).join("");
-  return `<div class="card"><b>權限（${members.length} 人）</b>
-    <span class="muted" style="font-size:12px">勾起來就是額外開給他的；「職位」是他的職位本來就有，要收回請改職位</span>
-    <div class="vidscroll" style="margin-top:8px">
-    <table class="responsive" style="min-width:660px"><thead><tr><th>名字</th>${head}
+  return `<div class="card"><b>權限（${members.length} 人可勾）</b>
+    <span class="muted" style="font-size:12px">職位不給任何預設權限 —— 勾起來才有，沒勾就是沒有</span>
+    <div class="vidscroll permwrap" style="margin-top:8px">
+    <table class="responsive permtable"><thead><tr><th>名字</th>${head}
       <th title="外包人員：看不到其他同事的看板與成效，也看不到月排程" style="white-space:nowrap">外包</th></tr></thead>
-    <tbody>${rows||'<tr><td class="muted">還沒有成員</td></tr>'}</tbody></table></div>
+    <tbody>${adminRow}${rows||'<tr><td class="muted">還沒有成員</td></tr>'}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.9">
       ${PERM_KEYS.map(k=>`<b>${esc(PERMS[k].label)}</b>：${esc(PERMS[k].why)}`).join("<br>")}<br>
       <b>外包</b>：看不到其他同事的看板與成效，也看不到月排程
     </div>
     <div class="muted" style="font-size:11px;margin-top:10px">
       設定、成員、回收桶、操作紀錄不在這張表裡 —— 拿到設定的人可以再把權限發給別人，
-      那等於多配一把管理員鑰匙。要給誰這些，只能換管理員本人。
+      那等於多配一把管理員鑰匙。要給誰這些，只能換管理員本人。<br>
+      管理員（${esc(ADMIN_DISPLAY)}）是最高權限，全部都有，不需要也不能在這裡勾。<br>
+      海外剪輯那幾格是「—」：那幾頁整頁是中文的，給了就是中文漏進英文介面。
     </div>
   </div>`;
 }
-// 勾／取消一項權限。存成 users.perms 陣列（職位給的不會寫進來，也不必寫）。
+// 勾／取消一項權限。存成 users.perms 陣列。
 function setMemberPerm(name, key, on){
   if(!PERMS[key]){ toast("不認得這個權限："+key,true); return; }
   const u=(STATE.users||[]).find(x=>x&&x.name===name);
@@ -10293,10 +10309,10 @@ function viewSettings(){
   // 老闆：「把我其他員工的各式權限都整合給我在後台設定」。
   // 以前三個勾勾各自散在這張表的三欄裡，加第四項就擠不下了。
   const permCell=(u)=>{
-    const extra=PERM_KEYS.filter(k=>!permByRole(k,u.role||"editor") && hasPerm(k,u.name));
+    const got=PERM_KEYS.filter(k=>hasPerm(k,u.name));
     return `<button class="btn sec sm" style="white-space:nowrap" onclick="setSetTab('perms')"
-      title="${esc(extra.length?("額外開了："+extra.map(k=>PERMS[k].label).join("、")):"沒有額外開的權限")}"
-      >${extra.length?("額外 "+extra.length+" 項"):'<span class="muted">職位預設</span>'}</button>`;
+      title="${esc(got.length?("開了："+got.map(k=>PERMS[k].label).join("、")):"一項都沒開")}"
+      >${got.length?("開了 "+got.length+" 項"):'<span class="muted">都沒開</span>'}</button>`;
   };
   const memberRows=members.map(u=>`<tr>
     <td data-label="名字"><b>${esc(u.name)}</b>${u.pwAt?`<div class="muted" style="font-size:11px">出勤自 ${esc(String(u.pwAt).slice(0,10))} 起算</div>`:'<div class="muted" style="font-size:11px">還沒設密碼・尚未起算</div>'}</td>

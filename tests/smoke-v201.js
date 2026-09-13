@@ -24,6 +24,10 @@ let ROLE = "boss";
 global.localStorage = { getItem: k => (k === "ecdr_role" ? ROLE : "管理員"), setItem(){}, removeItem(){} };
 global.navigator = { userAgent: "node" };
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+const PERMS_NO_SHIM = permsOf;   // 下面「誰看得到影片成效」那一段要測真的權限，不能吃補丁
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 
 let pass = 0, fail = 0;
 const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("FAIL  " + n); } };
@@ -359,14 +363,18 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   mount([大流片], "管理員", "boss");
   ok(viewPerf().includes("大流的強片"), "**大流的片照樣被推薦**（搬的是畫面，不是資料）");
   ok(viewPerf().includes("60,476"), "而且它的觀看也算進影片成效了 —— 以前那一頁根本看不到大流"); }
-// 搬家不能改變誰看得到：二創那一頁的範圍（boss／manager／editor）原封不動搬到 perf
+// 誰看得到影片成效：v207 起一律看「設定 → 權限」有沒有勾，職位不給任何預設
+// （老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
 { const 候選 = V({ id: "P3", name: "片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
-  ["boss", "manager", "editor"].forEach(r => {
+  const SHIMMED = permsOf; permsOf = PERMS_NO_SHIM;   // 這一段就是在測權限本身
+  ["boss", "manager", "editor", "cs"].forEach(r => {
     mount([候選], "某人", r);
-    ok(hasPerm("perf"), `${r} 看得到影片成效（跟以前看得到二創建議的是同一批人）`);
+    LAST_RAW.users.push({ name: "某人", role: r }); STATE = decorate(LAST_RAW);
+    ok(!hasPerm("perf"), `${r} 沒被勾就看不到影片成效（職位不給預設）`);
+    STATE.users.find(u => u.name === "某人").perms = ["perf"];
+    ok(hasPerm("perf"), `${r} 被勾起來就看得到`);
   });
-  mount([候選], "某人", "cs");
-  ok(!hasPerm("perf"), "不剪片的職位看不到");
+  permsOf = SHIMMED;
   ok(typeof PERMS.remake === "undefined", "「二創」不再是一個獨立權限（它就是影片成效的一部分）"); }
 
 // ══════════ ⑰c 進行中的二創 ══════════

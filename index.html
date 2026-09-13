@@ -618,6 +618,11 @@
     table.responsive td{display:flex;justify-content:space-between;align-items:center;border:none;padding:6px 2px;gap:10px;width:100%}
     table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700;flex:none}
     table.responsive td:empty{display:none}
+    /* 權限表在手機上已經轉成一人一張直列卡片了，就不要再吃桌機那個 660px 的最小寬度 ——
+       不然每一格的勾選框會整排被推到畫面外，而「都要可以勾選的」就是這一頁的全部意義。
+       ⚠️ 這一段在檔案裡比桌機那兩條**早**出現，所以要靠選擇器權重壓過去，不能同名。 */
+    table.responsive.permtable{min-width:0}
+    .vidscroll.permwrap{max-height:none;overflow:visible;border:0;border-radius:0}
     table.responsive td.na{display:none}                  /* 沒內容的欄位手機直接隱藏（精簡） */
     /* 片名列：不顯示「影片」標籤、標題可換行，卡片以片名開頭 */
     table.responsive td.cv-name{white-space:normal}
@@ -882,6 +887,8 @@
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
   .vidscroll table.vtable{margin-top:0}
   .vidscroll thead th{position:sticky;top:0;background:var(--panel);z-index:1;box-shadow:0 1px 0 var(--line)}
+  /* 設定→權限：桌機上九欄要撐開才點得準，橫向捲動由外面的 .permwrap 負責 */
+  table.permtable{min-width:660px}
   table.vtable th{white-space:nowrap}
   table.vtable th,table.vtable td{overflow:hidden}
   table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
@@ -959,7 +966,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=264e9c99af78"></script>
-<script type="module" src="fb.js?v=264e9c99af78"></script>
+<script src="app.js?v=77dae259b65a"></script>
+<script type="module" src="fb.js?v=77dae259b65a"></script>
 </body>
 </html>

@@ -29,6 +29,9 @@ global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,sc
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 // v188：設定分成五個子頁（基本／成員／平台／分類／維護）——這一支驗的是「成員」那一頁，
 // 所以先切過去。（老闆：「管理員的設定太多了，要分類分頁面」）
 SET_TAB="members";
@@ -195,10 +198,12 @@ const U=(o)=>Object.assign({name:"泓儒",role:"editor"},o||{});
   SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";
   ok("權限頁有「工作指派」這一欄", h.includes("工作指派"), (h.match(/<th[^>]*>工作指派<\/th>/)||[])[0]);
   ok("剪輯那一列有勾選框", /setMemberPerm\('泓儒','assign',this\.checked\)/.test(h), h.slice(0,200));
-  // 管理員本來就不在這張表裡（只列 STAFF_ROLES＋經理人），所以「職位」實際會出現的是經理人
-  ok("管理員不在這張表裡（本來就不列他）", !/setMemberPerm\('管理員'/.test(h));
-  ok("經理人那一列寫「職位」，不給勾（勾了也沒差）",
-     /Regina[\s\S]{0,900}職位/.test(h) && !/setMemberPerm\('Regina','assign'/.test(h),
+  // 管理員不給勾 —— 他是最高權限，勾不勾都一樣，列出來只會讓人以為收得回去
+  ok("管理員不給勾（他是最高權限）", !/setMemberPerm\('管理員'/.test(h));
+  ok("而且表上看得出他是最高權限", /最高/.test(h), h.slice(0, 300));
+  // v207：職位不再給任何預設，經理人那一格也是勾選框（老闆：「都要可以勾選的」）
+  ok("經理人那一列也是勾選框，不是寫死的「職位」",
+     /setMemberPerm\('Regina','assign',this\.checked\)/.test(h) && !/Regina[\s\S]{0,900}>職位</.test(h),
      (h.match(/Regina[\s\S]{0,900}?<\/tr>/)||[])[0]); }
 { reset([], "管理員","boss", [{name:"泓儒",role:"editor",canAssign:true},{name:"管理員",role:"boss"}]);
   SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";

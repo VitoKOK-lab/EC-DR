@@ -38,6 +38,9 @@ global.window={addEventListener(){},innerWidth:390,innerHeight:844,scrollY:0,scr
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
 todayTW=()=>FROZEN; ydayTW=()=>FROZEN.slice(0,8)+"14"; refreshToday();
 const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return d.toISOString().slice(0,10); };

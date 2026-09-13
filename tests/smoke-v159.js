@@ -30,6 +30,9 @@ global.window={addEventListener(){},innerWidth:1200,innerHeight:800,scrollY:0,sc
 global.requestAnimationFrame=(f)=>f(); global.navigator={onLine:true};
 global.confirm=()=>true; global.prompt=()=>null;
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 const FROZEN=new Date(Date.now()+288e5).toISOString().slice(0,8)+"15";
 // ⚠️ 把「今天」凍在月中（v160）。
 //    這支測試的樣本用相對日期（D(-8) 之類），而程式是**按月**分組的 ——

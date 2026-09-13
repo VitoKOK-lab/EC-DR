@@ -24,6 +24,9 @@ let ROLE = "boss";
 global.localStorage = { getItem: k => (k === "ecdr_role" ? ROLE : "管理員"), setItem(){}, removeItem(){} };
 global.navigator = { userAgent: "node" };
 eval(src);
+// v207：職位不再帶任何預設權限（老闆：「不要有人有任何預設的權限，都要可以勾選的」）。
+// 這一支不是在測權限，把以前職位會給的補回假資料上 —— 見 tests/perm-fixture.js 的說明。
+permsOf = require("./perm-fixture").withOldRoleDefaults(permsOf);
 
 let pass = 0, fail = 0;
 const ok = (c, n) => { if (c) { pass++; } else { fail++; console.log("FAIL  " + n); } };
@@ -38,7 +41,9 @@ function mount(vids, who, role, prods, unfiled) {
   global.window.DB = { videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
   global.localStorage.getItem = k => (k === "ecdr_role" ? ROLE : (who || "管理員"));
   LAST_RAW = { users: [{ name: "管理員", role: "boss" }, { name: "阿剪", role: "editor" }, { name: "阿二", role: "editor" },
-                       { name: "小主管", role: "editor", canAssign: true }],
+                       { name: "小主管", role: "editor", canAssign: true },
+                       // v207：職位不給預設了，要測「經理人動得了主檔」就得真的把那一格勾給她
+                       { name: "Regina", role: "manager", perms: ["prod", "perf"] }],
     settings: { dailyTarget: 4, videoTags: [], sources: [], postPlatforms: [], intlAccounts: [],
                 shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [],
                 unfiledPosts: unfiled || null },
