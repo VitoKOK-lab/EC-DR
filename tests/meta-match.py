@@ -408,9 +408,14 @@ ok(S.unfiled_groups([_P("太短", views=99999)]) == [], "文案太短不收，�
 amb = _P(LONG, views=99999); amb["candidates"] = ["V1", "V2"]
 ok(S.unfiled_groups([amb]) == [], "「有好幾支長得一樣」的不算未建檔（那是比對問題）")
 # 連結取觀看最高的那一則
+# ⚠️ 觀看高的要放在**前面**。放後面的話，「取最後一則」那種錯誤實作也會通過 ——
+#    突變測試就是這樣抓到我這條斷言是空的（把 if views > best 改成 if True，還是綠）。
+g = S.unfiled_groups([_P(LONG, views=8000, pid="a", link="高"),
+                      _P(LONG, views=3000, pid="b", link="低")])
+ok(g[0]["link"] == "高", "連結取**觀看最高**的那一則，不是最後一則")
 g = S.unfiled_groups([_P(LONG, views=3000, pid="a", link="低"),
                       _P(LONG, views=8000, pid="b", link="高")])
-ok(g[0]["link"] == "高", "連結取**觀看最高**的那一則（那一則最能代表這支片）")
+ok(g[0]["link"] == "高", "順序反過來也一樣（不是「取第一則」也不是「取最後一則」）")
 # 日期範圍
 g = S.unfiled_groups([_P(LONG, views=3000, at="2025-06-02"), _P(LONG, views=3000, at="2025-03-11")])
 ok(g[0]["first"] == "2025-03-11" and g[0]["last"] == "2025-06-02", "最早與最晚的發文日都記下來")
