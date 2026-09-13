@@ -371,64 +371,107 @@ ok(/"products"/.test(fs.readFileSync(__dirname + "/../tools/_fs.py", "utf8")),
 //    他是對的：自動生 1,300 支等於把人為的疏漏變成一千三百筆系統垃圾，沒人會回頭清。
 //    所以這張卡**只列出來**，建不建是人的決定。
 
-const UF = (items) => ({ at: "2026-09-13T06:20:00", days: 200, items });
+const UF = (items) => ({ at: "2026-09-13T06:20:00", days: 730, items });
 const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 9000, comments: 20,
   first: "2025-01-01", last: "2025-01-01", link: "https://www.facebook.com/reel/1/", plats: "FB" }, o);
 
-{ const v = V({ id: "Z1", name: "有建檔的片", metrics: M(5000, 10), scheduledDate: D(40) });
-  mount([v], "管理員", "boss", [], UF([
-    // ⚠️ views 是 0，而且是故意的 —— 這些貼文從來沒被問過成效，真實資料就長這樣。
-    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 0,
-            comments: 1880, first: "2025-03-11", last: "2025-06-02", plats: "FB／IG" }),
-    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 0, comments: 530 })]));
+// ⚠️ v207 老闆：「我不是要這樣，我要原本的成效排行…你的排行都是依照 meta 來的資料，
+//    只是說『有的你找的到系統中』，有的沒有，沒有的只要右邊加一個『建案進系統』，
+//    但排序和排行放在一起。」
+//    他是對的 —— 另外開一張卡等於把同一件事拆成兩個榜，人要自己在腦裡合併。
+{ const 高 = V({ id: "H1", name: "系統裡的高觀看片", metrics: M(500000, 900), scheduledDate: D(40) });
+  const 低 = V({ id: "L1", name: "系統裡的低觀看片", metrics: M(1000, 5), scheduledDate: D(40) });
+  mount([高, 低], "管理員", "boss", [], UF([
+    UITEM({ cap: "未建檔但觀看很高的舊片", views: 300000, comments: 1880, n: 6,
+            first: "2025-03-11", last: "2025-06-02" })]));
   const h = viewPerf();
-  ok(h.includes("未在資料庫裡的影片（2）"), "卡片出現，而且講清楚有幾支");
-  ok(h.includes("溱姐寵粉") && h.includes("我婆婆第一次見到我"), "兩則都列出來");
-  ok(h.includes("1,880") && h.includes("530"), "**留言數都在**（這就是它有用的原因）");
-  ok(h.includes("6 則") && h.includes("03-11") && h.includes("06-02"), "發過幾則、什麼時候發的");
-  ok(h.includes("FB／IG"), "哪些平台");
-  ok(h.includes("留言合計 2,410"), "合計算的是留言（1,880 + 530）");
-  ok(!h.includes("觀看合計"), "**沒問過觀看數就不要講觀看合計**");
-  ok(h.includes("--unfiled-views"), "而且講清楚觀看數要怎麼才問得到");
-  ok(!/data-label="觀看"[^>]*><b>0<\/b>/.test(h),
-     "**觀看不准印成 0** —— 那會讓人以為這支片沒人看，正好相反"); }
-{ // 有問過觀看數的時候，就要顯示出來
-  const v2 = V({ id: "Z9", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
-  mount([v2], "管理員", "boss", [], UF([UITEM({ cap: "問過觀看數的那一組", views: 412355, comments: 1880 })]));
-  const h2 = viewPerf();
-  ok(h2.includes("412,355"), "有觀看數就印出來");
-  ok(h2.includes("觀看合計 412,355"), "合計也把觀看講出來");
-  ok(!h2.includes("--unfiled-views"), "已經問過了就不用再提示怎麼問"); }
-{ const v3 = V({ id: "Z8", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
-  mount([v3], "管理員", "boss", [], UF([
-    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 0,
-            comments: 1880, first: "2025-03-11", last: "2025-06-02", plats: "FB／IG" }),
-    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 0, comments: 530 })]));
-  const h = viewPerf();
-  ok(h.indexOf("溱姐寵粉") < h.indexOf("我婆婆"), "留言多的排前面");
-  ok(h.includes("unfiledAdd("), "每一列都有「建檔」");
-  ok(h.includes("系統裡沒有這支片"), "講清楚為什麼排行上看不到它們");
-  ok(h.includes("舊片"), "也講清楚建出來會歸到哪裡"); }
+  ok(!h.includes("未在資料庫裡的影片（"), "**那張獨立的卡不見了**（同一件事不要拆成兩個榜）");
+  ok(h.includes("系統裡的高觀看片") && h.includes("未建檔但觀看很高的舊片") && h.includes("系統裡的低觀看片"),
+     "三列都在同一張排行上");
+  ok(h.indexOf("系統裡的高觀看片") < h.indexOf("未建檔但觀看很高的舊片"),
+     "**照觀看排在一起**：50 萬 > 30 萬");
+  ok(h.indexOf("未建檔但觀看很高的舊片") < h.indexOf("系統裡的低觀看片"),
+     "而且 30 萬 > 1,000 —— 未建檔的不會被丟到最後面");
+  ok(h.includes("未建檔"), "未建檔的那一列標出來");
+  ok(h.includes("建案進系統"), "**右邊那顆鍵是「建案進系統」**（老闆的用字）");
+  ok(h.includes("unfiledAdd("), "而且按得下去");
+  ok(h.includes("發過 6 次"), "重發幾次也看得到");
+  ok(h.includes("1,880"), "留言數在"); }
 
-{ // 沒跑過同步就沒有這份清單 —— 不要放一張空卡在那裡
-  const v = V({ id: "Z2", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+{ // 未建檔的沒有類型／剪輯／帶貨／二創 —— 系統裡根本沒有那一筆，不要編一個出來
+  const v = V({ id: "K1", name: "片", metrics: M(1000, 5), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([UITEM({ cap: "未建檔的", views: 9000, comments: 30 })]));
+  const h = viewPerf();
+  const row = h.slice(h.indexOf("未建檔的"), h.indexOf("未建檔的") + 1400);
+  ok(/data-label="類型"[^>]*><span class="muted">—/.test(row), "類型是破折號");
+  ok(/data-label="剪輯"><span class="muted">—/.test(row), "剪輯是破折號");
+  ok(/data-label="帶貨商品"><span class="muted">—/.test(row), "帶貨商品是破折號");
+  ok(/data-label="上次二創"[^>]*><span class="muted">—/.test(row), "上次二創是破折號");
+  ok(!row.includes("排二創"), "**未建檔的不能排二創**（系統裡沒有那一筆，排不了）"); }
+
+{ // 沒問過觀看數的（--no-unfiled-views 或 --from-file）→ 顯示破折號，不是 0
+  const v = V({ id: "K2", name: "片", metrics: M(1000, 5), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([UITEM({ cap: "沒問過觀看數的", views: 0, comments: 30 })]));
+  const h = viewPerf();
+  const row = h.slice(h.indexOf("沒問過觀看數的"), h.indexOf("沒問過觀看數的") + 1400);
+  ok(!/data-label="觀看"[^>]*><b>0<\/b>/.test(row),
+     "**觀看不准印成 0** —— 那會讓人以為這支片沒人看，正好相反");
+  ok(/data-label="觀看"[^>]*><span class="muted"/.test(row), "顯示破折號"); }
+
+{ // 沒跑過同步就沒有未建檔的列 —— 排行照舊
+  const v = V({ id: "K3", name: "片", metrics: M(9000, 20), scheduledDate: D(40) });
   mount([v], "管理員", "boss", [], null);
-  ok(!viewPerf().includes("未在資料庫裡的影片"), "沒有清單時整張卡不出現");
+  const h = viewPerf();
+  ok(h.includes("片") && !h.includes("未建檔"), "沒有清單時排行上一列未建檔的都沒有");
   mount([v], "管理員", "boss", [], UF([]));
-  ok(!viewPerf().includes("未在資料庫裡的影片"), "清單是空的也不出現（全部建完了就該消失）"); }
+  ok(!viewPerf().includes("未建檔"), "清單是空的也一樣（全部建完了就該消失）"); }
 
-{ // 建檔的權限：跟「直接加一支到大流」同一批人
-  const v = V({ id: "Z3", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
-  const u = UF([UITEM({})]);
+{ // 權限：不碰影片的職位看得到排行，但沒有「建案進系統」
+  const v = V({ id: "K4", name: "片", metrics: M(1000, 5), scheduledDate: D(40) });
+  const u = UF([UITEM({ cap: "未建檔的", views: 9000, comments: 30 })]);
   mount([v], "阿剪", "editor", [], u);
-  ok(viewPerf().includes("未在資料庫裡的影片"), "剪輯看得到清單（大流本來就開給他們）");
-  ok(viewPerf().includes("unfiledAdd("), "也建得了");
-  mount([v], "麗君", "cs", [], u);
-  ok(!viewPerf().includes("unfiledAdd("), "不碰影片的職位沒有「建檔」");
+  ok(viewPerf().includes("未建檔的"), "剪輯看得到未建檔的列");
   mount([v], "管理員", "boss", [], u);
   VIEW_AS = "阿剪";
-  ok(!viewPerf().includes("unfiledAdd("), "員工視角預覽時也不給（全站唯讀的規矩）");
+  // ⚠️ 不能只比對「建案進系統」四個字 —— 卡片的說明文字裡也有那四個字，
+  //    比對整頁的話，按鈕明明沒長出來也會被判成有。要比對**按鈕本身**。
+  ok(!viewPerf().includes("unfiledAdd("),
+     "員工視角預覽時沒有「建案進系統」那顆鍵（全站唯讀的規矩）");
   VIEW_AS = null; }
+
+{ // 依二創建議那個排法：未建檔的不列（系統裡沒有那一筆，排不了二創）
+  const v = V({ id: "K5", name: "有成效的片", metrics: M(50000, 100, D(40)), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([UITEM({ cap: "未建檔的", views: 900000, comments: 30 })]));
+  PERF_SORT = "remake";
+  const h = viewPerf();
+  PERF_SORT = "views";
+  ok(!h.includes("未建檔的"),
+     "**「依二創建議」不列未建檔的** —— 它們排不了二創，列進去只會佔位置"); }
+
+// ══════════ ⑩ FB＋IG 是一支片兩則貼文，不是兩支片（v206）══════════
+// 老闆：「fb 和 ig 幾乎是同時同一支影片上兩邊，不能算成 2 支影片。」
+// 他說得對，而且系統本來就沒有算成兩支 —— 排行上是一列。
+// 會誤會是因為平台卡片上「FB 152 支／IG 107 支」擺在一起很像可以相加，
+// 但其中 91 支是同一批片，不重複只有 168 支。
+{ const 兩邊都發 = V({ id: "B1", name: "兩邊都發的片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 60000, likes: 100, comments: 30, postAt: D(30) + "T10:00:00" },
+    { platform: "IG", account: "IG a", views: 40000, likes: 80, comments: 20, postAt: D(30) + "T10:00:00" }] });
+  const 只有FB = V({ id: "B2", name: "只發 FB 的片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 5000, likes: 10, comments: 6, postAt: D(30) + "T10:00:00" }] });
+  mount([兩邊都發, 只有FB], "管理員", "boss");
+  const h = viewPerf();
+  ok((h.match(/兩邊都發的片/g) || []).length === 1,
+     "**同一支片在排行上只出現一列**，不會因為發了兩個平台就變兩列");
+  ok(h.includes("100,000"), "它的觀看是兩邊相加（兩邊的觀看是不同的人看的）");
+  ok(h.includes("不重複合計 <b>2</b> 支"),
+     "**把不重複的支數明講出來**（FB 2 支 ＋ IG 1 支，但只有 2 支不同的影片）");
+  ok(h.includes("支發過"), "平台卡上寫「N 支發過」，不是光一個「N 支」");
+  ok(rmkAired(vid("B1")).length === 1, "而且「用過幾次」也只算一次（同一天的兩個平台）"); }
+{ // 只有一個平台的時候不用講這句（沒有東西會重複，講了是雜訊）
+  const 只有一個平台 = V({ id: "B3", name: "片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 5000, likes: 10, comments: 6, postAt: D(30) + "T10:00:00" }] });
+  mount([只有一個平台], "管理員", "boss");
+  ok(!viewPerf().includes("不重複合計"), "只有一個平台時不出現這句"); }
 
 { // 按「建檔」→ 補進**正式影片庫**，不是大流
   // ⚠️ 老闆：「不要建到大流，我們不是說好『等這裡做好，大流量影片庫要刪掉』。」

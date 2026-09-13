@@ -7800,47 +7800,30 @@ function unfiledList(){
   const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||null;
   return (u&&Array.isArray(u.items))?u.items:[];
 }
-let UNFILED_OPEN=false;
-function unfiledToggle(){ UNFILED_OPEN=!UNFILED_OPEN; render(); }
-function unfiledCard(){
-  const list=unfiledList(); if(!list.length) return "";
-  const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||{};
-  // ⚠️ v206：**留言是主要指標，不是觀看**。那些貼文從來沒被問過成效，
-  //    views 是 0 —— 印成「觀看 0」會讓人以為這支片沒人看，正好相反。
-  //    要真正的觀看數，同步要加 --unfiled-views（那會多花幾百次呼叫）。
-  const totC=list.reduce((a,x)=>a+(+x.comments||0),0);
-  const totV=list.reduce((a,x)=>a+(+x.views||0),0);
-  const show=UNFILED_OPEN?list:list.slice(0,8);
-  const rows=show.map((x,i)=>`<tr>
+// 未建檔的貼文在排行上長什麼樣：跟影片同一張表、同一個排序，
+// 差別只有「系統裡沒有這一筆」—— 所以類型／剪輯／帶貨／二創那幾欄都是破折號，
+// 最右邊那顆鍵不是「排二創」而是「建案進系統」。
+function unfiledRowHTML(x, ui, i, canPlan){
+  const last=String(x.last||x.first||"").slice(0,10);
+  const gap=last?Math.round((new Date(today+"T00:00:00")-new Date(last+"T00:00:00"))/864e5):null;
+  const cap=String(x.cap||"").replace(/\s+/g," ").trim();
+  return `<tr style="background:var(--amberbg)">
       <td data-label="#">${i+1}</td>
-      <td data-label="貼文">${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" title="開那則貼文">${esc(String(x.cap||"").slice(0,44))}</a>`
-        :esc(String(x.cap||"").slice(0,44))}</td>
-      <td data-label="平台" class="pr-k">${esc(x.plats||"")}</td>
-      <td data-label="發過" class="pr-k">${x.n} 則${x.first?`<span class="muted" style="font-size:11px">　${esc(String(x.first).slice(5))}${x.last&&x.last!==x.first?"～"+esc(String(x.last).slice(5)):""}</span>`:""}</td>
-      <td data-label="留言" class="pr-v"><b>${num(x.comments)}</b></td>
-      <td data-label="觀看" class="pr-c">${x.views?num(x.views)
-        :'<span class="muted" title="這些貼文沒被問過成效；同步加 --unfiled-views 才會去問">—</span>'}</td>
-      ${canAddOldVideo()?`<td data-label=""><button class="btn sm" style="white-space:nowrap" onclick="unfiledAdd(${i})" title="建成一支舊片（文案與上片連結會自動帶進去）">建檔</button></td>`:""}</tr>`).join("");
-  return `<div class="card" style="border-color:var(--accent)">
-    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <b>未在資料庫裡的影片（${list.length}）</b>
-      <span class="muted" style="font-size:12px">留言合計 ${num(totC)}${totV?`・觀看合計 ${num(totV)}`:""}</span>
-    </div>
-    <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.8">
-      平台上有這些貼文、成效數字也都在，但<b>系統裡沒有這支片</b> —— 所以上面的排行看不到它們。
-      系統做不到半年，平台上卻有兩年的資料，差的就是這一段。<br>
-      要建哪幾支是你決定的。按「建檔」會開新增視窗，<b>文案與上片連結自動帶進去</b>，
-      你只要補檔名（和雲端資料夾，找不到可以留空），建出來直接是<b>已上片的舊片</b>，
-      放在<b>正式影片庫</b>裡，不會跑進待認領也不會跑進待審。
-      ${u.at?`<br><span style="font-size:11px">清單更新於 ${esc(String(u.at).replace("T"," ").slice(0,16))}　只列留言 5 則以上的${
-          totV?"":"；觀看數要同步加 --unfiled-views 才問得到"}</span>`:""}
-    </div>
-    <div class="${show.length>10?'vidscroll':''}" style="margin-top:8px">
-    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-c">${canAddOldVideo()?'<col class="pr-k">':''}</colgroup>
-    <thead><tr><th>#</th><th>貼文（點開看原文）</th><th>平台</th><th>發過</th><th>留言</th><th>觀看</th>${canAddOldVideo()?"<th></th>":""}</tr></thead>
-    <tbody>${rows}</tbody></table></div>
-    ${list.length>8?`<button class="btn sm sec" style="margin-top:8px" onclick="unfiledToggle()">${UNFILED_OPEN?"只看前 8 支":`看全部 ${list.length} 支`}</button>`:""}
-  </div>`;
+      <td data-label="影片">${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" title="點開那則貼文">${esc(cap.slice(0,42))}</a>`:esc(cap.slice(0,42))}
+        <span class="pill wa" style="font-size:10px;margin-left:5px" title="平台上有這則貼文，系統裡沒有這支片">未建檔</span>${
+        (+x.n||0)>1?`<span class="muted" style="font-size:11px">　發過 ${x.n} 次</span>`:""}</td>
+      <td data-label="類型" class="pr-k"><span class="muted">—</span></td>
+      <td data-label="剪輯"><span class="muted">—</span></td>
+      <td data-label="帶貨商品"><span class="muted">—</span></td>
+      <td data-label="觀看" class="pr-v">${(+x.views)?`<b>${num(x.views)}</b>`
+        :'<span class="muted" title="這則沒被問過觀看數（同步用了 --no-unfiled-views 或 --from-file）">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${num(x.comments)}</td>
+      <td data-label="多久沒用" class="pr-v">${gap==null?'<span class="muted">—</span>':gap+" 天"}</td>
+      <td data-label="上次二創" class="pr-e"><span class="muted">—</span></td>
+      ${canPlan?`<td data-label="">${canAddOldVideo()
+        ? `<button class="btn sm" style="white-space:nowrap" onclick="event.stopPropagation();unfiledAdd(${ui})"
+             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">建案進系統</button>`
+        : '<span class="muted" style="font-size:11px">未建檔</span>'}</td>`:""}</tr>`;
 }
 // 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
 function canAddOldVideo(){ return !VIEW_AS && hasPerm("df"); }
@@ -7924,7 +7907,8 @@ function perfRankCard(){
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">${byRmk
       ? "依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比。片名旁邊的小數字＝這支已經出過幾次（含它的二創）"
-      : "依觀看排，前 50 名。點影片看跨平台明細與帶貨"}</div>
+      : `依觀看排，前 50 名。點影片看跨平台明細與帶貨${
+          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「建案進系統」就補得進來`:""}`}</div>
     <div class="row" style="gap:8px;margin-top:8px">
       <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
@@ -7951,16 +7935,27 @@ function perfRankRowsHTML(){
   }else if(byRmk){
     list=rmkRank().map(r=>({v:r.v, r}));
   }else{
+    // ⚠️ v207 老闆：「我不是要這樣，我要原本的成效排行…你的排行都是依照 meta 來的
+    //    資料，只是說『有的你找的到系統中』，有的沒有，沒有的只要右邊加一個
+    //    『建案進系統』，但排序和排行放在一起。」
+    //    他是對的 —— 另外開一張卡等於把同一件事拆成兩個榜，人要自己在腦裡合併。
+    //    **一份排行**：Meta 上的東西全部排在一起，系統裡找得到的照舊，
+    //    找不到的右邊給一顆「建案進系統」。
     list=allLibVideos().filter(v=>!v.deleted && rowsOf(v).length)
-      .sort((a,b)=>sViews(b)-sViews(a)).map(v=>({v}));
+      .map(v=>({v, views:sViews(v)}))
+      .concat(unfiledList().map((x,i)=>({u:x, ui:i, views:+x.views||0})))
+      .sort((a,b)=>b.views-a.views);
   }
   const total=list.length;
-  const show=list.filter(o=>!PERF_KIND||vidType(o.v)===PERF_KIND).slice(0,50);
+  // 未建檔的沒有類型可分（系統裡根本沒有那一筆），所以篩類型的時候不列它們
+  const show=list.filter(o=>!PERF_KIND||(o.v&&vidType(o.v)===PERF_KIND)).slice(0,50);
   const cols=canPlan?10:9;
   // ⚠️ rmkLastCut 在「這支從來沒二創過」的時候會退回原片自己的剪輯 —— 那在原本
   //    「上次誰剪」那一欄是對的，但這一欄叫「上次二創」，印出來會變成「昱丞剪過
   //    這支的二創」，而他根本沒剪過。沒有二創就留一個破折號。
-  const body=show.map((o,i)=>{ const v=o.v, gap=rmkDaysSince(v), vw=sViews(v),
+  const body=show.map((o,i)=>{
+    if(o.u) return unfiledRowHTML(o.u, o.ui, i, canPlan);
+    const v=o.v, gap=rmkDaysSince(v), vw=sViews(v),
       L=remakesOfSrc(v.id).length?rmkLastCut(v):{who:"",c:null},
       why=(o.r && !o.r.score)?rmkWhyNot(o.r):"";
     return `<tr style="cursor:pointer" onclick="${vidOpenFn(v)}">
@@ -8052,7 +8047,6 @@ function viewPerf(){
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
       <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
     }</div>`:''}
-  ${unfiledCard()}
   ${perfRankCard()}
   ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>

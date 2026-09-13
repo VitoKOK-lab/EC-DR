@@ -949,7 +949,7 @@ def unfiled_fill_views(groups, cfg, token, verbose=False):
     reps = [p for g in groups for p in g["posts"]]
     if not reps:
         return
-    print("\n  順便問這 %d 則的觀看數（--unfiled-views）：" % len(reps))
+    print("\n  順便問這 %d 則未建檔貼文的觀看數（要關掉用 --no-unfiled-views）：" % len(reps))
     add_insights(reps, cfg, token, verbose)
     for g in groups:
         g["views"] = sum(int(p.get("views") or 0) for p in g["posts"])
@@ -1039,8 +1039,13 @@ def main():
                     help="一支片達標之後，繼續追蹤幾天（預設 30）")
     ap.add_argument("--write", action="store_true", help="真的寫進資料庫（預設只看不寫）")
     ap.add_argument("--fill-links", action="store_true", help="順便把空的上片連結補回去")
-    ap.add_argument("--unfiled-views", action="store_true",
-                    help="替「未在資料庫裡的影片」清單問真正的觀看數（多花幾百次呼叫）")
+    # ⚠️ v207 改成**預設就問**。老闆：「我要原本的成效排行…排序和排行放在一起」——
+    #    未建檔的貼文要跟系統裡的片排在同一個榜上，沒有觀看數就排不進去
+    #    （它們的 views 是 0，會全部沉到最底下，等於沒排）。
+    #    代價是每次同步多四五百次呼叫（只問清單上那 200 組底下的貼文，
+    #    不是那一萬七千則）。真的嫌慢再用 --no-unfiled-views 關掉。
+    ap.add_argument("--no-unfiled-views", action="store_true",
+                    help="不要替未建檔的貼文問觀看數（省幾百次呼叫，但它們排不進排行）")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
     ap.add_argument("--from-file", default="", help="用存好的 JSON 重跑比對，不連網")
     ap.add_argument("--videos-file", default="",
@@ -1339,7 +1344,7 @@ def main():
     # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
     # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
     unfiled = unfiled_groups(unmatched)
-    if unfiled and args.unfiled_views and not args.from_file:
+    if unfiled and not args.no_unfiled_views and not args.from_file:
         unfiled_fill_views(unfiled, cfg, token, args.verbose)
     if unfiled:
         tot_c = sum(g["comments"] for g in unfiled)
@@ -1353,7 +1358,7 @@ def main():
         print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
         print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
         if not tot_v:
-            print("   （觀看數要加 --unfiled-views 才會去問；留言數是抓清單時就有的，不用花呼叫）")
+            print("   （這次沒問觀看數：不是 --no-unfiled-views 就是 --from-file）")
         for g in unfiled[:12]:
             # ⚠️ 日期要帶年份。只印月-日的話，跨年的區間會長成「06-24～02-22」，
             #    看起來像最早比最晚還晚。2026-09-13 的輸出就是這樣。

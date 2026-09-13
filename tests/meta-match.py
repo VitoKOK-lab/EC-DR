@@ -480,8 +480,13 @@ g = S.unfiled_groups([_P(LONG, comments=10, pid="a"), _P(LONG, comments=10, pid=
 ok(len(g[0].get("posts") or []) == 2, "每一組留著它底下的貼文（要問觀看數時用得到）")
 ok("def unfiled_fill_views(" in SYNC_SRC,
    "問觀看數是**另外一個函式**（平常的每日同步不能多花幾百次呼叫）")
-ok('ap.add_argument("--unfiled-views"' in SYNC_SRC, "--unfiled-views 這個旗標真的存在")
-ok("if unfiled and args.unfiled_views and not args.from_file:" in SYNC_SRC,
+# v207：改成**預設就問**。老闆要「排序和排行放在一起」——
+# 未建檔的貼文要跟系統裡的片排同一個榜，沒有觀看數就排不進去（views 0 會全沉底）。
+ok('ap.add_argument("--no-unfiled-views"' in SYNC_SRC,
+   "關掉的旗標是 --no-unfiled-views（**預設就會問**，不是要人記得加）")
+ok('ap.add_argument("--unfiled-views"' not in SYNC_SRC,
+   "舊的 --unfiled-views 已經不在（不要留兩個意思相反的旗標）")
+ok("if unfiled and not args.no_unfiled_views and not args.from_file:" in SYNC_SRC,
    "而且真的接到流程上（不然寫了函式沒人呼叫）")
 
 # ── 印出來的樣子（v206）──────────────────────────────────────────────
