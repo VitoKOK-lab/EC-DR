@@ -1,4 +1,4 @@
-// v152：「剪輯成效」—— 管理員與人資查得到每個剪輯做完什麼、審過沒、檔案在哪。
+// v152：「剪輯產出」—— 管理員與人資查得到每個剪輯做完什麼、審過沒、檔案在哪。
 //
 // 起因是兩件事撞在一起：
 //   ① 你要一個地方能分人看完成狀況，而且**審過之後直接點進資料夾看成片**。
@@ -102,9 +102,9 @@ const SET=()=>[
 
 // ══════════ ① 誰看得到這一頁 ══════════
 { reset(SET(), "管理員","boss");
-  ok("管理員的分頁有「剪輯成效」", myTabs().some(t=>t[0]==="output"));
+  ok("管理員的分頁有「剪輯產出」", myTabs().some(t=>t[0]==="output"));
   reset(SET(), "HR小姐","hr");
-  ok("人資的分頁有「剪輯成效」", myTabs().some(t=>t[0]==="output"));
+  ok("人資的分頁有「剪輯產出」", myTabs().some(t=>t[0]==="output"));
   reset(SET(), "小葵","editor");
   ok("剪輯看不到這一頁", !myTabs().some(t=>t[0]==="output"));
   reset(SET(), "Regina","manager");
@@ -202,11 +202,11 @@ const SET=()=>[
 // ══════════ ⑤ 月份可以往前翻 ══════════
 { reset(SET(), "管理員","boss");
   ok("有月份下拉", /teamSetYM/.test(viewOutput()));
-  ok("預設是本月", /本月剪輯成效/.test(viewOutput()));
+  ok("預設是本月", /本月剪輯產出/.test(viewOutput()));
   const prevYM=D(-60).slice(0,7);
   TEAM_YM=prevYM;
   const h=viewOutput();
-  ok("翻到上上個月：標題不再說「本月」", !/本月剪輯成效/.test(h) && /剪輯成效/.test(h));
+  ok("翻到上上個月：標題不再說「本月」", !/本月剪輯產出/.test(h) && /剪輯產出/.test(h));
   ok("翻到上上個月：看到的是那個月的那一支", /完成 1 支/.test(h), h.match(/完成 \d+ 支/g));
   ok("翻月份的時候還是停在名單那一層", /onclick="outPick/.test(h));
   TEAM_YM=null; }
@@ -275,7 +275,7 @@ const SET=()=>[
 { reset([ v_("OLD2",{editor:"小葵", finishedAt:D(-60)+"T10:00:00"}) ], "管理員","boss");
   const h=viewOutput();
   ok("這個月沒人完成時，名單還是畫得出來（不是空白也不是壞掉）",
-     h.includes("剪輯成效") && /onclick="outPick/.test(h), h.slice(0,200));
+     h.includes("剪輯產出") && /onclick="outPick/.test(h), h.slice(0,200));
   outPick("小葵");
   ok("點進沒有產出的人，講清楚是這個月沒有", viewOutput().includes("這個月還沒有完成的影片"));
   outBackAll();

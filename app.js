@@ -446,23 +446,38 @@ function allLibVideos(){
 //
 // ⚠️ ROLE_TABS 裡也不准再放這張表管得到的分頁（perf／output／attend／videosDF）——
 //    放回去等於偷偷給一個預設值，而且畫面上完全看不出來。
+// ⚠️ v208（老闆：「你的權限名要和上面的名字一樣，不然我不知這打勾是給什麼權，
+//    像商品主檔是什麼？？」）：
+//
+//    `label` **必須跟畫面上看得到的字一模一樣**，不准自己取一個新詞。
+//    有分頁的（有 tab 的那幾個）label 就是導覽列上的分頁名 —— 這一點是天生成立的，
+//    因為 myTabs() 補分頁時用的就是這個 label；但**進去之後的 <h2> 也要同一個字**，
+//    不然點進去看到另一個名字，一樣認不出來（剪輯產出／大流量影片就吃過這一虧）。
+//
+//    沒有分頁的那三個（指派毛片、改商品資料、看板主管版）本來就是藏在別頁裡的功能，
+//    所以每一個都要寫 `where`：一路點到那裡的路徑，照畫面上的字寫。
+//    權限表會把它印在欄名底下 —— 「這個勾是給什麼」要看得出來，不能靠猜。
 const PERMS = {
-  assign:{ label:"工作指派", legacy:"canAssign",
+  // 看板上那張卡的標題就是「🎬 指派毛片給員工」
+  assign:{ label:"指派毛片", where:"看板 → 指派毛片給員工", legacy:"canAssign",
            why:"指派毛片給剪輯、排二創、標急件" },
-  find:  { label:"找影片",   legacy:"canFindAssets",
+  find:  { label:"找影片",   where:"上面的分頁", legacy:"canFindAssets",
            why:"搜尋 Google Drive 素材庫" },
-  perf:  { label:"影片成效", tab:"perf", zhOnly:true,
+  perf:  { label:"影片成效", where:"上面的分頁", tab:"perf", zhOnly:true,
            why:"各平台累計觀看、影片排行（含二創建議與排二創）、帶貨商品排行、剪輯二創成效" },
-  output:{ label:"剪輯產出", tab:"output", zhOnly:true,
+  output:{ label:"剪輯產出", where:"上面的分頁", tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
-  attend:{ label:"出勤",     tab:"attend", zhOnly:true,
+  attend:{ label:"出勤",     where:"上面的分頁", tab:"attend", zhOnly:true,
            why:"打卡紀錄、遲到早退、月報表" },
-  df:    { label:"大流量影片", tab:"videosDF", zhOnly:true,
+  df:    { label:"大流量影片", where:"上面的分頁", tab:"videosDF", zhOnly:true,
            why:"過渡期的成品庫（舊片直接建檔）" },
-  // v206：商品主檔。改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉。
-  prod:  { label:"商品主檔", zhOnly:true,
+  // v206：商品資料改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉。
+  // v208 改名：本來叫「商品主檔」—— 那是資料庫的講法，畫面上沒有那四個字。
+  prod:  { label:"改商品資料", where:"影片成效 → 帶貨商品排行 → 點商品", zhOnly:true,
            why:"建檔、改名、換官網連結、標下架、把重複的兩筆合併" },
-  lead:  { label:"主管看板", zhOnly:true,
+  // v208 改名：本來叫「主管看板」，但導覽列上只有「看板」一個分頁，
+  //            沒有哪一頁叫「主管看板」—— 它是同一頁上主管才看得到的那幾區。
+  lead:  { label:"看板（主管版）", where:"看板 → 全隊交辦、備片存量、今日成效", zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
 const PERM_KEYS = Object.keys(PERMS);
@@ -5604,20 +5619,20 @@ function outPersonCard(u, ym, list, bare, wip){
   return `<div class="card">${head}${body}</div>`;
 }
 function viewOutput(){
-  if(!canSeeOutput()) return `<h2>${T("剪輯成效","Editor output")}</h2>
+  if(!canSeeOutput()) return `<h2>${T("剪輯產出","Editor output")}</h2>
     <div class="card muted">${T("這一頁只有管理員與人資看得到。","This page is for admins and HR only.")}</div>`;
   const ym=teamYM(), curYM=today.slice(0,7);
   // 會剪片的人才列 —— 行銷／客服／出貨不剪片，列進來整張卡都是空的，看起來像沒做事。
   const staff=staffSorted((STATE.users||[]).filter(u=>["editor","intl"].includes(u.role||"editor")));
-  if(!staff.length) return `<h2>${T("剪輯成效","Editor output")}</h2>
+  if(!staff.length) return `<h2>${T("剪輯產出","Editor output")}</h2>
     <div class="card muted">${T("還沒有剪輯成員","No editors yet")}</div>`;
-  if(videosLoading()) return `<h2>${T("剪輯成效","Editor output")}</h2>
+  if(videosLoading()) return `<h2>${T("剪輯產出","Editor output")}</h2>
     <div class="card muted">${T("影片資料還在載入…","Loading videos…")}</div>`;
   // 一個人只掃一次，名單與清單共用同一份
   const per=staff.map(u=>({u, list:outVideosOf(u.name, ym), wip:outWipOf(u.name, ym)}));
   const ymLabel=(+ym.slice(0,4))+T(" 年 "," / ")+(+ym.slice(5,7))+T(" 月","");
   const head=(extra)=>`<h2 style="display:flex;align-items:center;flex-wrap:wrap">${
-      ym===curYM?T("本月剪輯成效","Editor output — this month"):T("剪輯成效","Editor output")
+      ym===curYM?T("本月剪輯產出","Editor output — this month"):T("剪輯產出","Editor output")
     }${teamMonthPicker(ym)}${extra||""}</h2>`;
 
   // ── 第二層：某一個人這個月的清單 ──
@@ -6606,11 +6621,11 @@ function dfRowsHTML(){
   }).join("");
 }
 function viewVideosDF(){
-  if(!seesDF()) return `<h2>影片庫大流</h2><div class="card"><p class="muted">這個分頁沒有開放給你的職位。</p></div>`;
+  if(!seesDF()) return `<h2>大流量影片</h2><div class="card"><p class="muted">這個分頁沒有開放給你的職位。</p></div>`;
   const list=dfList(), n=dfVideos().filter(v=>!isVersion(v)).length;
   const nRemake=dfVideos().reduce((a,v)=>a+dfRemakes(v).length,0);
   const nSched=dfVideos().filter(v=>String(v.scheduledDate||"").slice(0,10)>=today).length;
-  return `<h2>影片庫大流</h2>
+  return `<h2>大流量影片</h2>
   <div class="card">
     <div class="muted" style="font-size:13px;line-height:1.7">
       這裡放<b>已經做完的成品</b>（以前沒進過系統的舊片），直接建檔就好，不用經過拍毛片跟剪片。<br>
@@ -7710,7 +7725,7 @@ function prodAdminHTML(m, key, names, link){
         ${names.length>1?`<span class="muted" style="font-size:11px">其餘 ${names.length-1} 個寫法會存成別名，之後照樣認得回來</span>`:""}
       </div></div>`;
   }
-  return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>管理這個商品</b>
+  return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>改商品資料</b>
     <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
       <input id="pd_name" value="${esc(m.name||"")}" placeholder="商品名稱" style="flex:2;min-width:150px">
       <input id="pd_sku" value="${esc(m.sku||"")}" placeholder="貨號（選填）" style="flex:1;min-width:100px">
@@ -10206,7 +10221,11 @@ function setWorkHoursCard(s){
 // 設定／成員／回收桶／操作紀錄不在這張表裡（老闆選的）：拿到設定的人可以再把權限
 // 發給別人，那等於多配一把管理員鑰匙。
 function setPermsCard(members){
-  const head=PERM_KEYS.map(k=>`<th title="${esc(PERMS[k].why)}" style="white-space:nowrap">${esc(PERMS[k].label)}</th>`).join("");
+  // 欄名底下寫「它在哪裡」—— 老闆：「不然我不知這打勾是給什麼權，像商品主檔是什麼？？」
+  // 名字照畫面上的字，再加一行路徑，勾之前就看得出勾的是什麼。
+  const head=PERM_KEYS.map(k=>`<th title="${esc(PERMS[k].why)}" style="white-space:nowrap;vertical-align:bottom">
+    ${esc(PERMS[k].label)}
+    <div class="muted" style="font-size:10px;font-weight:400;margin-top:2px">${esc(PERMS[k].where)}</div></th>`).join("");
   const adminRow=`<tr><td data-label="名字"><b>${esc(ADMIN_DISPLAY)}</b>
     <div class="muted" style="font-size:11px">管理員</div></td>
     ${PERM_KEYS.map(k=>`<td data-label="${esc(PERMS[k].label)}"><span class="pill ok" style="font-size:10px">最高</span></td>`).join("")}
@@ -10236,7 +10255,7 @@ function setPermsCard(members){
       <th title="外包人員：看不到其他同事的看板與成效，也看不到月排程" style="white-space:nowrap">外包</th></tr></thead>
     <tbody>${adminRow}${rows||'<tr><td class="muted">還沒有成員</td></tr>'}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.9">
-      ${PERM_KEYS.map(k=>`<b>${esc(PERMS[k].label)}</b>：${esc(PERMS[k].why)}`).join("<br>")}<br>
+      ${PERM_KEYS.map(k=>`<b>${esc(PERMS[k].label)}</b>（${esc(PERMS[k].where)}）：${esc(PERMS[k].why)}`).join("<br>")}<br>
       <b>外包</b>：看不到其他同事的看板與成效，也看不到月排程
     </div>
     <div class="muted" style="font-size:11px;margin-top:10px">

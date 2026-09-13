@@ -196,7 +196,9 @@ const U=(o)=>Object.assign({name:"泓儒",role:"editor"},o||{});
 // 設定 → 權限：老闆勾得到（v202 從成員表整合到「權限」那一頁）
 { reset([], "管理員","boss", [{name:"泓儒",role:"editor"},{name:"管理員",role:"boss"},{name:"Regina",role:"manager"}]);
   SET_TAB="perms"; const h=viewSettings(); SET_TAB="basic";
-  ok("權限頁有「工作指派」這一欄", h.includes("工作指派"), (h.match(/<th[^>]*>工作指派<\/th>/)||[])[0]);
+  // v208 改名：本來叫「工作指派」，畫面上沒有那四個字 —— 看板上那張卡寫的是「指派毛片給員工」
+  ok("權限頁有「指派毛片」這一欄", h.includes(">指派毛片") || /指派毛片\s*\n/.test(h),
+     (h.match(/<th[^>]*>[\s\S]{0,60}?指派毛片[\s\S]{0,60}/)||[])[0]);
   ok("剪輯那一列有勾選框", /setMemberPerm\('泓儒','assign',this\.checked\)/.test(h), h.slice(0,200));
   // 管理員不給勾 —— 他是最高權限，勾不勾都一樣，列出來只會讓人以為收得回去
   ok("管理員不給勾（他是最高權限）", !/setMemberPerm\('管理員'/.test(h));
