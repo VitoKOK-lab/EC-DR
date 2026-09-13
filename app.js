@@ -580,7 +580,20 @@ function dbBump(coll, id, field, n, fallback){
   if(window.DB && window.DB.bump) return window.DB.bump(coll, id, field, n);
   return fallback();
 }
-function segOf(path){ return path.split("/").filter(Boolean).slice(1); } // 去掉 'api'
+// 去掉 'api'，每一段都解碼回來。
+//
+// ⚠️ v209 正式環境的災情：在「設定 → 權限」勾一個中文名字的人，Firestore 回
+//    「No document to update: …/users/%E9%99%B3%E9%8B%92%EF%BC%88…」。
+//    setMemberPerm 把名字 encodeURIComponent 進網址是對的（名字可能有 / 或 #），
+//    錯在這裡從來不解碼 —— 文件 id 就變成那串百分號編碼，那個文件當然不存在。
+//    英文名字（Regina、HR）編碼前後一樣，所以從 v202 上線到現在都沒被發現。
+//
+//    decodeURIComponent 遇到單獨一個 % 會丟例外（舊的呼叫端有些沒編碼就把名字塞進來），
+//    所以包 try —— 解不開就照原樣用，至少不會整個動作當掉。
+function segOf(path){
+  return path.split("/").filter(Boolean).slice(1)
+    .map(s=>{ try{ return decodeURIComponent(s); }catch(e){ return s; } });
+}
 async function route(method, path, body){
   if(!window.DB) throw new Error("尚未連線，請稍候");
   const seg=segOf(path), head=seg[0], user=currentUser();
@@ -931,7 +944,7 @@ async function changeMyPw(){
   const err=pwRuleError(np, String(n2).trim()); if(err){ toast(err,true); return; }
   const body={pwHash: await pwMakeHash(np), pw:"", pwSet:true};
   if(!u.pwAt) body.pwAt=nowIso();   // 只有第一次設密碼才是出勤起算點
-  await write("PUT","/api/users/"+me,body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
+  await write("PUT","/api/users/"+encodeURIComponent(me),body,T("密碼已更新，下次登入請用新密碼","Password updated — use it next login")); }
 // 上班打卡：記錄當天第一次登入時間（只給管理員看）
 function shiftId(name,date){ return name+"__"+date; }
 // 寫入逾時：離線的時候 Firestore 的 setDoc **不會拋錯，而是永遠不 resolve**。
@@ -1325,7 +1338,7 @@ async function savePwGate(){
   const body={pwHash: await pwMakeHash(a), pw:"", pwSet:true};
   // 出勤從這一刻開始算。第二次改密碼不會重設，否則等於把之前的出勤洗掉。
   if(!(u&&u.pwAt)) body.pwAt=nowIso();
-  const okDone=await write("PUT","/api/users/"+realUser(),body,T("密碼已設定，開始使用吧","Password saved — you're all set"));
+  const okDone=await write("PUT","/api/users/"+encodeURIComponent(realUser()),body,T("密碼已設定，開始使用吧","Password saved — you're all set"));
   if(okDone){ applyState(LAST_RAW); }
 }
 function render(){
@@ -10627,11 +10640,11 @@ function setMemberHours(name, start, end){
   const ns=patch.workStart!==undefined?patch.workStart:(u.workStart||"");
   const ne=patch.workEnd!==undefined?patch.workEnd:(u.workEnd||"");
   const msg=(ns||ne)?("已設定「"+name+"」的上下班時間 "+(ns||"—")+"–"+(ne||"—")):("「"+name+"」改回全公司時間");
-  writeAdmin("PUT","/api/users/"+name, patch, msg);
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name), patch, msg);
 }
 // 變動工時：沒有固定上下班，只記工時，不判遲到早退（人資預設就是）
 function setMemberFlex(name, on){
-  writeAdmin("PUT","/api/users/"+name,{flexHours:!!on},
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name),{flexHours:!!on},
     on?("「"+name+"」改為變動工時（只記工時，不判遲到早退）"):("「"+name+"」改回固定班表")); }
 // 逐一給某個人「可以指派剪輯工作」的權限。用旗標而不是把名字寫死在程式裡：
 // 換人、多一個人、拿掉權限，在這裡勾一下就好，不必改程式重新部署。
@@ -10639,17 +10652,17 @@ function setMemberFlex(name, on){
 // 一個權限一條寫入路徑，兩條遲早會不一致。
 // v185：外包人員 —— 看不到其他同事的看板與成效（自己那一份照舊看得到）
 function setMemberOutsourced(name, on){
-  writeAdmin("PUT","/api/users/"+name,{outsourced:!!on},
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name),{outsourced:!!on},
     on?("「"+name+"」設為外包人員（看不到其他同事的看板與成效）"):("「"+name+"」改回一般同仁")); }
 function setMemberRole(name, role){ if(!STAFF_ROLES.concat("manager").includes(role)) return;
-  writeAdmin("PUT","/api/users/"+name,{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name),{role},"已將「"+name+"」設為"+(ROLE_LABEL[role]||role)); }
 function delMember(name){ if(!confirm("確定刪除成員「"+name+"」？")) return;
-  writeAdmin("DELETE","/api/users/"+name,{},"已刪除成員"); }
+  writeAdmin("DELETE","/api/users/"+encodeURIComponent(name),{},"已刪除成員"); }
 // 主管線上重設員工密碼為 0000，員工再自行修改
 function resetMemberPw(name){
   if(!confirm("確定把「"+name+"」的密碼重設為 0000？\n請通知他登入後自行修改。")) return;
   // pwHash 清空 → 他下次登入用 0000 進來，然後一定會被「請設定新密碼」擋住
-  writeAdmin("PUT","/api/users/"+name,{pw:"0000",pwHash:"",pwSet:false},"已將「"+name+"」密碼重設為 0000（他下次登入要自己重設）"); }
+  writeAdmin("PUT","/api/users/"+encodeURIComponent(name),{pw:"0000",pwHash:"",pwSet:false},"已將「"+name+"」密碼重設為 0000（他下次登入要自己重設）"); }
 function renameMember(oldName){ if(dbBlocked()) return;
   const input=prompt("將成員「"+oldName+"」改名為：", oldName); if(input===null) return;
   const nn=input.trim(); if(!nn || nn===oldName) return;

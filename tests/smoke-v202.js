@@ -44,7 +44,9 @@ function reset(users, who, role) {
   WRITES = []; modalHTML = ""; VIEW_AS = null; BRAND = ""; SET_TAB = "basic";
   global.window.DB = { set: async (c, id, o) => { WRITES.push(["set", c, id, o]); },
     update: async (c, id, p) => { WRITES.push(["update", c, id, p]); },
-    del: async () => {}, scheduleSet: async () => {}, setSettings: async () => {},
+    // ⚠️ del 也要記下來 —— 本來是個空殼，於是「刪除成員寫到哪一筆」完全測不到
+    del: async (c, id) => { WRITES.push(["del", c, id]); },
+    scheduleSet: async () => {}, setSettings: async () => {},
     videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
   const raw = { users: users || [], settings: { dailyTarget: 4, videoTags: [], sources: [], postPlatforms: [],
       intlAccounts: [], shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [], reviewSince: "2020-01-01" },
@@ -265,7 +267,53 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
     const w = WRITES.find(x => x[0] === "update" && x[1] === "users");
     ok("勾起來會寫 users", !!w, WRITES);
     ok("perms 寫進去了", w && (w[3].perms || []).includes("perf"), w && w[3]);
-    ok("沒有舊旗標的權限就只寫 perms", w && Object.keys(w[3]).join() === "perms", w && w[3]); }
+    ok("沒有舊旗標的權限就只寫 perms", w && Object.keys(w[3]).join() === "perms", w && w[3]);
+    // ⚠️ v209：正式環境的災情 —— 勾中文名字的人，Firestore 回
+    //    「No document to update: …/users/%E9%99%B3%E9%8B%92%EF%BC%88…」。
+    //    setMemberPerm 把名字 encodeURIComponent 進網址，但 segOf() 從來不解碼，
+    //    於是文件 id 變成那串百分號編碼，那個文件當然不存在。
+    //    以前測不到是因為假的 DB 照單全收 —— 它不在乎 id 是不是真的有這個人。
+    ok("**寫回去的 id 是他的名字，不是網址編碼過的字串**", w && w[2] === "小葵", w && w[2]); }
+  // 真名實測：全形括號也會被編碼成 %EF%BC%88 / %EF%BC%89
+  { reset([U("管理員", "boss"), U("陳鋒（原李浩）", "editor")], "管理員", "boss");
+    setMemberPerm("陳鋒（原李浩）", "df", true); await new Promise(r => setTimeout(r, 20));
+    const w = WRITES.find(x => x[0] === "update" && x[1] === "users");
+    ok("名字有全形括號也一樣（陳鋒（原李浩）：正式環境就是這一筆爆的）",
+       w && w[2] === "陳鋒（原李浩）", w && w[2]); }
+  // ⚠️ 中文名字測不出「有沒有編碼」—— 解碼一串沒編碼過的中文，結果還是那串中文。
+  //    真正會被網址吃掉的是 / ? # %，用這些才測得到編碼那一半。
+  //    「/」尤其致命：沒編碼的話 segOf 會把名字從中間切成兩段，寫到別的地方去。
+  { for (const nasty of ["王/小明", "阿#明", "九成九%的人", "問號?先生"]) {
+      reset([U("管理員", "boss"), U(nasty, "editor")], "管理員", "boss");
+      setMemberPerm(nasty, "perf", true); await new Promise(r => setTimeout(r, 20));
+      const w = WRITES.find(x => x[0] === "update" && x[1] === "users");
+      ok(`名字裡有網址的特殊字元也寫得對：${nasty}`, w && w[2] === nasty, w && w[2]);
+    } }
+  // segOf 直接測：壞掉的百分號不能讓整個動作當掉（decodeURIComponent 會丟例外）
+  { let threw = false;
+    try { segOf("/api/users/100%"); } catch (e) { threw = true; }
+    ok("**路徑上有解不開的 % 也不會整個當掉**（解不開就照原樣用）", !threw);
+    ok("（前提）解得開的照樣解得開", segOf("/api/users/" + encodeURIComponent("陳鋒（原李浩）"))[1] === "陳鋒（原李浩）",
+       segOf("/api/users/" + encodeURIComponent("陳鋒（原李浩）"))[1]); }
+  // 其他每一個會寫 users 的動作都走同一條路，一起釘住 ——
+  // 這一條沒有的話，下一個人只修 setMemberPerm 就以為修完了。
+  { const acts = [
+      ["外包",     n => setMemberOutsourced(n, true)],
+      ["換職位",   n => setMemberRole(n, "cs")],
+      ["變動工時", n => setMemberFlex(n, true)],
+      ["上下班",   n => setMemberHours(n, "09:00", null)],
+      ["重設密碼", n => resetMemberPw(n)],
+      ["刪除",     n => delMember(n)],
+    ];
+    // 用「陳鋒（原李浩）」測解碼那一半，用「王/小明」測編碼那一半
+    for (const [label, run] of acts) {
+      for (const who of ["陳鋒（原李浩）", "王/小明"]) {
+        reset([U("管理員", "boss"), U(who, "editor")], "管理員", "boss");
+        run(who); await new Promise(r => setTimeout(r, 20));
+        const w = WRITES.find(x => x[1] === "users");
+        ok(`「${label}」寫回去的也是名字本身（${who}）`, w && w[2] === who, w && w[2]);
+      }
+    } }
   { reset([U("管理員", "boss"), U("小葵", "editor", { canAssign: true, perms: ["assign"] })], "管理員", "boss");
     setMemberPerm("小葵", "assign", false); await new Promise(r => setTimeout(r, 20));
     const w = WRITES.find(x => x[0] === "update" && x[1] === "users");
