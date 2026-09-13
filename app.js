@@ -6955,6 +6955,18 @@ function viewTrash(){
 // 兩種都是好事，不該被塞進同一個二選一的標籤裡。
 // ===================================================================
 function vidMetricRows(v){ return Array.isArray(v&&v.metrics)?v.metrics:[]; }
+// ⚠️ v206：一則貼文的觀看要分三種情況，不能全都印成數字。
+// 2026-09-13 老闆在畫面上看到「觀看 1、讚 182、分享 29」—— 那不是成績，是壞數字。
+// 後來又抓到兩則 FB 圖文貼文印著「觀看 0、讚 282、留言 309」：圖文貼文本來就
+// 沒有播放數，那是「沒有這個數字」，不是「數字是 0」。
+// 把兩者都印成 0，看的人會以為這支片沒人看，然後把一支好片判死。
+function metricViewCell(m){
+  if(m && m.notVideo)
+    return `<span class="muted" title="圖文／連結貼文沒有播放數，不是沒人看">—<span style="font-size:11px">　圖文貼文</span></span>`;
+  if(m && m.viewsMissing)
+    return `<span class="muted" title="這一則的播放數問不到（不是 0）">—<span style="font-size:11px">　問不到</span></span>`;
+  return (+((m&&m.views))||0).toLocaleString();
+}
 function vidViews(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.views||0),0); }
 function vidComments(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.comments||0),0); }
 function vidCommentRate(v){ const n=vidViews(v); return n?1000*vidComments(v)/n:0; }
@@ -8096,7 +8108,7 @@ function vidMetricsCard(v){
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>發文日</th><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.slice().sort((a,b)=>String(b.postAt||"").localeCompare(String(a.postAt||""))).map(m=>`<tr><td data-label="發文日" style="white-space:nowrap">${
         m.link?`<a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer" title="點開這則貼文">${esc(String(m.postAt||"").slice(0,10))||"—"}</a>`
-              :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
+              :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${metricViewCell(m)}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
       ${/* ⚠️ v205：這裡本來寫「同一支片發了 N 次」，N 是**貼文則數**。
             但 FB 一則 ＋ IG 一則是同一次上片發到兩個平台，不是發了兩次 ——
             老闆在畫面上看到「發了 2 次」，旁邊排行卻寫「多久沒用 —」，兩個數字打架。

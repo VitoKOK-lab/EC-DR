@@ -405,6 +405,25 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   mount([三次], "管理員", "boss");
   const c = vidMetricsCard(vid("M3"));
   ok(c.includes("<th>發文日</th>"), "成效卡上有「發文日」這一欄");
+  // ⚠️ v206：觀看有三種情況，不能全都印成數字。
+  //    老闆在畫面上看到「觀看 1、讚 182、分享 29」—— 那不是成績，是壞數字。
+  //    後來又抓到兩則 FB 圖文貼文印著「觀看 0、讚 282、留言 309」：
+  //    圖文貼文本來就沒有播放數，那是「沒有這個數字」，不是「數字是 0」。
+  //    兩者都印成 0，看的人會以為這支片沒人看，把一支好片判死。
+  { const 三種 = V({ id: "MV", name: "三種情況", metrics: [
+      { platform: "FB", account: "FB a", views: 8014, likes: 105, comments: 47,
+        postAt: "2026-09-08T12:00:00", postId: "ok" },
+      { platform: "FB", account: "FB a", views: 0, likes: 282, comments: 309,
+        postAt: "2026-06-12T12:00:00", postId: "pic", notVideo: true, viewsMissing: true },
+      { platform: "FB", account: "FB a", views: 1, likes: 182, comments: 3,
+        postAt: "2026-03-15T12:00:00", postId: "bad", viewsMissing: true }] });
+    mount([三種], "管理員", "boss");
+    const h = vidMetricsCard(vid("MV"));
+    ok(h.includes("8,014"), "問得到的照樣印數字");
+    ok(h.includes("圖文貼文"), "**圖文貼文寫「圖文貼文」** —— 沒有播放數，不是沒人看");
+    ok(h.includes("問不到"), "**問不到的寫「問不到」** —— 不是 0");
+    ok(!/data-label="觀看">0</.test(h) && !/data-label="觀看">1</.test(h),
+       "那兩列不准印成 0 或 1（那正是老闆在畫面上抓到的東西）"); }
   ok(c.includes("2026-09-12") && c.includes("2026-09-08") && c.includes("2026-08-10"),
      "三則的日期都列出來");
   ok(c.indexOf("2026-09-12") < c.indexOf("2026-08-10"), "新的排前面");

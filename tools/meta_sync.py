@@ -468,8 +468,14 @@ def add_insights(posts, cfg, token, verbose=False):
         #    「這支片真的沒人看」—— 2026-09-13 老闆就是在畫面上抓到「觀看 1、讚 182」。
         #    現在只要問不到就誠實標記；notVideo 另外記，讓畫面知道該說「沒有播放數」
         #    還是「問不到」。
-        p["viewsMissing"] = view is None
         p["notVideo"] = bool(p["platform"] == "FB" and not vid_id)
+        # ⚠️ 2026-09-13 在正式資料上抓到：有兩則 FB 圖文貼文（讚 282／309 則留言、
+        #    讚 153／58 則留言）記著 views=0 而 viewsMissing=false ——
+        #    看起來像「這支真的沒人看」。原因不是「Meta 沒回」，是
+        #    **post_video_views 對非影片貼文回 0**，而 0 不是 None，
+        #    所以 `view is None` 這條判斷不成立。
+        #    圖文貼文本來就沒有播放數：那是「沒有這個數字」，不是「數字是 0」。
+        p["viewsMissing"] = (view is None) or p["notVideo"]
         if p["platform"] == "IG":
             p["shares"] = ins.get("shares", p.get("shares", 0))
         else:
@@ -747,6 +753,18 @@ def merge_metrics(old, rows):
         if k not in by_key:
             order.append(k)
         by_key[k] = r
+    # ⚠️ 這次沒被重問的舊列會原封不動留著（那是對的，不要弄丟資料）——
+    #    但如果那一列的數字**物理上不可能**（觀看比讚還少，沒有人能在沒看過的
+    #    情況下按讚），繼續把它當成量到的數字顯示出來更糟。
+    #    標成 viewsMissing，畫面就會顯示「—」而不是一個錯的 0 或 1。
+    #    2026-09-13 正式資料上有 11 列是這種：它們所屬的影片有被更新，
+    #    但那幾則貼文這次沒對上，所以舊列一直留著。
+    got = set(str(r.get("postId") or "") for r in rows)
+    for k, m in by_key.items():
+        if k in got:
+            continue
+        if int(m.get("views") or 0) < int(m.get("likes") or 0):
+            m["viewsMissing"] = True
     return [by_key[k] for k in order]
 
 
@@ -1138,6 +1156,10 @@ def main():
                "comments": int(p.get("comments") or 0), "shares": int(p.get("shares") or 0),
                "at": _fs.taipei_now(), "postId": str(p.get("id") or ""),
                "viewsMissing": bool(p.get("viewsMissing")),
+               # ⚠️ notVideo 以前只算在記憶體裡、**沒有寫進那一列** —— 正式資料上
+               #    全庫 0 列有這個欄位。畫面因此分不出「沒人看」跟「這則根本不是
+               #    影片貼文」，兩個都顯示成 0。
+               "notVideo": bool(p.get("notVideo")),
                "postAt": str(p.get("at") or "")[:19], "link": p.get("permalink") or ""}
         e = plan.setdefault(vid, {"videoId": vid, "rows": [], "fillLink": ""})
         e["rows"].append(row)

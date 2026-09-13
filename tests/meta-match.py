@@ -345,8 +345,16 @@ ok("video_insights" in SYNC_SRC and "fb_video_id(p)" in SYNC_SRC,
 # 但它把**真的沒問到的影片**也一起吞成 0 —— 2026-09-13 老闆在畫面上抓到
 # 「觀看 1、讚 182、分享 29」就是這樣來的。
 # 現在 viewsMissing 誠實記，改用 notVideo 在**報告那一段**分兩堆講。
-ok('p["viewsMissing"] = view is None' in SYNC_SRC,
-   "問不到就誠實標記，不要因為它是 FB 就假裝問到了")
+# v206：又改了一次。`view is None` 還是不夠 —— 正式資料上抓到兩則 FB 圖文貼文
+# 記著 views=0 而 viewsMissing=false，因為 **post_video_views 對非影片貼文回 0**，
+# 而 0 不是 None。圖文貼文本來就沒有播放數：那是「沒有這個數字」，不是「數字是 0」。
+ok('p["viewsMissing"] = (view is None) or p["notVideo"]' in SYNC_SRC,
+   "問不到、或那則根本不是影片貼文 → 都標成沒有播放數（0 不是量到的數字）")
+ok('"notVideo": bool(p.get("notVideo")),' in SYNC_SRC,
+   "**notVideo 要寫進那一列** —— 以前只算在記憶體裡，全庫 0 列有這個欄位，"
+   "畫面因此分不出「沒人看」跟「這則不是影片貼文」")
+ok('if int(m.get("views") or 0) < int(m.get("likes") or 0):' in SYNC_SRC,
+   "沒被重問的舊列，數字物理上不可能就標成問不到（不要繼續顯示一個錯的數字）")
 ok('p.get("viewsMissing") and not p.get("notVideo")' in SYNC_SRC
    and 'p.get("viewsMissing") and p.get("notVideo")' in SYNC_SRC,
    "報告裡「抓不到」與「本來就沒有播放數」分兩堆講（圖文貼文不會變成熄不掉的紅字）")
@@ -367,6 +375,25 @@ ok(not S.looks_broken({"metrics": [{"postId": "other", "views": 1, "likes": 9}]}
    "只看同一則貼文的那一列")
 ok(not S.looks_broken(None, "p1") and not S.looks_broken({}, ""),
    "沒有資料不會爆掉")
+
+# ── merge_metrics：沒被重問的舊列（v206）────────────────────────────
+# 2026-09-13 正式資料：11 列「觀看比讚還少」，它們所屬的影片有被更新，
+# 但那幾則貼文這次沒對上，所以舊列原封不動留著 —— 畫面繼續顯示一個錯的 0 或 1。
+OLDROW = {"postId": "old1", "views": 1, "likes": 182, "comments": 3, "platform": "FB"}
+NEWROW = {"postId": "new1", "views": 9000, "likes": 100, "comments": 20, "platform": "FB"}
+out = S.merge_metrics([OLDROW], [NEWROW])
+ok(len(out) == 2, "舊列不會被弄丟（那是對的，不要因為這次沒對到就刪資料）")
+old_after = [m for m in out if m["postId"] == "old1"][0]
+ok(old_after.get("viewsMissing") is True,
+   "**但它被標成問不到** —— 觀看比讚還少是物理上不可能，繼續當成量到的數字更糟")
+ok(old_after["likes"] == 182, "讚與留言照舊留著（那兩個是真的）")
+# 正常的舊列不要被亂標
+ok(S.merge_metrics([{"postId": "ok1", "views": 5000, "likes": 100}], [NEWROW])[0].get("viewsMissing")
+   in (None, False), "正常的舊列不會被誤標")
+# 這次有重問到的，就用新的，不套那條規則
+out2 = S.merge_metrics([OLDROW], [{"postId": "old1", "views": 13402, "likes": 182}])
+ok(len(out2) == 1 and out2[0]["views"] == 13402 and not out2[0].get("viewsMissing"),
+   "這次有重問到 → 用新數字，不標問不到")
 ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
    "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
 
