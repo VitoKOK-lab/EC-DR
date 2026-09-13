@@ -7267,7 +7267,7 @@ function openRmkPlan(sourceId){
       name,                                                  // 新片名（排片人現取）
       videoCopy:String(s.videoCopy||""),                     // 口播稿是同一支片的，沿用
       driveFolder:String(s.driveFolder||"").trim(),          // 剪完存回同一個資料夾
-      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||"",link:p.link||""})),
       productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
       tags:(s.tags||[]).slice(), subTag:(s.tags||[])[0]||"",
       platforms:(s.platforms||[]).slice(),                   // 成效歸戶靠「上片日期＋帳號」，平台先跟著原片
@@ -7523,6 +7523,88 @@ let PERF_KIND=null;   // 選中的類型（null＝全部；值是 mainType，或
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
 function perfSetKind(k){ PERF_KIND=(PERF_KIND===k)?null:k; render(); }
 function num(n){ return (+n||0).toLocaleString(); }
+// ── 商品的身分（v205）────────────────────────────────────────────────
+// 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
+//
+// 連結才是商品的身分證 —— 同一個東西會被寫成好幾種名字，連結不會。
+// ⚠️ 我一開始跟老闆說「217 個商品要有人去填連結」，那是**錯的** ——
+//    影片上早就有 productUrl 了，158 支填了，而且長成
+//    https://www.tzgrotw.tw/products/<商品名>，商品名就在網址裡。老闆說得對。
+//
+// 所以連結按這個順序找，全部**現算**、不寫進資料庫（跟 vidType 一樣，舊資料自己會修正）：
+//   ① 商品自己的 link 欄位（人明確填的，最準）
+//   ② 這支片的 productUrl，而且**這支片只有一個商品** —— 那就是它，不用比名字
+//   ③ 這支片有好幾個商品 → 只有網址裡那段名字跟它一模一樣才算（比錯比不比更糟）
+// 正式資料實測：② 有 100 支、③ 再多 6 支，共 106 支不用任何人填就連得上。
+//
+// ⚠️ 不要「聰明地」把名字正規化後模糊比對：實測 217 個商品名裡只有 2 組寫法接近，
+//    而那 2 組（925銀誕生石寶寶吊墜／18K金誕生石寶寶吊墜）是**不同材質的不同商品**，
+//    合併反而錯。網址裡也有「天然鉍晶體 vs 橄欖石黑碧璽｜裸石」這種根本不同的，
+//    模糊比對只會把它們黏在一起。
+// 網址拿來「看」的樣子：中文解碼回來。⚠️ 只用在顯示，href 一律用原樣。
+function prettyUrl(u){ try{ return decodeURIComponent(String(u||"")); }catch(e){ return String(u||""); } }
+function prodPageName(url){
+  const u=String(url||"").split("#")[0].split("?")[0].replace(/\/+$/,"");
+  const i=u.indexOf("/products/");
+  if(i<0) return "";                       // 分類頁（/categories/…）不算商品頁
+  try{ return decodeURIComponent(u.slice(i+10)); }catch(e){ return u.slice(i+10); }
+}
+function prodLink(p, v){
+  const own=String((p&&p.link)||"").trim();
+  if(/^https?:\/\//i.test(own)) return own;
+  const url=String((v&&v.productUrl)||"").trim();
+  if(!/^https?:\/\//i.test(url) || !prodPageName(url)) return "";
+  const ps=((v&&v.products)||[]).filter(x=>x&&String(x.name||"").trim());
+  if(ps.length===1) return url;                                   // 只有一個商品，那就是它
+  return prodPageName(url).trim()===String((p&&p.name)||"").trim() ? url : "";
+}
+function prodKey(p, v){
+  const u=prodLink(p, v);
+  if(!u) return "n:"+String((p&&p.name)||"").trim();
+  // 網址尾巴的 / 、查詢字串、# 片段都不算身分的一部分（同一頁常被複製成好幾種形狀）
+  return "u:"+u.split("#")[0].split("?")[0].replace(/\/+$/,"").toLowerCase();
+}
+// 點商品 → 哪些影片賣過它
+function openProdVids(key){
+  const hits=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    (v.products||[]).forEach(p=>{ if(p&&p.name&&prodKey(p,v)===key) hits.push({v,p}); }); });
+  if(!hits.length){ toast("找不到這個商品的影片",true); return; }
+  const names=[...new Set(hits.map(h=>h.p.name))];
+  const link=(hits.map(h=>prodLink(h.p,h.v)).find(Boolean))||"";
+  hits.sort((a,b)=>vidViews(b.v)-vidViews(a.v));
+  const rows=hits.map(h=>{ const v=h.v, d=rmkAired(v);
+    return `<tr style="cursor:pointer" onclick="closeModal();${jsEsc(vidOpenFn(v))}">
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(v))}</a>${rmkUsedBadge(v)}</td>
+      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="最近出片">${d.length?esc(d[d.length-1]):'<span class="muted">還沒出</span>'}</td>
+      <td data-label="觀看" class="pr-v">${vidViews(v)?`<b>${num(vidViews(v))}</b>`:'<span class="muted">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${vidViews(v)?num(vidComments(v)):''}</td>
+      <td data-label="售價" class="pr-v">${h.p.salePrice?num(h.p.salePrice):(h.p.price?`<span class="muted">${num(h.p.price)}</span>`:'<span class="muted">—</span>')}</td></tr>`;
+  }).join("");
+  const total=hits.reduce((a,h)=>a+vidViews(h.v),0);
+  showModal(names[0], `
+    ${/* ⚠️ 同一個連結底下出現好幾個名字，有兩種可能，而且我們分不出來：
+          ①同一個東西的不同寫法（那就對了，正是老闆要的合併）
+          ②有人貼錯網址（正式資料上 90 個連結裡有 1 個是這種，其中一個商品名叫「十十十十」）
+          分不出來就**不要猜**，把名字全列出來，讓看的人自己判斷、自己去修。 */''}
+    ${names.length>1?`<div class="muted" style="font-size:12px;margin-bottom:4px">
+       這個連結底下有 <b>${names.length}</b> 種商品名：${esc(names.join("、"))}<br>
+       同一個東西的不同寫法就沒事；如果不是，表示有影片貼錯網址 —— 到那支片的「商品與導購」改掉。</div>`:""}
+    ${/* 網址上的中文會被編碼成 %E5%80%AB… 一長串，貼在畫面上沒有人看得懂。
+          連結本身照原樣用（解碼過的不一定連得過去），只有**顯示**的時候解碼。 */''}
+    ${link?`<div style="margin-bottom:8px;word-break:break-all"><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(prettyUrl(link))} ↗</a></div>`
+          :`<div class="muted" style="font-size:12px;margin-bottom:8px">找不到官網連結 —— 賣它的影片裡，${
+              hits.some(h=>String(h.v.productUrl||"").trim())
+                ? "有人填的是分類頁，或那支片有好幾個商品、認不出網址指的是哪一個。"
+                : "沒有一支填了「商品頁網址」。"}<br>在影片的「商品與導購」補上網址之後，名字寫法不同的同一個商品就會自動合併成一列。</div>`}
+    <div class="muted" style="font-size:13px;margin-bottom:6px"><b>${hits.length}</b> 支影片賣過它，觀看合計 <b>${num(total)}</b>（觸及，不是銷售）</div>
+    <div class="${hits.length>10?'vidscroll':''}">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-e"><col class="pr-k"><col class="pr-v"><col class="pr-c"><col class="pr-v"></colgroup>
+    <thead><tr><th>影片</th><th>剪輯</th><th>最近出片</th><th>觀看</th><th>留言</th><th>售價</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`);
+}
+
 // 影片排行的排法：views＝依觀看｜remake＝依二創建議（v204 把二創建議併進這張表）
 let PERF_SORT="views";
 function perfSetSort(s){ PERF_SORT=(s==="remake")?"remake":"views"; render(); }
@@ -7641,8 +7723,12 @@ function viewPerf(){
   vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
   const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
+  // v205 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
-    (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
+    (v.products||[]).forEach(p=>{ if(!p||!p.name) return; const k=prodKey(p,v);
+      const o=prod[k]||(prod[k]={views:0,vids:new Set(),names:new Set(),link:""});
+      o.views+=vv; o.vids.add(v.id); o.names.add(p.name);
+      if(!o.link && prodLink(p,v)) o.link=prodLink(p,v); }); });
   const pRank=Object.entries(prod).sort((a,b)=>b[1].views-a[1].views).slice(0,50);
 
   const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
@@ -7666,7 +7752,14 @@ function viewPerf(){
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
-    <tbody>${pRank.map((e,i)=>`<tr><td data-label="#">${i+1}</td><td data-label="商品"><b>${esc(e[0])}</b></td><td data-label="出現影片">${e[1].vids.size} 支</td><td data-label="觀看(觸及)"><b>${num(e[1].views)}</b></td></tr>`).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
+    <tbody>${pRank.map((e,i)=>{ const o=e[1], names=[...o.names];
+      return `<tr style="cursor:pointer" onclick="openProdVids('${esc(jsEsc(e[0]))}')" title="點開看哪些影片賣過它">
+      <td data-label="#">${i+1}</td>
+      <td data-label="商品"><a href="javascript:void(0)"><b>${esc(names[0])}</b></a>${
+        names.length>1?`<span class="muted" style="font-size:11px">　也寫成：${esc(names.slice(1).join("、"))}</span>`:""}${
+        o.link?` <a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="開官網商品頁" style="font-size:11px">官網 ↗</a>`:""}</td>
+      <td data-label="出現影片">${o.vids.size} 支</td>
+      <td data-label="觀看(觸及)"><b>${num(o.views)}</b></td></tr>`; }).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
     </div>
   </div>`;
 }
@@ -8305,7 +8398,7 @@ function createLineVersion(k, sourceId, account, msg){
   const rec=newVideoRecord({ [L.field]:k, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:withVerSuffix(draft,k), videoCopy:"",
     driveFolder:String(s.driveFolder||"").trim(),   // 存檔位置跟源片同一個資料夾（剪好後自己換成自己的檔案連結）
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||"",link:p.link||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:currentUser() });
   write("POST","/api/videos",{video:rec},msg.ok(account)).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
@@ -10306,6 +10399,11 @@ function productRowHTML(prefix, i, p){
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" oninput="autoPamperTag('${prefix}')" placeholder="${T("商品 "+(i+1)+"（品名）","Product "+(i+1)+" (name)")}" style="flex:2;min-width:130px">
       <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="${T("原價","List price")}" style="flex:1;min-width:80px">
       <input id="${prefix}_ps${i}" type="number" min="0" value="${(p.salePrice!=null&&p.salePrice!=="")?esc(p.salePrice):''}" placeholder="${T("售價(寵粉價)","Fan price")}" style="flex:1;min-width:100px">
+      ${/* v205 老闆：「這裡以商品為主的排序，我希望有連結，點商品，我要能看到有什麼
+            影片賣過這個商品（用相同官網連結為主）。」
+            連結同時是**商品的身分證** —— 名字同一個東西會被寫成好幾種寫法，
+            連結不會。有填就用連結歸戶，沒填就退回用名字（見 prodKey）。 */''}
+      <input id="${prefix}_pl${i}" value="${esc(p.link||"")}" placeholder="${T("官網連結（選填）","Product URL (optional)")}" style="flex:2;min-width:150px">
     </div>`;
 }
 function productRows(prefix, products){
@@ -10327,7 +10425,8 @@ function addProductRow(prefix){
 }
 function collectProducts(prefix){ const out=[];
   for(let i=0;i<PRODUCT_MAX;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
-    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0}); }
+    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0,
+              link:(val(prefix+"_pl"+i)||"").trim()}); }
   return out;
 }
 
