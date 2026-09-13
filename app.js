@@ -7902,7 +7902,18 @@ function viewPerf(){
 
   const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
-      <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
+      <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支發過</div></button>`).join("");
+  // ⚠️ v206 老闆：「fb 和 ig 幾乎是同時同一支影片上兩邊，不能算成 2 支影片。」
+  //    他說得對，而且**系統本來就沒有算成兩支** —— 排行上那是一列，觀看是兩邊相加
+  //    （兩邊的觀看是不同的人看的，本來就該相加）。
+  //    會誤會是因為卡片上那兩個數字擺在一起很像可以相加：正式資料 FB 152 支、
+  //    IG 107 支，但其中 91 支是同一批片，不重複只有 168 支。所以把不重複的數字
+  //    明講出來，不要讓人自己去加。
+  const uniqVids=new Set(); Object.keys(plats).forEach(k=>plats[k].vids.forEach(id=>uniqVids.add(id)));
+  const platNote=platKeys.length>1
+    ? `<div class="muted" style="font-size:12px;margin:-2px 0 8px">上面各平台的支數會重複算到同一支片（同一支通常 FB、IG 都發）——
+        不重複合計 <b>${uniqVids.size}</b> 支，下面的排行就是這 ${uniqVids.size} 支。</div>`
+    : "";
 
   return `<h2>影片成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
@@ -7910,6 +7921,7 @@ function viewPerf(){
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
+  ${platNote}
   ${hasData?`<div class="row" style="gap:10px;margin-bottom:6px">${
     kindKeys.map(k=>
     `<button class="card" onclick="perfSetKind('${esc(jsEsc(k))}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:140px;flex:1">

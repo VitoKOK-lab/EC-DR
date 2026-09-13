@@ -334,5 +334,30 @@ ok(/products/.test(fs.readFileSync(__dirname + "/../firebase/firestore.rules", "
 ok(/"products"/.test(fs.readFileSync(__dirname + "/../tools/_fs.py", "utf8")),
    "備份清單也涵蓋（沒列到就是靜悄悄地不備份）");
 
+// ══════════ ⑩ FB＋IG 是一支片兩則貼文，不是兩支片（v206）══════════
+// 老闆：「fb 和 ig 幾乎是同時同一支影片上兩邊，不能算成 2 支影片。」
+// 他說得對，而且系統本來就沒有算成兩支 —— 排行上是一列。
+// 會誤會是因為平台卡片上「FB 152 支／IG 107 支」擺在一起很像可以相加，
+// 但其中 91 支是同一批片，不重複只有 168 支。
+{ const 兩邊都發 = V({ id: "B1", name: "兩邊都發的片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 60000, likes: 100, comments: 30, postAt: D(30) + "T10:00:00" },
+    { platform: "IG", account: "IG a", views: 40000, likes: 80, comments: 20, postAt: D(30) + "T10:00:00" }] });
+  const 只有FB = V({ id: "B2", name: "只發 FB 的片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 5000, likes: 10, comments: 6, postAt: D(30) + "T10:00:00" }] });
+  mount([兩邊都發, 只有FB], "管理員", "boss");
+  const h = viewPerf();
+  ok((h.match(/兩邊都發的片/g) || []).length === 1,
+     "**同一支片在排行上只出現一列**，不會因為發了兩個平台就變兩列");
+  ok(h.includes("100,000"), "它的觀看是兩邊相加（兩邊的觀看是不同的人看的）");
+  ok(h.includes("不重複合計 <b>2</b> 支"),
+     "**把不重複的支數明講出來**（FB 2 支 ＋ IG 1 支，但只有 2 支不同的影片）");
+  ok(h.includes("支發過"), "平台卡上寫「N 支發過」，不是光一個「N 支」");
+  ok(rmkAired(vid("B1")).length === 1, "而且「用過幾次」也只算一次（同一天的兩個平台）"); }
+{ // 只有一個平台的時候不用講這句（沒有東西會重複，講了是雜訊）
+  const 只有一個平台 = V({ id: "B3", name: "片", scheduledDate: D(30), metrics: [
+    { platform: "FB", account: "FB a", views: 5000, likes: 10, comments: 6, postAt: D(30) + "T10:00:00" }] });
+  mount([只有一個平台], "管理員", "boss");
+  ok(!viewPerf().includes("不重複合計"), "只有一個平台時不出現這句"); }
+
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);
