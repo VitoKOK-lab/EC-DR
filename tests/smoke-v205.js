@@ -527,8 +527,14 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(/UNFILED_MAX = 200/.test(SY), "上限是 200 —— 人一次看不完兩百筆以上");
   ok(/updateMask\.fieldPaths=unfiledPosts/.test(SY),
      "**用 updateMask 只寫這一格**（整份覆寫會把系統設定洗掉）");
-  ok(/report_unfiled\(cfg_fb, token, unfiled, args\.days\)/.test(SY),
-     "真的有接到同步流程上（不然寫了函式沒人呼叫）"); }
+  // v207：權杖改名成 fb_token / meta_token（以前兩個都叫 token，
+  //       Firebase 的那個會被傳進 Meta 的函式）
+  ok(/report_unfiled\(cfg_fb, fb_token, unfiled, args\.days\)/.test(SY),
+     "真的有接到同步流程上（不然寫了函式沒人呼叫）");
+  ok(/write_back\(cfg_fb, fb_token,/.test(SY) && /add_insights\(want, cfg, meta_token,/.test(SY),
+     "**兩個權杖分開了**：寫資料庫用 fb_token、問 Meta 用 meta_token");
+  ok(!/add_insights\([^)]*\bfb_token\b/.test(SY),
+     "Firebase 的權杖不准傳進 Meta 的函式"); }
 
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);
