@@ -447,6 +447,10 @@ const PERMS = {
            why:"打卡紀錄、遲到早退、月報表" },
   df:    { label:"大流量影片", roles:["boss","manager","editor"], tab:"videosDF", zhOnly:true,
            why:"過渡期的成品庫（舊片直接建檔）" },
+  // v206：商品主檔。改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉，
+  //       所以不跟著「影片成效」一起開給剪輯 —— 看得到排行，不代表能動主檔。
+  prod:  { label:"商品主檔", roles:["boss","manager"], zhOnly:true,
+           why:"建檔、改名、換官網連結、標下架、把重複的兩筆合併" },
   lead:  { label:"主管看板", roles:["boss","manager","hr"], zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
 };
@@ -6951,6 +6955,18 @@ function viewTrash(){
 // 兩種都是好事，不該被塞進同一個二選一的標籤裡。
 // ===================================================================
 function vidMetricRows(v){ return Array.isArray(v&&v.metrics)?v.metrics:[]; }
+// ⚠️ v206：一則貼文的觀看要分三種情況，不能全都印成數字。
+// 2026-09-13 老闆在畫面上看到「觀看 1、讚 182、分享 29」—— 那不是成績，是壞數字。
+// 後來又抓到兩則 FB 圖文貼文印著「觀看 0、讚 282、留言 309」：圖文貼文本來就
+// 沒有播放數，那是「沒有這個數字」，不是「數字是 0」。
+// 把兩者都印成 0，看的人會以為這支片沒人看，然後把一支好片判死。
+function metricViewCell(m){
+  if(m && m.notVideo)
+    return `<span class="muted" title="圖文／連結貼文沒有播放數，不是沒人看">—<span style="font-size:11px">　圖文貼文</span></span>`;
+  if(m && m.viewsMissing)
+    return `<span class="muted" title="這一則的播放數問不到（不是 0）">—<span style="font-size:11px">　問不到</span></span>`;
+  return (+((m&&m.views))||0).toLocaleString();
+}
 function vidViews(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.views||0),0); }
 function vidComments(v){ return vidMetricRows(v).reduce((a,m)=>a+(+m.comments||0),0); }
 function vidCommentRate(v){ const n=vidViews(v); return n?1000*vidComments(v)/n:0; }
@@ -7024,6 +7040,17 @@ function rmkAired(v){
   // 還沒到上片日的不算（下面那道 <=today 會濾掉）——排了不等於出了。
   if(!isRemake(v)) remakesOfSrc(v&&v.id).forEach(k=>{
     const x=String((k||{}).scheduledDate||"").slice(0,10); if(x) o.push(x); });
+  // ⚠️ v205：**平台上真正的發文日**才是最硬的證據，排程日只是「打算什麼時候發」。
+  // 正式資料實測（168 支有發文日的片）：只有 100 支兩者對得起來，47 支差超過 7 天、
+  // 7 支排程日還在未來卻早就發了、14 支根本沒填排程日 —— 也就是 68 支的
+  // 「多久沒用／用過幾次」是錯的，而那正是二創建議排序的兩個乘數之一。
+  // 最誇張的一支：排程說「32 天沒用、用過 1 次」，實際上三個月內重發了 7 次、
+  // 最近一次是 4 天前 —— 系統卻把它排在推薦的第 11 名。
+  //
+  // 日期本身去重就夠了：同一天的 FB＋IG 自動算一天。**不要再做鄰近日期合併** ——
+  // 量過，相隔剛好一天的 7 對裡只有 1 對是跨平台時差，另外 6 對都是同一個粉專
+  // 隔天又發一次（那是真的重發）。為了修 1 個時差吃掉 6 次真重發，划不來。
+  ((v&&v.metrics)||[]).forEach(m=>{ const x=String((m||{}).postAt||"").slice(0,10); if(x) o.push(x); });
   return [...new Set(o)].filter(x=>x<=today).sort();
 }
 function rmkDaysSince(v){
@@ -7256,7 +7283,7 @@ function openRmkPlan(sourceId){
       name,                                                  // 新片名（排片人現取）
       videoCopy:String(s.videoCopy||""),                     // 口播稿是同一支片的，沿用
       driveFolder:String(s.driveFolder||"").trim(),          // 剪完存回同一個資料夾
-      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+      products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||"",link:p.link||""})),
       productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
       tags:(s.tags||[]).slice(), subTag:(s.tags||[])[0]||"",
       platforms:(s.platforms||[]).slice(),                   // 成效歸戶靠「上片日期＋帳號」，平台先跟著原片
@@ -7512,6 +7539,363 @@ let PERF_KIND=null;   // 選中的類型（null＝全部；值是 mainType，或
 function perfSetPlat(p){ PERF_PLAT=(PERF_PLAT===p)?null:p; render(); }
 function perfSetKind(k){ PERF_KIND=(PERF_KIND===k)?null:k; render(); }
 function num(n){ return (+n||0).toLocaleString(); }
+// ── 商品的身分（v205）────────────────────────────────────────────────
+// 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
+//
+// 連結才是商品的身分證 —— 同一個東西會被寫成好幾種名字，連結不會。
+// ⚠️ 我一開始跟老闆說「217 個商品要有人去填連結」，那是**錯的** ——
+//    影片上早就有 productUrl 了，158 支填了，而且長成
+//    https://www.tzgrotw.tw/products/<商品名>，商品名就在網址裡。老闆說得對。
+//
+// 所以連結按這個順序找，全部**現算**、不寫進資料庫（跟 vidType 一樣，舊資料自己會修正）：
+//   ① 商品自己的 link 欄位（人明確填的，最準）
+//   ② 這支片的 productUrl，而且**這支片只有一個商品** —— 那就是它，不用比名字
+//   ③ 這支片有好幾個商品 → 只有網址裡那段名字跟它一模一樣才算（比錯比不比更糟）
+// 正式資料實測：② 有 100 支、③ 再多 6 支，共 106 支不用任何人填就連得上。
+//
+// ⚠️ 不要「聰明地」把名字正規化後模糊比對：實測 217 個商品名裡只有 2 組寫法接近，
+//    而那 2 組（925銀誕生石寶寶吊墜／18K金誕生石寶寶吊墜）是**不同材質的不同商品**，
+//    合併反而錯。網址裡也有「天然鉍晶體 vs 橄欖石黑碧璽｜裸石」這種根本不同的，
+//    模糊比對只會把它們黏在一起。
+// 網址拿來「看」的樣子：中文解碼回來。⚠️ 只用在顯示，href 一律用原樣。
+function prettyUrl(u){ try{ return decodeURIComponent(String(u||"")); }catch(e){ return String(u||""); } }
+function prodPageName(url){
+  const u=String(url||"").split("#")[0].split("?")[0].replace(/\/+$/,"");
+  const i=u.indexOf("/products/");
+  if(i<0) return "";                       // 分類頁（/categories/…）不算商品頁
+  try{ return decodeURIComponent(u.slice(i+10)); }catch(e){ return u.slice(i+10); }
+}
+function prodLink(p, v){
+  const own=String((p&&p.link)||"").trim();
+  if(/^https?:\/\//i.test(own)) return own;
+  const url=String((v&&v.productUrl)||"").trim();
+  if(!/^https?:\/\//i.test(url) || !prodPageName(url)) return "";
+  const ps=((v&&v.products)||[]).filter(x=>x&&String(x.name||"").trim());
+  if(ps.length===1) return url;                                   // 只有一個商品，那就是它
+  return prodPageName(url).trim()===String((p&&p.name)||"").trim() ? url : "";
+}
+// 網址正規化：尾巴的 / 、查詢字串、# 片段都不算身分的一部分
+// （同一頁常被複製成好幾種形狀）。中文有沒有編碼過也要一致。
+function prodUrlKey(u){
+  const s=String(u||"").split("#")[0].split("?")[0].replace(/\/+$/,"");
+  if(!s) return "";
+  let d=s; try{ d=decodeURIComponent(s); }catch(e){}
+  return d.toLowerCase();
+}
+
+// ── 商品主檔（v206）──────────────────────────────────────────────────
+// 老闆：「很有可能官網會變更…若是以後官網的連結失去了，可能官網的商品下架了，
+//        但是已經建檔的排序名單我還是希望能夠找得到、能夠在上面，只是可以註明
+//        已下架，讓我可以再次新增商品再次販售，然後可以保持是同一個連貫的紀錄。」
+//
+// 他戳到 v205 的弱點：我把**連結當成商品的身分證**，而連結會變。
+// 連結一換，系統就當成新商品，舊紀錄接不起來 —— 正是他擔心的事。
+// 身分不能是會變的東西，只能是一個不會變的編號。
+//
+// ⚠️ products 這個集合**早就存在**（選品配對 v138 建的，v175 把工作台整頁拿掉、
+//    集合留著，正式資料只有 2 筆測試資料）。rules 與備份清單也早就涵蓋 ——
+//    所以是接上去，不是另開一個。欄位沿用既有的 name/sku/officialUrl/
+//    shoplineLink/image，再加 aliases／oldUrls／status／offAt。
+//
+// ⚠️ **影片那邊不加 pid**。主檔的「現用名字＋別名」和「現用連結＋舊連結」
+//    已經足夠把影片認回來了，不必去動一百多筆影片文件。
+//    換連結＝把舊的推進 oldUrls；改名＝把舊的推進 aliases；合併＝把另一筆的
+//    名字與連結全部收過來再刪掉它 —— 三個動作都只寫主檔那一筆。
+function prodAll(){ return (STATE&&STATE.products)||[]; }
+function prodById(id){ return prodAll().find(x=>x&&x.id===id)||null; }
+function prodIsOff(m){ return !!(m && m.status==="off"); }
+function prodNames(m){ return [String((m&&m.name)||"").trim()].concat(((m&&m.aliases)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
+function prodUrls(m){ return [String((m&&m.officialUrl)||"").trim()].concat(((m&&m.oldUrls)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
+// 連結→主檔、名字→主檔。快取靠陣列身分認（跟 rmkIndex 同一招）。
+let PDX=null, PDX_SRC=null;
+function prodIndex(){
+  const a=prodAll();
+  if(PDX && PDX_SRC===a) return PDX;
+  const byUrl={}, byName={};
+  a.forEach(m=>{ if(!m||!m.id) return;
+    prodUrls(m).forEach(u=>{ const k=prodUrlKey(u); if(k && !byUrl[k]) byUrl[k]=m; });
+    prodNames(m).forEach(n=>{ if(n && !byName[n]) byName[n]=m; }); });
+  PDX={byUrl, byName}; PDX_SRC=a; return PDX;
+}
+// 這一筆商品屬於主檔的哪一個？連結優先（名字會被寫成好幾種寫法，連結不會）。
+function prodMasterOf(p, v){
+  const ix=prodIndex();
+  const u=prodUrlKey(prodLink(p, v));
+  if(u && ix.byUrl[u]) return ix.byUrl[u];
+  return ix.byName[String((p&&p.name)||"").trim()] || null;
+}
+function prodKey(p, v){
+  const m=prodMasterOf(p, v);
+  if(m) return "m:"+m.id;                 // 建檔了就用編號 —— 連結怎麼換都接得起來
+  const u=prodLink(p, v);
+  if(!u) return "n:"+String((p&&p.name)||"").trim();
+  return "u:"+prodUrlKey(u);
+}
+// 點商品 → 哪些影片賣過它
+function openProdVids(key){
+  const hits=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    (v.products||[]).forEach(p=>{ if(p&&p.name&&prodKey(p,v)===key) hits.push({v,p}); }); });
+  const m=String(key||"").startsWith("m:") ? prodById(key.slice(2)) : null;
+  if(!hits.length && !m){ toast("找不到這個商品的影片",true); return; }
+  const names=[...new Set((m?prodNames(m):[]).concat(hits.map(h=>h.p.name)))];
+  const link=(m&&String(m.officialUrl||"").trim())||(hits.map(h=>prodLink(h.p,h.v)).find(Boolean))||"";
+  hits.sort((a,b)=>vidViews(b.v)-vidViews(a.v));
+  const rows=hits.map(h=>{ const v=h.v, d=rmkAired(v);
+    return `<tr style="cursor:pointer" onclick="closeModal();${jsEsc(vidOpenFn(v))}">
+      <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(v))}</a>${rmkUsedBadge(v)}</td>
+      <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+      <td data-label="最近出片">${d.length?esc(d[d.length-1]):'<span class="muted">還沒出</span>'}</td>
+      <td data-label="觀看" class="pr-v">${vidViews(v)?`<b>${num(vidViews(v))}</b>`:'<span class="muted">—</span>'}</td>
+      <td data-label="留言" class="pr-c">${vidViews(v)?num(vidComments(v)):''}</td>
+      <td data-label="售價" class="pr-v">${h.p.salePrice?num(h.p.salePrice):(h.p.price?`<span class="muted">${num(h.p.price)}</span>`:'<span class="muted">—</span>')}</td></tr>`;
+  }).join("");
+  const total=hits.reduce((a,h)=>a+vidViews(h.v),0);
+  showModal((m&&m.name)||names[0], `
+    ${m?`<div class="muted" style="font-size:12px;margin-bottom:6px">商品編號 <b>${esc(m.id)}</b>${
+        m.sku?`　貨號 ${esc(m.sku)}`:""}${
+        prodIsOff(m)?` <span class="pill wa" style="font-size:10px">已下架${m.offAt?"（"+esc(String(m.offAt).slice(0,10))+"）":""}</span>`
+                    :` <span class="pill ok" style="font-size:10px">在售</span>`}</div>`
+      :`<div class="muted" style="font-size:12px;margin-bottom:6px">還沒建檔 —— 建了檔之後，官網換網址或下架都不會弄丟這段紀錄。</div>`}
+    ${/* ⚠️ 同一個連結底下出現好幾個名字，有兩種可能，而且我們分不出來：
+          ①同一個東西的不同寫法（那就對了，正是老闆要的合併）
+          ②有人貼錯網址（正式資料上 90 個連結裡有 1 個是這種，其中一個商品名叫「十十十十」）
+          分不出來就**不要猜**，把名字全列出來，讓看的人自己判斷、自己去修。 */''}
+    ${names.length>1?`<div class="muted" style="font-size:12px;margin-bottom:4px">
+       這個連結底下有 <b>${names.length}</b> 種商品名：${esc(names.join("、"))}<br>
+       同一個東西的不同寫法就沒事；如果不是，表示有影片貼錯網址 —— 到那支片的「商品與導購」改掉。</div>`:""}
+    ${/* 網址上的中文會被編碼成 %E5%80%AB… 一長串，貼在畫面上沒有人看得懂。
+          連結本身照原樣用（解碼過的不一定連得過去），只有**顯示**的時候解碼。 */''}
+    ${link?`<div style="margin-bottom:8px;word-break:break-all"><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(prettyUrl(link))} ↗</a></div>`
+          :`<div class="muted" style="font-size:12px;margin-bottom:8px">找不到官網連結 —— 賣它的影片裡，${
+              hits.some(h=>String(h.v.productUrl||"").trim())
+                ? "有人填的是分類頁，或那支片有好幾個商品、認不出網址指的是哪一個。"
+                : "沒有一支填了「商品頁網址」。"}<br>在影片的「商品與導購」補上網址之後，名字寫法不同的同一個商品就會自動合併成一列。</div>`}
+    <div class="muted" style="font-size:13px;margin-bottom:6px"><b>${hits.length}</b> 支影片賣過它，觀看合計 <b>${num(total)}</b>（觸及，不是銷售）</div>
+    <div class="${hits.length>10?'vidscroll':''}">
+    <table class="responsive perfrank"><colgroup><col><col class="pr-e"><col class="pr-k"><col class="pr-v"><col class="pr-c"><col class="pr-v"></colgroup>
+    <thead><tr><th>影片</th><th>剪輯</th><th>最近出片</th><th>觀看</th><th>留言</th><th>售價</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${prodAdminHTML(m, key, names, link)}`);
+}
+// 誰能動主檔：改錯會讓排行上兩個商品黏在一起，或一段歷史斷掉 —— 不是人人都該碰。
+function canEditProducts(){ return !VIEW_AS && hasPerm("prod"); }
+// 商品彈窗底下那一塊管理區。沒權限的人整塊看不到（看得到但按不動最讓人火大）。
+function prodAdminHTML(m, key, names, link){
+  if(!canEditProducts()) return "";
+  const others=prodAll().filter(x=>x&&x.id&&(!m||x.id!==m.id))
+    .sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  if(!m){
+    return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>建檔</b>
+      <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.7">
+        建檔之後這個商品就有一個**不會變的編號**。之後官網換網址、下架、重新上架，
+        都只是改這一筆的內容 —— 排行上的紀錄一路連著，不會斷。</div>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <input id="pd_new_name" value="${esc(names[0]||"")}" placeholder="商品名稱" style="flex:2;min-width:150px">
+        <input id="pd_new_sku" placeholder="貨號（選填）" style="flex:1;min-width:100px">
+      </div>
+      <input id="pd_new_url" value="${esc(link)}" placeholder="官網連結（選填）" style="margin-top:6px">
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn sm" onclick="prodCreate('${esc(jsEsc(key))}')">建檔</button>
+        ${names.length>1?`<span class="muted" style="font-size:11px">其餘 ${names.length-1} 個寫法會存成別名，之後照樣認得回來</span>`:""}
+      </div></div>`;
+  }
+  return `<div class="card" style="background:var(--panel2);margin-top:10px"><b>管理這個商品</b>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <input id="pd_name" value="${esc(m.name||"")}" placeholder="商品名稱" style="flex:2;min-width:150px">
+      <input id="pd_sku" value="${esc(m.sku||"")}" placeholder="貨號（選填）" style="flex:1;min-width:100px">
+    </div>
+    <input id="pd_url" value="${esc(m.officialUrl||"")}" placeholder="官網連結" style="margin-top:6px">
+    <div class="muted" style="font-size:11px;margin-top:4px">
+      改名字或換網址，舊的會自動留成別名／舊連結 —— 用舊寫法建檔的影片照樣認得回來。
+      ${(m.aliases||[]).length?`<br>別名：${esc((m.aliases||[]).join("、"))}`:""}
+      ${(m.oldUrls||[]).length?`<br>舊連結：${esc((m.oldUrls||[]).map(prettyUrl).join("　"))}`:""}
+    </div>
+    <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn sm" onclick="prodSave('${esc(jsEsc(m.id))}')">儲存</button>
+      ${prodIsOff(m)
+        ? `<button class="btn sm sec" onclick="prodSetOff('${esc(jsEsc(m.id))}',false)">重新上架</button>`
+        : `<button class="btn sm sec" onclick="prodSetOff('${esc(jsEsc(m.id))}',true)">標為已下架</button>`}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:10px">
+      同一個商品被建成兩筆？選另一筆合併過來 —— 它的名字、別名、舊連結全部收進這一筆，
+      兩段歷史接成一段。</div>
+    <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap">
+      <select id="pd_merge" style="flex:1;min-width:170px">
+        <option value="">（選一筆要合併進來的商品）</option>
+        ${others.map(x=>`<option value="${esc(x.id)}">${esc(x.name||x.id)}${prodIsOff(x)?"（已下架）":""}</option>`).join("")}
+      </select>
+      <button class="btn sm sec" onclick="prodMerge('${esc(jsEsc(m.id))}')">合併進來</button>
+    </div></div>`;
+}
+function prodCreate(key){
+  if(dbBlocked()) return;
+  const name=(val("pd_new_name")||"").trim();
+  if(!name){ toast("請填商品名稱",true); return; }
+  // 這個 key 底下用過的所有寫法都收成別名 —— 不然改天有人用舊寫法建檔就認不回來
+  const seen=new Set(); const alias=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    (v.products||[]).forEach(p=>{ if(p&&p.name&&prodKey(p,v)===key){
+      const n=String(p.name).trim(); if(n && n!==name && !seen.has(n)){ seen.add(n); alias.push(n); } } }); });
+  const id=uid("PD");
+  const rec={id, name, sku:(val("pd_new_sku")||"").trim(), officialUrl:(val("pd_new_url")||"").trim(),
+             shoplineLink:"", image:"", aliases:alias, oldUrls:[], status:"on", offAt:"",
+             assignedCurator:"", activeVideoId:"",
+             createdAt:nowIso(), updatedAt:nowIso(), createdBy:currentUser()};
+  dbWrite("set","products",id,rec,{action:"商品建檔",target:name}).then(ok=>{ if(ok){ closeModal(); toast("已建檔 "+name); } });
+}
+function prodSave(id){
+  if(dbBlocked()) return;
+  const m=prodById(id); if(!m) return;
+  const name=(val("pd_name")||"").trim();
+  if(!name){ toast("請填商品名稱",true); return; }
+  const url=(val("pd_url")||"").trim();
+  // ⚠️ 舊名字與舊網址一定要留著。丟掉的話，用舊寫法建檔的影片下一秒就對不回來了 ——
+  //    那正是老闆擔心的「紀錄斷掉」。
+  const aliases=(m.aliases||[]).slice();
+  if(m.name && m.name!==name && aliases.indexOf(m.name)<0) aliases.push(m.name);
+  const oldUrls=(m.oldUrls||[]).slice();
+  if(m.officialUrl && m.officialUrl!==url && oldUrls.indexOf(m.officialUrl)<0) oldUrls.push(m.officialUrl);
+  dbUpdate("products", id, {name, sku:(val("pd_sku")||"").trim(), officialUrl:url,
+                            aliases, oldUrls, updatedAt:nowIso()},
+           {action:"商品改資料", target:name}).then(ok=>{ if(ok){ closeModal(); toast("已儲存"); } });
+}
+function prodSetOff(id, off){
+  if(dbBlocked()) return;
+  const m=prodById(id); if(!m) return;
+  dbUpdate("products", id, {status:off?"off":"on", offAt:off?nowIso():"", updatedAt:nowIso()},
+           {action:off?"商品標下架":"商品重新上架", target:m.name||id})
+    .then(ok=>{ if(ok){ closeModal(); toast(off?"已標為下架（紀錄照樣留著）":"已重新上架"); } });
+}
+function prodMerge(keepId){
+  if(dbBlocked()) return;
+  const gone=val("pd_merge"); if(!gone){ toast("先選一筆要合併進來的商品",true); return; }
+  const a=prodById(keepId), b=prodById(gone);
+  if(!a||!b||a.id===b.id) return;
+  if(!confirm(`把「${b.name||b.id}」併進「${a.name||a.id}」？\n\n` +
+              `「${b.name||b.id}」那一筆會被刪掉，它的名字、別名、舊連結全部收進「${a.name||a.id}」，\n` +
+              `兩邊的影片紀錄接成一段。這個動作不能復原。`)) return;
+  const aliases=[...new Set((a.aliases||[]).concat(prodNames(b)).filter(n=>n&&n!==a.name))];
+  const oldUrls=[...new Set((a.oldUrls||[]).concat(prodUrls(b)).filter(u=>u&&u!==a.officialUrl))];
+  dbUpdate("products", a.id, {aliases, oldUrls, updatedAt:nowIso()},
+           {action:"商品合併", target:(b.name||b.id)+" → "+(a.name||a.id)})
+    .then(ok=>{ if(!ok) return;
+      return dbDel("products", b.id, {action:"商品合併後刪除", target:b.name||b.id})
+        .then(()=>{ closeModal(); toast("已合併"); }); });
+}
+
+// ── 未在資料庫裡的影片（v206）────────────────────────────────────────
+// 老闆：「這個系統是新的，才做不到半年，可是我們 meta 裡面的資料有 2 年，
+//        所以你找到很多的是『系統裡面沒有建檔的』。」
+//
+// 我原本提議「自動把對不到的貼文全部建成影片」（估算約 1,300 支）。他否決了：
+//   「不行，因為這是因為我們人為的問題。那如果是，你只是給成效清單，然後標注
+//     『未建檔』這樣會比較簡單嗎？我們選中的再自己手動去找輸入，然後就歸進到舊片。」
+// 他是對的 —— 自動生 1,300 支，等於把人為的疏漏變成一千三百筆系統垃圾，
+// 而且沒有人會回頭清。所以這張卡**只列出來**，建不建是人的決定。
+//
+// 清單是 meta_sync 跑完寫進 meta/settings.unfiledPosts 的（同一份資料，
+// 不必讓前端自己去打 Meta API）。沒跑過同步就沒有這張卡。
+function unfiledList(){
+  const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||null;
+  return (u&&Array.isArray(u.items))?u.items:[];
+}
+let UNFILED_OPEN=false;
+function unfiledToggle(){ UNFILED_OPEN=!UNFILED_OPEN; render(); }
+function unfiledCard(){
+  const list=unfiledList(); if(!list.length) return "";
+  const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||{};
+  // ⚠️ v206：**留言是主要指標，不是觀看**。那些貼文從來沒被問過成效，
+  //    views 是 0 —— 印成「觀看 0」會讓人以為這支片沒人看，正好相反。
+  //    要真正的觀看數，同步要加 --unfiled-views（那會多花幾百次呼叫）。
+  const totC=list.reduce((a,x)=>a+(+x.comments||0),0);
+  const totV=list.reduce((a,x)=>a+(+x.views||0),0);
+  const show=UNFILED_OPEN?list:list.slice(0,8);
+  const rows=show.map((x,i)=>`<tr>
+      <td data-label="#">${i+1}</td>
+      <td data-label="貼文">${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" title="開那則貼文">${esc(String(x.cap||"").slice(0,44))}</a>`
+        :esc(String(x.cap||"").slice(0,44))}</td>
+      <td data-label="平台" class="pr-k">${esc(x.plats||"")}</td>
+      <td data-label="發過" class="pr-k">${x.n} 則${x.first?`<span class="muted" style="font-size:11px">　${esc(String(x.first).slice(5))}${x.last&&x.last!==x.first?"～"+esc(String(x.last).slice(5)):""}</span>`:""}</td>
+      <td data-label="留言" class="pr-v"><b>${num(x.comments)}</b></td>
+      <td data-label="觀看" class="pr-c">${x.views?num(x.views)
+        :'<span class="muted" title="這些貼文沒被問過成效；同步加 --unfiled-views 才會去問">—</span>'}</td>
+      ${canAddOldVideo()?`<td data-label=""><button class="btn sm" style="white-space:nowrap" onclick="unfiledAdd(${i})" title="建成一支舊片（文案與上片連結會自動帶進去）">建檔</button></td>`:""}</tr>`).join("");
+  return `<div class="card" style="border-color:var(--accent)">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>未在資料庫裡的影片（${list.length}）</b>
+      <span class="muted" style="font-size:12px">留言合計 ${num(totC)}${totV?`・觀看合計 ${num(totV)}`:""}</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.8">
+      平台上有這些貼文、成效數字也都在，但<b>系統裡沒有這支片</b> —— 所以上面的排行看不到它們。
+      系統做不到半年，平台上卻有兩年的資料，差的就是這一段。<br>
+      要建哪幾支是你決定的。按「建檔」會開新增視窗，<b>文案與上片連結自動帶進去</b>，
+      你只要補檔名（和雲端資料夾，找不到可以留空），建出來直接是<b>已上片的舊片</b>，
+      放在<b>正式影片庫</b>裡，不會跑進待認領也不會跑進待審。
+      ${u.at?`<br><span style="font-size:11px">清單更新於 ${esc(String(u.at).replace("T"," ").slice(0,16))}　只列留言 5 則以上的${
+          totV?"":"；觀看數要同步加 --unfiled-views 才問得到"}</span>`:""}
+    </div>
+    <div class="${show.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-c">${canAddOldVideo()?'<col class="pr-k">':''}</colgroup>
+    <thead><tr><th>#</th><th>貼文（點開看原文）</th><th>平台</th><th>發過</th><th>留言</th><th>觀看</th>${canAddOldVideo()?"<th></th>":""}</tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${list.length>8?`<button class="btn sm sec" style="margin-top:8px" onclick="unfiledToggle()">${UNFILED_OPEN?"只看前 8 支":`看全部 ${list.length} 支`}</button>`:""}
+  </div>`;
+}
+// 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
+function canAddOldVideo(){ return !VIEW_AS && hasPerm("df"); }
+// 按「建檔」→ 把這支舊片補進**正式影片庫**，文案與上片連結先填好。
+//
+// ⚠️ v206 老闆：「不要建到大流，我們不是說好『等這裡做好，大流量影片庫要刪掉』。」
+//    他是對的 —— 建進一個準備拆掉的庫，等於製造下一次搬家。
+//    而且查過了：擋住生產面的**不是 lib，是 stage** ——
+//      poolAll()（待認領）與 rawStock()（毛片庫存）都要求 stage==="待處理"
+//      needsReview()（審片）要求沒有 reviewStatus
+//    所以建成「已完成 ＋ 已審過」就不會跑進去，跟在哪個庫無關。
+//
+// ⚠️ finishedAt 要用**貼文那天**，不是今天。用 nowIso() 的話，兩年前的舊片
+//    會跑進「今日完成」（doneToday 就是比對 finishedAt===today），
+//    看板上會出現一支今天根本沒人剪的片。
+// ⚠️ 檔名與雲端資料夾**故意不代填**：那要人自己去 Drive 找回毛片，
+//    代填一個猜的名字只會讓人按過去就存檔，然後留下一支找不到原檔的片。
+function unfiledAdd(i){
+  const x=unfiledList()[i]; if(!x) return;
+  if(dbBlocked()) return;
+  const when=String(x.first||x.last||"").slice(0,10);
+  showModal("把這支舊片補進影片庫", `
+    <div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">
+      這支片平台上發過，系統裡沒有。補進來之後，下一次同步就會把觀看數對回它 ——
+      因為文案跟平台上那則<b>一模一樣</b>。<br>
+      它會直接是<b>已上片的舊片</b>，不會跑進待認領，也不會跑進待審。</div>
+    <label>檔名 · 必填</label>
+    <input id="uf_name" placeholder="這支片叫什麼（去雲端硬碟找回毛片，用它的資料夾名）">
+    <label style="margin-top:10px">上片日期 · 必填</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="uf_date" type="date" value="${esc(when)}"></div>
+    <div class="muted" style="font-size:12px;margin-top:4px">預設帶的是<b>第一則貼文的日期</b>（${esc(when||"沒有日期")}）。</div>
+    <label style="margin-top:10px">存檔資料夾（找不到就留空）</label>
+    <input id="uf_drive" placeholder="https://drive.google.com/...">
+    <label style="margin-top:10px">上片連結</label>
+    <input id="uf_pub" value="${esc(String(x.link||""))}">
+    <label style="margin-top:10px">文案（跟平台上那則一樣，不要改）</label>
+    <textarea id="uf_copy" style="min-height:110px">${esc(String(x.cap||""))}</textarea>
+  `, async ()=>{
+    const name=zhTW((val("uf_name")||"").trim());
+    if(!name){ toast("請填檔名",true); return false; }
+    const when2=String(val("uf_date")||"").slice(0,10);
+    if(!when2){ toast("請選上片日期 —— 沒有日期，「多久沒用」就算不出來",true); return false; }
+    const copy=(val("uf_copy")||"").trim();
+    if(!copy){ toast("文案不要清掉 —— 那是下次同步對回成效的唯一依據",true); return false; }
+    const video={ name, rawName:name, videoCopy:copy,
+      driveFolder:(val("uf_drive")||"").trim(), publishedLink:(val("uf_pub")||"").trim(),
+      scheduledDate:when2,
+      // 已經是成品：一步到位，不進待處理、不進待認領、不進審片
+      stage:"已完成", published:true, finishedAt:when2, backupDone:true, socialScheduled:true,
+      reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),
+      tags:["舊片"] };
+    return await write("POST","/api/videos",{video},"已補進影片庫");
+  });
+}
+
 // 影片排行的排法：views＝依觀看｜remake＝依二創建議（v204 把二創建議併進這張表）
 let PERF_SORT="views";
 function perfSetSort(s){ PERF_SORT=(s==="remake")?"remake":"views"; render(); }
@@ -7630,13 +8014,30 @@ function viewPerf(){
   vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
   const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
+  // v205 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
   const prod={}; vids.forEach(v=>{ const vv=(Array.isArray(v.metrics)?v.metrics:[]).filter(inScope).reduce((a,m)=>a+(+m.views||0),0);
-    (v.products||[]).forEach(p=>{ if(p&&p.name){ const o=prod[p.name]||(prod[p.name]={views:0,vids:new Set()}); o.views+=vv; o.vids.add(v.id); } }); });
+    (v.products||[]).forEach(p=>{ if(!p||!p.name) return; const k=prodKey(p,v);
+      const o=prod[k]||(prod[k]={views:0,vids:new Set(),names:new Set(),link:"",m:prodMasterOf(p,v)});
+      o.views+=vv; o.vids.add(v.id); o.names.add(p.name);
+      if(!o.link && prodLink(p,v)) o.link=prodLink(p,v); }); });
+  // 已下架的商品**照樣排進來**（老闆指定：「排序名單我還是希望能夠找得到」）——
+  // 只是在名字旁邊標一個「已下架」。下架的是官網那一頁，不是這裡的歷史紀錄。
   const pRank=Object.entries(prod).sort((a,b)=>b[1].views-a[1].views).slice(0,50);
 
   const platCards=platKeys.map(p=>`<button class="card" onclick="perfSetPlat('${esc(jsEsc(p))}')" style="text-align:left;cursor:pointer;border-color:${PERF_PLAT===p?'var(--accent)':'var(--line)'};min-width:150px;flex:1">
       <b>${esc(p)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${num(plats[p].views)}</div>
-      <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支</div></button>`).join("");
+      <div class="muted" style="font-size:12px">觀看累計・讚 ${num(plats[p].likes)}・${plats[p].vids.size} 支發過</div></button>`).join("");
+  // ⚠️ v206 老闆：「fb 和 ig 幾乎是同時同一支影片上兩邊，不能算成 2 支影片。」
+  //    他說得對，而且**系統本來就沒有算成兩支** —— 排行上那是一列，觀看是兩邊相加
+  //    （兩邊的觀看是不同的人看的，本來就該相加）。
+  //    會誤會是因為卡片上那兩個數字擺在一起很像可以相加：正式資料 FB 152 支、
+  //    IG 107 支，但其中 91 支是同一批片，不重複只有 168 支。所以把不重複的數字
+  //    明講出來，不要讓人自己去加。
+  const uniqVids=new Set(); Object.keys(plats).forEach(k=>plats[k].vids.forEach(id=>uniqVids.add(id)));
+  const platNote=platKeys.length>1
+    ? `<div class="muted" style="font-size:12px;margin:-2px 0 8px">上面各平台的支數會重複算到同一支片（同一支通常 FB、IG 都發）——
+        不重複合計 <b>${uniqVids.size}</b> 支，下面的排行就是這 ${uniqVids.size} 支。</div>`
+    : "";
 
   return `<h2>影片成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
@@ -7644,18 +8045,28 @@ function viewPerf(){
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
+  ${platNote}
   ${hasData?`<div class="row" style="gap:10px;margin-bottom:6px">${
     kindKeys.map(k=>
     `<button class="card" onclick="perfSetKind('${esc(jsEsc(k))}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:140px;flex:1">
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
       <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
     }</div>`:''}
+  ${unfiledCard()}
   ${perfRankCard()}
   ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>
     <div class="${pRank.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive"><thead><tr><th>#</th><th>商品</th><th>出現影片</th><th>觀看(觸及)</th></tr></thead>
-    <tbody>${pRank.map((e,i)=>`<tr><td data-label="#">${i+1}</td><td data-label="商品"><b>${esc(e[0])}</b></td><td data-label="出現影片">${e[1].vids.size} 支</td><td data-label="觀看(觸及)"><b>${num(e[1].views)}</b></td></tr>`).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
+    <tbody>${pRank.map((e,i)=>{ const o=e[1], names=[...o.names];
+      return `<tr style="cursor:pointer" onclick="openProdVids('${esc(jsEsc(e[0]))}')" title="點開看哪些影片賣過它">
+      <td data-label="#">${i+1}</td>
+      <td data-label="商品"><a href="javascript:void(0)"><b>${esc((o.m&&o.m.name)||names[0])}</b></a>${
+        prodIsOff(o.m)?` <span class="pill wa" style="font-size:10px" title="官網已下架；這裡的紀錄照樣留著">已下架</span>`:""}${
+        names.length>1?`<span class="muted" style="font-size:11px">　也寫成：${esc(names.slice(1).join("、"))}</span>`:""}${
+        o.link?` <a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="開官網商品頁" style="font-size:11px">官網 ↗</a>`:""}</td>
+      <td data-label="出現影片">${o.vids.size} 支</td>
+      <td data-label="觀看(觸及)"><b>${num(o.views)}</b></td></tr>`; }).join("")||`<tr><td colspan="4" class="muted">尚無帶貨商品資料</td></tr>`}</tbody></table>
     </div>
   </div>`;
 }
@@ -7703,8 +8114,16 @@ function vidMetricsCard(v){
     ${mx.length?`<table class="responsive" style="margin-top:8px"><thead><tr><th>發文日</th><th>平台／帳號</th><th>觀看</th><th>讚</th><th>留言</th><th>分享</th></tr></thead><tbody>
       ${mx.slice().sort((a,b)=>String(b.postAt||"").localeCompare(String(a.postAt||""))).map(m=>`<tr><td data-label="發文日" style="white-space:nowrap">${
         m.link?`<a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer" title="點開這則貼文">${esc(String(m.postAt||"").slice(0,10))||"—"}</a>`
-              :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
-      </tbody></table>${mx.length>1?`<div class="muted" style="font-size:11px;margin-top:4px">同一支片發了 ${mx.length} 次（每一列是一則貼文，點日期可以開那則）</div>`:""}<div class="muted" style="font-size:11px;margin-top:4px">${
+              :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${metricViewCell(m)}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
+      ${/* ⚠️ v205：這裡本來寫「同一支片發了 N 次」，N 是**貼文則數**。
+            但 FB 一則 ＋ IG 一則是同一次上片發到兩個平台，不是發了兩次 ——
+            老闆在畫面上看到「發了 2 次」，旁邊排行卻寫「多久沒用 —」，兩個數字打架。
+            改成講**出過幾天**（同一天的跨平台算一次），跟排行的「用過幾次」同一個算法，
+            兩邊才對得起來。則數另外講，因為它也是有用的（點得開每一則）。 */''}
+      </tbody></table>${(()=>{ const days=[...new Set(mx.map(m=>String(m.postAt||"").slice(0,10)).filter(Boolean))];
+        if(mx.length<2) return "";
+        return `<div class="muted" style="font-size:11px;margin-top:4px">${
+          days.length>1?`這支片出過 <b>${days.length}</b> 次`:"同一次上片"}，共 ${mx.length} 則貼文（點日期可以開那則）</div>`; })()}<div class="muted" style="font-size:11px;margin-top:4px">${
         rateShown(v)?`每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言　・　`:''
       }更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。同步工作會以<b>貼文文案</b>比對 IG／FB 的貼文，把觀看、讚、留言填進這裡。對不到的話，通常是這支片沒有文案、或平台上用了完全不同的行銷文案發。</div>`}
@@ -8286,7 +8705,7 @@ function createLineVersion(k, sourceId, account, msg){
   const rec=newVideoRecord({ [L.field]:k, account, sourceVideoId:sourceId,
     rawName:(s.name||s.rawName||""), name:withVerSuffix(draft,k), videoCopy:"",
     driveFolder:String(s.driveFolder||"").trim(),   // 存檔位置跟源片同一個資料夾（剪好後自己換成自己的檔案連結）
-    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||""})),
+    products:(s.products||[]).filter(p=>p&&p.name).map(p=>({name:p.name,price:p.price||"",salePrice:p.salePrice||"",link:p.link||""})),
     productUrl:s.productUrl||"", mainType:s.mainType||"", source:s.source||"",
     stage:"待處理", assignedTo:currentUser() });
   write("POST","/api/videos",{video:rec},msg.ok(account)).then(ok=>{ if(ok) render(); });   // 留在原頁刷新，不跳走
@@ -10287,6 +10706,11 @@ function productRowHTML(prefix, i, p){
       <input id="${prefix}_pn${i}" list="${prefix}_plist" value="${esc(p.name||"")}" oninput="autoPamperTag('${prefix}')" placeholder="${T("商品 "+(i+1)+"（品名）","Product "+(i+1)+" (name)")}" style="flex:2;min-width:130px">
       <input id="${prefix}_pp${i}" type="number" min="0" value="${(p.price!=null&&p.price!=="")?esc(p.price):''}" placeholder="${T("原價","List price")}" style="flex:1;min-width:80px">
       <input id="${prefix}_ps${i}" type="number" min="0" value="${(p.salePrice!=null&&p.salePrice!=="")?esc(p.salePrice):''}" placeholder="${T("售價(寵粉價)","Fan price")}" style="flex:1;min-width:100px">
+      ${/* v205 老闆：「這裡以商品為主的排序，我希望有連結，點商品，我要能看到有什麼
+            影片賣過這個商品（用相同官網連結為主）。」
+            連結同時是**商品的身分證** —— 名字同一個東西會被寫成好幾種寫法，
+            連結不會。有填就用連結歸戶，沒填就退回用名字（見 prodKey）。 */''}
+      <input id="${prefix}_pl${i}" value="${esc(p.link||"")}" placeholder="${T("官網連結（選填）","Product URL (optional)")}" style="flex:2;min-width:150px">
     </div>`;
 }
 function productRows(prefix, products){
@@ -10308,7 +10732,8 @@ function addProductRow(prefix){
 }
 function collectProducts(prefix){ const out=[];
   for(let i=0;i<PRODUCT_MAX;i++){ const name=(val(prefix+"_pn"+i)||"").trim(); if(!name) continue;
-    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0}); }
+    out.push({name, price:parseInt(val(prefix+"_pp"+i))||0, salePrice:parseInt(val(prefix+"_ps"+i))||0,
+              link:(val(prefix+"_pl"+i)||"").trim()}); }
   return out;
 }
 

@@ -113,9 +113,34 @@ RE_FB_VIDEO = re.compile(r"/(?:reel|videos?)/(\d+)")
 
 
 def fb_video_id(post):
-    """從 FB 貼文的網址拆出影片 id；不是影片貼文就回空字串。"""
+    """從 FB 貼文的網址拆出影片 id；拆不出來就回空字串。
+
+    ⚠️ 網址不是只有 /reel/<id>/ 一種。同一個粉專也會出現
+       facebook.com/<粉專id>/posts/<貼文id> —— 那串是**貼文** id，不是影片 id，
+       拆出來也問不到播放數。這種要走 fb_video_id_deep() 再問一次附件。
+    """
     m = RE_FB_VIDEO.search(str((post or {}).get("permalink") or ""))
     return m.group(1) if m else ""
+
+
+def fb_video_id_deep(post, token):
+    """網址拆不出影片 id 的時候，逐則去問那篇貼文的附件。
+
+    2026-09-13 在正式資料上抓到：最新一次同步寫進去的 275 列 FB 裡，有 2 列觀看是 0
+    而讚有 282 和 153 —— 兩則的網址都是 /<粉專>/posts/<id>，所以從頭到尾沒問過影片。
+
+    ⚠️ 只在網址拆不出來的時候才問（275 則裡只有 2 則），不然每則多一次呼叫。
+    ⚠️ 也不要改成在 /posts 清單上要 attachments 的子欄位 —— 會被擋成
+       「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated
+       for versions v3.3 and higher」，整支掛掉。附件只能**逐則單獨問**。
+    """
+    try:
+        det = _call(str(post.get("id") or ""), token,
+                    {"fields": "object_id,attachments{media_type,type,target}"})
+    except MetaError:
+        return ""
+    att = ((det.get("attachments") or {}).get("data") or [{}])[0]
+    return str(((att.get("target") or {}).get("id")) or det.get("object_id") or "")
 
 
 # 哪些指標算「觀看數」。順序就是優先序 —— Reels 的總播放排第一。
@@ -423,6 +448,8 @@ def add_insights(posts, cfg, token, verbose=False):
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
         # FB 影片貼文：播放數在**影片物件**上，貼文物件上沒有（見 FB_VIDEO_METRICS 那段）
         vid_id = fb_video_id(p) if p["platform"] == "FB" else ""
+        if p["platform"] == "FB" and not vid_id:
+            vid_id = fb_video_id_deep(p, tok)      # 網址拆不出來的才多問一次
         if vid_id:
             ins.update(_insights("%s/video_insights" % vid_id, tok,
                                  FB_VIDEO_METRICS, missing))
@@ -436,8 +463,19 @@ def add_insights(posts, cfg, token, verbose=False):
         p["views"] = int(view or 0)
         # 圖文／連結貼文本來就沒有播放數，那不是「抓不到」——
         # 標成 viewsMissing 會讓它一直出現在「要查」的名單上，變成永遠熄不掉的紅字。
-        p["viewsMissing"] = (view is None) and not (p["platform"] == "FB" and not vid_id)
+        # ⚠️ 這一行以前寫成「FB 而且沒有影片 id → 不算抓不到」，結果把「真的沒問到」
+        #    跟「本來就沒有播放數」吞成同一件事，安安靜靜記成 0。畫面上看起來就像
+        #    「這支片真的沒人看」—— 2026-09-13 老闆就是在畫面上抓到「觀看 1、讚 182」。
+        #    現在只要問不到就誠實標記；notVideo 另外記，讓畫面知道該說「沒有播放數」
+        #    還是「問不到」。
         p["notVideo"] = bool(p["platform"] == "FB" and not vid_id)
+        # ⚠️ 2026-09-13 在正式資料上抓到：有兩則 FB 圖文貼文（讚 282／309 則留言、
+        #    讚 153／58 則留言）記著 views=0 而 viewsMissing=false ——
+        #    看起來像「這支真的沒人看」。原因不是「Meta 沒回」，是
+        #    **post_video_views 對非影片貼文回 0**，而 0 不是 None，
+        #    所以 `view is None` 這條判斷不成立。
+        #    圖文貼文本來就沒有播放數：那是「沒有這個數字」，不是「數字是 0」。
+        p["viewsMissing"] = (view is None) or p["notVideo"]
         if p["platform"] == "IG":
             p["shares"] = ins.get("shares", p.get("shares", 0))
         else:
@@ -543,6 +581,30 @@ def remake_parents(videos):
     return out
 
 
+def looks_broken(video, post_id):
+    """這則貼文上次存下來的數字，是不是明顯壞掉的？
+
+    判準只有一條，而且是物理性的：**觀看數比讚數還少**。
+    沒有人能在沒看過的情況下按讚，所以這種列一定是抓錯，不是真的沒人看。
+
+    為什麼需要這條：2026-09-12 修好 FB Reels 播放數之後，舊的壞數字**不會自己好** ——
+    同步只會重問「留言夠多」或「還在追蹤期內」的貼文，一則一個月前、留言只有 1 的
+    舊貼文就永遠停在錯的數字上。正式資料上這樣的有 12 列，最誇張的一列是
+    「觀看 1、讚 182、分享 29」，而它就長在老闆的畫面上。
+
+    有了這條，下一次排程同步自己會把它們重問一遍，不用任何人記得下指令。
+    """
+    if not video or not post_id:
+        return False
+    for r in (video.get("metrics") or []):
+        if str(r.get("postId") or "") != str(post_id):
+            continue
+        if r.get("viewsMissing"):
+            return True                      # 上次根本沒問到，再試一次
+        return int(r.get("views") or 0) < int(r.get("likes") or 0)
+    return False
+
+
 def needs_insights(post, video, today, min_comments, min_views, track_days,
                    suspects=(), parents=()):
     """這一則要不要花一次 API 呼叫去問成效？回傳 (要不要, 為什麼)。
@@ -560,6 +622,8 @@ def needs_insights(post, video, today, min_comments, min_views, track_days,
         return True, "留言夠"
     if not video:
         return False, ""
+    if looks_broken(video, post.get("id")):
+        return True, "上次抓到的數字不可能（要重問）"
     if str(video.get("sourceVideoId") or "").strip():
         return True, "二創"
     if video.get("id") in (suspects or ()):
@@ -689,6 +753,18 @@ def merge_metrics(old, rows):
         if k not in by_key:
             order.append(k)
         by_key[k] = r
+    # ⚠️ 這次沒被重問的舊列會原封不動留著（那是對的，不要弄丟資料）——
+    #    但如果那一列的數字**物理上不可能**（觀看比讚還少，沒有人能在沒看過的
+    #    情況下按讚），繼續把它當成量到的數字顯示出來更糟。
+    #    標成 viewsMissing，畫面就會顯示「—」而不是一個錯的 0 或 1。
+    #    2026-09-13 正式資料上有 11 列是這種：它們所屬的影片有被更新，
+    #    但那幾則貼文這次沒對上，所以舊列一直留著。
+    got = set(str(r.get("postId") or "") for r in rows)
+    for k, m in by_key.items():
+        if k in got:
+            continue
+        if int(m.get("views") or 0) < int(m.get("likes") or 0):
+            m["viewsMissing"] = True
     return [by_key[k] for k in order]
 
 
@@ -800,6 +876,120 @@ def _mark_success(info):
         print("  ⚠ 狀態檔寫不進去：%s" % e)
 
 
+# ---------------------------------------------------------------------------
+# 未建檔的高成效貼文
+# ---------------------------------------------------------------------------
+# 老闆：「這個系統是新的，才做不到半年，可是我們 meta 裡面的資料有 2 年，
+#        所以你找到很多的是『系統裡面沒有建檔的』。」
+#
+# 我原本提議「自動把對不到的貼文全部建成影片」（估算約 1,300 支）。他否決了：
+#   「不行，因為這是因為我們人為的問題。那如果是，你只是給成效清單，然後標注
+#     『未建檔』這樣會比較簡單嗎？我們選中的再自己手動去找輸入，然後就歸進到舊片。」
+# 他是對的 —— 自動生 1,300 支，等於把人為的疏漏變成一千三百筆系統垃圾，
+# 而且沒有人會回頭清。改成：**只給清單，人挑，挑中的自己建**。
+#
+# 所以這裡不寫影片，只把「值得建檔的舊貼文」整理成一份清單放在 meta/settings 上，
+# 讓畫面列得出來。挑不挑、建不建，是人的決定。
+# ⚠️ 門檻用**留言數**，不是觀看數。
+#    2026-09-13 第一版用觀看數，結果清單永遠是空的 —— 因為同步只對「對得上影片」
+#    的貼文去問成效，**對不上的那一萬七千則從來沒被問過，views 全是 0**，
+#    而 0 永遠不會 >= 5000。我測試時是自己塞 views 進假貼文，所以測不出來。
+#    這支檔案開頭就寫過「留言數在貼文清單裡就拿得到，不用另外呼叫 → 拿它當篩子」，
+#    我做這個功能的時候把自己寫過的原則忘了。
+#    留言數是免費的（FB 的 comments.summary、IG 的 comments_count 都在清單裡），
+#    而且它本來就是達標條件的一半。
+UNFILED_MIN_COMMENTS = 5     # 跟達標同一條線（觀看 >= 5,000 **且** 留言 >= 5）
+UNFILED_MAX = 200            # 清單上限。不是省空間，是**人一次看不完兩百筆以上**
+
+
+def unfiled_groups(unmatched):
+    """把「對不到任何影片」的貼文依文案分組，一組＝一支沒建檔的片。
+
+    同一支片會被重發好幾次，文案幾乎一模一樣 —— 不分組的話，一支片會在清單上
+    出現七八次，人根本挑不下去。分組的 key 用正規化後的文案前 60 字：
+    整段比會因為結尾多一個 emoji 就分開，前 60 字夠認出是不是同一支。
+    """
+    groups = {}
+    for u in unmatched:
+        if u.get("candidates"):
+            continue                      # 那是「分不出是哪一支」，不是沒建檔
+        p = u["post"]
+        cap = meta_match.normalize(p.get("caption") or "")
+        if len(cap) < meta_match.MIN_CHARS:
+            continue                      # 文案太短，建了檔也對不回來
+        g = groups.setdefault(cap[:60], {
+            "cap": (p.get("caption") or "").strip(),
+            "n": 0, "views": 0, "comments": 0,
+            "first": "9999", "last": "", "link": "", "best": -1, "plats": set(),
+            "posts": []})          # 留著，--unfiled-views 才問得到它們的觀看數
+        g["posts"].append(p)
+        g["n"] += 1
+        g["views"] += int(p.get("views") or 0)
+        g["comments"] += int(p.get("comments") or 0)
+        d = str(p.get("at") or "")[:10]
+        if d:
+            g["first"] = min(g["first"], d)
+            g["last"] = max(g["last"], d)
+        g["plats"].add(p.get("platform") or "")
+        if int(p.get("views") or 0) > g["best"]:     # 連結取觀看最高的那一則
+            g["best"] = int(p.get("views") or 0)
+            g["link"] = p.get("permalink") or ""
+    out = [g for g in groups.values() if g["comments"] >= UNFILED_MIN_COMMENTS]
+    out.sort(key=lambda g: (-g["comments"], -g["views"]))
+    return out[:UNFILED_MAX]
+
+
+def unfiled_fill_views(groups, cfg, token, verbose=False):
+    """替清單上那幾組去問真正的觀看數（要花呼叫，所以是 --unfiled-views 才做）。
+
+    平常的每日同步不做這一段：對不上的貼文有一萬七千則，全問等於一萬七千次呼叫。
+    只問清單上這 200 組裡的貼文（每組通常 1～3 則），大約四五百次，
+    而且只有在人真的要挖舊片的時候才跑。
+    """
+    reps = [p for g in groups for p in g["posts"]]
+    if not reps:
+        return
+    print("\n  順便問這 %d 則的觀看數（--unfiled-views）：" % len(reps))
+    add_insights(reps, cfg, token, verbose)
+    for g in groups:
+        g["views"] = sum(int(p.get("views") or 0) for p in g["posts"])
+        best = -1
+        for p in g["posts"]:
+            v = int(p.get("views") or 0)
+            if v > best:
+                best, g["link"] = v, (p.get("permalink") or g["link"])
+
+
+def report_unfiled(cfg_fb, token, groups, days):
+    """寫進 meta/settings 的 unfiledPosts。
+
+    ⚠️ 跟 report_status 一樣，一定要用 updateMask 只寫這一格 ——
+       整份覆寫會把系統設定洗掉。
+    ⚠️ 文案只存前 300 字：Firestore 單一文件有 1 MiB 上限，而且畫面上本來就
+       只顯示開頭幾十個字，全文存進去只是把設定檔撐爆。
+    """
+    items = []
+    for g in groups:
+        # posts 只是拿來問觀看數的暫存，不寫進資料庫（會把設定檔撐爆）
+        items.append({"mapValue": {"fields": {
+            "cap":      {"stringValue": g["cap"][:300]},
+            "n":        {"integerValue": str(g["n"])},
+            "views":    {"integerValue": str(g["views"])},
+            "comments": {"integerValue": str(g["comments"])},
+            "first":    {"stringValue": g["first"] if g["first"] != "9999" else ""},
+            "last":     {"stringValue": g["last"]},
+            "link":     {"stringValue": g["link"]},
+            "plats":    {"stringValue": "／".join(sorted(x for x in g["plats"] if x))},
+        }}})
+    url = "%s/meta/settings?updateMask.fieldPaths=unfiledPosts" % _fs.docs_base(cfg_fb)
+    body = {"fields": {"unfiledPosts": {"mapValue": {"fields": {
+        "at":    {"stringValue": _fs.taipei_now()},
+        "days":  {"integerValue": str(days)},
+        "items": {"arrayValue": {"values": items}},
+    }}}}}
+    _fs._patch(url, body, token)
+
+
 def report_status(cfg_fb, token, status):
     """把這次的結果寫進 meta/settings 的 metaSyncStatus。
 
@@ -849,6 +1039,8 @@ def main():
                     help="一支片達標之後，繼續追蹤幾天（預設 30）")
     ap.add_argument("--write", action="store_true", help="真的寫進資料庫（預設只看不寫）")
     ap.add_argument("--fill-links", action="store_true", help="順便把空的上片連結補回去")
+    ap.add_argument("--unfiled-views", action="store_true",
+                    help="替「未在資料庫裡的影片」清單問真正的觀看數（多花幾百次呼叫）")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
     ap.add_argument("--from-file", default="", help="用存好的 JSON 重跑比對，不連網")
     ap.add_argument("--videos-file", default="",
@@ -960,11 +1152,19 @@ def main():
     by_plat = {}
     for p in want:
         by_plat.setdefault(p["platform"], []).append(int(p.get("views") or 0))
-    nodata = [p for p in want if p.get("viewsMissing")]
+    # ⚠️ 「抓不到」與「本來就沒有播放數」要分開講。
+    #    以前的作法是把圖文貼文直接標成「不算抓不到」（viewsMissing=False），
+    #    結果連**真的沒問到的影片**也一起被吞成 0 —— 2026-09-13 老闆在畫面上
+    #    抓到「觀看 1、讚 182」就是這樣來的。現在 viewsMissing 誠實記，
+    #    改在**這裡**分兩堆講，圖文貼文一樣不會變成熄不掉的紅字。
+    nodata = [p for p in want if p.get("viewsMissing") and not p.get("notVideo")]
+    notvid = [p for p in want if p.get("viewsMissing") and p.get("notVideo")]
     if nodata:
         print("\n⚠ 有 %d 則**抓不到觀看數**（Meta 回空的，不是回 0）。" % len(nodata))
         print("   常見原因：帳號粉絲數不足 100（官方說有些指標就是不給），")
         print("   或那則貼文的類型／年紀不支援。這幾則不會被當成「沒人看」。")
+    if notvid:
+        print("\n  （另外 %d 則不是影片貼文，本來就沒有播放數 —— 不用查）" % len(notvid))
 
     dead = [k for k, vs in by_plat.items() if vs and not any(vs)]
     if dead:
@@ -990,6 +1190,10 @@ def main():
                "comments": int(p.get("comments") or 0), "shares": int(p.get("shares") or 0),
                "at": _fs.taipei_now(), "postId": str(p.get("id") or ""),
                "viewsMissing": bool(p.get("viewsMissing")),
+               # ⚠️ notVideo 以前只算在記憶體裡、**沒有寫進那一列** —— 正式資料上
+               #    全庫 0 列有這個欄位。畫面因此分不出「沒人看」跟「這則根本不是
+               #    影片貼文」，兩個都顯示成 0。
+               "notVideo": bool(p.get("notVideo")),
                "postAt": str(p.get("at") or "")[:19], "link": p.get("permalink") or ""}
         e = plan.setdefault(vid, {"videoId": vid, "rows": [], "fillLink": ""})
         e["rows"].append(row)
@@ -1131,8 +1335,44 @@ def main():
             if len(amb) > 15:
                 print("     …另外還有 %d 則" % (len(amb) - 15))
 
+    # ── 未在資料庫裡的影片（老闆指定，見 unfiled_groups 上面那段）──────────
+    # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
+    # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
+    unfiled = unfiled_groups(unmatched)
+    if unfiled and args.unfiled_views and not args.from_file:
+        unfiled_fill_views(unfiled, cfg, token, args.verbose)
+    if unfiled:
+        tot_c = sum(g["comments"] for g in unfiled)
+        tot_v = sum(g["views"] for g in unfiled)
+        # ⚠️ 不要用 _fs.human() —— 那是**檔案大小**的格式化（B/KB/MB/GB）。
+        #    2026-09-13 拿它印留言數，畫面上就出現「留言 4.5 KB」。
+        #    數量用千分位就好。
+        print("\n── 未在資料庫裡、但有人看的舊片：%d 支（留言合計 %s%s）──"
+              % (len(unfiled), "{:,}".format(tot_c),
+                 "、觀看合計 {:,}".format(tot_v) if tot_v else ""))
+        print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
+        print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
+        if not tot_v:
+            print("   （觀看數要加 --unfiled-views 才會去問；留言數是抓清單時就有的，不用花呼叫）")
+        for g in unfiled[:12]:
+            # ⚠️ 日期要帶年份。只印月-日的話，跨年的區間會長成「06-24～02-22」，
+            #    看起來像最早比最晚還晚。2026-09-13 的輸出就是這樣。
+            span = ("%s～%s" % (g["first"], g["last"])) if g["first"][:4] != g["last"][:4] \
+                else ("%s～%s" % (g["first"], g["last"][5:]))
+            print("   留言 %6s　%s%3s 則　%-21s %s"
+                  % ("{:,}".format(g["comments"]),
+                     ("觀看 %9s　" % "{:,}".format(g["views"])) if g["views"] else "",
+                     g["n"], span, g["cap"][:28].replace("\n", " ")))
+        if len(unfiled) > 12:
+            print("   …另外還有 %d 支（畫面上看得到全部）" % (len(unfiled) - 12))
+    else:
+        print("\n── 未在資料庫裡的舊片：這個範圍內沒有留言 %d 則以上的 ──" % UNFILED_MIN_COMMENTS)
+
     if not args.write:
         print("\n（只看不寫，資料庫沒有動。確認上面的清單是對的，再加 --write）")
+        if unfiled:
+            print("　⚠ 「未在資料庫裡的舊片」那張清單**也要 --write 才會寫進畫面**，"
+                  "現在只是印在這裡。")
         return 0
 
     # ⚠️ 警告要**擋得住寫入**，不然它只是事後諸葛。
@@ -1182,6 +1422,12 @@ def main():
             "matched": len(matched), "days": args.days}
     try:
         report_status(cfg_fb, token, info)
+        # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——
+        # 不寫的話畫面上會一直掛著上一次的舊清單，建過檔的片還留在「未建檔」裡。
+        try:
+            report_unfiled(cfg_fb, token, unfiled, args.days)
+        except Exception as e:
+            print("  ⚠ 未建檔清單寫不進去：%s" % e)
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 狀態回報寫不進去：%s" % e)
     if not failed:

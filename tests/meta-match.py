@@ -340,10 +340,161 @@ ok("fb_reels_total_plays" in S.FB_VIDEO_METRICS and "blue_reels_play_count" in S
 # 程式碼層級：影片物件那一次呼叫真的有打出去
 ok("video_insights" in SYNC_SRC and "fb_video_id(p)" in SYNC_SRC,
    "add_insights 真的會去問影片物件")
-# 圖文貼文沒有播放數是正常的，不可以標成「抓不到」——
-# 標了會讓它永遠掛在「要查」的名單上，變成熄不掉的紅字（v136 那類病）
-ok('not (p["platform"] == "FB" and not vid_id)' in SYNC_SRC,
-   "圖文貼文的 0 不算「抓不到」")
+# ⚠️ v205 改法：以前這裡是「FB 而且沒有影片 id → 不算抓不到」，寫在 viewsMissing 上。
+# 用意是對的（圖文貼文沒有播放數是正常的，標成抓不到會變成熄不掉的紅字），
+# 但它把**真的沒問到的影片**也一起吞成 0 —— 2026-09-13 老闆在畫面上抓到
+# 「觀看 1、讚 182、分享 29」就是這樣來的。
+# 現在 viewsMissing 誠實記，改用 notVideo 在**報告那一段**分兩堆講。
+# v206：又改了一次。`view is None` 還是不夠 —— 正式資料上抓到兩則 FB 圖文貼文
+# 記著 views=0 而 viewsMissing=false，因為 **post_video_views 對非影片貼文回 0**，
+# 而 0 不是 None。圖文貼文本來就沒有播放數：那是「沒有這個數字」，不是「數字是 0」。
+ok('p["viewsMissing"] = (view is None) or p["notVideo"]' in SYNC_SRC,
+   "問不到、或那則根本不是影片貼文 → 都標成沒有播放數（0 不是量到的數字）")
+ok('"notVideo": bool(p.get("notVideo")),' in SYNC_SRC,
+   "**notVideo 要寫進那一列** —— 以前只算在記憶體裡，全庫 0 列有這個欄位，"
+   "畫面因此分不出「沒人看」跟「這則不是影片貼文」")
+ok('if int(m.get("views") or 0) < int(m.get("likes") or 0):' in SYNC_SRC,
+   "沒被重問的舊列，數字物理上不可能就標成問不到（不要繼續顯示一個錯的數字）")
+ok('p.get("viewsMissing") and not p.get("notVideo")' in SYNC_SRC
+   and 'p.get("viewsMissing") and p.get("notVideo")' in SYNC_SRC,
+   "報告裡「抓不到」與「本來就沒有播放數」分兩堆講（圖文貼文不會變成熄不掉的紅字）")
+# 網址拆不出影片 id 的，要再問一次那則貼文的附件 ——
+# 正式資料上有 2 則的網址是 /<粉專>/posts/<id>，從頭到尾沒問過影片，觀看記成 0 而讚有 282
+ok("fb_video_id_deep" in SYNC_SRC and "attachments{media_type,type,target}" in SYNC_SRC,
+   "/posts/<id> 這種網址要逐則去問附件，才拿得到影片 id")
+ok('if p["platform"] == "FB" and not vid_id:' in SYNC_SRC,
+   "而且只在網址拆不出來的時候才多問（275 則裡只有 2 則，不要每則都多一次呼叫）")
+# 舊的壞數字不會自己好 —— 同步只重問「留言夠」或「追蹤中」的貼文
+ok(S.looks_broken({"metrics": [{"postId": "p1", "views": 1, "likes": 182}]}, "p1"),
+   "觀看比讚還少 → 判定為壞數字（沒有人能在沒看過的情況下按讚）")
+ok(not S.looks_broken({"metrics": [{"postId": "p1", "views": 5000, "likes": 182}]}, "p1"),
+   "正常的列不會被誤判")
+ok(S.looks_broken({"metrics": [{"postId": "p1", "views": 0, "likes": 0, "viewsMissing": True}]}, "p1"),
+   "上次根本沒問到的，也要再試一次")
+ok(not S.looks_broken({"metrics": [{"postId": "other", "views": 1, "likes": 9}]}, "p1"),
+   "只看同一則貼文的那一列")
+ok(not S.looks_broken(None, "p1") and not S.looks_broken({}, ""),
+   "沒有資料不會爆掉")
+
+# ── merge_metrics：沒被重問的舊列（v206）────────────────────────────
+# 2026-09-13 正式資料：11 列「觀看比讚還少」，它們所屬的影片有被更新，
+# 但那幾則貼文這次沒對上，所以舊列原封不動留著 —— 畫面繼續顯示一個錯的 0 或 1。
+OLDROW = {"postId": "old1", "views": 1, "likes": 182, "comments": 3, "platform": "FB"}
+NEWROW = {"postId": "new1", "views": 9000, "likes": 100, "comments": 20, "platform": "FB"}
+out = S.merge_metrics([OLDROW], [NEWROW])
+ok(len(out) == 2, "舊列不會被弄丟（那是對的，不要因為這次沒對到就刪資料）")
+old_after = [m for m in out if m["postId"] == "old1"][0]
+ok(old_after.get("viewsMissing") is True,
+   "**但它被標成問不到** —— 觀看比讚還少是物理上不可能，繼續當成量到的數字更糟")
+ok(old_after["likes"] == 182, "讚與留言照舊留著（那兩個是真的）")
+# 正常的舊列不要被亂標
+ok(S.merge_metrics([{"postId": "ok1", "views": 5000, "likes": 100}], [NEWROW])[0].get("viewsMissing")
+   in (None, False), "正常的舊列不會被誤標")
+# 這次有重問到的，就用新的，不套那條規則
+out2 = S.merge_metrics([OLDROW], [{"postId": "old1", "views": 13402, "likes": 182}])
+ok(len(out2) == 1 and out2[0]["views"] == 13402 and not out2[0].get("viewsMissing"),
+   "這次有重問到 → 用新數字，不標問不到")
+# ⚠️ 上面那條**抓不到**「連這次重問到的也一起標」這個錯 ——
+#    因為 13402 > 182，健檢本來就不會標它。要測「有沒有跳過這次拿到的」，
+#    新資料本身就得是「觀看 < 讚」的形狀。
+#    這一輪同步問到什麼就是什麼，健檢只負責**這次沒問到、只能沿用舊值**的那些。
+out3 = S.merge_metrics([OLDROW],
+                       [{"postId": "old1", "views": 10, "likes": 50, "viewsMissing": False}])
+ok(out3[0]["views"] == 10 and out3[0].get("viewsMissing") is False,
+   "**這次問到的就算數字難看也照用** —— 健檢只管沒被重問的舊列，不覆寫這一輪的判斷")
+out4 = S.merge_metrics([], [{"postId": "n1", "views": 3, "likes": 99}])
+ok(not out4[0].get("viewsMissing"), "全新的一列也一樣，不會被健檢標記")
+ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
+   "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
+
+# ── 未在資料庫裡的影片：unfiled_groups 的**行為**（v206）─────────────────
+# ⚠️ 這一段被我自己刪掉過一次（f961a20）—— 清「重複段落」時把新的那份刪了，
+#    舊的那份也早就不在，結果 unfiled_groups 有整整一輪一條測試都沒有，
+#    而我還在拿它跑突變測試說「全綠」。刪測試之前先確認刪的是哪一份。
+def _P(cap, comments=20, views=0, at="2025-03-11", plat="FB", pid="p", link="L"):
+    """一則**對不到影片**的貼文，形狀跟真實資料一樣。
+
+    ⚠️ views 預設 0，而且是故意的。同步只對「對得上影片」的貼文去問成效，
+       對不上的那一萬七千則**從來沒被問過**，views 就是 0。
+       2026-09-13 我第一版的測試自己塞 views=9000 進去，所以沒測出
+       「門檻用觀看數 → 清單永遠是空的」這個錯。
+       測試資料要長得跟資料真正到達的樣子一樣，不是長得跟我希望的樣子一樣。
+    """
+    return {"post": {"platform": plat, "at": at + "T10:00:00", "caption": cap,
+                     "views": views, "comments": comments, "permalink": link, "id": pid},
+            "why": "文案對不上任何一支"}
+
+LONG = "這是一段夠長的貼文文案用來當比對的依據不要太短"      # > MIN_CHARS
+g = S.unfiled_groups([_P(LONG, comments=20)])
+ok(len(g) == 1 and g[0]["comments"] == 20, "一則達標的貼文 → 一組")
+ok(g[0]["views"] == 0, "**觀看是 0，因為根本沒去問** —— 這就是真實資料的樣子")
+
+# ★ 這一條是核心：用觀看數當門檻，清單永遠是空的
+ok(len(S.unfiled_groups([_P(LONG, comments=50, views=0)])) == 1,
+   "**觀看 0 但留言 50 → 照樣進清單**（用觀看當門檻的話，這裡會是空的）")
+ok(S.UNFILED_MIN_COMMENTS == 5, "門檻是留言 5 則 —— 跟達標條件的另一半同一條線")
+ok(S.unfiled_groups([_P(LONG, comments=4, views=99999)]) == [],
+   "**留言 4 則就是不收，觀看再高也一樣**（門檻真的是留言數，不是觀看數）")
+ok(len(S.unfiled_groups([_P(LONG, comments=5, views=0)])) == 1, "剛好 5 則收進來")
+
+# 同一支片重發，留言要加起來才過門檻
+g = S.unfiled_groups([_P(LONG, comments=3, pid="a"), _P(LONG, comments=3, pid="b")])
+ok(len(g) == 1 and g[0]["n"] == 2 and g[0]["comments"] == 6,
+   "同一支片重發兩次算一組，留言相加（3+3 才過門檻）")
+
+# 排序：照留言，而且觀看全是 0 也要排得出來
+g = S.unfiled_groups([_P("甲的文案內容夠長才進得了比對的門檻編號甲", comments=10, pid="a"),
+                      _P("乙的文案內容夠長才進得了比對的門檻編號乙", comments=90, pid="b"),
+                      _P("丙的文案內容夠長才進得了比對的門檻編號丙", comments=50, pid="c")])
+ok([x["comments"] for x in g] == [90, 50, 10],
+   "**照留言數排**（改成照觀看排的話，全是 0，等於沒排）")
+
+# 上限真的有截
+many = [_P("第%d支影片的文案內容不一樣所以會分成不同組別編號%d" % (i, i), comments=10 + i, pid=str(i))
+        for i in range(S.UNFILED_MAX + 30)]
+res = S.unfiled_groups(many)
+ok(len(res) == S.UNFILED_MAX,
+   "**超過上限就截掉**（%d 組進去只留 %d 組）" % (len(many), S.UNFILED_MAX))
+ok(res[0]["comments"] == 10 + S.UNFILED_MAX + 29, "而且留下的是留言最多的那些")
+
+# 文案太短的不收（建了檔也對不回來）
+ok(S.unfiled_groups([_P("太短", comments=9999)]) == [], "文案太短不收，留言再多也一樣")
+# 「分不出是哪一支」不是沒建檔
+amb = _P(LONG, comments=9999); amb["candidates"] = ["V1", "V2"]
+ok(S.unfiled_groups([amb]) == [], "「有好幾支長得一樣」的不算未建檔（那是比對問題）")
+
+# 連結：有觀看數時取觀看最高的那一則（兩種順序都要對，不然「取第一則」也會通過）
+g = S.unfiled_groups([_P(LONG, comments=10, views=8000, pid="a", link="高"),
+                      _P(LONG, comments=10, views=3000, pid="b", link="低")])
+ok(g[0]["link"] == "高", "連結取**觀看最高**的那一則，不是最後一則")
+g = S.unfiled_groups([_P(LONG, comments=10, views=3000, pid="a", link="低"),
+                      _P(LONG, comments=10, views=8000, pid="b", link="高")])
+ok(g[0]["link"] == "高", "順序反過來也一樣（不是「取第一則」也不是「取最後一則」）")
+
+# 日期範圍
+g = S.unfiled_groups([_P(LONG, comments=10, at="2025-06-02"), _P(LONG, comments=10, at="2025-03-11")])
+ok(g[0]["first"] == "2025-03-11" and g[0]["last"] == "2025-06-02", "最早與最晚的發文日都記下來")
+
+# 每一組要留著它底下的貼文，--unfiled-views 才問得到觀看數
+g = S.unfiled_groups([_P(LONG, comments=10, pid="a"), _P(LONG, comments=10, pid="b")])
+ok(len(g[0].get("posts") or []) == 2, "每一組留著它底下的貼文（要問觀看數時用得到）")
+ok("def unfiled_fill_views(" in SYNC_SRC,
+   "問觀看數是**另外一個函式**（平常的每日同步不能多花幾百次呼叫）")
+ok('ap.add_argument("--unfiled-views"' in SYNC_SRC, "--unfiled-views 這個旗標真的存在")
+ok("if unfiled and args.unfiled_views and not args.from_file:" in SYNC_SRC,
+   "而且真的接到流程上（不然寫了函式沒人呼叫）")
+
+# ── 印出來的樣子（v206）──────────────────────────────────────────────
+# 2026-09-13 正式資料上印出「留言 4.5 KB」「留言合計 78.9 KB」——
+# 因為我拿 _fs.human() 去格式化留言數，而那是**檔案大小**的格式化（B/KB/MB/GB）。
+ok("_fs.human(g[\"comments\"])" not in SYNC_SRC and "_fs.human(tot_c)" not in SYNC_SRC,
+   "**留言數不准用 _fs.human()** —— 那是檔案大小的格式化，會印出「4.5 KB」")
+ok('"{:,}".format(tot_c)' in SYNC_SRC and '"{:,}".format(g["comments"])' in SYNC_SRC,
+   "數量用千分位")
+ok("_fs.human(g[\"views\"])" not in SYNC_SRC, "觀看數也一樣，不用檔案大小的格式化")
+# 日期區間要帶年份，不然跨年的會長成「06-24～02-22」，看起來像最早比最晚還晚
+ok('g["first"][:4] != g["last"][:4]' in SYNC_SRC,
+   "**跨年的日期區間要印出年份**（不然「2025-06-24～2026-02-22」會變成「06-24～02-22」）")
 
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
