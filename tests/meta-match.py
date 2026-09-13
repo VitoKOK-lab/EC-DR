@@ -489,6 +489,26 @@ ok('ap.add_argument("--unfiled-views"' not in SYNC_SRC,
 ok("if unfiled and not args.no_unfiled_views and not args.from_file:" in SYNC_SRC,
    "而且真的接到流程上（不然寫了函式沒人呼叫）")
 
+# ── 2026-09-13 的事故：178 支全部寫入失敗（v207）──────────────────────
+# 那一次 --write 跑完，**0 支成功、178 支失敗**，每一支都是
+# HTTP 401 UNAUTHENTICATED。資料庫沒被寫壞（一支都沒寫進去），但整趟白跑。
+#
+# 兩個原因，都是我的：
+#   ① 問觀看數沒有上限 → 問了 10,091 則（我估「四五百」）
+#      分組是用文案前 60 字當 key，小編的罐頭開頭會把一大堆不同的貼文黏成一組
+#   ② 跑太久 → Firebase 的匿名 idToken（1 小時）在寫之前就過期了
+ok("token = _fs.sign_in(cfg_fb)" in SYNC_SRC.split("done, failed = write_back")[0].split("# 4. 寫回去")[-1],
+   "**寫之前重新登入** —— 長時間的同步會讓權杖過期，那一次 178 支全部 401")
+ok("MAX_PER_GROUP = 15" in SYNC_SRC,
+   "一組超過 15 則就不問（那不是一支片重發，是罐頭句黏成一坨）")
+ok("MAX_ASK = 600" in SYNC_SRC,
+   "**問觀看數的總數要封頂** —— 沒有上限那次問了 10,091 則")
+ok("if len(reps) + len(ps) > MAX_ASK:" in SYNC_SRC, "封頂真的有被用")
+ok("if len(ps) > MAX_PER_GROUP:" in SYNC_SRC, "每組上限也真的有被用")
+ok("asked = set(id(p) for p in reps)" in SYNC_SRC and
+   "if not all(id(p) in asked for p in g[\"posts\"]):" in SYNC_SRC,
+   "**沒問完的那幾組 views 留 0**，不要拿半套的數字當成那一組的觀看（畫面會顯示「—」）")
+
 # ── 印出來的樣子（v206）──────────────────────────────────────────────
 # 2026-09-13 正式資料上印出「留言 4.5 KB」「留言合計 78.9 KB」——
 # 因為我拿 _fs.human() 去格式化留言數，而那是**檔案大小**的格式化（B/KB/MB/GB）。

@@ -946,12 +946,39 @@ def unfiled_fill_views(groups, cfg, token, verbose=False):
     只問清單上這 200 組裡的貼文（每組通常 1～3 則），大約四五百次，
     而且只有在人真的要挖舊片的時候才跑。
     """
-    reps = [p for g in groups for p in g["posts"]]
+    # ⚠️ 這裡一定要有上限。2026-09-13 沒有上限，結果問了 **10,091 則** ——
+    #    我當時估「每組 8 則、共四五百次」，但分組是用文案前 60 字當 key，
+    #    小編的罐頭開頭（「留言『喜歡』獲取下單連結…」）會把一大堆不同的貼文
+    #    黏成同一組，平均變成 50 則。那一次跑太久，Firebase 權杖過期，
+    #    178 支全部寫入失敗。
+    #
+    #    兩道閘：
+    #      ① 一組超過 MAX_PER_GROUP 則＝那不是「一支片重發」，是罐頭句黏成一坨，
+    #         跳過不問（它的觀看數本來就不會是同一支片的）
+    #      ② 總數封頂 MAX_ASK，超過就不問了 —— 排行上那幾組顯示「—」，
+    #         總比整批寫不進去好
+    MAX_PER_GROUP = 15          # V166 真的重發過 10 次，15 已經很寬
+    MAX_ASK = 600
+    reps, skipped = [], 0
+    for g in groups:
+        ps = g["posts"]
+        if len(ps) > MAX_PER_GROUP:
+            skipped += 1
+            continue
+        if len(reps) + len(ps) > MAX_ASK:
+            break
+        reps.extend(ps)
+    if skipped:
+        print("\n  （%d 組底下的貼文超過 %d 則，多半是罐頭開頭黏成一坨，不問觀看數）"
+              % (skipped, MAX_PER_GROUP))
     if not reps:
         return
     print("\n  順便問這 %d 則未建檔貼文的觀看數（要關掉用 --no-unfiled-views）：" % len(reps))
     add_insights(reps, cfg, token, verbose)
+    asked = set(id(p) for p in reps)
     for g in groups:
+        if not all(id(p) in asked for p in g["posts"]):
+            continue            # 這一組沒問完，views 留 0（畫面會顯示「—」）
         g["views"] = sum(int(p.get("views") or 0) for p in g["posts"])
         best = -1
         for p in g["posts"]:
@@ -1411,6 +1438,16 @@ def main():
                       # 「原片第 30 天」可以跟「二創第 30 天」比（見 merge_hist）
                       "hist": merge_hist(byvid.get(vid, {}).get("metricsHist"), e["rows"], today_str),
                       "fillLink": e["fillLink"]})
+    # ⚠️ 寫之前**重新登入**。
+    #    Firebase 的匿名 idToken 只有 1 小時。同步一開始登入拿權杖，中間可能花
+    #    一兩個小時在問 Meta（2026-09-13 那次問了 10,091 則），等到要寫的時候
+    #    權杖早就過期 —— 178 支**全部** 401 UNAUTHENTICATED，一支都沒寫進去。
+    #    重新登入只是一次呼叫，而且做的事跟使用者開網頁完全一樣。
+    #    ⚠️ 後面寫 logs 與 metaSyncStatus 也要用這個新的權杖，不要用舊的。
+    try:
+        token = _fs.sign_in(cfg_fb)
+    except Exception as e:                                      # noqa: BLE001
+        print("  ⚠ 寫入前重新登入失敗：%s" % e)
     done, failed = write_back(cfg_fb, token, final, args.fill_links)
     print("\n寫入完成：%d 支成功、%d 支失敗%s"
           % (done, failed, ("（另外跳過 %d 支疑似誤配的）" % len(skip)) if skip else ""))
