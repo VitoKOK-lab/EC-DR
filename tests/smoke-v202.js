@@ -185,8 +185,19 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
 // ══════════ ⑦ 設定 → 權限那一頁 ══════════
 { reset([U("管理員", "boss"), U("Regina", "manager"), U("小葵", "editor"), U("阿包", "editor", { outsourced: true })], "管理員", "boss");
   SET_TAB = "perms"; const h = viewSettings(); SET_TAB = "basic";
-  ok("每一項都在表頭上", PERM_KEYS.every(k => h.includes(">" + PERMS[k].label + "</th>")),
-     PERM_KEYS.filter(k => !h.includes(">" + PERMS[k].label + "</th>")));
+  ok("每一項都在表頭上", PERM_KEYS.every(k => h.includes("\n    " + PERMS[k].label + "\n")),
+     PERM_KEYS.filter(k => !h.includes("\n    " + PERMS[k].label + "\n")));
+  // v208（老闆：「你的權限名要和上面的名字一樣，不然我不知這打勾是給什麼權，
+  //       像商品主檔是什麼？？」）：欄名底下要寫它在畫面上的哪裡。
+  // ⚠️ 只比對整張卡的話，卡片下面那段說明裡也有同一串字 —— 把表頭那一行刪掉照樣是綠的。
+  //    要比對的是 <thead> 裡面。
+  const thead = (h.match(/<thead>[\s\S]*?<\/thead>/) || [""])[0];
+  ok("**每一欄底下都寫了它在哪裡**（不然勾之前看不出勾的是什麼）",
+     thead && PERM_KEYS.every(k => PERMS[k].where && thead.includes(PERMS[k].where)),
+     PERM_KEYS.filter(k => !PERMS[k].where || !thead.includes(PERMS[k].where)));
+  ok("下面的說明也一項一項寫了位置",
+     PERM_KEYS.every(k => h.includes("（" + PERMS[k].where + "）：" + PERMS[k].why)),
+     PERM_KEYS.filter(k => !h.includes("（" + PERMS[k].where + "）：" + PERMS[k].why)));
   ok("每個人一列", h.includes("Regina") && h.includes("小葵") && h.includes("阿包"));
   // v207：沒有「職位」那一檔了 —— 每一格都是勾選框（管理員那一列除外，他是最高權限）
   ok("**每一個人、每一項都是勾選框**（老闆：「都要可以勾選的」）",
@@ -205,6 +216,25 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
   ok("每一項都寫出它到底能做什麼", PERM_KEYS.every(k => h.includes(PERMS[k].why)),
      PERM_KEYS.filter(k => !h.includes(PERMS[k].why)));
   ok("有講清楚設定為什麼不在這裡", h.includes("管理員鑰匙"));
+  // ⚠️ v208 的重點：權限名不准是自己取的新詞，必須跟畫面上那個字一模一樣。
+  //    有分頁的那幾項，分頁名天生就是這個 label（myTabs 用的就是它）——
+  //    但**點進去之後的標題**也要同一個字，不然點進去看到另一個名字，一樣認不出來。
+  //    「剪輯產出／剪輯成效」「大流量影片／影片庫大流」就是這樣歪掉的。
+  { reset([U("小葵", "editor", { perms: PERM_KEYS.slice() })], "小葵", "editor");
+    const PAGE = { find: viewAssets, perf: viewPerf, output: viewOutput, attend: viewAttend, df: viewVideosDF };
+    Object.keys(PAGE).forEach(k => {
+      const h2 = (String(PAGE[k]()).match(/<h2[^>]*>([\s\S]*?)<\/h2>/) || ["", ""])[1];
+      ok(`點進去的標題跟權限名同一個字：${PERMS[k].label}`,
+         h2.indexOf(PERMS[k].label) >= 0, { k, want: PERMS[k].label, h2: h2.slice(0, 120) });
+    });
+    // 沒有分頁的那兩個，名字一樣不准亂取。
+    // ⚠️ 這裡一定要拿 PERMS[k].label 去比，不能把字寫死 ——
+    //    寫死的話「把 label 改回『商品主檔』」照樣是綠的（畫面上那塊還是舊字），
+    //    而那正是老闆抱怨的那個病。
+    ok("商品那一塊的標題＝權限名（改了權限名就要一起改，不准各叫各的）",
+       APP.includes("<b>" + PERMS.prod.label + "</b>"), PERMS.prod.label);
+    ok("看板上指派那張卡的標題＝權限名",
+       APP.includes('T("🎬 ' + PERMS.assign.label + '給員工"'), PERMS.assign.label); }
   // 手機上勾不到＝這一頁沒用。桌機要 660px 才點得準，手機轉成直列卡片後那個寬度必須讓開，
   // 不然九欄的勾選框整排被推到畫面外（量過：表格 660px、容器只有 334px）。
   // ⚠️ 手機那一段在 index.html 裡比桌機那兩條**早**出現，所以只能靠選擇器權重壓過去 ——

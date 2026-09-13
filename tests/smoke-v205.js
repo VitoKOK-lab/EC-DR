@@ -257,19 +257,19 @@ const PD = (o) => Object.assign({ id: "PD1", name: "", sku: "", officialUrl: "",
   let S = null; showModal = (t, inner) => { S = { t, inner }; };
   mount([v3], "管理員", "boss", [m]);
   openProdVids("m:PDd");
-  ok(S.inner.includes("管理這個商品"), "老闆看得到管理區");
+  ok(S.inner.includes("改商品資料"), "老闆看得到管理區");
   mount([v3], "Regina", "manager", [m]);
   openProdVids("m:PDd");
-  ok(S.inner.includes("管理這個商品"), "經理人也看得到");
+  ok(S.inner.includes("改商品資料"), "經理人也看得到");
   mount([v3], "阿剪", "editor", [m]);
   openProdVids("m:PDd");
-  ok(!S.inner.includes("管理這個商品"),
+  ok(!S.inner.includes("改商品資料"),
      "**剪輯看得到排行，但動不了主檔**（看得到卻按不動最讓人火大，所以整塊藏起來）");
   ok(S.inner.includes("賣過它"), "但他照樣看得到哪些影片賣過它");
   mount([v3], "管理員", "boss", [m]);
   VIEW_AS = "阿剪";
   openProdVids("m:PDd");
-  ok(!S.inner.includes("管理這個商品"), "員工視角預覽時也不給（全站唯讀的規矩）");
+  ok(!S.inner.includes("改商品資料"), "員工視角預覽時也不給（全站唯讀的規矩）");
   VIEW_AS = null; }
 
 // ══════════ ⑥ 改名／換網址：舊的一定要留著 ══════════
