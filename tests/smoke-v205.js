@@ -33,14 +33,15 @@ const V = (o) => Object.assign({ id: "X", name: "", rawName: "", videoCopy: "", 
   editor: "", claimedBy: "", assignedTo: "", createdAt: "" }, o);
 const M = (views, comments, postAt) => [{ platform: "IG", account: "IG a", views, comments, likes: 0, postAt: (postAt || D(10)) + "T00:00:00" }];
 
-function mount(vids, who, role, prods) {
+function mount(vids, who, role, prods, unfiled) {
   ROLE = role || "boss";
   global.window.DB = { videosWatched: () => true, netState: () => ({ online: true, pending: false }) };
   global.localStorage.getItem = k => (k === "ecdr_role" ? ROLE : (who || "管理員"));
   LAST_RAW = { users: [{ name: "管理員", role: "boss" }, { name: "阿剪", role: "editor" }, { name: "阿二", role: "editor" },
                        { name: "小主管", role: "editor", canAssign: true }],
     settings: { dailyTarget: 4, videoTags: [], sources: [], postPlatforms: [], intlAccounts: [],
-                shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [] },
+                shopeeAccounts: [], msAccounts: [], exchangeRates: {}, contacts: [],
+                unfiledPosts: unfiled || null },
     schedule: {}, tasks: {}, shifts: {}, logs: [], deletedVideos: [], videos: vids,
     products: prods || [], matches: [] };
   STATE = decorate(LAST_RAW); RMK_Q = ""; RMK_OPEN = false;
@@ -358,6 +359,108 @@ ok(/"products"/.test(fs.readFileSync(__dirname + "/../tools/_fs.py", "utf8")),
     { platform: "FB", account: "FB a", views: 5000, likes: 10, comments: 6, postAt: D(30) + "T10:00:00" }] });
   mount([只有一個平台], "管理員", "boss");
   ok(!viewPerf().includes("不重複合計"), "只有一個平台時不出現這句"); }
+
+// ═══════════════════════════════════════════════════════════════════
+// 未在資料庫裡的影片（v206）
+// ═══════════════════════════════════════════════════════════════════
+// 老闆：「這個系統是新的，才做不到半年，可是我們 meta 裡面的資料有 2 年，
+//        所以你找到很多的是『系統裡面沒有建檔的』…你只是給成效清單，然後標注
+//        『未建檔』這樣會比較簡單嗎？我們選中的再自己手動去找輸入，然後就歸進到舊片。」
+//
+// ⚠️ 我原本提議「自動建 1,300 支」，他否決了 ——「因為這是因為我們人為的問題」。
+//    他是對的：自動生 1,300 支等於把人為的疏漏變成一千三百筆系統垃圾，沒人會回頭清。
+//    所以這張卡**只列出來**，建不建是人的決定。
+
+const UF = (items) => ({ at: "2026-09-13T06:20:00", days: 200, items });
+const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 9000, comments: 20,
+  first: "2025-01-01", last: "2025-01-01", link: "https://www.facebook.com/reel/1/", plats: "FB" }, o);
+
+{ const v = V({ id: "Z1", name: "有建檔的片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([
+    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 412355,
+            comments: 1880, first: "2025-03-11", last: "2025-06-02", plats: "FB／IG" }),
+    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 288900, comments: 530 })]));
+  const h = viewPerf();
+  ok(h.includes("未在資料庫裡的影片（2）"), "卡片出現，而且講清楚有幾支");
+  ok(h.includes("溱姐寵粉") && h.includes("我婆婆第一次見到我"), "兩則都列出來");
+  ok(h.includes("412,355") && h.includes("288,900"), "**成效數字都在**（這就是它有用的原因）");
+  ok(h.includes("6 則") && h.includes("03-11") && h.includes("06-02"), "發過幾則、什麼時候發的");
+  ok(h.includes("FB／IG"), "哪些平台");
+  ok(h.includes("觀看合計 701,255"), "合計算出來");
+  ok(h.indexOf("溱姐寵粉") < h.indexOf("我婆婆"), "觀看高的排前面");
+  ok(h.includes("unfiledAdd("), "每一列都有「建檔」");
+  ok(h.includes("系統裡沒有這支片"), "講清楚為什麼排行上看不到它們");
+  ok(h.includes("舊片"), "也講清楚建出來會歸到哪裡"); }
+
+{ // 沒跑過同步就沒有這份清單 —— 不要放一張空卡在那裡
+  const v = V({ id: "Z2", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], null);
+  ok(!viewPerf().includes("未在資料庫裡的影片"), "沒有清單時整張卡不出現");
+  mount([v], "管理員", "boss", [], UF([]));
+  ok(!viewPerf().includes("未在資料庫裡的影片"), "清單是空的也不出現（全部建完了就該消失）"); }
+
+{ // 建檔的權限：跟「直接加一支到大流」同一批人
+  const v = V({ id: "Z3", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  const u = UF([UITEM({})]);
+  mount([v], "阿剪", "editor", [], u);
+  ok(viewPerf().includes("未在資料庫裡的影片"), "剪輯看得到清單（大流本來就開給他們）");
+  ok(viewPerf().includes("unfiledAdd("), "也建得了");
+  mount([v], "麗君", "cs", [], u);
+  ok(!viewPerf().includes("unfiledAdd("), "不碰影片的職位沒有「建檔」");
+  mount([v], "管理員", "boss", [], u);
+  VIEW_AS = "阿剪";
+  ok(!viewPerf().includes("unfiledAdd("), "員工視角預覽時也不給（全站唯讀的規矩）");
+  VIEW_AS = null; }
+
+{ // 按「建檔」→ 補進**正式影片庫**，不是大流
+  // ⚠️ 老闆：「不要建到大流，我們不是說好『等這裡做好，大流量影片庫要刪掉』。」
+  //    他是對的 —— 建進一個準備拆掉的庫，等於製造下一次搬家。
+  const v = V({ id: "Z4", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([
+    UITEM({ cap: "這一段就是貼文的原文", link: "https://www.facebook.com/reel/9876/",
+            first: "2025-03-11", last: "2025-06-02" })]));
+  let SHOWN = null; showModal = (t, inner) => { SHOWN = { t, inner }; };
+  unfiledAdd(0);
+  ok(SHOWN && SHOWN.t === "把這支舊片補進影片庫", "**不是「直接加一支到大流」**");
+  ok(!SHOWN.inner.includes("大流"), "整個視窗裡不該再提到大流");
+  ok(SHOWN.inner.includes("這一段就是貼文的原文"),
+     "**文案自動帶進去**（而且是跟平台一模一樣的那份，下次同步就對得回來）");
+  ok(SHOWN.inner.includes("https://www.facebook.com/reel/9876/"), "上片連結也帶進去");
+  ok(/id="uf_date" type="date" value="2025-03-11"/.test(SHOWN.inner),
+     "**上片日期預設帶第一則貼文的日期**，不是今天");
+  ok(/id="uf_name" placeholder/.test(SHOWN.inner) && !/id="uf_name" value=/.test(SHOWN.inner),
+     "**檔名故意留空** —— 代填一個猜的名字，人會按過去就存檔，留下一支找不到原檔的片");
+  ok(/id="uf_drive" placeholder/.test(SHOWN.inner) && !/id="uf_drive" value=/.test(SHOWN.inner),
+     "雲端資料夾也留空（那要人自己去 Drive 找回毛片）"); }
+
+{ // 建出來的是「已上片的舊片」，不會跑進待認領、毛片庫存或待審
+  // ⚠️ 擋住生產面的不是 lib，是 stage：poolAll() 與 rawStock() 都要求
+  //    stage==="待處理"，needsReview() 要求沒有 reviewStatus。
+  const src = APP.slice(APP.indexOf("function unfiledAdd("), APP.indexOf("function unfiledAdd(") + 3000);
+  ok(!/lib:\s*DF_LIB/.test(src) && !/lib:\s*"大流"/.test(src), "**沒有把 lib 設成大流**");
+  ok(/tags:\["舊片"\]/.test(src), "帶「舊片」標籤");
+  ok(/stage:"已完成", published:true/.test(src), "一步到位（不進待處理 → 不進待認領、不進毛片庫存）");
+  ok(/reviewStatus:"通過"/.test(src), "審核也先標好（成品不需要審，免得跑進審片清單）");
+  ok(/finishedAt:when2/.test(src),
+     "**完成日用貼文那天，不是今天** —— 用 nowIso() 的話兩年前的舊片會跑進「今日完成」");
+  ok(/scheduledDate:when2/.test(src), "上片日也用那天（「多久沒用」才算得出來）");
+  // 生產面的三個池子確實只看 stage
+  ok(/function poolAll\(\)[\s\S]{0,300}stage==="待處理"/.test(APP), "待認領池只收「待處理」");
+  ok(/function rawStock\(\)[\s\S]{0,200}stage==="待處理"/.test(APP), "毛片庫存也只收「待處理」");
+  ok(/function doneToday|doneToday=\(STATE\.videos\|\|\[\]\)\.filter\(v=>isPublished\(v\)&&String\(v\.finishedAt\|\|""\)\.slice\(0,10\)===today\)/.test(APP),
+     "「今日完成」是比對 finishedAt===today（所以完成日不能填今天）"); }
+
+// 同步端：清單是 meta_sync 寫進 meta/settings.unfiledPosts 的
+{ const SY = fs.readFileSync(__dirname + "/../tools/meta_sync.py", "utf8");
+  ok(/def unfiled_groups\(/.test(SY), "同步端會把對不到的貼文依文案分組");
+  ok(/if u\.get\("candidates"\):\s*\n\s*continue/.test(SY),
+     "**「分不出是哪一支」的不算未建檔**（那是比對問題，不是沒建檔）");
+  ok(/UNFILED_MIN_VIEWS = 5000/.test(SY), "只收觀看 5,000 以上的（跟二創建議同一條線）");
+  ok(/UNFILED_MAX = 200/.test(SY), "而且有上限 —— 人一次看不完兩百筆以上");
+  ok(/updateMask\.fieldPaths=unfiledPosts/.test(SY),
+     "**用 updateMask 只寫這一格**（整份覆寫會把系統設定洗掉）");
+  ok(/report_unfiled\(cfg_fb, token, unfiled, args\.days\)/.test(SY),
+     "真的有接到同步流程上（不然寫了函式沒人呼叫）"); }
 
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);

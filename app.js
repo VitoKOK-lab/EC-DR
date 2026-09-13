@@ -7772,6 +7772,112 @@ function prodMerge(keepId){
         .then(()=>{ closeModal(); toast("已合併"); }); });
 }
 
+// ── 未在資料庫裡的影片（v206）────────────────────────────────────────
+// 老闆：「這個系統是新的，才做不到半年，可是我們 meta 裡面的資料有 2 年，
+//        所以你找到很多的是『系統裡面沒有建檔的』。」
+//
+// 我原本提議「自動把對不到的貼文全部建成影片」（估算約 1,300 支）。他否決了：
+//   「不行，因為這是因為我們人為的問題。那如果是，你只是給成效清單，然後標注
+//     『未建檔』這樣會比較簡單嗎？我們選中的再自己手動去找輸入，然後就歸進到舊片。」
+// 他是對的 —— 自動生 1,300 支，等於把人為的疏漏變成一千三百筆系統垃圾，
+// 而且沒有人會回頭清。所以這張卡**只列出來**，建不建是人的決定。
+//
+// 清單是 meta_sync 跑完寫進 meta/settings.unfiledPosts 的（同一份資料，
+// 不必讓前端自己去打 Meta API）。沒跑過同步就沒有這張卡。
+function unfiledList(){
+  const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||null;
+  return (u&&Array.isArray(u.items))?u.items:[];
+}
+let UNFILED_OPEN=false;
+function unfiledToggle(){ UNFILED_OPEN=!UNFILED_OPEN; render(); }
+function unfiledCard(){
+  const list=unfiledList(); if(!list.length) return "";
+  const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||{};
+  const tot=list.reduce((a,x)=>a+(+x.views||0),0);
+  const show=UNFILED_OPEN?list:list.slice(0,8);
+  const rows=show.map((x,i)=>`<tr>
+      <td data-label="#">${i+1}</td>
+      <td data-label="貼文">${x.link?`<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" title="開那則貼文">${esc(String(x.cap||"").slice(0,44))}</a>`
+        :esc(String(x.cap||"").slice(0,44))}</td>
+      <td data-label="平台" class="pr-k">${esc(x.plats||"")}</td>
+      <td data-label="發過" class="pr-k">${x.n} 則${x.first?`<span class="muted" style="font-size:11px">　${esc(String(x.first).slice(5))}${x.last&&x.last!==x.first?"～"+esc(String(x.last).slice(5)):""}</span>`:""}</td>
+      <td data-label="觀看" class="pr-v"><b>${num(x.views)}</b></td>
+      <td data-label="留言" class="pr-c">${num(x.comments)}</td>
+      ${canAddOldVideo()?`<td data-label=""><button class="btn sm" style="white-space:nowrap" onclick="unfiledAdd(${i})" title="建成一支舊片（文案與上片連結會自動帶進去）">建檔</button></td>`:""}</tr>`).join("");
+  return `<div class="card" style="border-color:var(--accent)">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>未在資料庫裡的影片（${list.length}）</b>
+      <span class="muted" style="font-size:12px">觀看合計 ${num(tot)}</span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.8">
+      平台上有這些貼文、成效數字也都在，但<b>系統裡沒有這支片</b> —— 所以上面的排行看不到它們。
+      系統做不到半年，平台上卻有兩年的資料，差的就是這一段。<br>
+      要建哪幾支是你決定的。按「建檔」會開新增視窗，<b>文案與上片連結自動帶進去</b>，
+      你只要補檔名（和雲端資料夾，找不到可以留空），建出來直接是<b>已上片的舊片</b>，
+      放在<b>正式影片庫</b>裡，不會跑進待認領也不會跑進待審。
+      ${u.at?`<br><span style="font-size:11px">清單更新於 ${esc(String(u.at).replace("T"," ").slice(0,16))}　只列觀看 ${num(5000)} 以上的</span>`:""}
+    </div>
+    <div class="${show.length>10?'vidscroll':''}" style="margin-top:8px">
+    <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-c">${canAddOldVideo()?'<col class="pr-k">':''}</colgroup>
+    <thead><tr><th>#</th><th>貼文（點開看原文）</th><th>平台</th><th>發過</th><th>觀看</th><th>留言</th>${canAddOldVideo()?"<th></th>":""}</tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${list.length>8?`<button class="btn sm sec" style="margin-top:8px" onclick="unfiledToggle()">${UNFILED_OPEN?"只看前 8 支":`看全部 ${list.length} 支`}</button>`:""}
+  </div>`;
+}
+// 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
+function canAddOldVideo(){ return !VIEW_AS && hasPerm("df"); }
+// 按「建檔」→ 把這支舊片補進**正式影片庫**，文案與上片連結先填好。
+//
+// ⚠️ v206 老闆：「不要建到大流，我們不是說好『等這裡做好，大流量影片庫要刪掉』。」
+//    他是對的 —— 建進一個準備拆掉的庫，等於製造下一次搬家。
+//    而且查過了：擋住生產面的**不是 lib，是 stage** ——
+//      poolAll()（待認領）與 rawStock()（毛片庫存）都要求 stage==="待處理"
+//      needsReview()（審片）要求沒有 reviewStatus
+//    所以建成「已完成 ＋ 已審過」就不會跑進去，跟在哪個庫無關。
+//
+// ⚠️ finishedAt 要用**貼文那天**，不是今天。用 nowIso() 的話，兩年前的舊片
+//    會跑進「今日完成」（doneToday 就是比對 finishedAt===today），
+//    看板上會出現一支今天根本沒人剪的片。
+// ⚠️ 檔名與雲端資料夾**故意不代填**：那要人自己去 Drive 找回毛片，
+//    代填一個猜的名字只會讓人按過去就存檔，然後留下一支找不到原檔的片。
+function unfiledAdd(i){
+  const x=unfiledList()[i]; if(!x) return;
+  if(dbBlocked()) return;
+  const when=String(x.first||x.last||"").slice(0,10);
+  showModal("把這支舊片補進影片庫", `
+    <div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">
+      這支片平台上發過，系統裡沒有。補進來之後，下一次同步就會把觀看數對回它 ——
+      因為文案跟平台上那則<b>一模一樣</b>。<br>
+      它會直接是<b>已上片的舊片</b>，不會跑進待認領，也不會跑進待審。</div>
+    <label>檔名 · 必填</label>
+    <input id="uf_name" placeholder="這支片叫什麼（去雲端硬碟找回毛片，用它的資料夾名）">
+    <label style="margin-top:10px">上片日期 · 必填</label>
+    <div class="dateField"><span class="dateIco">🗓</span><input id="uf_date" type="date" value="${esc(when)}"></div>
+    <div class="muted" style="font-size:12px;margin-top:4px">預設帶的是<b>第一則貼文的日期</b>（${esc(when||"沒有日期")}）。</div>
+    <label style="margin-top:10px">存檔資料夾（找不到就留空）</label>
+    <input id="uf_drive" placeholder="https://drive.google.com/...">
+    <label style="margin-top:10px">上片連結</label>
+    <input id="uf_pub" value="${esc(String(x.link||""))}">
+    <label style="margin-top:10px">文案（跟平台上那則一樣，不要改）</label>
+    <textarea id="uf_copy" style="min-height:110px">${esc(String(x.cap||""))}</textarea>
+  `, async ()=>{
+    const name=zhTW((val("uf_name")||"").trim());
+    if(!name){ toast("請填檔名",true); return false; }
+    const when2=String(val("uf_date")||"").slice(0,10);
+    if(!when2){ toast("請選上片日期 —— 沒有日期，「多久沒用」就算不出來",true); return false; }
+    const copy=(val("uf_copy")||"").trim();
+    if(!copy){ toast("文案不要清掉 —— 那是下次同步對回成效的唯一依據",true); return false; }
+    const video={ name, rawName:name, videoCopy:copy,
+      driveFolder:(val("uf_drive")||"").trim(), publishedLink:(val("uf_pub")||"").trim(),
+      scheduledDate:when2,
+      // 已經是成品：一步到位，不進待處理、不進待認領、不進審片
+      stage:"已完成", published:true, finishedAt:when2, backupDone:true, socialScheduled:true,
+      reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),
+      tags:["舊片"] };
+    return await write("POST","/api/videos",{video},"已補進影片庫");
+  });
+}
+
 // 影片排行的排法：views＝依觀看｜remake＝依二創建議（v204 把二創建議併進這張表）
 let PERF_SORT="views";
 function perfSetSort(s){ PERF_SORT=(s==="remake")?"remake":"views"; render(); }
@@ -7928,6 +8034,7 @@ function viewPerf(){
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
       <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
     }</div>`:''}
+  ${unfiledCard()}
   ${perfRankCard()}
   ${rmkPerfCard()}
   <div class="card"><b>帶貨商品排行${PERF_PLAT?`（${esc(PERF_PLAT)}）`:''}</b> <span class="muted" style="font-size:12px">前 50 名</span> <span class="muted" style="font-size:12px">依「帶此商品的影片觀看加總」排（觸及，非銷售）</span>

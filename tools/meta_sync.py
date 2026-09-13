@@ -858,6 +858,88 @@ def _mark_success(info):
         print("  ⚠ 狀態檔寫不進去：%s" % e)
 
 
+# ---------------------------------------------------------------------------
+# 未建檔的高成效貼文
+# ---------------------------------------------------------------------------
+# 老闆：「這個系統是新的，才做不到半年，可是我們 meta 裡面的資料有 2 年，
+#        所以你找到很多的是『系統裡面沒有建檔的』。」
+#
+# 我原本提議「自動把對不到的貼文全部建成影片」（估算約 1,300 支）。他否決了：
+#   「不行，因為這是因為我們人為的問題。那如果是，你只是給成效清單，然後標注
+#     『未建檔』這樣會比較簡單嗎？我們選中的再自己手動去找輸入，然後就歸進到舊片。」
+# 他是對的 —— 自動生 1,300 支，等於把人為的疏漏變成一千三百筆系統垃圾，
+# 而且沒有人會回頭清。改成：**只給清單，人挑，挑中的自己建**。
+#
+# 所以這裡不寫影片，只把「值得建檔的舊貼文」整理成一份清單放在 meta/settings 上，
+# 讓畫面列得出來。挑不挑、建不建，是人的決定。
+UNFILED_MIN_VIEWS = 5000     # 跟二創建議同一條線 —— 沒到這個數的舊貼文不值得回頭建檔
+UNFILED_MAX = 200            # 清單上限。不是省空間，是**人一次看不完兩百筆以上**
+
+
+def unfiled_groups(unmatched):
+    """把「對不到任何影片」的貼文依文案分組，一組＝一支沒建檔的片。
+
+    同一支片會被重發好幾次，文案幾乎一模一樣 —— 不分組的話，一支片會在清單上
+    出現七八次，人根本挑不下去。分組的 key 用正規化後的文案前 60 字：
+    整段比會因為結尾多一個 emoji 就分開，前 60 字夠認出是不是同一支。
+    """
+    groups = {}
+    for u in unmatched:
+        if u.get("candidates"):
+            continue                      # 那是「分不出是哪一支」，不是沒建檔
+        p = u["post"]
+        cap = meta_match.normalize(p.get("caption") or "")
+        if len(cap) < meta_match.MIN_CHARS:
+            continue                      # 文案太短，建了檔也對不回來
+        g = groups.setdefault(cap[:60], {
+            "cap": (p.get("caption") or "").strip(),
+            "n": 0, "views": 0, "comments": 0,
+            "first": "9999", "last": "", "link": "", "best": -1, "plats": set()})
+        g["n"] += 1
+        g["views"] += int(p.get("views") or 0)
+        g["comments"] += int(p.get("comments") or 0)
+        d = str(p.get("at") or "")[:10]
+        if d:
+            g["first"] = min(g["first"], d)
+            g["last"] = max(g["last"], d)
+        g["plats"].add(p.get("platform") or "")
+        if int(p.get("views") or 0) > g["best"]:     # 連結取觀看最高的那一則
+            g["best"] = int(p.get("views") or 0)
+            g["link"] = p.get("permalink") or ""
+    out = [g for g in groups.values() if g["views"] >= UNFILED_MIN_VIEWS]
+    out.sort(key=lambda g: -g["views"])
+    return out[:UNFILED_MAX]
+
+
+def report_unfiled(cfg_fb, token, groups, days):
+    """寫進 meta/settings 的 unfiledPosts。
+
+    ⚠️ 跟 report_status 一樣，一定要用 updateMask 只寫這一格 ——
+       整份覆寫會把系統設定洗掉。
+    ⚠️ 文案只存前 300 字：Firestore 單一文件有 1 MiB 上限，而且畫面上本來就
+       只顯示開頭幾十個字，全文存進去只是把設定檔撐爆。
+    """
+    items = []
+    for g in groups:
+        items.append({"mapValue": {"fields": {
+            "cap":      {"stringValue": g["cap"][:300]},
+            "n":        {"integerValue": str(g["n"])},
+            "views":    {"integerValue": str(g["views"])},
+            "comments": {"integerValue": str(g["comments"])},
+            "first":    {"stringValue": g["first"] if g["first"] != "9999" else ""},
+            "last":     {"stringValue": g["last"]},
+            "link":     {"stringValue": g["link"]},
+            "plats":    {"stringValue": "／".join(sorted(x for x in g["plats"] if x))},
+        }}})
+    url = "%s/meta/settings?updateMask.fieldPaths=unfiledPosts" % _fs.docs_base(cfg_fb)
+    body = {"fields": {"unfiledPosts": {"mapValue": {"fields": {
+        "at":    {"stringValue": _fs.taipei_now()},
+        "days":  {"integerValue": str(days)},
+        "items": {"arrayValue": {"values": items}},
+    }}}}}
+    _fs._patch(url, body, token)
+
+
 def report_status(cfg_fb, token, status):
     """把這次的結果寫進 meta/settings 的 metaSyncStatus。
 
@@ -1197,6 +1279,23 @@ def main():
             if len(amb) > 15:
                 print("     …另外還有 %d 則" % (len(amb) - 15))
 
+    # ── 未在資料庫裡的影片（老闆指定，見 unfiled_groups 上面那段）──────────
+    # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
+    # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
+    unfiled = unfiled_groups(unmatched)
+    if unfiled:
+        tot = sum(g["views"] for g in unfiled)
+        print("\n── 未在資料庫裡、但成效不錯的舊片：%d 支（觀看合計 %s）──"
+              % (len(unfiled), _fs.human(tot)))
+        print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
+        print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
+        for g in unfiled[:12]:
+            print("   %9s 觀看　%3s 則　%s～%s　%s"
+                  % (_fs.human(g["views"]), g["n"], g["first"][5:], g["last"][5:],
+                     g["cap"][:30].replace("\n", " ")))
+        if len(unfiled) > 12:
+            print("   …另外還有 %d 支（畫面上看得到全部）" % (len(unfiled) - 12))
+
     if not args.write:
         print("\n（只看不寫，資料庫沒有動。確認上面的清單是對的，再加 --write）")
         return 0
@@ -1248,6 +1347,12 @@ def main():
             "matched": len(matched), "days": args.days}
     try:
         report_status(cfg_fb, token, info)
+        # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——
+        # 不寫的話畫面上會一直掛著上一次的舊清單，建過檔的片還留在「未建檔」裡。
+        try:
+            report_unfiled(cfg_fb, token, unfiled, args.days)
+        except Exception as e:
+            print("  ⚠ 未建檔清單寫不進去：%s" % e)
     except Exception as e:                                      # noqa: BLE001
         print("  ⚠ 狀態回報寫不進去：%s" % e)
     if not failed:
