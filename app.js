@@ -7024,6 +7024,17 @@ function rmkAired(v){
   // 還沒到上片日的不算（下面那道 <=today 會濾掉）——排了不等於出了。
   if(!isRemake(v)) remakesOfSrc(v&&v.id).forEach(k=>{
     const x=String((k||{}).scheduledDate||"").slice(0,10); if(x) o.push(x); });
+  // ⚠️ v205：**平台上真正的發文日**才是最硬的證據，排程日只是「打算什麼時候發」。
+  // 正式資料實測（168 支有發文日的片）：只有 100 支兩者對得起來，47 支差超過 7 天、
+  // 7 支排程日還在未來卻早就發了、14 支根本沒填排程日 —— 也就是 68 支的
+  // 「多久沒用／用過幾次」是錯的，而那正是二創建議排序的兩個乘數之一。
+  // 最誇張的一支：排程說「32 天沒用、用過 1 次」，實際上三個月內重發了 7 次、
+  // 最近一次是 4 天前 —— 系統卻把它排在推薦的第 11 名。
+  //
+  // 日期本身去重就夠了：同一天的 FB＋IG 自動算一天。**不要再做鄰近日期合併** ——
+  // 量過，相隔剛好一天的 7 對裡只有 1 對是跨平台時差，另外 6 對都是同一個粉專
+  // 隔天又發一次（那是真的重發）。為了修 1 個時差吃掉 6 次真重發，划不來。
+  ((v&&v.metrics)||[]).forEach(m=>{ const x=String((m||{}).postAt||"").slice(0,10); if(x) o.push(x); });
   return [...new Set(o)].filter(x=>x<=today).sort();
 }
 function rmkDaysSince(v){
@@ -7704,7 +7715,15 @@ function vidMetricsCard(v){
       ${mx.slice().sort((a,b)=>String(b.postAt||"").localeCompare(String(a.postAt||""))).map(m=>`<tr><td data-label="發文日" style="white-space:nowrap">${
         m.link?`<a href="${esc(m.link)}" target="_blank" rel="noopener noreferrer" title="點開這則貼文">${esc(String(m.postAt||"").slice(0,10))||"—"}</a>`
               :esc(String(m.postAt||"").slice(0,10))||'<span class="muted">—</span>'}</td><td data-label="平台／帳號">${esc(m.platform||"")} ${esc(m.account||"")}</td><td data-label="觀看">${(+m.views||0).toLocaleString()}</td><td data-label="讚">${(+m.likes||0).toLocaleString()}</td><td data-label="留言">${(+m.comments||0).toLocaleString()}</td><td data-label="分享">${(+m.shares||0).toLocaleString()}</td></tr>`).join("")}
-      </tbody></table>${mx.length>1?`<div class="muted" style="font-size:11px;margin-top:4px">同一支片發了 ${mx.length} 次（每一列是一則貼文，點日期可以開那則）</div>`:""}<div class="muted" style="font-size:11px;margin-top:4px">${
+      ${/* ⚠️ v205：這裡本來寫「同一支片發了 N 次」，N 是**貼文則數**。
+            但 FB 一則 ＋ IG 一則是同一次上片發到兩個平台，不是發了兩次 ——
+            老闆在畫面上看到「發了 2 次」，旁邊排行卻寫「多久沒用 —」，兩個數字打架。
+            改成講**出過幾天**（同一天的跨平台算一次），跟排行的「用過幾次」同一個算法，
+            兩邊才對得起來。則數另外講，因為它也是有用的（點得開每一則）。 */''}
+      </tbody></table>${(()=>{ const days=[...new Set(mx.map(m=>String(m.postAt||"").slice(0,10)).filter(Boolean))];
+        if(mx.length<2) return "";
+        return `<div class="muted" style="font-size:11px;margin-top:4px">${
+          days.length>1?`這支片出過 <b>${days.length}</b> 次`:"同一次上片"}，共 ${mx.length} 則貼文（點日期可以開那則）</div>`; })()}<div class="muted" style="font-size:11px;margin-top:4px">${
         rateShown(v)?`每千次觀看 ${vidCommentRate(v).toFixed(1)} 則留言　・　`:''
       }更新於 ${esc((v.metricsAt||"").replace("T"," "))}</div>`
       :`<div class="muted" style="font-size:12px;margin-top:6px">尚無成效數據。同步工作會以<b>貼文文案</b>比對 IG／FB 的貼文，把觀看、讚、留言填進這裡。對不到的話，通常是這支片沒有文案、或平台上用了完全不同的行銷文案發。</div>`}

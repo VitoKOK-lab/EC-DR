@@ -294,6 +294,42 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
      "沒有成績就只顯示人，不要硬擠一個 0% 上去");
 }
 
+// ══════════ ⑰a 「多久沒用／用過幾次」要看平台上真正的發文日（v205）══════════
+// 老闆在畫面上抓到的：一支片排行寫「多久沒用 —」，點進去卻看到它 8/12 就發過了。
+// 原因是排序只看**人工填的預排上片日**（2026-10-10，還沒到），沒看平台回來的發文日。
+// 正式資料實測：168 支有發文日的片裡，只有 100 支兩者對得起來 ——
+// 47 支差超過 7 天、7 支排程日還在未來卻早就發了、14 支根本沒填排程日。
+{ const 排程在未來但早就發了 = V({ id: "PA", name: "十月才排，八月就發了",
+    scheduledDate: D(-28),                       // 上片日還在未來
+    metrics: [{ platform: "FB", account: "FB 粉專（Zanagems）", views: 102499, likes: 300,
+                comments: 38, postAt: D(32) + "T10:00:00", postId: "z1" }] });
+  mount([排程在未來但早就發了], "管理員", "boss");
+  const v = vid("PA");
+  ok(rmkAired(v).length === 1, "**排程日還沒到，但平台上發過了 → 算它出過一次**");
+  ok(rmkDaysSince(v) === 32, "「多久沒用」從真正的發文日算起，不是從排程日");
+  ok(rmkRank([v]).length && rmkRank([v])[0].score > 0,
+     "所以它推薦得出來（以前排程日沒到，分數是 0，整支片從建議上消失）"); }
+{ // 反過來：排程說很久沒用，但其實幾天前才重發過 —— 這種片絕不能推薦去二創
+  const 剛重發過 = V({ id: "PB", name: "排程說很久沒用，其實四天前才發",
+    scheduledDate: D(32),
+    metrics: [{ platform: "FB", account: "FB 粉專（Zanagems）", views: 50000, likes: 300,
+                comments: 40, postAt: D(4) + "T10:00:00", postId: "z2" }] });
+  mount([剛重發過], "管理員", "boss");
+  const v = vid("PB");
+  ok(rmkDaysSince(v) === 4, "「多久沒用」＝ 4 天，不是排程說的 32 天");
+  ok(rmkRank([v])[0].score === 0, "**四天前才發過的片，分數是 0（30 天冷卻擋住）**");
+  ok(rmkAired(v).length === 2, "排程日與發文日是兩次不同的使用，都算"); }
+{ // 同一天發 FB＋IG 只算一次；不同天的重發才各算一次
+  const m = (d, p) => ({ platform: p, account: p + " 帳號", views: 9000, likes: 10, comments: 6,
+                         postAt: D(d) + "T10:00:00", postId: p + d });
+  const v0 = V({ id: "PC", name: "同天兩平台", metrics: [m(40, "FB"), m(40, "IG")] });
+  const v1 = V({ id: "PD", name: "隔天又發一次", metrics: [m(40, "FB"), m(39, "FB")] });
+  mount([v0, v1], "管理員", "boss");
+  ok(rmkAired(vid("PC")).length === 1, "同一天 FB＋IG → 算一次");
+  // ⚠️ 不要為了這個去做「鄰近日期合併」。量過正式資料：相隔剛好一天的 7 對裡，
+  //    只有 1 對是跨平台時差，其他 6 對都是同一個粉專隔天又發一次（真的重發）。
+  ok(rmkAired(vid("PD")).length === 2, "**隔天又發一次 → 算兩次**（那是真的重發，不准合併掉）"); }
+
 // ══════════ ⑰b 二創自己一頁，不長在「大流量影片」上（v203）══════════
 // 老闆：「我這裡是新的頁面新的表單，跟原本的大流量不要有關係，未來這邊用的順手了，
 //        我會直接把大流量那一整頁直接刪掉」「舊的那一個大流量頁面，那邊的資料不是那麼準確」
@@ -372,7 +408,22 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   ok(c.includes("2026-09-12") && c.includes("2026-09-08") && c.includes("2026-08-10"),
      "三則的日期都列出來");
   ok(c.indexOf("2026-09-12") < c.indexOf("2026-08-10"), "新的排前面");
-  ok(c.includes("同一支片發了 3 次"), "直接寫明這是同一支片發了幾次");
+  // v205：本來寫「同一支片發了 N 次」，N 是貼文則數 —— 但 FB 一則 ＋ IG 一則是
+  // 同一次上片發到兩個平台，不是發了兩次。老闆在畫面上看到「發了 2 次」，旁邊排行
+  // 卻寫「多久沒用 —」，兩個數字打架。改成講**出過幾天**，跟排行的「用過幾次」同一個算法。
+  ok(c.includes("出過 <b>3</b> 次") && c.includes("共 3 則貼文"),
+     "三個不同的日子 → 出過 3 次、共 3 則貼文");
+  { const 同天兩平台 = V({ id: "M4", name: "一次發兩個平台", metrics: [
+      { platform: "FB", account: "FB 粉專（Zanagems）", views: 900, likes: 8, comments: 7,
+        postAt: "2026-08-12T10:00:22", postId: "q1", link: "https://www.facebook.com/reel/9/" },
+      { platform: "IG", account: "IG 溱姐主（@tzgems1111）", views: 102499, likes: 3251, comments: 38,
+        postAt: "2026-08-12T10:00:07", postId: "q2", link: "https://www.instagram.com/reel/x/" }] });
+    mount([同天兩平台], "管理員", "boss");
+    const c2 = vidMetricsCard(vid("M4"));
+    ok(c2.includes("同一次上片") && c2.includes("共 2 則貼文"),
+       "**同一天發到 FB＋IG 是「同一次上片」，不是「發了 2 次」**（老闆看到這裡覺得怪的就是它）");
+    ok(!c2.includes("發了 2 次"), "不要再寫「發了 2 次」");
+    ok(rmkAired(vid("M4")).length === 1, "而且「用過幾次」也只算 1 次 —— 兩邊要對得起來"); }
   ok(/<a href="https:\/\/www\.facebook\.com\/reel\/2\/"[^>]*>2026-09-08<\/a>/.test(c),
      "有連結的日期點得開那則貼文（要查是不是同一支片就靠它）");
   ok(c.includes("總觀看 8,660"), "總數照舊（645+8014+1）"); }

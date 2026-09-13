@@ -340,10 +340,35 @@ ok("fb_reels_total_plays" in S.FB_VIDEO_METRICS and "blue_reels_play_count" in S
 # 程式碼層級：影片物件那一次呼叫真的有打出去
 ok("video_insights" in SYNC_SRC and "fb_video_id(p)" in SYNC_SRC,
    "add_insights 真的會去問影片物件")
-# 圖文貼文沒有播放數是正常的，不可以標成「抓不到」——
-# 標了會讓它永遠掛在「要查」的名單上，變成熄不掉的紅字（v136 那類病）
-ok('not (p["platform"] == "FB" and not vid_id)' in SYNC_SRC,
-   "圖文貼文的 0 不算「抓不到」")
+# ⚠️ v205 改法：以前這裡是「FB 而且沒有影片 id → 不算抓不到」，寫在 viewsMissing 上。
+# 用意是對的（圖文貼文沒有播放數是正常的，標成抓不到會變成熄不掉的紅字），
+# 但它把**真的沒問到的影片**也一起吞成 0 —— 2026-09-13 老闆在畫面上抓到
+# 「觀看 1、讚 182、分享 29」就是這樣來的。
+# 現在 viewsMissing 誠實記，改用 notVideo 在**報告那一段**分兩堆講。
+ok('p["viewsMissing"] = view is None' in SYNC_SRC,
+   "問不到就誠實標記，不要因為它是 FB 就假裝問到了")
+ok('p.get("viewsMissing") and not p.get("notVideo")' in SYNC_SRC
+   and 'p.get("viewsMissing") and p.get("notVideo")' in SYNC_SRC,
+   "報告裡「抓不到」與「本來就沒有播放數」分兩堆講（圖文貼文不會變成熄不掉的紅字）")
+# 網址拆不出影片 id 的，要再問一次那則貼文的附件 ——
+# 正式資料上有 2 則的網址是 /<粉專>/posts/<id>，從頭到尾沒問過影片，觀看記成 0 而讚有 282
+ok("fb_video_id_deep" in SYNC_SRC and "attachments{media_type,type,target}" in SYNC_SRC,
+   "/posts/<id> 這種網址要逐則去問附件，才拿得到影片 id")
+ok('if p["platform"] == "FB" and not vid_id:' in SYNC_SRC,
+   "而且只在網址拆不出來的時候才多問（275 則裡只有 2 則，不要每則都多一次呼叫）")
+# 舊的壞數字不會自己好 —— 同步只重問「留言夠」或「追蹤中」的貼文
+ok(S.looks_broken({"metrics": [{"postId": "p1", "views": 1, "likes": 182}]}, "p1"),
+   "觀看比讚還少 → 判定為壞數字（沒有人能在沒看過的情況下按讚）")
+ok(not S.looks_broken({"metrics": [{"postId": "p1", "views": 5000, "likes": 182}]}, "p1"),
+   "正常的列不會被誤判")
+ok(S.looks_broken({"metrics": [{"postId": "p1", "views": 0, "likes": 0, "viewsMissing": True}]}, "p1"),
+   "上次根本沒問到的，也要再試一次")
+ok(not S.looks_broken({"metrics": [{"postId": "other", "views": 1, "likes": 9}]}, "p1"),
+   "只看同一則貼文的那一列")
+ok(not S.looks_broken(None, "p1") and not S.looks_broken({}, ""),
+   "沒有資料不會爆掉")
+ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
+   "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
 
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，

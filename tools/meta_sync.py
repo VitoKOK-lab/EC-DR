@@ -113,9 +113,34 @@ RE_FB_VIDEO = re.compile(r"/(?:reel|videos?)/(\d+)")
 
 
 def fb_video_id(post):
-    """從 FB 貼文的網址拆出影片 id；不是影片貼文就回空字串。"""
+    """從 FB 貼文的網址拆出影片 id；拆不出來就回空字串。
+
+    ⚠️ 網址不是只有 /reel/<id>/ 一種。同一個粉專也會出現
+       facebook.com/<粉專id>/posts/<貼文id> —— 那串是**貼文** id，不是影片 id，
+       拆出來也問不到播放數。這種要走 fb_video_id_deep() 再問一次附件。
+    """
     m = RE_FB_VIDEO.search(str((post or {}).get("permalink") or ""))
     return m.group(1) if m else ""
+
+
+def fb_video_id_deep(post, token):
+    """網址拆不出影片 id 的時候，逐則去問那篇貼文的附件。
+
+    2026-09-13 在正式資料上抓到：最新一次同步寫進去的 275 列 FB 裡，有 2 列觀看是 0
+    而讚有 282 和 153 —— 兩則的網址都是 /<粉專>/posts/<id>，所以從頭到尾沒問過影片。
+
+    ⚠️ 只在網址拆不出來的時候才問（275 則裡只有 2 則），不然每則多一次呼叫。
+    ⚠️ 也不要改成在 /posts 清單上要 attachments 的子欄位 —— 會被擋成
+       「(#12) deprecate_post_aggregated_fields_for_attachement is deprecated
+       for versions v3.3 and higher」，整支掛掉。附件只能**逐則單獨問**。
+    """
+    try:
+        det = _call(str(post.get("id") or ""), token,
+                    {"fields": "object_id,attachments{media_type,type,target}"})
+    except MetaError:
+        return ""
+    att = ((det.get("attachments") or {}).get("data") or [{}])[0]
+    return str(((att.get("target") or {}).get("id")) or det.get("object_id") or "")
 
 
 # 哪些指標算「觀看數」。順序就是優先序 —— Reels 的總播放排第一。
@@ -423,6 +448,8 @@ def add_insights(posts, cfg, token, verbose=False):
                         IG_METRICS if p["platform"] == "IG" else FB_METRICS, missing)
         # FB 影片貼文：播放數在**影片物件**上，貼文物件上沒有（見 FB_VIDEO_METRICS 那段）
         vid_id = fb_video_id(p) if p["platform"] == "FB" else ""
+        if p["platform"] == "FB" and not vid_id:
+            vid_id = fb_video_id_deep(p, tok)      # 網址拆不出來的才多問一次
         if vid_id:
             ins.update(_insights("%s/video_insights" % vid_id, tok,
                                  FB_VIDEO_METRICS, missing))
@@ -436,7 +463,12 @@ def add_insights(posts, cfg, token, verbose=False):
         p["views"] = int(view or 0)
         # 圖文／連結貼文本來就沒有播放數，那不是「抓不到」——
         # 標成 viewsMissing 會讓它一直出現在「要查」的名單上，變成永遠熄不掉的紅字。
-        p["viewsMissing"] = (view is None) and not (p["platform"] == "FB" and not vid_id)
+        # ⚠️ 這一行以前寫成「FB 而且沒有影片 id → 不算抓不到」，結果把「真的沒問到」
+        #    跟「本來就沒有播放數」吞成同一件事，安安靜靜記成 0。畫面上看起來就像
+        #    「這支片真的沒人看」—— 2026-09-13 老闆就是在畫面上抓到「觀看 1、讚 182」。
+        #    現在只要問不到就誠實標記；notVideo 另外記，讓畫面知道該說「沒有播放數」
+        #    還是「問不到」。
+        p["viewsMissing"] = view is None
         p["notVideo"] = bool(p["platform"] == "FB" and not vid_id)
         if p["platform"] == "IG":
             p["shares"] = ins.get("shares", p.get("shares", 0))
@@ -543,6 +575,30 @@ def remake_parents(videos):
     return out
 
 
+def looks_broken(video, post_id):
+    """這則貼文上次存下來的數字，是不是明顯壞掉的？
+
+    判準只有一條，而且是物理性的：**觀看數比讚數還少**。
+    沒有人能在沒看過的情況下按讚，所以這種列一定是抓錯，不是真的沒人看。
+
+    為什麼需要這條：2026-09-12 修好 FB Reels 播放數之後，舊的壞數字**不會自己好** ——
+    同步只會重問「留言夠多」或「還在追蹤期內」的貼文，一則一個月前、留言只有 1 的
+    舊貼文就永遠停在錯的數字上。正式資料上這樣的有 12 列，最誇張的一列是
+    「觀看 1、讚 182、分享 29」，而它就長在老闆的畫面上。
+
+    有了這條，下一次排程同步自己會把它們重問一遍，不用任何人記得下指令。
+    """
+    if not video or not post_id:
+        return False
+    for r in (video.get("metrics") or []):
+        if str(r.get("postId") or "") != str(post_id):
+            continue
+        if r.get("viewsMissing"):
+            return True                      # 上次根本沒問到，再試一次
+        return int(r.get("views") or 0) < int(r.get("likes") or 0)
+    return False
+
+
 def needs_insights(post, video, today, min_comments, min_views, track_days,
                    suspects=(), parents=()):
     """這一則要不要花一次 API 呼叫去問成效？回傳 (要不要, 為什麼)。
@@ -560,6 +616,8 @@ def needs_insights(post, video, today, min_comments, min_views, track_days,
         return True, "留言夠"
     if not video:
         return False, ""
+    if looks_broken(video, post.get("id")):
+        return True, "上次抓到的數字不可能（要重問）"
     if str(video.get("sourceVideoId") or "").strip():
         return True, "二創"
     if video.get("id") in (suspects or ()):
@@ -960,11 +1018,19 @@ def main():
     by_plat = {}
     for p in want:
         by_plat.setdefault(p["platform"], []).append(int(p.get("views") or 0))
-    nodata = [p for p in want if p.get("viewsMissing")]
+    # ⚠️ 「抓不到」與「本來就沒有播放數」要分開講。
+    #    以前的作法是把圖文貼文直接標成「不算抓不到」（viewsMissing=False），
+    #    結果連**真的沒問到的影片**也一起被吞成 0 —— 2026-09-13 老闆在畫面上
+    #    抓到「觀看 1、讚 182」就是這樣來的。現在 viewsMissing 誠實記，
+    #    改在**這裡**分兩堆講，圖文貼文一樣不會變成熄不掉的紅字。
+    nodata = [p for p in want if p.get("viewsMissing") and not p.get("notVideo")]
+    notvid = [p for p in want if p.get("viewsMissing") and p.get("notVideo")]
     if nodata:
         print("\n⚠ 有 %d 則**抓不到觀看數**（Meta 回空的，不是回 0）。" % len(nodata))
         print("   常見原因：帳號粉絲數不足 100（官方說有些指標就是不給），")
         print("   或那則貼文的類型／年紀不支援。這幾則不會被當成「沒人看」。")
+    if notvid:
+        print("\n  （另外 %d 則不是影片貼文，本來就沒有播放數 —— 不用查）" % len(notvid))
 
     dead = [k for k, vs in by_plat.items() if vs and not any(vs)]
     if dead:
