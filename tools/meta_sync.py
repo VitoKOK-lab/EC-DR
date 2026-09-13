@@ -890,7 +890,15 @@ def _mark_success(info):
 #
 # 所以這裡不寫影片，只把「值得建檔的舊貼文」整理成一份清單放在 meta/settings 上，
 # 讓畫面列得出來。挑不挑、建不建，是人的決定。
-UNFILED_MIN_VIEWS = 5000     # 跟二創建議同一條線 —— 沒到這個數的舊貼文不值得回頭建檔
+# ⚠️ 門檻用**留言數**，不是觀看數。
+#    2026-09-13 第一版用觀看數，結果清單永遠是空的 —— 因為同步只對「對得上影片」
+#    的貼文去問成效，**對不上的那一萬七千則從來沒被問過，views 全是 0**，
+#    而 0 永遠不會 >= 5000。我測試時是自己塞 views 進假貼文，所以測不出來。
+#    這支檔案開頭就寫過「留言數在貼文清單裡就拿得到，不用另外呼叫 → 拿它當篩子」，
+#    我做這個功能的時候把自己寫過的原則忘了。
+#    留言數是免費的（FB 的 comments.summary、IG 的 comments_count 都在清單裡），
+#    而且它本來就是達標條件的一半。
+UNFILED_MIN_COMMENTS = 5     # 跟達標同一條線（觀看 >= 5,000 **且** 留言 >= 5）
 UNFILED_MAX = 200            # 清單上限。不是省空間，是**人一次看不完兩百筆以上**
 
 
@@ -912,7 +920,9 @@ def unfiled_groups(unmatched):
         g = groups.setdefault(cap[:60], {
             "cap": (p.get("caption") or "").strip(),
             "n": 0, "views": 0, "comments": 0,
-            "first": "9999", "last": "", "link": "", "best": -1, "plats": set()})
+            "first": "9999", "last": "", "link": "", "best": -1, "plats": set(),
+            "posts": []})          # 留著，--unfiled-views 才問得到它們的觀看數
+        g["posts"].append(p)
         g["n"] += 1
         g["views"] += int(p.get("views") or 0)
         g["comments"] += int(p.get("comments") or 0)
@@ -924,9 +934,30 @@ def unfiled_groups(unmatched):
         if int(p.get("views") or 0) > g["best"]:     # 連結取觀看最高的那一則
             g["best"] = int(p.get("views") or 0)
             g["link"] = p.get("permalink") or ""
-    out = [g for g in groups.values() if g["views"] >= UNFILED_MIN_VIEWS]
-    out.sort(key=lambda g: -g["views"])
+    out = [g for g in groups.values() if g["comments"] >= UNFILED_MIN_COMMENTS]
+    out.sort(key=lambda g: (-g["comments"], -g["views"]))
     return out[:UNFILED_MAX]
+
+
+def unfiled_fill_views(groups, cfg, token, verbose=False):
+    """替清單上那幾組去問真正的觀看數（要花呼叫，所以是 --unfiled-views 才做）。
+
+    平常的每日同步不做這一段：對不上的貼文有一萬七千則，全問等於一萬七千次呼叫。
+    只問清單上這 200 組裡的貼文（每組通常 1～3 則），大約四五百次，
+    而且只有在人真的要挖舊片的時候才跑。
+    """
+    reps = [p for g in groups for p in g["posts"]]
+    if not reps:
+        return
+    print("\n  順便問這 %d 則的觀看數（--unfiled-views）：" % len(reps))
+    add_insights(reps, cfg, token, verbose)
+    for g in groups:
+        g["views"] = sum(int(p.get("views") or 0) for p in g["posts"])
+        best = -1
+        for p in g["posts"]:
+            v = int(p.get("views") or 0)
+            if v > best:
+                best, g["link"] = v, (p.get("permalink") or g["link"])
 
 
 def report_unfiled(cfg_fb, token, groups, days):
@@ -939,6 +970,7 @@ def report_unfiled(cfg_fb, token, groups, days):
     """
     items = []
     for g in groups:
+        # posts 只是拿來問觀看數的暫存，不寫進資料庫（會把設定檔撐爆）
         items.append({"mapValue": {"fields": {
             "cap":      {"stringValue": g["cap"][:300]},
             "n":        {"integerValue": str(g["n"])},
@@ -1007,6 +1039,8 @@ def main():
                     help="一支片達標之後，繼續追蹤幾天（預設 30）")
     ap.add_argument("--write", action="store_true", help="真的寫進資料庫（預設只看不寫）")
     ap.add_argument("--fill-links", action="store_true", help="順便把空的上片連結補回去")
+    ap.add_argument("--unfiled-views", action="store_true",
+                    help="替「未在資料庫裡的影片」清單問真正的觀看數（多花幾百次呼叫）")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
     ap.add_argument("--from-file", default="", help="用存好的 JSON 重跑比對，不連網")
     ap.add_argument("--videos-file", default="",
@@ -1305,21 +1339,34 @@ def main():
     # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
     # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
     unfiled = unfiled_groups(unmatched)
+    if unfiled and args.unfiled_views and not args.from_file:
+        unfiled_fill_views(unfiled, cfg, token, args.verbose)
     if unfiled:
-        tot = sum(g["views"] for g in unfiled)
-        print("\n── 未在資料庫裡、但成效不錯的舊片：%d 支（觀看合計 %s）──"
-              % (len(unfiled), _fs.human(tot)))
+        tot_c = sum(g["comments"] for g in unfiled)
+        tot_v = sum(g["views"] for g in unfiled)
+        print("\n── 未在資料庫裡、但有人看的舊片：%d 支（留言合計 %s%s）──"
+              % (len(unfiled), _fs.human(tot_c),
+                 "、觀看合計 " + _fs.human(tot_v) if tot_v else ""))
         print("   系統裡沒有這幾支片，所以排行上看不到它們。要不要建檔是人的決定 ——")
         print("   畫面上（影片成效頁）會列出來，挑中的按「建檔」，文案與上片連結會自動帶進去。")
+        if not tot_v:
+            print("   （觀看數要加 --unfiled-views 才會去問；留言數是抓清單時就有的，不用花呼叫）")
         for g in unfiled[:12]:
-            print("   %9s 觀看　%3s 則　%s～%s　%s"
-                  % (_fs.human(g["views"]), g["n"], g["first"][5:], g["last"][5:],
-                     g["cap"][:30].replace("\n", " ")))
+            print("   留言 %5s　%s%3s 則　%s～%s　%s"
+                  % (_fs.human(g["comments"]),
+                     ("觀看 %9s　" % _fs.human(g["views"])) if g["views"] else "",
+                     g["n"], g["first"][5:], g["last"][5:],
+                     g["cap"][:28].replace("\n", " ")))
         if len(unfiled) > 12:
             print("   …另外還有 %d 支（畫面上看得到全部）" % (len(unfiled) - 12))
+    else:
+        print("\n── 未在資料庫裡的舊片：這個範圍內沒有留言 %d 則以上的 ──" % UNFILED_MIN_COMMENTS)
 
     if not args.write:
         print("\n（只看不寫，資料庫沒有動。確認上面的清單是對的，再加 --write）")
+        if unfiled:
+            print("　⚠ 「未在資料庫裡的舊片」那張清單**也要 --write 才會寫進畫面**，"
+                  "現在只是印在這裡。")
         return 0
 
     # ⚠️ 警告要**擋得住寫入**，不然它只是事後諸葛。

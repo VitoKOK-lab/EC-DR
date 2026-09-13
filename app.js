@@ -7805,7 +7805,11 @@ function unfiledToggle(){ UNFILED_OPEN=!UNFILED_OPEN; render(); }
 function unfiledCard(){
   const list=unfiledList(); if(!list.length) return "";
   const u=(STATE&&STATE.settings&&STATE.settings.unfiledPosts)||{};
-  const tot=list.reduce((a,x)=>a+(+x.views||0),0);
+  // ⚠️ v206：**留言是主要指標，不是觀看**。那些貼文從來沒被問過成效，
+  //    views 是 0 —— 印成「觀看 0」會讓人以為這支片沒人看，正好相反。
+  //    要真正的觀看數，同步要加 --unfiled-views（那會多花幾百次呼叫）。
+  const totC=list.reduce((a,x)=>a+(+x.comments||0),0);
+  const totV=list.reduce((a,x)=>a+(+x.views||0),0);
   const show=UNFILED_OPEN?list:list.slice(0,8);
   const rows=show.map((x,i)=>`<tr>
       <td data-label="#">${i+1}</td>
@@ -7813,13 +7817,14 @@ function unfiledCard(){
         :esc(String(x.cap||"").slice(0,44))}</td>
       <td data-label="平台" class="pr-k">${esc(x.plats||"")}</td>
       <td data-label="發過" class="pr-k">${x.n} 則${x.first?`<span class="muted" style="font-size:11px">　${esc(String(x.first).slice(5))}${x.last&&x.last!==x.first?"～"+esc(String(x.last).slice(5)):""}</span>`:""}</td>
-      <td data-label="觀看" class="pr-v"><b>${num(x.views)}</b></td>
-      <td data-label="留言" class="pr-c">${num(x.comments)}</td>
+      <td data-label="留言" class="pr-v"><b>${num(x.comments)}</b></td>
+      <td data-label="觀看" class="pr-c">${x.views?num(x.views)
+        :'<span class="muted" title="這些貼文沒被問過成效；同步加 --unfiled-views 才會去問">—</span>'}</td>
       ${canAddOldVideo()?`<td data-label=""><button class="btn sm" style="white-space:nowrap" onclick="unfiledAdd(${i})" title="建成一支舊片（文案與上片連結會自動帶進去）">建檔</button></td>`:""}</tr>`).join("");
   return `<div class="card" style="border-color:var(--accent)">
     <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <b>未在資料庫裡的影片（${list.length}）</b>
-      <span class="muted" style="font-size:12px">觀看合計 ${num(tot)}</span>
+      <span class="muted" style="font-size:12px">留言合計 ${num(totC)}${totV?`・觀看合計 ${num(totV)}`:""}</span>
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px;line-height:1.8">
       平台上有這些貼文、成效數字也都在，但<b>系統裡沒有這支片</b> —— 所以上面的排行看不到它們。
@@ -7827,11 +7832,12 @@ function unfiledCard(){
       要建哪幾支是你決定的。按「建檔」會開新增視窗，<b>文案與上片連結自動帶進去</b>，
       你只要補檔名（和雲端資料夾，找不到可以留空），建出來直接是<b>已上片的舊片</b>，
       放在<b>正式影片庫</b>裡，不會跑進待認領也不會跑進待審。
-      ${u.at?`<br><span style="font-size:11px">清單更新於 ${esc(String(u.at).replace("T"," ").slice(0,16))}　只列觀看 ${num(5000)} 以上的</span>`:""}
+      ${u.at?`<br><span style="font-size:11px">清單更新於 ${esc(String(u.at).replace("T"," ").slice(0,16))}　只列留言 5 則以上的${
+          totV?"":"；觀看數要同步加 --unfiled-views 才問得到"}</span>`:""}
     </div>
     <div class="${show.length>10?'vidscroll':''}" style="margin-top:8px">
     <table class="responsive perfrank"><colgroup><col class="pr-n"><col><col class="pr-k"><col class="pr-k"><col class="pr-v"><col class="pr-c">${canAddOldVideo()?'<col class="pr-k">':''}</colgroup>
-    <thead><tr><th>#</th><th>貼文（點開看原文）</th><th>平台</th><th>發過</th><th>觀看</th><th>留言</th>${canAddOldVideo()?"<th></th>":""}</tr></thead>
+    <thead><tr><th>#</th><th>貼文（點開看原文）</th><th>平台</th><th>發過</th><th>留言</th><th>觀看</th>${canAddOldVideo()?"<th></th>":""}</tr></thead>
     <tbody>${rows}</tbody></table></div>
     ${list.length>8?`<button class="btn sm sec" style="margin-top:8px" onclick="unfiledToggle()">${UNFILED_OPEN?"只看前 8 支":`看全部 ${list.length} 支`}</button>`:""}
   </div>`;

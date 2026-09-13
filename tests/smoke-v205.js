@@ -377,17 +377,35 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
 
 { const v = V({ id: "Z1", name: "有建檔的片", metrics: M(5000, 10), scheduledDate: D(40) });
   mount([v], "管理員", "boss", [], UF([
-    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 412355,
+    // ⚠️ views 是 0，而且是故意的 —— 這些貼文從來沒被問過成效，真實資料就長這樣。
+    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 0,
             comments: 1880, first: "2025-03-11", last: "2025-06-02", plats: "FB／IG" }),
-    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 288900, comments: 530 })]));
+    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 0, comments: 530 })]));
   const h = viewPerf();
   ok(h.includes("未在資料庫裡的影片（2）"), "卡片出現，而且講清楚有幾支");
   ok(h.includes("溱姐寵粉") && h.includes("我婆婆第一次見到我"), "兩則都列出來");
-  ok(h.includes("412,355") && h.includes("288,900"), "**成效數字都在**（這就是它有用的原因）");
+  ok(h.includes("1,880") && h.includes("530"), "**留言數都在**（這就是它有用的原因）");
   ok(h.includes("6 則") && h.includes("03-11") && h.includes("06-02"), "發過幾則、什麼時候發的");
   ok(h.includes("FB／IG"), "哪些平台");
-  ok(h.includes("觀看合計 701,255"), "合計算出來");
-  ok(h.indexOf("溱姐寵粉") < h.indexOf("我婆婆"), "觀看高的排前面");
+  ok(h.includes("留言合計 2,410"), "合計算的是留言（1,880 + 530）");
+  ok(!h.includes("觀看合計"), "**沒問過觀看數就不要講觀看合計**");
+  ok(h.includes("--unfiled-views"), "而且講清楚觀看數要怎麼才問得到");
+  ok(!/data-label="觀看"[^>]*><b>0<\/b>/.test(h),
+     "**觀看不准印成 0** —— 那會讓人以為這支片沒人看，正好相反"); }
+{ // 有問過觀看數的時候，就要顯示出來
+  const v2 = V({ id: "Z9", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v2], "管理員", "boss", [], UF([UITEM({ cap: "問過觀看數的那一組", views: 412355, comments: 1880 })]));
+  const h2 = viewPerf();
+  ok(h2.includes("412,355"), "有觀看數就印出來");
+  ok(h2.includes("觀看合計 412,355"), "合計也把觀看講出來");
+  ok(!h2.includes("--unfiled-views"), "已經問過了就不用再提示怎麼問"); }
+{ const v3 = V({ id: "Z8", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v3], "管理員", "boss", [], UF([
+    UITEM({ cap: "溱姐寵粉！天然摩根石 市價 12000 今天只要 2800", n: 6, views: 0,
+            comments: 1880, first: "2025-03-11", last: "2025-06-02", plats: "FB／IG" }),
+    UITEM({ cap: "我婆婆第一次見到我 就把這條項鍊拿下來", n: 3, views: 0, comments: 530 })]));
+  const h = viewPerf();
+  ok(h.indexOf("溱姐寵粉") < h.indexOf("我婆婆"), "留言多的排前面");
   ok(h.includes("unfiledAdd("), "每一列都有「建檔」");
   ok(h.includes("系統裡沒有這支片"), "講清楚為什麼排行上看不到它們");
   ok(h.includes("舊片"), "也講清楚建出來會歸到哪裡"); }
@@ -459,7 +477,10 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   //    把 out[:UNFILED_MAX] 改成 out、把門檻那行拿掉，常數還在，測試照樣綠。
   //    真正要測的是「有沒有被用」，所以搬到 tests/meta-match.py 直接呼叫
   //    unfiled_groups() 驗行為。這裡只留「常數還在、而且是那個數字」。
-  ok(/UNFILED_MIN_VIEWS = 5000/.test(SY), "門檻是 5,000（跟二創建議同一條線）");
+  // ⚠️ v206：門檻從觀看數改成**留言數**。對不上的貼文從來沒被問過成效，
+  //    views 全是 0，用觀看當門檻的話清單永遠是空的（正式資料驗證出來的）。
+  ok(/UNFILED_MIN_COMMENTS = 5/.test(SY), "門檻是留言 5 則（跟達標條件的另一半同一條線）");
+  ok(!/UNFILED_MIN_VIEWS/.test(SY), "**不要再用觀看數當門檻** —— 那些貼文的 views 是 0");
   ok(/UNFILED_MAX = 200/.test(SY), "上限是 200 —— 人一次看不完兩百筆以上");
   ok(/updateMask\.fieldPaths=unfiledPosts/.test(SY),
      "**用 updateMask 只寫這一格**（整份覆寫會把系統設定洗掉）");
