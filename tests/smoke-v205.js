@@ -455,8 +455,12 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(/def unfiled_groups\(/.test(SY), "同步端會把對不到的貼文依文案分組");
   ok(/if u\.get\("candidates"\):\s*\n\s*continue/.test(SY),
      "**「分不出是哪一支」的不算未建檔**（那是比對問題，不是沒建檔）");
-  ok(/UNFILED_MIN_VIEWS = 5000/.test(SY), "只收觀看 5,000 以上的（跟二創建議同一條線）");
-  ok(/UNFILED_MAX = 200/.test(SY), "而且有上限 —— 人一次看不完兩百筆以上");
+  // ⚠️ 這兩條本來只檢查「常數有沒有宣告」，突變測試證明那是**空的斷言** ——
+  //    把 out[:UNFILED_MAX] 改成 out、把門檻那行拿掉，常數還在，測試照樣綠。
+  //    真正要測的是「有沒有被用」，所以搬到 tests/meta-match.py 直接呼叫
+  //    unfiled_groups() 驗行為。這裡只留「常數還在、而且是那個數字」。
+  ok(/UNFILED_MIN_VIEWS = 5000/.test(SY), "門檻是 5,000（跟二創建議同一條線）");
+  ok(/UNFILED_MAX = 200/.test(SY), "上限是 200 —— 人一次看不完兩百筆以上");
   ok(/updateMask\.fieldPaths=unfiledPosts/.test(SY),
      "**用 updateMask 只寫這一格**（整份覆寫會把系統設定洗掉）");
   ok(/report_unfiled\(cfg_fb, token, unfiled, args\.days\)/.test(SY),

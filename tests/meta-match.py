@@ -370,6 +370,51 @@ ok(not S.looks_broken(None, "p1") and not S.looks_broken({}, ""),
 ok("looks_broken(video, post.get(\"id\"))" in SYNC_SRC,
    "**needs_insights 真的會因為這條再問一次**（不然下次同步還是不會碰到那些壞列）")
 
+# ── 未在資料庫裡的影片：unfiled_groups 的**行為**（v206）─────────────────
+# ⚠️ 這一段是突變測試逼出來的。原本只在 smoke-v205.js 檢查
+#    「UNFILED_MIN_VIEWS = 5000」「UNFILED_MAX = 200」這兩個字串有沒有出現 ——
+#    結果把 `out[:UNFILED_MAX]` 改成 `out`、把門檻那行拿掉，常數還在，
+#    測試照樣全綠。**只檢查常數有沒有宣告，等於沒測。**
+def _P(cap, views=9000, comments=20, at="2025-03-11", plat="FB", pid="p", link="L"):
+    return {"post": {"platform": plat, "at": at + "T10:00:00", "caption": cap,
+                     "views": views, "comments": comments, "permalink": link, "id": pid},
+            "why": "文案對不上任何一支"}
+
+LONG = "這是一段夠長的貼文文案用來當比對的依據不要太短"      # > MIN_CHARS
+g = S.unfiled_groups([_P(LONG, views=9000)])
+ok(len(g) == 1 and g[0]["views"] == 9000, "一則達標的貼文 → 一組")
+
+# 門檻真的有擋
+ok(S.unfiled_groups([_P(LONG, views=4999)]) == [],
+   "**觀看 4,999 擋掉**（門檻要真的被用，不是宣告了就算）")
+ok(len(S.unfiled_groups([_P(LONG, views=5000)])) == 1, "剛好 5,000 收進來")
+# 同一支片重發，觀看要加起來才過門檻
+g = S.unfiled_groups([_P(LONG, views=3000, pid="a"), _P(LONG, views=3000, pid="b")])
+ok(len(g) == 1 and g[0]["n"] == 2 and g[0]["views"] == 6000,
+   "同一支片重發兩次算一組，觀看相加（3000+3000 才過門檻）")
+
+# 上限真的有截
+many = [_P("第%d支影片的文案內容不一樣所以會分成不同組別編號%d" % (i, i), views=10000 + i, pid=str(i))
+        for i in range(S.UNFILED_MAX + 30)]
+res = S.unfiled_groups(many)
+ok(len(res) == S.UNFILED_MAX,
+   "**超過上限就截掉**（%d 組進去只留 %d 組）" % (len(many), S.UNFILED_MAX))
+ok(res[0]["views"] >= res[-1]["views"], "而且照觀看排，留下的是最高的那些")
+ok(res[0]["views"] == 10000 + S.UNFILED_MAX + 29, "第一名就是觀看最高的那一組")
+
+# 文案太短的不收（建了檔也對不回來）
+ok(S.unfiled_groups([_P("太短", views=99999)]) == [], "文案太短不收，觀看再高也一樣")
+# 「分不出是哪一支」不是沒建檔
+amb = _P(LONG, views=99999); amb["candidates"] = ["V1", "V2"]
+ok(S.unfiled_groups([amb]) == [], "「有好幾支長得一樣」的不算未建檔（那是比對問題）")
+# 連結取觀看最高的那一則
+g = S.unfiled_groups([_P(LONG, views=3000, pid="a", link="低"),
+                      _P(LONG, views=8000, pid="b", link="高")])
+ok(g[0]["link"] == "高", "連結取**觀看最高**的那一則（那一則最能代表這支片）")
+# 日期範圍
+g = S.unfiled_groups([_P(LONG, views=3000, at="2025-06-02"), _P(LONG, views=3000, at="2025-03-11")])
+ok(g[0]["first"] == "2025-03-11" and g[0]["last"] == "2025-06-02", "最早與最晚的發文日都記下來")
+
 print("— 被二創過的原片要一直量下去（v201）—")
 # 老闆比的是「二創比原本好還是壞」。原片的數字停在半年前、二創的數字是這個月的，
 # 那個比值就不是在比剪輯，是在比誰的數字比較新。
