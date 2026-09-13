@@ -13,7 +13,14 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$HOME/EC-DR-Backups/_logs"
 LOG="$LOG_DIR/meta-sync.log"
 EVERY="${EC_DR_META_EVERY:-3}"
-DAYS="${EC_DR_META_DAYS:-30}"
+# ⚠️ 2026-09-13 從 30 改成 730（兩年）。
+# 理由：老闆的 Meta 上有兩年的資料，系統才做不到半年 —— 30 天的窗抓不到
+# 那些「系統裡沒建檔、但當年很紅」的舊片，「未在資料庫裡的影片」那張清單
+# 就永遠只有最近一個月的東西。
+# 成本：一次多抓約 18,000 則貼文清單（分頁很便宜），問成效的則數有封頂
+# （對到的 ~500 則 ＋ 未建檔的最多 600 則），不會像 2026-09-13 那次跑到
+# 權杖過期。
+DAYS="${EC_DR_META_DAYS:-730}"
 
 mkdir -p "$LOG_DIR"
 {
