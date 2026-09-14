@@ -101,8 +101,9 @@ const scriptVid=(id,o)=>Object.assign({}, doneVid(id,o), {id,code:id,name:"腳�
      && !/function submitMatch\(/.test(CODE) && !/newMatchRecord\s*\(/.test(CODE),
      (CODE.match(/function (viewMatch|matchWorkbenchHTML|submitMatch)\(/g)||[]));
   ok("路由表裡也沒有 match 了", !/match:viewMatch/.test(CODE));
-  ok("products／matches 的 API 路由也拿掉了",
-     !/head==="products"/.test(CODE) && !/head==="matches"/.test(CODE)); }
+  // v210：products 的路由回來了 —— 選品清單就是用它。退役的是 matches。
+  ok("matches 的 API 路由沒有回來", !/head==="matches"/.test(CODE));
+  ok("（對照）products 的路由在（選品清單要用）", /head==="products"/.test(CODE)); }
 
 
 // ══════════ ⑬ 新職位不能在既有的「職位清單」畫面裡悄悄消失 ══════════

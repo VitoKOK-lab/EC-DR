@@ -16,3 +16,6 @@ firestore-debug.log
 # Python 執行時產生的暫存檔
 __pycache__/
 *.pyc
+
+# 設計稿的產出檔：2.5 MB（編輯器整包在裡面），由 docs/design/*.dc.html 重新產生
+curation-page-design.html

@@ -82,8 +82,54 @@ ok("補讀的舊月份不會被訂閱更新蓋掉",
    fbSrc.includes("Object.assign({}, shiftsOld, shiftsLive)"));
 ok("訂閱窗內的資料每次都重建，刪掉的不會留著",
    /Object\.keys\(shiftsLive\)\.forEach\(k\s*=>\s*delete shiftsLive\[k\]\)/.test(fbSrc));
-ok("videos／users／tasks／schedule 照舊即時訂閱（該即時的還是即時）",
-   ["users","videos","schedule","tasks"].every(c=>fbSrc.includes(`onSnapshot(collection(db, "${c}")`)));
+ok("videos／users／schedule 照舊整包即時訂閱（該即時的還是即時）",
+   ["users","videos","schedule"].every(c=>fbSrc.includes(`onSnapshot(collection(db, "${c}")`)));
+
+// ── tasks 也有時間窗了（v210）────────────────────────────────────────
+// 它本來是唯一一個**完全沒有邊界**的常駐訂閱。正式資料實測 1,824 筆，
+// 比影片（1,068）還多，而且一個月長一千筆 ——
+// 照那個速度一年後每個人冷開機要讀一萬多筆，只為了看今天要做什麼。
+ok("tasks 訂閱窗是 45 天（不是 450）", /TASK_WINDOW_DAYS\s*=\s*45\s*;/.test(fbSrc));
+ok("**時間窗真的有掛上去**（少了 where 就又變成整包載）",
+   /watchTasks\(tasksRecent,\s*query\(collection\(db,\s*"tasks"\),\s*where\("date",\s*">=",\s*TASKS_FROM\)\)\)/.test(fbSrc));
+ok("tasks 還是即時的（onSnapshot，不是讀一次）",
+   /const watchTasks\s*=\s*\(part,\s*q2\)\s*=>\s*onSnapshot\(q2/.test(fbSrc));
+// ⚠️ 三個監聽少一個，就會有人的東西憑空消失
+ok("**沒做完的不管多舊都要載**（實測有一筆 6/22 的還沒做完）",
+   /watchTasks\(tasksOpen,[\s\S]{0,120}where\("done",\s*"==",\s*false\)/.test(fbSrc));
+ok("**草稿也要載**（草稿沒有 date 欄位，只靠時間窗會整個不見）",
+   /watchTasks\(tasksDraft,[\s\S]{0,120}where\("kind",\s*"==",\s*"draft"\)/.test(fbSrc));
+ok("三份合起來才是 raw.tasks", /Object\.assign\(\{\},\s*tasksOld,\s*tasksRecent,\s*tasksOpen,\s*tasksDraft\)/.test(fbSrc));
+ok("每一份都會重建，刪掉的不會留著",
+   /Object\.keys\(part\)\.forEach\(k\s*=>\s*delete part\[k\]\)/.test(fbSrc));
+ok("補讀舊月份用 getDocs（讀一次，不建立訂閱）",
+   /loadTaskMonth\(ym\)[\s\S]{0,500}getDocs\(query\(collection\(db,\s*"tasks"\)/.test(fbSrc));
+ok("同一個月不會重複補讀", /loadedTaskMonths\.has\(ym\)\)\s*return false;/.test(fbSrc));
+ok("窗內的月份不會多此一舉再讀一次", /ym \+ "-31" >= TASKS_FROM\) return false;/.test(fbSrc));
+ok("補讀的舊月份不會被訂閱更新蓋掉（tasksOld 放最前面）",
+   fbSrc.indexOf("tasksOld, tasksRecent") > 0);
+// 翻月份時要跟著補讀，不然舊月份的「交辦完成」會變成 0/0，看起來像那個月沒人做事
+ok("app.js 翻月份時會補讀交辦", /taskEnsureMonth\(ym\);/.test(src));
+ok("補讀前先確認整個月不在窗內", /if\(ym > from\.slice\(0,7\)\) return;[\s\S]{0,120}loadTaskMonth/.test(src));
+
+// 交辦補讀：跟出勤一樣，只有翻到窗外的月份才去讀，而且同一個月只讀一次
+{ const tFrom=new Date(Date.now()+288e5-45*864e5).toISOString().slice(0,10);
+  let tLoaded=[], tReads=[];
+  reset({ tasksFrom:tFrom,
+    loadTaskMonth:async(m)=>{ tLoaded.push(m);
+      if(tReads.includes(m)) return false; tReads.push(m); return true; } });
+  as("管理員","boss");
+  teamSetYM(ym(0));
+  ok("翻到本月（窗內）→ 不補讀交辦", tLoaded.length===0);
+  teamSetYM(ym(3));
+  ok("翻到窗外的月份 → 去補讀那個月的交辦", tLoaded.includes(ym(3)));
+  teamSetYM(ym(0)); teamSetYM(ym(3));
+  ok("來回翻同一個月只會真的讀一次",
+     tLoaded.filter(x=>x===ym(3)).length===2 && tReads.filter(x=>x===ym(3)).length===1);
+  // 舊版 fb.js 還在瀏覽器快取裡（沒有 loadTaskMonth）也不能炸
+  reset({}); as("管理員","boss");
+  let threw=false; try{ teamSetYM(ym(3)); }catch(e){ threw=true; }
+  ok("舊版 fb.js 沒有這個函式也不會炸", !threw); }
 
 // ══ ② app.js：什麼時候補讀舊月份 ══
 reset(); as("HR小姐","hr");

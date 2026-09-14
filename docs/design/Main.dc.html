@@ -1,0 +1,226 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+  <style>
+    :root{
+      --bg:#F7F6F3; --panel:#FFFFFF; --panel2:#F1EFEA; --line:#E5E1DA;
+      --txt:#221C18; --muted:#665F57; --faint:#A49C92;
+      --accent:#8A7338; --gold:#C5B382; --gold-dk:#937C44;
+      --green:#2C8077; --greenbg:#EAF8F6; --amber:#937C44; --amberbg:#FAF6EA;
+      --red:#B0473A; --redbg:#F7EBE8; --chip:#EFEBE3;
+      --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
+      --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+      --latin:"Helvetica Neue",Helvetica,Arial,sans-serif;
+      --foil:linear-gradient(110deg,#9C8550 0%,#C5B382 18%,#DCCD9E 36%,#F1E9CD 50%,#CFBE8A 64%,#B5A06A 84%,#9C8550 100%);
+      --shadow:0 2px 10px rgba(43,24,34,.06);
+      --r:8px; --rs:5px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+         font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{color:var(--gold-dk);text-decoration:underline}
+    h2{font-family:var(--serif);font-size:22px;margin:0 0 18px;font-weight:600;letter-spacing:.04em}
+    .card{position:relative;background:var(--panel);border:1px solid var(--line);
+          border-radius:var(--r);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+    .ct{font-size:16px;letter-spacing:.04em;font-family:var(--serif);font-weight:600}
+    .ct::before{content:"";display:inline-block;width:14px;height:2px;background:var(--foil);
+                border-radius:2px;vertical-align:middle;margin-right:8px}
+    .muted{color:var(--muted)}
+    .lab{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.1em;
+         text-transform:uppercase;font-family:var(--latin)}
+    .btn{background:var(--txt);border:none;color:#fff;padding:11px 20px;border-radius:2px;
+         font-weight:600;letter-spacing:.1em;font-family:var(--sans);font-size:15px;
+         box-shadow:0 5px 14px rgba(34,28,24,.22);cursor:pointer}
+    .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
+    .btn.sm{padding:7px 14px;font-size:13px;letter-spacing:.06em}
+    .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
+    .pill.ok{background:var(--greenbg);color:var(--green)}
+    .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
+    .pill.em{background:var(--redbg);color:var(--red)}
+    textarea{width:100%;padding:13px 14px;border-radius:var(--rs);border:1.5px solid var(--line);
+             background:#fff;color:var(--txt);font-size:13px;font-family:ui-monospace,Menlo,monospace;
+             line-height:1.9;min-height:104px;resize:vertical}
+  </style>
+</helmet>
+
+<div style="padding:28px 32px 40px">
+
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">
+    <h2 style="margin:0">選品</h2>
+    <!-- 月份切換：不用一路往下捲 -->
+    <div style="display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
+         border-radius:var(--rs);padding:3px">
+      <span style="padding:6px 14px;font-size:13.5px;font-weight:700;background:#fff;
+            border-radius:3px;box-shadow:var(--shadow)">9 月<span class="muted" style="font-weight:400;margin-left:6px">5</span></span>
+      <span style="padding:6px 14px;font-size:13.5px;color:var(--muted)">8 月<span style="margin-left:6px;opacity:.6">2</span></span>
+      <span style="padding:6px 14px;font-size:13.5px;color:var(--muted)">7 月<span style="margin-left:6px;opacity:.6">9</span></span>
+      <span style="padding:6px 11px;font-size:13.5px;color:var(--faint)">⋯</span>
+    </div>
+    <span style="flex:1"></span>
+    <!-- 卡片／列表：挑的時候看圖，處理一整批的時候看列表 -->
+    <div style="display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
+         border-radius:var(--rs);padding:3px">
+      <span style="padding:6px 12px;background:#fff;border-radius:3px;box-shadow:var(--shadow);
+            display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+        卡片</span>
+      <span style="padding:6px 12px;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>
+        列表</span>
+    </div>
+  </div>
+
+  <!-- 貼網址：整張卡就是一個大投放區，設計師一次貼十條 -->
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="display:flex;gap:0;align-items:stretch">
+      <div style="flex:1;min-width:0;padding:20px 22px">
+        <div class="ct">加商品</div>
+        <div class="muted" style="font-size:12.5px;margin:4px 0 12px">
+          從官網複製商品網址，一行一個，貼幾條都可以。
+        </div>
+        <textarea placeholder="https://www.tzgrotw.tw/products/…
+https://www.tzgrotw.tw/products/…"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+          <span class="muted" style="font-size:12px">只收單一商品頁 · 重複的會自動合併</span>
+          <button class="btn">檢查這些網址</button>
+        </div>
+      </div>
+      <!-- 對帳單：貼完先看一眼再寫進去 -->
+      <div style="width:288px;flex:none;background:var(--panel2);border-left:1px solid var(--line);padding:20px 22px">
+        <div class="lab" style="margin-bottom:10px">檢查結果</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:13.5px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:7px;height:7px;border-radius:999px;background:var(--green);flex:none"></span>
+            <b style="flex:1">新的</b><b>8</b></div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:7px;height:7px;border-radius:999px;background:var(--gold-dk);flex:none"></span>
+            <span style="flex:1">以前選過</span><span>1</span></div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:7px;height:7px;border-radius:999px;background:var(--faint);flex:none"></span>
+            <span style="flex:1;color:var(--muted)">這個月已經有</span><span class="muted">1</span></div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:7px;height:7px;border-radius:999px;background:var(--red);flex:none"></span>
+            <span style="flex:1;color:var(--red)">不是商品頁</span><span style="color:var(--red)">1</span></div>
+        </div>
+        <div class="muted" style="font-size:11.5px;margin-top:10px;line-height:1.6;
+             border-top:1px solid var(--line);padding-top:10px">
+          /categories/異象水晶<br>分類頁對不回單一商品
+        </div>
+        <button class="btn" style="width:100%;margin-top:14px">確認加入 9 個</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 待抓資料：一條細長的提示，不搶版面 -->
+  <div class="card" style="display:flex;align-items:center;gap:16px;padding:14px 20px;
+       border-left:3px solid var(--gold)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#937C44" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" style="flex:none">
+      <path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 3v6h-6"></path></svg>
+    <div style="flex:1;min-width:0">
+      <b style="font-family:var(--serif);font-size:15px">2 個商品還沒抓資料</b>
+      <div class="muted" style="font-size:12.5px">按一下去官網把名稱、照片、價格抓回來。只跑這幾個。</div>
+    </div>
+    <button class="btn" style="flex:none">同步</button>
+  </div>
+
+  <!-- 九月：商品卡牆 -->
+  <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px">
+
+    <!-- 抓好了：有圖、有價 -->
+    <div class="card" style="padding:0;overflow:hidden;margin:0">
+      <div style="aspect-ratio:1/1;background:linear-gradient(135deg,#EFEAE0,#E3DCCD);position:relative">
+        <span class="pill" style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.92);color:var(--muted)">4 款</span>
+      </div>
+      <div style="padding:13px 14px 15px">
+        <div style="font-weight:700;font-size:14px;line-height:1.45;min-height:40px">自帶光芒｜手鏈｜項鍊｜天然歐泊</div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-top:7px">
+          <b style="font-size:17px;font-family:var(--latin);letter-spacing:.01em">NT$990</b>
+          <span class="muted" style="font-size:12px">～3,500</span>
+        </div>
+        <div class="muted" style="font-size:12px;text-decoration:line-through">NT$6,000～15,000</div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <a href="#" style="font-size:12px;flex:1">看官網</a>
+          <button class="btn sec sm" style="padding:4px 10px;font-size:11.5px">改名</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;margin:0">
+      <div style="aspect-ratio:1/1;background:linear-gradient(135deg,#E8E4DB,#DCD5C6)"></div>
+      <div style="padding:13px 14px 15px">
+        <div style="font-weight:700;font-size:14px;line-height:1.45;min-height:40px">12星座守護寶石</div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-top:7px">
+          <b style="font-size:17px;font-family:var(--latin)">NT$1,280</b>
+        </div>
+        <div class="muted" style="font-size:12px">&nbsp;</div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <a href="#" style="font-size:12px;flex:1">看官網</a>
+          <button class="btn sec sm" style="padding:4px 10px;font-size:11.5px">改名</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 還沒抓：骨架狀態，一眼看得出在等什麼 -->
+    <div class="card" style="padding:0;overflow:hidden;margin:0;border-style:dashed">
+      <div style="aspect-ratio:1/1;background:repeating-linear-gradient(45deg,#F4F1EA,#F4F1EA 9px,#EFEAE0 9px,#EFEAE0 18px);
+           display:flex;align-items:center;justify-content:center">
+        <span class="pill wa">還沒抓</span>
+      </div>
+      <div style="padding:13px 14px 15px">
+        <div style="font-weight:700;font-size:14px;line-height:1.45;min-height:40px;color:var(--muted)">限量盲盒・蓮花色雙寶</div>
+        <div class="muted" style="font-size:12px;margin-top:7px">按上面的「同步」把資料抓回來</div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <a href="#" style="font-size:12px;flex:1">看官網</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 抓不到：給得出下一步，不是死路 -->
+    <div class="card" style="padding:0;overflow:hidden;margin:0;border-color:#E7CFC9">
+      <div style="aspect-ratio:1/1;background:var(--redbg);display:flex;align-items:center;justify-content:center">
+        <span class="pill em">抓不到</span>
+      </div>
+      <div style="padding:13px 14px 15px">
+        <div style="font-weight:700;font-size:14px;line-height:1.45;min-height:40px;color:var(--muted)">埃及特產 幸運石之王</div>
+        <div style="font-size:12px;color:var(--red);margin-top:7px;line-height:1.5">這一頁找不到商品資料</div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <a href="#" style="font-size:12px;flex:1">看官網</a>
+          <button class="btn sec sm" style="padding:4px 10px;font-size:11.5px">自己填名稱</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;margin:0">
+      <div style="aspect-ratio:1/1;background:linear-gradient(135deg,#E6E1D6,#D8D0BE);position:relative">
+        <span class="pill" style="position:absolute;top:10px;left:10px;background:rgba(255,255,255,.92);color:var(--gold-dk)">選過 2 個月</span>
+      </div>
+      <div style="padding:13px 14px 15px">
+        <div style="font-weight:700;font-size:14px;line-height:1.45;min-height:40px">綠意財富｜天然胖三角綠水晶裸石</div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-top:7px">
+          <b style="font-size:17px;font-family:var(--latin)">NT$590</b>
+        </div>
+        <div class="muted" style="font-size:12px">&nbsp;</div>
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <a href="#" style="font-size:12px;flex:1">看官網</a>
+          <button class="btn sec sm" style="padding:4px 10px;font-size:11.5px">改名</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

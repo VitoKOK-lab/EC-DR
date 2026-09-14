@@ -19,7 +19,7 @@ rules_version = '2';
 //      → 與程式流程一致（軟刪除進回收桶 → 管理員才能永久刪除）
 //
 // 【刻意保留可刪除的集合】程式確實需要，擋掉會壞掉：
-//   users(2 處) / tasks(3 處) / products(1 處) / matches(1 處)
+//   users(2 處) / tasks(3 處) / products(1 處)
 //
 // 每一條都對照 app.js 的實際呼叫點確認過，不改變任何現有操作行為。
 // ===========================================================================
@@ -86,7 +86,8 @@ service cloud.firestore {
     match /users/{id}    { allow read, write: if signedIn(); }
     match /tasks/{id}    { allow read, write: if signedIn(); }
     match /products/{id} { allow read, write: if signedIn(); }
-    match /matches/{id}  { allow read, write: if signedIn(); }
+    // matches 在 v210 退役（v175 那版選品配對設計錯誤、沒人用）——
+    // 集合不再開放寫入，程式也不再訂閱它。
 
     // --- 其餘一律拒絕 -------------------------------------------------------
     // 沒有列在上面的集合名稱、以及任何子集合，都不開放。

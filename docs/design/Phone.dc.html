@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+  <style>
+    :root{
+      --bg:#F7F6F3; --panel:#FFFFFF; --panel2:#F1EFEA; --line:#E5E1DA;
+      --txt:#221C18; --muted:#665F57; --faint:#A49C92;
+      --accent:#8A7338; --gold:#C5B382; --gold-dk:#937C44;
+      --green:#2C8077; --greenbg:#EAF8F6; --amberbg:#FAF6EA;
+      --red:#B0473A; --redbg:#F7EBE8; --chip:#EFEBE3;
+      --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
+      --sans:"Noto Sans TC","PingFang TC",sans-serif;
+      --latin:"Helvetica Neue",Helvetica,Arial,sans-serif;
+      --foil:linear-gradient(110deg,#9C8550 0%,#C5B382 18%,#DCCD9E 36%,#F1E9CD 50%,#CFBE8A 64%,#B5A06A 84%,#9C8550 100%);
+      --shadow:0 2px 10px rgba(43,24,34,.06); --r:8px; --rs:5px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+         font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+    a{color:var(--accent);text-decoration:none}
+    h2{font-family:var(--serif);font-size:20px;margin:0;font-weight:600;letter-spacing:.04em}
+    .card{position:relative;background:var(--panel);border:1px solid var(--line);
+          border-radius:var(--r);padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+    .ct{font-size:15px;letter-spacing:.04em;font-family:var(--serif);font-weight:600}
+    .ct::before{content:"";display:inline-block;width:14px;height:2px;background:var(--foil);
+                border-radius:2px;vertical-align:middle;margin-right:8px}
+    .muted{color:var(--muted)}
+    .lab{font-size:10.5px;color:var(--muted);font-weight:600;letter-spacing:.1em;
+         text-transform:uppercase;font-family:var(--latin)}
+    .btn{background:var(--txt);border:none;color:#fff;padding:13px 18px;border-radius:2px;
+         font-weight:600;letter-spacing:.1em;font-family:var(--sans);font-size:15px;
+         min-height:46px;box-shadow:0 5px 14px rgba(34,28,24,.22);cursor:pointer}
+    .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
+    .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
+    .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
+    .pill.em{background:var(--redbg);color:var(--red)}
+    textarea{width:100%;padding:12px;border-radius:var(--rs);border:1.5px solid var(--line);
+             background:#fff;font-size:13px;font-family:ui-monospace,Menlo,monospace;
+             line-height:1.9;min-height:92px;resize:vertical}
+  </style>
+</helmet>
+
+<div style="min-height:100%;background:var(--bg)">
+
+  <!-- 頂列：照系統既有的深色頭 -->
+  <div style="background:#2B1822;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:8px">
+    <span style="color:#E6007E;font-size:13px">✦</span>
+    <span style="font-family:var(--latin);font-size:12px;letter-spacing:.18em">電商部協作系統</span>
+    <span style="flex:1"></span>
+    <span style="font-size:12.5px;opacity:.85">小設</span>
+  </div>
+  <div style="background:#fff;border-bottom:1px solid var(--line);display:flex;gap:4px;padding:0 12px">
+    <span style="padding:13px 12px;font-size:14px;color:var(--muted)">傳訊息</span>
+    <span style="padding:13px 12px;font-size:14px;font-weight:700;border-bottom:2px solid var(--accent)">選品</span>
+  </div>
+
+  <div style="padding:18px 14px 28px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">
+      <h2>選品</h2><span class="lab">9 月 · 5 個</span>
+    </div>
+
+    <div class="card">
+      <div class="ct">加商品</div>
+      <div class="muted" style="font-size:12.5px;margin:4px 0 10px">一行一個網址，貼幾條都可以。</div>
+      <textarea placeholder="https://www.tzgrotw.tw/products/…"></textarea>
+      <button class="btn" style="width:100%;margin-top:10px">檢查這些網址</button>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--gold);display:flex;align-items:center;gap:12px">
+      <div style="flex:1;min-width:0">
+        <b style="font-family:var(--serif);font-size:14.5px">2 個還沒抓資料</b>
+        <div class="muted" style="font-size:12px">抓回名稱、照片、價格</div>
+      </div>
+      <button class="btn" style="flex:none;padding:11px 18px">同步</button>
+    </div>
+
+    <div style="display:flex;align-items:baseline;gap:9px;margin:22px 0 12px">
+      <span class="ct" style="font-size:16px">2026 年 9 月</span>
+      <span class="pill" style="background:var(--chip);color:var(--muted)">5 個</span>
+    </div>
+
+    <!-- 手機兩欄：拇指滑得動，圖還看得清楚 -->
+    <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px">
+      <div class="card" style="padding:0;overflow:hidden;margin:0">
+        <div style="aspect-ratio:1/1;background:linear-gradient(135deg,#EFEAE0,#E3DCCD);position:relative">
+          <span class="pill" style="position:absolute;top:8px;left:8px;background:rgba(255,255,255,.92);color:var(--muted);font-size:11px">4 款</span>
+        </div>
+        <div style="padding:11px 12px 13px">
+          <div style="font-weight:700;font-size:13px;line-height:1.45;min-height:38px">自帶光芒｜手鏈｜天然歐泊</div>
+          <b style="font-size:15px;font-family:var(--latin);display:block;margin-top:6px">NT$990～3,500</b>
+          <div class="muted" style="font-size:11.5px;text-decoration:line-through">NT$6,000～15,000</div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;margin:0">
+        <div style="aspect-ratio:1/1;background:linear-gradient(135deg,#E8E4DB,#DCD5C6)"></div>
+        <div style="padding:11px 12px 13px">
+          <div style="font-weight:700;font-size:13px;line-height:1.45;min-height:38px">12星座守護寶石</div>
+          <b style="font-size:15px;font-family:var(--latin);display:block;margin-top:6px">NT$1,280</b>
+          <div class="muted" style="font-size:11.5px">&nbsp;</div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;margin:0;border-style:dashed">
+        <div style="aspect-ratio:1/1;background:repeating-linear-gradient(45deg,#F4F1EA,#F4F1EA 9px,#EFEAE0 9px,#EFEAE0 18px);
+             display:flex;align-items:center;justify-content:center">
+          <span class="pill wa">還沒抓</span>
+        </div>
+        <div style="padding:11px 12px 13px">
+          <div style="font-weight:700;font-size:13px;line-height:1.45;min-height:38px;color:var(--muted)">限量盲盒・蓮花色雙寶</div>
+          <div class="muted" style="font-size:11.5px;margin-top:6px">按上面的「同步」</div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;margin:0;border-color:#E7CFC9">
+        <div style="aspect-ratio:1/1;background:var(--redbg);display:flex;align-items:center;justify-content:center">
+          <span class="pill em">抓不到</span>
+        </div>
+        <div style="padding:11px 12px 13px">
+          <div style="font-weight:700;font-size:13px;line-height:1.45;min-height:38px;color:var(--muted)">埃及特產 幸運石之王</div>
+          <button class="btn sec" style="width:100%;margin-top:6px;padding:8px;font-size:12px;min-height:0">自己填名稱</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

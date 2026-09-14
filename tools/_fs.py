@@ -34,8 +34,7 @@ COLLECTIONS = [
     "users",     # 成員與權限
     "schedule",  # 上片排程（文件 id = 日期）
     "tasks",     # 交辦事項
-    "products",  # 商品庫
-    "matches",   # 商品配片
+    "products",  # 商品庫（選品清單）
     "shifts",    # 出勤打卡
     "meta",      # 系統設定（meta/settings）
     "assetgroups",  # 人工確認的影片素材包（v196）
