@@ -91,6 +91,18 @@ function withStatus(bs){
 { const h = withStatus({at:daysAgo(90), docs:10601, covers:241});
   ok("90 天沒更新也是警告", /資料備份可能停了/.test(h)); }
 
+// ══════════ ③b 排程狀態自己不准漏查（v210）══════════
+// 正式環境實測：老闆的 Mac mini 上 --status 說兩個排程都 ✅，
+// 但安裝時明明裝了三個 —— 迴圈裡只列了備份與健康檢查，漏掉 com.ecdr.metasync。
+// 這支指令存在的意義就是抓「某個排程默默停掉」，自己漏掉一個等於白做。
+{ const SH = fs.readFileSync(path.join(__dirname, "..", "tools", "install-schedule.sh"), "utf8");
+  const loop = (SH.match(/for L in [^\n]*/) || [""])[0];
+  ok("**--status 三個排程都要查**", /BK_LABEL/.test(loop) && /HC_LABEL/.test(loop) && /MS_LABEL/.test(loop), loop);
+  ok("安裝的三個跟查的三個是同一組",
+     ["BK_LABEL","HC_LABEL","MS_LABEL"].every(v => new RegExp(v + '="com\\.ecdr\\.').test(SH)));
+  ok("沒設定 Meta 時不要誤報成故障（本來就不會裝那一個）",
+     /META_CONF[\s\S]{0,120}未安裝/.test(SH)); }
+
 // ══════════ ④ 時間字串壞掉 → 當成不正常，不能顯示成正常 ══════════
 { const h = withStatus({at:"這不是時間", docs:10601});
   ok("**時間解析不出來時當成不正常**（不能因為算不出來就說正常）",

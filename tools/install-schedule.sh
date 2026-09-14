@@ -90,9 +90,15 @@ if [ "$MODE" = "status" ]; then
     echo ""
     echo "自動排程狀態"
     echo "========================================"
-    for L in "$BK_LABEL" "$HC_LABEL"; do
+    # ⚠️ 三個都要查。這裡本來只查備份與健康檢查，漏了 com.ecdr.metasync ——
+    #    安裝時說「三個排程都已載入」，狀態卻只列兩個，看的人以為一切正常。
+    #    這支指令存在的意義就是抓「某個排程默默停掉」，自己漏掉一個等於白做。
+    for L in "$BK_LABEL" "$HC_LABEL" "$MS_LABEL"; do
         if launchctl list 2>/dev/null | grep -q "$L"; then
             echo "  ✅ $L 已載入"
+        elif [ "$L" = "$MS_LABEL" ] && [ ! -f "$META_CONF" ]; then
+            # 沒有 Meta 設定檔時本來就不會安裝這一個，那不是故障
+            echo "  －  $L 未安裝（沒有 $META_CONF，平台成效同步沒設定）"
         else
             echo "  ❌ $L 未載入"
         fi
