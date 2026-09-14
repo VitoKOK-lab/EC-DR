@@ -74,6 +74,20 @@ try {
   failed.push("meta-unfiled.py");
 }
 
+// 「這個品推過幾次」（v211）：Shopline 貼文銷售接進選品清單。
+// ⚠️ 商品比對規則在 Python 與 JS 各有一份 —— 這支把同一批字餵進兩邊比結果，
+//    差一個字元就變紅。不一樣的話畫面只會顯示「沒有資料」，看不出是規則不同步。
+try {
+  extras++;
+  execFileSync("python3", [path.join(dir, "postsale.py")], { stdio: "pipe" });
+  console.log("PASS  postsale.py（這個品推過幾次・兩邊比對規則一致）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  postsale.py");
+  out.split("\n").filter(l => l.startsWith("FAIL")).forEach(l => console.log("        " + l));
+  failed.push("postsale.py");
+}
+
 // 排程跑之前自己更新程式（v211）。這支會動到 Mac mini 上的 git，
 // 寫錯了會吃掉老闆沒存的東西 —— 所以它**真的開 git 倉庫**來測，不是比對字串。
 try {

@@ -10310,6 +10310,47 @@ function curPrevHTML(){
       <button class="btn sec" onclick="curCancel()">取消</button>
     </div></div>`;
 }
+// ── 這個品賣過嗎（v211）────────────────────────────────────────────────
+// 老闆指著 meta 報告：「貼過幾次都找的出來，可是你的都沒有。」
+//
+// 資料是 Shopline 匯出的「貼文銷售」，由 tools/postsale_sync.py 寫進
+// meta/settings.postsale。設計師挑品的時候一眼看得到「這個品我們推過幾次、
+// 最近一次什麼時候、帶了多少留言」—— 重複推同一個品之前，先知道推過。
+//
+// ⚠️ psKey 的規則跟 tools/postsale_sync.py 的 prod_key **必須一模一樣**。
+//    不一樣的話，同步寫進去的東西畫面上查不到，而畫面只會顯示「沒有資料」，
+//    看不出是兩邊的比對規則不同步。tests/postsale.py 逐字盯著這兩份。
+//
+// ⚠️ 只放寬到分隔符號、空白、括號、大小寫。再往下猜（去掉「寵粉」這種前綴、
+//    比相似度）就會把不同材質的兩個商品合成一個 —— 那比查不到更糟。
+function psKey(s){
+  return String(s==null?"":s)
+    .replace(/[｜|·・\-－—_/\\、,，.。\s]+/g,"")
+    .replace(/[（）()【】\[\]「」『』]/g,"")
+    .toLowerCase();
+}
+function psData(){ const d=(STATE&&STATE.settings&&STATE.settings.postsale)||null;
+  return (d&&Array.isArray(d.items)) ? d : null; }
+let PS_INDEX=null, PS_INDEX_SRC=null;
+function psOf(name){
+  const d=psData(); if(!d) return null;
+  const k=psKey(name); if(!k) return null;
+  // 索引只建一次 —— 選品頁一次要查幾十個商品，每次線性掃 523 筆是白花的。
+  // ⚠️ 快取的鍵要用 items 這個**陣列本身**，不要用 at 那個時間戳：
+  //    時間戳一樣、內容換掉的時候（重新整理狀態、測試裡換一份假資料）索引不會重建，
+  //    查出來的是上一份的答案 —— 而畫面上看起來完全正常。
+  if(PS_INDEX_SRC!==d.items){ PS_INDEX={}; (d.items||[]).forEach(x=>{ if(x&&x.k) PS_INDEX[x.k]=x; }); PS_INDEX_SRC=d.items; }
+  return PS_INDEX[k]||null;
+}
+// 「推過 N 次・最近 X」。沒查到就回空字串 —— 不要寫「推過 0 次」，
+// 那是在講一件我們其實不知道的事（很可能只是名字對不上）。
+function psLine(p){
+  const g=psOf(curTitle(p)); if(!g||!(+g.n)) return "";
+  const when=String(g.last||"").slice(0,10);
+  return `<div class="muted" style="font-size:12px;margin-top:6px">
+    <b style="color:var(--gold-dk)">推過 ${+g.n} 次</b>${when?`　最近 ${esc(when)}`:""}
+    ${(+g.c)?`　留言 ${num(+g.c)}`:""}${(+g.a)?`　加購 ${num(+g.a)}`:""}</div>`;
+}
 // 商品的四種狀態，兩個模式共用同一份判斷
 function curState(p){
   const st=String(p.fetchStatus||"");
@@ -10346,6 +10387,7 @@ function curCardHTML(p){
     </div>
     <div style="padding:13px 14px 15px">
       <div class="curname">${esc(curTitle(p))}</div>
+      ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
             :`<div class="muted" style="font-size:12px;margin-top:7px">${
@@ -10373,6 +10415,8 @@ function curRowHTML(p){
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}
         ${months>1?`<span style="color:var(--gold-dk)">　選過 ${months} 個月</span>`:""}
+        ${(()=>{ const g=psOf(curTitle(p)); return (g&&+g.n)
+          ? `<span style="color:var(--gold-dk)" title="${esc("最近 "+String(g.last||"").slice(0,10)+"・留言 "+num(+g.c||0))}">　推過 ${+g.n} 次</span>` : ""; })()}
         ${s.k==="bad"?`<span style="color:var(--red)">　${esc(p.fetchError||"")}</span>`:""}
       </div>
     </div>
@@ -10429,7 +10473,24 @@ function viewCurate(){
   }else{
     body=`<div class="curgrid">${items.map(curCardHTML).join("")}</div>`;
   }
-  return `${head}${paste}${syncCard}${body}`;
+  return `${head}${paste}${syncCard}${body}${psFootNote()}`;
+}
+// 「推過幾次」這份資料有多新。
+//
+// ⚠️ 這一行是必要的，不是裝飾。那份「貼文銷售」CSV **不是自動產生的** ——
+//    是人從 Shopline 匯出的。沒有這一行，資料停在三個月前也看不出來，
+//    設計師會拿著舊數字判斷「這個品沒推過」。默默變舊的資料比沒有資料更糟。
+function psFootNote(){
+  const d=psData();
+  if(!d) return `<div class="muted" style="font-size:12px;margin-top:14px">
+    還沒接上「這個品推過幾次」的資料（Shopline 貼文銷售）。</div>`;
+  const day=String(d.dataAt||"").slice(0,10);
+  const age=day?Math.floor((new Date(today+"T00:00:00")-new Date(day+"T00:00:00"))/864e5):null;
+  const old=(age==null)||age>45;
+  return `<div class="muted" style="font-size:12px;margin-top:14px${old?";color:#C0392B":""}">
+    「推過幾次」來自 Shopline 貼文銷售，<b>資料到 ${esc(day||"不明")}</b>${
+    age!=null?`（${age<=0?"今天":age+" 天前"}）`:""}・${num((d.items||[]).length)} 個商品。${
+    old?"<b>這份資料舊了</b> —— 要重新從 Shopline 匯出一次。":""}</div>`;
 }
 
 function viewAssets(){

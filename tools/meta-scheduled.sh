@@ -34,6 +34,11 @@ mkdir -p "$LOG_DIR"
     EC_DR_CODE_STATE="$CODE_STATE" EC_DR_CODE_NOTE="$CODE_NOTE" \
         python3 tools/meta_sync.py --write --every "$EVERY" --days "$DAYS"
     echo "[結束碼 $?]"
+    # 貼文銷售（「這個品推過幾次」）。跟成效同步搭同一班車 —— 它只抓一個 CSV，
+    # 很便宜，而且失敗了也不該影響上面那一段（所以放在後面、不看它的結束碼）。
+    echo "── 貼文銷售 ──"
+    python3 tools/postsale_sync.py --write
+    echo "[貼文銷售結束碼 $?]"
 } >> "$LOG" 2>&1
 
 # 只保留最後 2000 行，不要讓紀錄檔無限長大
