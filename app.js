@@ -1006,6 +1006,9 @@ function writeWithin(p, ms){
     new Promise(r=>setTimeout(()=>r(false), ms||PUNCH_WAIT)) ]);
 }
 async function clockIn(name){ refreshToday();
+  // 外包不打卡（見 needsClock）。擋在這裡而不是擋在登入那一行 —— 這是唯一
+  // 真正寫進 shifts 的地方，擋在這裡就不會有第二條路繞過去。
+  if(!needsClock(name)) return true;
   // 員工視角是唯讀預覽。write()／writeAdmin()／dbWrite() 三個入口都擋了，
   // 只有這裡直接呼叫 window.DB.set，繞過了全部三個 —— 實測管理員在預覽底下
   // 叫這個函式會**真的幫員工打一張上班卡**。
@@ -3484,6 +3487,16 @@ function isOutsourced(name){
   const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===n);
   return !!(u && u.outsourced);
 }
+// 這個人要不要打卡（v211，老闆指定：「外包人員是不用打卡的，也不會出現在出勤畫面，
+// 但可以對話」）。
+//
+// 外包不是我們的員工 —— 他沒有上下班時間，替他記遲到早退是假的數字，
+// 而且會讓人資的出勤頁每天掛著一排永遠不會消失的「未打卡」。
+//
+// ⚠️ 規則只寫在這一個地方。打卡、出勤名單、下班匯報、異常提醒、手機打卡名單
+//    全部問這個函式 —— 散成五份的話，改一個忘四個，而畫面上看不出來。
+// ⚠️ 只擋出勤，**不擋對話**。老闆那句話的後半段就是這個：他照樣要能傳訊息。
+function needsClock(name){ return !isOutsourced(name); }
 function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
@@ -3529,9 +3542,9 @@ function viewWorkCS(me){
         這不是說好要整合在一起嗎?」這一頁現在只留「今天要做什麼」。
         我的出勤也搬走了（跟看板放在一起）。 */''}
   ${fold(T("預排工作提醒","Reminders"), nFuture, futureTasksBody())}
-  <div class="card" style="text-align:center">
+  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
-  </div>`;
+  </div>`:""}`;
 }
 function viewWork(){
   const me = currentUser();
@@ -3640,9 +3653,9 @@ function viewWork(){
           <div class="tsub">${T("完成","Done")} ${esc(String(v.finishedAt||"").slice(11,16))}・${T("剪 ","")}${editDaysLabel(v)||"-"} ${T("天","d")}</div></div></div>`).join("")
       : "")}
 
-  <div class="card" style="text-align:center">
+  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
-  </div>`
+  </div>`:""}`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
@@ -3742,6 +3755,9 @@ function createZoneCard(){
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，無法代為下班打卡",true); return; }
+  // 外包不打卡。畫面上已經不畫這顆鍵了，但**按鍵不畫擋得住手滑，擋不住直接呼叫** ——
+  // 真正寫進 shifts 的那一層也要擋，不然「外包不打卡」只是畫面上的說法。
+  if(!needsClock(currentUser())){ toast("外包人員不需要打卡",true); return; }
   const me=currentUser();
   const doneVids=(STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
@@ -4040,6 +4056,7 @@ function attIssueAskOn(){ const s=(STATE&&STATE.settings)||{}; return s.attIssue
 // 工作頁最上面的異常提醒卡（有未說明的異常、且已開啟這個功能才出現）
 function workIssueCard(){
   if(!attIssueAskOn()) return "";
+  if(!needsClock(currentUser())) return "";   // 外包不打卡，就不會有出勤異常
   const list=myIssueShifts(); if(!list.length) return "";
   return `<div class="card" style="border-color:var(--red)">
     <b style="font-size:16px;color:var(--red)">⚠ ${T("出勤異常待說明","Attendance to explain")}（${list.length}）</b>
@@ -4079,7 +4096,10 @@ function taskEnsureMonth(ym){
     window.DB.loadTaskMonth(ym).catch(()=>{});
   }catch(e){}
 }
-function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor"))); }
+// ⚠️ 外包不列進出勤（老闆指定）。他不打卡，列進來就是每天一排「未打卡」，
+//    紅字久了人資就不看了 —— 那會把真正沒打卡的人一起蓋掉。
+function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>
+  STAFF_ROLES.includes(u.role||"editor") && needsClock(u.name))); }
 // 某人某月的每日出勤
 function attRows(name, ym){
   return Object.values((STATE&&STATE.shifts)||{})
@@ -8065,6 +8085,34 @@ function perfRankCard(){
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
     </div>
     <div id="rmk_rows" style="margin-top:8px">${perfRankRowsHTML()}</div>
+    ${perfNoDataNote()}
+  </div>`;
+}
+// 排行上看不到的那幾支：已經上片了，但一個成效數字都沒有。
+//
+// 老闆 2026-09-14 看著排行說「我覺得你找出來的好像太少」。查下去一部分原因在這裡：
+// 正式資料上這兩年標「已上片」的 319 支，**上片連結只有 1 支有填**。
+// 那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙；沒有它就只能拿文案硬比，
+// 比不到就一個數字都沒有，而那支片**在排行上根本不出現**。
+//
+// ⚠️ 不出現比排在最後面更糟：排在最後面看得出「它成效差」，不出現看起來像「沒這支片」。
+//    老闆：「這個就注明缺上片連結就好」—— 所以這裡只把數字說出來、指去補的地方，
+//    不自作主張改比對規則（門檻降下去會把 A 片的成效算到 B 片頭上，比沒資料更糟）。
+function perfNoData(){
+  return allLibVideos().filter(v=>{
+    if(!v || v.deleted) return false;
+    if((Array.isArray(v.metrics)?v.metrics:[]).length) return false;   // 有數字就不算
+    const sch=String(v.scheduledDate||"").slice(0,10);
+    return !!sch && sch<=today;                                        // 已經播出去了
+  });
+}
+function perfNoDataNote(){
+  const list=perfNoData(); if(!list.length) return "";
+  const nolink=list.filter(v=>!String(v.publishedLink||"").trim()).length;
+  return `<div class="muted" style="font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);line-height:1.8">
+    另外有 <b>${num(list.length)}</b> 支已經上片的影片<b>完全沒有成效數字</b>，所以不在這張排行上。${
+    nolink?`<br>其中 <b>${num(nolink)}</b> 支<b>缺上片連結</b> —— 那條網址是這支片對上平台那則貼文的唯一鑰匙，
+      沒有它就只能拿文案硬比，比不到就一個數字都沒有。到<b>看板 → 🔗 上片連結</b>補。`:""}
   </div>`;
 }
 function perfRankRowsHTML(){
@@ -10598,7 +10646,8 @@ function setWorkHoursCard(s){
     <label style="margin-top:12px;display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
     ${(()=>{ const allow=mobileAllowList();
-      const list=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+      const list=staffSorted((STATE.users||[]).filter(u=>
+        STAFF_ROLES.includes(u.role||"editor") && needsClock(u.name)));
       if(!list.length) return "";
       return `<div style="margin:8px 0 0 24px">
         <div class="muted" style="font-size:12px">上面打開的時候，這裡勾到的人<b>可以</b>用手機打卡（外務、跑倉庫、外派用）。

@@ -544,5 +544,35 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(!/add_insights\([^)]*\bfb_token\b/.test(SY),
      "Firebase 的權杖不准傳進 Meta 的函式"); }
 
+// ══════════ 排行上看不到的那幾支：注明缺上片連結（v211）══════════
+//
+// 老闆看著排行說「我覺得你找出來的好像太少」。一部分原因是：已經上片、但一個成效
+// 數字都沒有的片**在排行上根本不出現**。不出現比排在最後面更糟 —— 排在最後面看得出
+// 「它成效差」，不出現看起來像「沒這支片」。
+//
+// 正式資料：這兩年標已上片的 319 支，上片連結只有 1 支有填。
+// 老闆：「這個就注明缺上片連結就好」。
+{ const 有數字 = V({ id: "N1", name: "有成效的片", metrics: M(50000, 10), scheduledDate: D(20) });
+  const 沒數字缺連結 = V({ id: "N2", name: "上片了卻沒數字的片", scheduledDate: D(20), publishedLink: "" });
+  const 沒數字有連結 = V({ id: "N3", name: "有連結但還沒對到的片", scheduledDate: D(20),
+                          publishedLink: "https://www.facebook.com/reel/1/" });
+  const 還沒上片 = V({ id: "N4", name: "還沒播的片", scheduledDate: D(-5) });
+  mount([有數字, 沒數字缺連結, 沒數字有連結, 還沒上片], "管理員", "boss");
+  ok(perfNoData().map(v => v.id).sort().join() === "N2,N3",
+     "**已上片卻一個成效數字都沒有**的才算（有數字的、還沒播的都不算）");
+  const h = viewPerf();
+  ok(/另外有 <b>2<\/b> 支已經上片的影片/.test(h), "排行底下講得出有幾支看不到");
+  ok(/其中 <b>1<\/b> 支<b>缺上片連結<\/b>/.test(h), "**而且講得出其中幾支是缺上片連結**");
+  ok(/看板 → 🔗 上片連結/.test(h), "還要指去補的地方（講了問題不講去哪修等於沒講）");
+  // ⚠️ 這段是**註記**不是警報：全部都有數字的時候要整段消失，不要留一句「0 支」。
+  mount([有數字], "管理員", "boss");
+  ok(perfNoData().length === 0 && !/另外有 <b>/.test(viewPerf()),
+     "全部都有數字時整段消失（不要留一句沒有意義的「0 支」）");
+  // 缺連結是 0 的時候只講總數，不要硬寫「其中 0 支缺上片連結」
+  mount([有數字, 沒數字有連結], "管理員", "boss");
+  const h2 = viewPerf();
+  ok(/另外有 <b>1<\/b> 支/.test(h2) && !/缺上片連結/.test(h2),
+     "沒有人缺連結時就不提缺連結那句"); }
+
 console.log(`\n${pass} / ${pass + fail} 通過`);
 if (fail) process.exit(1);

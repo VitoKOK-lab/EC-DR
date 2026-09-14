@@ -300,6 +300,80 @@ function reset(vids, users){
           try{ render(); }catch(e){ bad=w+"/"+t[0]+": "+e.message; } }); });
     ok("六種身分、每一個分頁都畫得出來", !bad, bad); }
 
-  console.log(`\nv185（待審・審完才能上架・外包看不到別人）: ${pass} passed, ${fail} failed`);
+  // ══════════ ⑦ 外包不用打卡、不出現在出勤畫面，但照樣可以對話（v211）══════════
+  //
+  // 老闆 2026-09-14：「然後『外包』人員是不用打卡的，也不出出現在出勤畫面，但可以對話」
+  //
+  // 外包不是我們的員工 —— 他沒有上下班時間，替他記遲到早退是假的數字。
+  // 而且列進出勤頁就是每天一排永遠不會消失的「未打卡」，紅字久了人資就不看了，
+  // 那會把**真正沒打卡的人**一起蓋掉。
+  { reset(); 
+    ok("（前提）陳鋒是外包，小葵不是", isOutsourced("陳鋒") && !isOutsourced("小葵"));
+    ok("**外包不用打卡**", !needsClock("陳鋒"));
+    ok("自己人照樣要打卡", needsClock("小葵") && needsClock("小美")); }
+
+  // 出勤畫面上不准出現
+  { reset();
+    const names = attStaff().map(u=>u.name);
+    ok("**外包不出現在出勤名單上**", names.indexOf("陳鋒") < 0, names);
+    ok("（對照）自己人還在", names.indexOf("小葵") >= 0, names);
+    as("HR小姐","hr"); CUR_TAB="attend";
+    const h = viewAttend();
+    ok("出勤頁整頁都看不到他", !h.includes("陳鋒"), (h.match(/陳鋒[^<]{0,20}/)||[])[0]); }
+
+  // 真的不會寫進 shifts —— 畫面上看不到不等於沒記
+  { reset(); as("陳鋒","editor");
+    await clockIn("陳鋒"); await wait(20);
+    ok("**登入也不會替他打上班卡**（畫面看不到不等於沒記）",
+       !WRITES.some(w=>w[1]==="shifts"), WRITES);
+    reset(); as("小葵","editor");
+    await clockIn("小葵"); await wait(20);
+    ok("（對照）自己人照樣打得進去", WRITES.some(w=>w[1]==="shifts"), WRITES); }
+
+  // 下班匯報：鍵不畫，而且直接呼叫也擋
+  { reset(); as("陳鋒","editor"); CUR_TAB="work";
+    ok("外包的工作頁沒有「下班匯報」那顆鍵", !viewWork().includes("clockOutReport()"));
+    reset(); as("小葵","editor"); CUR_TAB="work";
+    ok("（對照）自己人有那顆鍵", viewWork().includes("clockOutReport()"));
+    // ⚠️ 按鍵不畫擋得住手滑，擋不住直接呼叫 —— 真正寫進 shifts 的那一層也要擋
+    reset(); as("陳鋒","editor"); modalHTML="";
+    clockOutReport();
+    ok("**直接呼叫下班匯報也擋得住**（不畫鍵只是畫面上的說法）",
+       modalHTML==="" && TOASTS.some(t=>/不需要打卡/.test(t)), {modalHTML:modalHTML.slice(0,60), TOASTS}); }
+
+  // 出勤異常提醒不要跳給他
+  // ⚠️ 這一條第一次寫成「設好 attIssueAsk 就呼叫 workIssueCard」—— 那是**假綠燈**：
+  //    假資料裡根本沒有異常班表，所以不管有沒有防護都回空字串，突變測試裡它活著。
+  //    要真的做出一張「遲到而且還沒說明」的班表，這條才測得到東西。
+  { const 異常班 = (who)=>({ id:who+"__"+T0, user:who, date:T0,
+      clockIn:T0+"T11:30:00", clockOut:T0+"T18:00:00", issueNote:"" });   // 上班 11:30 ＝遲到
+    const users=[{name:"陳鋒",role:"editor",outsourced:true,pwAt:"2020-01-01T00:00:00"},
+                 {name:"小葵",role:"editor",pwAt:"2020-01-01T00:00:00"}];
+    reset(null, users); as("小葵","editor");
+    STATE.settings.attIssueAsk = true;
+    STATE.shifts = { ["小葵__"+T0]: 異常班("小葵") };
+    ok("（前提）自己人遲到真的會跳提醒 —— 不然下一條測不到東西",
+       /出勤異常待說明/.test(workIssueCard()), workIssueCard().slice(0,80));
+    reset(null, users); as("陳鋒","editor");
+    STATE.settings.attIssueAsk = true;
+    STATE.shifts = { ["陳鋒__"+T0]: 異常班("陳鋒") };   // 就算真有這張班表也不准跳
+    ok("**外包不會收到「出勤異常待說明」**（他本來就沒有出勤）", workIssueCard()===""); }
+
+  // 設定裡「可以用手機打卡」的名單也不准列他 —— 那份名單是給「會打卡的人」開例外的，
+  // 外包根本不打卡，出現在上面只會讓人以為他要打卡。
+  { reset(); as("管理員","boss"); SET_TAB="basic";
+    const h = viewSettings(); SET_TAB="members";
+    ok("**手機打卡名單上沒有外包**",
+       !/class="mba_u" value="陳鋒"/.test(h), (h.match(/class="mba_u" value="[^"]*"/g)||[]));
+    ok("（對照）自己人在名單上", /class="mba_u" value="小葵"/.test(h)); }
+
+  // ⚠️ 只擋出勤，**不擋對話** —— 老闆那句話的後半段
+  { reset(); as("陳鋒","editor");
+    ok("**外包照樣看得到「傳訊息」**（老闆：但可以對話）",
+       myTabs().map(t=>t[0]).indexOf("chat") >= 0, myTabs().map(t=>t[0]));
+    // v185 本來就限制他只能傳給管理層，那一條不准被這次改動弄掉
+    ok("（v185 那條還在）他只能傳給管理層", APP.includes("外包人員只能傳訊息給主管或管理員")); }
+
+  console.log(`\nv185（待審・審完才能上架・外包看不到別人・外包不打卡）: ${pass} passed, ${fail} failed`);
   process.exit(fail?1:0);
 })();

@@ -345,7 +345,10 @@ function lastSlot(){
   // 大流的片一樣會帶貨，只看 STATE.videos 的話那張清單會少一半。
   // 上限 9→10（v206）：商品建檔要把「這個商品用過的所有寫法」收成別名，
   // 同樣得掃兩個庫，不然大流那邊用的寫法會漏掉、之後認不回來。
-  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=10);
+  // 上限 10→11（v211）：影片成效那一頁底下要講「另有 N 支已上片卻一個成效數字都沒有，
+  // 其中 M 支缺上片連結」。那句話的分母必須跟排行同一個庫 —— 排行算兩庫、註記只算一庫，
+  // 兩個數字對不起來，而畫面上看不出哪個是錯的。
+  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=11);
   ok("decorate 有把大流抽出去", /st\.videosDF=st\.videos\.filter\(isDF\)/.test(CODE));
   ok("抽出去之後 STATE.videos 真的只剩 A", /st\.videos=st\.videos\.filter\(v=>!isDF\(v\)\)/.test(CODE)); }
 
