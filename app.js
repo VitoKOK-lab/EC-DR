@@ -491,9 +491,9 @@ const PERMS = {
   // v210（選品 A-1）：這兩項先只是「勾得起來」，分頁與畫面在 A-2。
   // ⚠️ 刻意**還沒有** tab —— 有 tab 就會長出一個點進去空白的分頁。
   //    A-2 把畫面做出來時才補上 tab:"curate"。
-  curate:{ label:"選品", where:"上面的分頁（A-2 才會出現）", zhOnly:true,
+  curate:{ label:"選品", where:"上面的分頁", tab:"curate", zhOnly:true,
            why:"貼商品網址、看這個月選了哪些品" },
-  plan:  { label:"排影片", where:"選品 → 點商品（A-2 才會出現）", zhOnly:true,
+  plan:  { label:"排影片", where:"選品 → 點商品", zhOnly:true,
            why:"幫選中的商品排二創或開新片" },
 };
 const PERM_KEYS = Object.keys(PERMS);
@@ -725,8 +725,43 @@ async function route(method, path, body){
       return;
     }
   }
-  // v175：products／matches 的路由跟著選品配對工作台一起移除。
-  // 資料庫那兩個集合沒有動（各 2 筆），只是現在沒有任何畫面走得到它們。
+  // 選品清單（v210）。matches 在這一版退役了，products 重新啟用。
+  if(head==="products"){
+    if(method==="POST"){
+      const url=shopUrlNorm(body.officialUrl);
+      if(!isShopProductUrl(url)) throw new Error("請貼單一商品頁的網址");
+      const id=uid("PD"), now=nowIso();
+      await window.DB.set("products", id, {
+        id, name:String(body.name||"").trim(), officialUrl:url,
+        sku:"", image:"", aliases:[], oldUrls:[], status:"on", offAt:"",
+        priceMin:0, priceMax:0, listMin:0, listMax:0, variants:[],
+        // 還沒抓過。按「同步」才會去官網把名稱、照片、價格補上來。
+        fetchStatus:"pending", fetchError:"", fetchedAt:"",
+        picks:[{month:String(body.month||curMonth()), by:user, at:now, note:String(body.note||"")}],
+        createdBy:user, createdAt:now, updatedAt:now });
+      return id;
+    }
+    const pid=seg[1];
+    if(!pid) throw new Error("不支援的操作");
+    if(method==="DELETE"){ await window.DB.del("products", pid); return; }
+    if(method==="PUT"){
+      // ⚠️ 白名單：沒列進來的欄位會被默默丟掉。加新欄位時很容易忘記這裡。
+      const patch={};
+      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt"]
+        .forEach(k=>{ if(body[k]!=null) patch[k]=String(body[k]); });
+      ["priceMin","priceMax","listMin","listMax"]
+        .forEach(k=>{ if(body[k]!=null) patch[k]=+body[k]||0; });
+      if(Array.isArray(body.variants)) patch.variants=body.variants.map(String).slice(0,20);
+      if(Array.isArray(body.picks))    patch.picks=body.picks;
+      if(body.officialUrl!=null){
+        const url=shopUrlNorm(body.officialUrl);
+        if(!isShopProductUrl(url)) throw new Error("請貼單一商品頁的網址");
+        patch.officialUrl=url;
+      }
+      patch.updatedAt=nowIso();
+      await window.DB.update("products", pid, patch); return;
+    }
+  }
   throw new Error("不支援的操作");
 }
 function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -1395,7 +1430,7 @@ function render(){
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   // v196：素材索引 4.8 MB，只有真的打開「找影片」的人才下載，一次連線只下載一次。
   try{ needAssets(); }catch(e){}
-  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, curate:viewCurate, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -10062,6 +10097,193 @@ function assetResultsHTML(){
     + `<div class="muted" style="font-size:12px;margin-bottom:8px">${ASSET_HITS.length} 個候選${more>0?`，先列前 ${AS_MAX} 個`:""}</div>`
     + shown.map(h=>h.t==="f"?assetFolderCard(h):assetFileCard(h)).join("");
 }
+// ===================================================================
+// 選品清單（v210 / A-2）
+// ===================================================================
+// 老闆要的流程：
+//   設計師從官網挑商品 → 一次貼十條網址 → 按「同步」→ 系統抓回名稱、照片、
+//   價格 → 按月份列出「這個月選了哪些品」。不用審核、不用檔期。
+//
+// ⚠️ 為什麼要按「檢查」才寫進去：貼十條一定會有一兩條重複或貼錯。
+//    直接寫進資料庫的話他不會發現 —— 先給他看一張對帳單，一秒的事。
+//
+// ⚠️ 為什麼抓資料要繞一圈：官網沒有開 CORS（實測：回應裡沒有
+//    Access-Control-Allow-Origin、/products.json 只回同一頁 HTML、
+//    /api/... 全部轉走）。瀏覽器發出去的一定被擋，跟是不是手動按的無關。
+//    所以走 cloudflare/shopline-proxy.mjs 代抓，設定在「設定 → 平台」。
+function canCurate(){ return !VIEW_AS && hasPerm("curate"); }
+function shopProxy(){ return String((STATE&&STATE.settings&&STATE.settings.shopProxy)||"").trim(); }
+function prodList(){ return ((STATE&&STATE.products)||[]).filter(p=>p&&p.id); }
+function prodById(id){ return prodList().find(p=>p.id===id)||null; }
+// 這個網址已經在清單裡了嗎（用正規化之後的網址比，不是比字面）
+function prodByUrl(url){ const u=shopUrlNorm(url); if(!u) return null;
+  return prodList().find(p=>prodUrls(p).some(x=>shopUrlNorm(x)===u))||null; }
+
+let CUR_PREV=null;     // 按過「檢查」之後的對帳單
+let CUR_BUSY=false;
+
+// 貼上的一整段 → 分成四類。這就是對帳單的內容。
+function curClassify(text, ym){
+  const month=ym||curMonth();
+  const out={add:[], dupMonth:[], dupOther:[], bad:[]};
+  parseUrlLines(text).forEach(u=>{
+    if(!isShopProductUrl(u)){ out.bad.push(u); return; }
+    const hit=prodByUrl(u);
+    if(!hit) out.add.push(u);
+    else if(prodPickedIn(hit, month)) out.dupMonth.push({url:u, p:hit});
+    else out.dupOther.push({url:u, p:hit});
+  });
+  return out;
+}
+function curCheck(){
+  if(!canCurate()){ toast("你沒有這一頁的權限",true); return; }
+  const t=val("cur_paste")||"";
+  const r=curClassify(t);
+  if(!r.add.length && !r.dupMonth.length && !r.dupOther.length && !r.bad.length){
+    toast("這裡面找不到網址",true); return;
+  }
+  CUR_PREV=r; render();
+}
+function curCancel(){ CUR_PREV=null; render(); }
+// 確認之後才真的寫。用 bulkRun：分批平行，而且失敗會誠實報出來 ——
+// 不會發生「說加了 12 筆其實只進 9 筆」。
+async function curConfirm(){
+  if(!canCurate()||!CUR_PREV||CUR_BUSY) return;
+  const r=CUR_PREV, month=curMonth();
+  CUR_BUSY=true; render();
+  try{
+    const mk=await bulkRun(r.add, u=>route("POST","/api/products",{officialUrl:u, month}));
+    // 以前選過、這次要補掛到這個月的：不新建，只在原本那一列加一筆 pick
+    const re=await bulkRun(r.dupOther, x=>route("PUT","/api/products/"+encodeURIComponent(x.p.id),
+      {picks: prodPicks(x.p).concat([{month, by:currentUser(), at:nowIso(), note:""}])}));
+    const n=mk.done+re.done, bad=mk.failed+re.failed;
+    logA("選品：新增 "+mk.done+" 個、補掛 "+re.done+" 個", "選品清單");
+    bulkToast({failed:bad}, n?("已加入 "+n+" 個商品"):"沒有要加的", "個");
+    CUR_PREV=null;
+    const box=document.getElementById("cur_paste"); if(box) box.value="";
+  }catch(e){ toast(e.message||"加不進去，請稍後再試", true); }
+  CUR_BUSY=false; render();
+}
+// 按「同步」：把還沒抓過的商品，一個一個送去代抓、寫回來。
+// 只跑「被選中那幾個」—— 沒人按就完全不動（老闆指定的做法）。
+function curPending(){ return prodList().filter(p=>String(p.fetchStatus||"")!=="ok"); }
+async function curSync(){
+  if(!canCurate()||CUR_BUSY) return;
+  const proxy=shopProxy();
+  if(!proxy){ toast("還沒設定抓商品資料的網址（設定 → 平台）",true); return; }
+  const list=curPending();
+  if(!list.length){ toast("沒有需要抓的"); return; }
+  CUR_BUSY=true; render();
+  let done=0, bad=0;
+  for(const p of list){
+    try{
+      const r=await fetch(proxy+"?url="+encodeURIComponent(p.officialUrl));
+      const d=await r.json();
+      if(!d||!d.ok) throw new Error((d&&d.error)||("HTTP "+r.status));
+      await route("PUT","/api/products/"+encodeURIComponent(p.id), {
+        name:d.name, image:d.image||"", sku:d.sku||"",
+        priceMin:d.priceMin, priceMax:d.priceMax, listMin:d.listMin, listMax:d.listMax,
+        variants:d.variants||[], fetchStatus:"ok", fetchError:"", fetchedAt:nowIso() });
+      done++;
+    }catch(e){
+      bad++;
+      try{ await route("PUT","/api/products/"+encodeURIComponent(p.id),
+        {fetchStatus:"failed", fetchError:String(e.message||e).slice(0,120), fetchedAt:nowIso()}); }catch(e2){}
+    }
+  }
+  logA("選品：同步商品資料 "+done+" 個成功、"+bad+" 個失敗", "選品清單");
+  toast(bad?("抓回 "+done+" 個，"+bad+" 個抓不到（可以自己填名稱）"):("抓回 "+done+" 個商品"), !!bad);
+  CUR_BUSY=false; render();
+}
+function curRename(id){
+  const p=prodById(id); if(!p||!canCurate()) return;
+  const n=prompt("商品名稱：", p.name||""); if(n===null) return;
+  const name=String(n).trim(); if(!name){ toast("名稱不能空白",true); return; }
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), {name, fetchStatus:"ok"}, "已改名為「"+name+"」");
+}
+function curDel(id){
+  const p=prodById(id); if(!p||!canCurate()) return;
+  if(!confirm("把「"+(p.name||p.officialUrl)+"」從選品清單移除？\n（只是移除這一筆，官網上的商品不會有任何變化）")) return;
+  writeAdmin("DELETE","/api/products/"+encodeURIComponent(id), {}, "已移除");
+}
+// 依月份分組：新的月份排前面。一個商品選過幾個月就會出現在那幾個月裡，
+// 但資料庫裡永遠只有一列（picks 是陣列）。
+function curByMonth(){
+  const m={};
+  prodList().forEach(p=>prodPicks(p).forEach(k=>{ (m[k.month]=m[k.month]||[]).push(p); }));
+  return Object.keys(m).sort().reverse().map(ym=>({ym, items:m[ym]}));
+}
+function curPrevHTML(){
+  const r=CUR_PREV; if(!r) return "";
+  const line=(dot,label,n,tip)=>n?`<div style="margin-top:4px">
+    <span style="color:${dot}">●</span> <b>${label} ${n} 個</b>
+    ${tip?`<span class="muted" style="font-size:12px">　${esc(tip)}</span>`:""}</div>`:"";
+  const badList=r.bad.length?`<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">${
+    r.bad.slice(0,6).map(u=>"・"+esc(prettyUrl(u))).join("<br>")}${r.bad.length>6?"<br>…":""}</div>`:"";
+  const total=r.add.length+r.dupOther.length;
+  return `<div class="card" style="border-color:var(--accent)">
+    <b>檢查結果</b>
+    ${line("#1E8E5A","新的",r.add.length,"會建檔")}
+    ${line("#B8860B","以前選過",r.dupOther.length,"補掛到這個月，不會變成兩筆")}
+    ${line("#777","這個月已經有了",r.dupMonth.length,"跳過")}
+    ${line("#C0392B","不是商品頁",r.bad.length,"分類頁、活動頁都對不回單一商品")}
+    ${badList}
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="btn" ${total&&!CUR_BUSY?"":"disabled"} onclick="curConfirm()">
+        ${CUR_BUSY?"寫入中…":"確認加入 "+total+" 個"}</button>
+      <button class="btn sec" onclick="curCancel()">取消</button>
+    </div></div>`;
+}
+function curCardHTML(p){
+  const sale=prodSaleText(p), lst=prodListText(p);
+  const st=String(p.fetchStatus||"");
+  const img=p.image?`<img src="${esc(p.image)}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none">`
+                   :`<div style="width:56px;height:56px;border-radius:8px;background:var(--panel2);flex:none"></div>`;
+  const state = st==="ok" ? ""
+    : st==="failed" ? `<div style="font-size:12px;color:#C0392B">抓不到：${esc(p.fetchError||"")}　<button class="btn sec sm" style="padding:2px 8px;font-size:11px" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button></div>`
+    : `<div class="muted" style="font-size:12px">還沒抓 —— 按上面的「同步」</div>`;
+  return `<div class="row" style="gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)">
+    ${img}
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700">${esc(p.name||prettyUrl(p.officialUrl))}</div>
+      ${sale?`<div style="font-size:13px">售價 ${esc(sale)}${lst?`　<span class="muted">原價 ${esc(lst)}</span>`:""}${
+        (p.variants||[]).length>1?`　<span class="muted">${(p.variants||[]).length} 款</span>`:""}</div>`:""}
+      ${state}
+      <div class="muted" style="font-size:11px;margin-top:2px">
+        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
+        ${prodPicks(p).length>1?`　選過 ${prodPickMonths(p).length} 個月`:""}</div>
+    </div>
+    ${canCurate()?`<div style="flex:none"><button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">改名</button>
+      <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button></div>`:""}
+  </div>`;
+}
+function viewCurate(){
+  if(!hasPerm("curate")) return `<h2>選品</h2>
+    <div class="card muted">這一頁要有「選品」權限才看得到。</div>`;
+  const groups=curByMonth();
+  const pend=curPending().length;
+  const paste=canCurate()?`<div class="card"><b>加商品</b>
+    <div class="muted" style="font-size:12px;margin-top:2px">一行一個網址，貼幾條都可以。只收單一商品頁。</div>
+    <textarea id="cur_paste" rows="4" style="margin-top:8px;font-family:monospace;font-size:12px"
+      placeholder="https://www.tzgrotw.tw/products/…&#10;https://www.tzgrotw.tw/products/…"></textarea>
+    <div class="modalFoot"><button class="btn" onclick="curCheck()">檢查這些網址</button></div>
+  </div>${curPrevHTML()}`:"";
+  const syncCard=(canCurate()&&pend)?`<div class="card" style="border-left:4px solid var(--accent)">
+    <b>${pend} 個商品還沒抓資料</b>
+    <div class="muted" style="font-size:12px;margin-top:2px">
+      ${shopProxy()?"按一下去官網把名稱、照片、價格抓回來。只跑這幾個。"
+                   :"還沒設定抓商品資料的網址（設定 → 平台）。在那之前可以自己填名稱。"}</div>
+    <div class="modalFoot"><button class="btn" ${(!shopProxy()||CUR_BUSY)?"disabled":""} onclick="curSync()">
+      ${CUR_BUSY?"抓取中…":"同步"}</button></div></div>`:"";
+  const body=groups.length?groups.map(g=>{
+    const [y,m]=g.ym.split("-").map(Number);
+    return `<div class="card"><b>${y} 年 ${m} 月</b>
+      <span class="muted" style="font-size:12px">${g.items.length} 個</span>
+      ${g.items.map(curCardHTML).join("")}</div>`;
+  }).join(""):`<div class="card muted">還沒有選品。${canCurate()?"貼幾個商品網址上去就有了。":""}</div>`;
+  return `<h2>選品</h2>${paste}${syncCard}${body}`;
+}
+
 function viewAssets(){
   if(!canFindAssets()) return `<h2>找影片</h2><p class="muted">你沒有這一頁的權限。</p>`;
   const m=(ASSET_IDX&&ASSET_IDX.meta)||{};
@@ -10506,6 +10728,12 @@ function viewSettings(){
     <input type="number" id="set_horizon" value="${s.scheduleHorizonDays||30}" style="max-width:160px">
     <label style="margin-top:12px">Shopline 網址</label>
     <input id="set_shop" value="${esc(s.shoplineBase||'')}" placeholder="https://你的店.shoplineapp.com">
+    <label style="margin-top:12px">抓商品資料的網址</label>
+    <input id="set_shopproxy" value="${esc(s.shopProxy||'')}" placeholder="https://xxxx.workers.dev">
+    <div class="muted" style="font-size:12px;margin-top:4px">
+      選品清單「同步」用的。官網沒開 CORS，瀏覽器抓不到，要靠這一段代抓。
+      還沒設好的話，設計師貼完網址只會看到「還沒設定」，可以自己手動填商品名。
+      設定方式見 <code>docs/選品清單-Cloudflare-部署.md</code>。</div>
     <div class="modalFoot"><button class="btn" onclick="saveSettings()">確認送出設定</button></div>
   </div>
   <div class="card"><b>管理員密碼</b>
@@ -10619,6 +10847,7 @@ async function saveSettings(){
   }
   if(document.getElementById("set_horizon")) settings.scheduleHorizonDays=parseInt(val("set_horizon"))||30;
   if(document.getElementById("set_shop")) settings.shoplineBase=(val("set_shop")||"").trim();
+  if(document.getElementById("set_shopproxy")) settings.shopProxy=(val("set_shopproxy")||"").trim();
   let rateWarn="";
   // 管理員密碼：留空＝不改；要改的話存雜湊、把明文清掉（跟員工密碼同一套規則）
   const pw=(val("set_pw")||"").trim();

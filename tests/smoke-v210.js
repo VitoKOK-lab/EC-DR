@@ -78,9 +78,13 @@ ok("有「選品」這一項", PERMS.curate && PERMS.curate.label === "選品");
 ok("有「排影片」這一項", PERMS.plan && PERMS.plan.label === "排影片");
 ok("兩項都寫了它在畫面上的哪裡", !!(PERMS.curate.where && PERMS.plan.where));
 ok("兩項都是中文頁（海外剪輯不給）", PERMS.curate.zhOnly === true && PERMS.plan.zhOnly === true);
-// ⚠️ A-1 還沒有畫面。有 tab 就會長出一個點進去空白的分頁。
-ok("**A-1 還不給分頁**（畫面在 A-2，先長分頁等於給一頁空白）",
-   PERMS.curate.tab === undefined && PERMS.plan.tab === undefined);
+// v210 / A-2：選品有畫面了，分頁接上去。
+// 「排影片」還是沒有自己的分頁 —— 它是選品頁裡的動作，不是一頁。
+ok("「選品」有分頁", PERMS.curate.tab === "curate");
+ok("「排影片」沒有自己的分頁（它是選品頁裡的動作）", PERMS.plan.tab === undefined);
+{ reset([U("小設", "design", { perms: ["curate"] })], "小設", "design");
+  ok("勾了「選品」，設計師就多一頁", myTabs().map(t => t[0]).join() === "chat,curate", myTabs().map(t => t[0]));
+  ok("分頁名字是權限表上那個名字", (myTabs().find(t => t[0] === "curate") || [])[1] === "選品"); }
 { reset([U("小設", "design")], "小設", "design");
   ok("沒勾就是沒有（職位不給預設，跟 v207 同一條規矩）", !hasPerm("curate") && !hasPerm("plan"));
   reset([U("小設", "design", { perms: ["curate"] })], "小設", "design");
@@ -167,5 +171,120 @@ ok("（對照）products 留著", /match \/products\/\{id\}\s*\{\s*allow/.test(R
 ok("（對照）fb.js 照樣訂閱 products", /collection\(db,\s*["']products["']\)/.test(FB));
 ok("操作紀錄查得到商品名字", /seg\[1\]==="products"/.test(APP));
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ══════════ ⑦ A-2：選品頁 ══════════
+const PD = (o) => Object.assign({ id:"PD1", name:"", officialUrl:BASE+"/products/a",
+  picks:[{month:curMonth(), by:"小設", at:"2026-09-01T10:00:00"}],
+  fetchStatus:"ok", priceMin:0, priceMax:0, listMin:0, listMax:0, variants:[] }, o||{});
+function withProds(prods, who, role, perms){
+  reset([U(who||"小設", role||"design", { perms: perms||["curate"] })], who||"小設", role||"design");
+  LAST_RAW.products = prods; STATE = decorate(LAST_RAW);
+}
+
+// ── 權限 ──
+{ reset([U("小明","design")], "小明", "design");
+  ok("沒權限 → 看不到內容", /要有「選品」權限/.test(viewCurate())); }
+{ withProds([]);
+  ok("有權限 → 看得到貼網址的框", /id="cur_paste"/.test(viewCurate()));
+  ok("還沒選品時講清楚", /還沒有選品/.test(viewCurate())); }
+// 員工視角是唯讀 —— 全站規矩
+{ withProds([]); VIEW_AS = "小設";
+  ok("**員工視角預覽時不給貼網址**（全站唯讀的規矩）", !/id="cur_paste"/.test(viewCurate()));
+  VIEW_AS = null; }
+
+// ── 對帳單：四種情況 ──
+{ const p = PD({ id:"PDa", officialUrl:BASE+"/products/舊品", name:"舊品" });
+  withProds([p]);
+  const r = curClassify([
+    BASE+"/products/新品",            // 新的
+    BASE+"/products/舊品",            // 這個月已經有了
+    BASE+"/categories/異象水晶",      // 不是商品頁
+    BASE+"/products/新品/",           // 跟第一條同一個（尾斜線）
+  ].join("\n"));
+  ok("新的 1 個（尾斜線那條算同一個，不會重複建）", r.add.length === 1, r.add);
+  ok("這個月已經有的 1 個", r.dupMonth.length === 1);
+  ok("不是商品頁的 1 個", r.bad.length === 1, r.bad); }
+// ⚠️ 這一條最重要：以前選過的品，這次要「補掛到這個月」，不是新建一筆。
+//    新建就變兩列，這個品的營收會被拆成兩半，ROAS 從此算不準。
+{ const p = PD({ id:"PDb", officialUrl:BASE+"/products/老品", name:"老品",
+                 picks:[{month:"2026-01", by:"小設", at:"2026-01-05T10:00:00"}] });
+  withProds([p]);
+  const r = curClassify(BASE+"/products/老品");
+  ok("**以前選過的品：補掛，不是新建**", r.dupOther.length === 1 && r.add.length === 0, r);
+  ok("而且指到原本那一列", r.dupOther[0].p.id === "PDb"); }
+
+// ── 畫面：按月份分組、價格、狀態 ──
+{ const a = PD({ id:"P1", name:"歐泊手鏈", priceMin:990, priceMax:3500, listMin:6000, listMax:15000,
+                 variants:["白","黑","白項鍊","黑項鍊"], picks:[{month:"2026-09", by:"小設", at:""}] });
+  const b = PD({ id:"P2", name:"八月的品", officialUrl:BASE+"/products/b",
+                 picks:[{month:"2026-08", by:"小設", at:""}] });
+  withProds([a,b]);
+  const h = viewCurate();
+  ok("兩個月各一組", /2026 年 9 月/.test(h) && /2026 年 8 月/.test(h));
+  ok("新的月份排前面", h.indexOf("2026 年 9 月") < h.indexOf("2026 年 8 月"));
+  ok("售價印成區間", /售價 NT\$990～NT\$3,500/.test(h));
+  ok("原價也看得到", /原價 NT\$6,000～NT\$15,000/.test(h));
+  ok("多款會標幾款", /4 款/.test(h)); }
+// 同一個商品選兩個月 → 兩個月都看得到，但資料庫只有一列
+{ const p = PD({ id:"P9", name:"跨月的品",
+                 picks:[{month:"2026-09", by:"小設", at:""},{month:"2026-08", by:"小設", at:""}] });
+  withProds([p]);
+  const g = curByMonth();
+  ok("**兩個月都列得出來**", g.length === 2 && g.every(x=>x.items.length===1), g.map(x=>x.ym));
+  ok("**但資料庫只有一列**", prodList().length === 1);
+  ok("畫面上會標「選過 2 個月」", /選過 2 個月/.test(viewCurate())); }
+
+// ── 還沒抓資料的狀態 ──
+{ withProds([PD({ id:"P3", fetchStatus:"pending", name:"" })]);
+  const h = viewCurate();
+  ok("有還沒抓的 → 出現同步卡", /1 個商品還沒抓資料/.test(h));
+  ok("沒設定代抓網址時講清楚，而且按鍵是關的",
+     /還沒設定抓商品資料的網址/.test(h) && /disabled/.test(h));
+  ok("沒名稱時退回顯示網址，不是一列空白", /products\//.test(h)); }
+{ withProds([PD({ id:"P4", fetchStatus:"pending" })]);
+  LAST_RAW.settings.shopProxy = "https://x.workers.dev"; STATE = decorate(LAST_RAW);
+  const h = viewCurate();
+  ok("設定好之後同步鍵可以按", /onclick="curSync\(\)"/.test(h) && !/disabled[^>]*onclick="curSync/.test(h)); }
+{ withProds([PD({ id:"P5", fetchStatus:"failed", fetchError:"這一頁找不到商品資料" })]);
+  const h = viewCurate();
+  ok("抓不到時說原因", /抓不到：這一頁找不到商品資料/.test(h));
+  ok("而且給得出手動填名稱的路", /自己填名稱/.test(h)); }
+{ withProds([PD({ id:"P6", fetchStatus:"ok", name:"好了" })]);
+  ok("已經抓好的不算待抓", curPending().length === 0);
+  ok("不會出現同步卡", !/還沒抓資料/.test(viewCurate())); }
+
+// ── 寫入路由 ──
+(async () => {
+  let W = [];
+  function withDB(prods){
+    withProds(prods||[]);
+    W = [];
+    global.window.DB = { set: async (c,id,o)=>{W.push(["set",c,id,o]);},
+      update: async (c,id,p)=>{W.push(["update",c,id,p]);},
+      del: async (c,id)=>{W.push(["del",c,id]);},
+      scheduleSet: async()=>{}, setSettings: async()=>{},
+      videosWatched:()=>true, netState:()=>({online:true,pending:false}) };
+  }
+  withDB();
+  await route("POST","/api/products",{officialUrl:BASE+"/products/新品"});
+  const w = W.find(x=>x[0]==="set" && x[1]==="products");
+  ok("建檔會寫 products", !!w, W);
+  ok("**一開始就是待抓取**（等按同步）", w && w[3].fetchStatus === "pending", w && w[3].fetchStatus);
+  ok("**picks 是陣列，掛在這個月**",
+     w && Array.isArray(w[3].picks) && w[3].picks.length===1 && w[3].picks[0].month===curMonth(), w && w[3].picks);
+  ok("網址存的是正規化過的", w && w[3].officialUrl === BASE+"/products/新品");
+  // ⚠️ 分類頁擋在寫入這一層，不是只擋在畫面上 —— 畫面擋得住手滑，擋不住直接呼叫
+  let threw = false;
+  try { await route("POST","/api/products",{officialUrl:BASE+"/categories/x"}); } catch(e){ threw = true; }
+  ok("**分類頁在寫入那一層就被擋掉**", threw);
+  withDB();
+  await route("PUT","/api/products/PD1",{name:"改過的", priceMin:990, variants:["A","B"], 亂七八糟:"x"});
+  const u = W.find(x=>x[0]==="update");
+  ok("改得動名稱與價格", u && u[3].name==="改過的" && u[3].priceMin===990, u && u[3]);
+  ok("**白名單外的欄位會被丟掉**", u && u["3"]!==undefined && !("亂七八糟" in u[3]), u && Object.keys(u[3]));
+  withDB();
+  await route("DELETE","/api/products/PD1",{});
+  ok("刪得掉", W.some(x=>x[0]==="del" && x[1]==="products" && x[2]==="PD1"), W);
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})();
