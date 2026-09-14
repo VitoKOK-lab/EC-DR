@@ -471,8 +471,18 @@ ok(rmkPerfCard() === "", "一支二創都沒有的時候，不要長一張空卡
   ok(!canPlanRemake(), "沒有那個權限的剪輯就不行");
   mount([候選], "管理員", "boss");
   ok(canPlanRemake(), "管理員本來就有");
-  ok(/canPlanRemake\(\)\{ return canAssignWork\(\); \}/.test(APP_SRC),
-     "而且是直接接到 canAssignWork，不是另外抄一份名單"); }
+  // v211：再加上「排影片」那個權限（PERMS.plan）—— 它的說明本來就寫著
+  // 「幫選中的商品排二創或開新片」，勾了卻排不動等於那一格是假的。
+  // ⚠️ 這一條守的是「不准自己抄一份名單」，不是「只准接一個開關」：
+  //    兩邊都必須是現成的判斷（canAssignWork／hasPerm），不可以出現職位或人名。
+  ok(/canPlanRemake\(\)\{ return canAssignWork\(\) \|\| hasPerm\("plan"\); \}/.test(APP_SRC),
+     "接的是現成的開關（canAssignWork ＋ 排影片權限），不是另外抄一份名單");
+  { const 候選2 = V({ id: "S4", name: "可二創的片", scheduledDate: D(100), metrics: M(50000, 100, D(100)) });
+    mount([候選2], "行銷", "mkt");
+    ok(!canPlanRemake(), "（前提）行銷沒勾「排影片」就排不動");
+    LAST_RAW.users.push({ name: "行銷", role: "mkt", perms: ["plan"] });
+    STATE = decorate(LAST_RAW);
+    ok(canPlanRemake(), "**勾了「排影片」就排得動**（不然那一格是假的）"); } }
 
 // ══════════ ⑱b 排二創那個視窗：字要對，三格都要擋 ══════════
 // 老闆：「這裡不叫毛片，就是舊片素材。」—— 二創拿到的是已經上過片的成品，

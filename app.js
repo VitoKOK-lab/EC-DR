@@ -5977,7 +5977,9 @@ function copyStr(enc){ const t=decodeURIComponent(enc);
   else fallbackCopy(t); }
 function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("已複製連結"); }catch(e){ toast("複製失敗，請手動",true); } }
 // 新增影片：原始片名 ＋ 影片文案 ＋ 商品
-function newSimpleVideo(){
+// prefill：從選品清單開新片時帶進來的商品（名稱＋官網連結），行銷不用再複製貼上。
+// ⚠️ 預設是空陣列 —— 原本所有呼叫點都不帶參數，行為一個字都不能變。
+function newSimpleVideo(prefill){
   showModal(T("新增影片","Add video"), `
     <label>${T("原本語言（這支影片是什麼語言拍的）","Original language (what language was it shot in)")}</label>
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
@@ -5995,7 +5997,7 @@ function newSimpleVideo(){
       <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
         <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
     </div>
-    ${productRows("sv", [])}
+    ${productRows("sv", Array.isArray(prefill)?prefill:[])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
     if(!name){ toast(T("請輸入原始片名","Enter the raw title"),true); return false; }
@@ -7291,7 +7293,9 @@ function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoI
 // 那個權限系統裡已經有了：設定→成員的「工作指派」勾勾（users.canAssign），
 // 泓儒早就打勾了。排二創跟指派毛片本來就是同一件事（把工作分給誰），
 // 共用同一個開關，換人的時候只要改一個地方 —— 兩份定義遲早會不一致。
-function canPlanRemake(){ return canAssignWork(); }
+// v211：加上 hasPerm("plan")。那個權限的說明本來就寫著「幫選中的商品排二創或開新片」——
+// 勾了卻排不動，等於那一格是假的。（本來只有「指派工作」那一群人排得動。）
+function canPlanRemake(){ return canAssignWork() || hasPerm("plan"); }
 // 原片 → 它的二創。建一次表，不要每問一支就掃一次全庫 ——
 // 排序那裡是「每支片都問一次」，掃全庫的話 1,045 支就變成一百萬次比對。
 // 快取靠陣列本身的身分認（跟 allLibVideos 同一招）：資料一換就自動重建。
@@ -10369,6 +10373,70 @@ function curActs(p){
   return `<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">${s.k==="bad"?"自己填名稱":"改名"}</button>
     <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`;
 }
+// ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
+// 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
+// 「排影片」這個權限（PERMS.plan）之前勾得起來但不做事，就是缺這一段。
+//
+// 這個視窗要回答行銷三件事，然後讓他當場動手：
+//   ① 這個品我們推過幾次（Shopline 貼文銷售）
+//   ② 哪幾支影片賣過它、成效如何
+//   ③ 要拿哪一支去二創，還是開一支新片
+function canPlanVideo(){ return !VIEW_AS && hasPerm("plan"); }
+// 賣過這個品的影片。用**官網連結**認，不是用名字 ——
+// 同一個商品在不同影片上被寫成不同名字（v205 量過），名字認不得，連結認得出來。
+function curVidsFor(p){
+  const want=shopUrlNorm(p&&p.officialUrl); if(!want) return [];
+  const out=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    let hit = shopUrlNorm(v.productUrl)===want;
+    if(!hit) (v.products||[]).forEach(x=>{ if(x&&shopUrlNorm(x.link)===want) hit=true; });
+    if(hit) out.push(v);
+  });
+  return out.sort((a,b)=>vidViews(b)-vidViews(a));
+}
+function curOpen(id){
+  const p=(STATE.products||[]).find(x=>x&&x.id===id); if(!p){ toast("找不到這個商品",true); return; }
+  const g=psOf(curTitle(p)), vids=curVidsFor(p), plan=canPlanVideo();
+  const s=curState(p), sale=prodSaleText(p), lst=prodListText(p);
+  const rows=vids.map(v=>`<tr>
+    <td data-label="影片"><a href="javascript:void(0)" onclick="closeModal();${jsEsc(vidOpenFn(v))}">${esc(vidTitle(v))}</a></td>
+    <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+    <td data-label="觀看" class="pr-v">${vidViews(v)?`<b>${num(vidViews(v))}</b>`:'<span class="muted">—</span>'}</td>
+    ${plan?`<td data-label="">${isVersion(v)?'<span class="muted" style="font-size:11px">版本片</span>'
+      :`<button class="btn sm" style="white-space:nowrap" onclick="closeModal();openRmkPlan('${esc(jsEsc(v.id))}')">排二創</button>`}</td>`:""}
+  </tr>`).join("");
+  showModal(curTitle(p), `
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:baseline">
+      ${sale?`<b class="curprice" style="font-size:17px">${esc(sale)}</b>`:""}
+      ${lst?`<span class="muted curlist">${esc(lst)}</span>`:""}
+      <span class="pill ${s.pill}">${s.label}</span>
+    </div>
+    <div style="margin-top:6px;word-break:break-all">
+      <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener noreferrer">${esc(prettyUrl(p.officialUrl))} ↗</a></div>
+    ${/* ⚠️ 查不到就整段不顯示，不要寫「推過 0 次」—— 那是在講一件我們不知道的事。 */''}
+    ${(g&&+g.n)?`<div class="card" style="background:var(--panel2);margin-top:10px">
+      <b style="color:var(--gold-dk)">Shopline 上推過 ${+g.n} 次</b>
+      <div class="muted" style="font-size:12.5px;margin-top:4px">
+        ${g.first?esc(String(g.first).slice(0,10))+" ～ ":""}${esc(String(g.last||"").slice(0,10))}
+        ${(+g.c)?`　·　留言 ${num(+g.c)}`:""}${(+g.a)?`　·　留言加購 ${num(+g.a)}`:""}</div></div>`
+      :`<div class="muted" style="font-size:12.5px;margin-top:10px">Shopline 的貼文銷售裡查不到這個品 —— 可能還沒推過，也可能是名字寫法對不上。</div>`}
+    <div class="muted" style="font-size:13px;margin:12px 0 6px">
+      <b>${vids.length}</b> 支影片賣過它${vids.length?`，觀看合計 <b>${num(vids.reduce((a,v)=>a+vidViews(v),0))}</b>（觸及，不是銷售）`:""}</div>
+    ${vids.length?`<div class="${vids.length>8?'vidscroll':''}">
+      <table class="responsive perfrank"><thead><tr><th>影片</th><th>剪輯</th><th>觀看</th>${plan?"<th></th>":""}</tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+      :`<div class="muted" style="font-size:12.5px">還沒有影片賣過這個品。${plan?"下面開一支新的。":""}</div>`}
+    ${plan?`<div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" onclick="closeModal();curNewVideo('${esc(jsEsc(p.id))}')">開新片</button>
+      <span class="muted" style="font-size:12px;flex:1;min-width:160px">拿上面某一支去二創，或開一支新的 —— 商品名與官網連結會自動帶進去。</span>
+      </div>`:""}`);
+}
+// 從選品清單開一支新片：把商品名與官網連結先填好，行銷不用再複製貼上。
+function curNewVideo(id){
+  const p=(STATE.products||[]).find(x=>x&&x.id===id); if(!p){ toast("找不到這個商品",true); return; }
+  if(!canPlanVideo()){ toast("你沒有「排影片」的權限",true); return; }
+  newSimpleVideo([{name:curTitle(p), link:p.officialUrl, salePrice:(+p.priceMin||0)||null}]);
+}
 // ── 卡片模式：挑品的時候看圖 ──
 function curCardHTML(p){
   const s=curState(p), sale=prodSaleText(p), lst=prodListText(p), n=(p.variants||[]).length;
@@ -10386,7 +10454,7 @@ function curCardHTML(p){
       ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
     <div style="padding:13px 14px 15px">
-      <div class="curname">${esc(curTitle(p))}</div>
+      <div class="curname"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
@@ -10410,7 +10478,7 @@ function curRowHTML(p){
   return `<div class="currow cur-r-${s.k}">
     ${th}
     <div style="min-width:0">
-      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curTitle(p))}</div>
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       <div style="font-size:12px">
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}

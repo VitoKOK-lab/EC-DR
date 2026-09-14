@@ -348,7 +348,9 @@ function lastSlot(){
   // 上限 10→11（v211）：影片成效那一頁底下要講「另有 N 支已上片卻一個成效數字都沒有，
   // 其中 M 支缺上片連結」。那句話的分母必須跟排行同一個庫 —— 排行算兩庫、註記只算一庫，
   // 兩個數字對不起來，而畫面上看不出哪個是錯的。
-  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=11);
+  // 上限 11→12（v211）：選品頁點商品要列「哪幾支影片賣過它」。大流的片一樣會帶貨，
+  // 只看 STATE.videos 的話那張清單會少一半 —— 跟 v205 點商品那一處是同一個理由。
+  ok("allLibVideos 只用在少數幾個出片面的地方（現在 "+uses+" 處）", uses<=12);
   ok("decorate 有把大流抽出去", /st\.videosDF=st\.videos\.filter\(isDF\)/.test(CODE));
   ok("抽出去之後 STATE.videos 真的只剩 A", /st\.videos=st\.videos\.filter\(v=>!isDF\(v\)\)/.test(CODE)); }
 
