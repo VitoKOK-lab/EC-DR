@@ -7,18 +7,20 @@
 // mkt／svc／ship 是後來加的不剪片職位，權限與畫面比照 cs。
 // pick＝選品行銷（v138）：從「商品」出發幫商品配一支影片、送老闆審核，畫面與權限比照 cs，
 // （原本額外多一頁「選品配對」，v175 整頁移除，老闆要重新設計。）
+// design＝設計師（v210）：整條「選品 → 影片 → 投廣 → 算錢」的第一關。
+// 他只做一件事 —— 從官網挑商品、把網址貼進選品清單。不剪片、不排程、不看成效。
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷", pick:"選品行銷",
-                    svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
+                    design:"設計師", svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
 const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing", pick:"Curation Marketing",
-                       svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+                       design:"Designer", svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 const roleEn=(r)=>ROLE_LABEL_EN[r]||ROLE_LABEL_EN.editor;
 // 篩選下拉是在挑「一群人」，用複數才讀得順（個人徽章仍用上面的單數）
 const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"Marketing", pick:"Curation Marketing",
-                     svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+                     design:"Designers", svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 // 會打卡、進團隊看板與出勤的所有職位（不含管理員／經理人）。顯示順序見 ROLE_ORDER。
-const STAFF_ROLES=["editor","mkt","pick","svc","ship","cs","hr","intl"];
+const STAFF_ROLES=["editor","mkt","pick","design","svc","ship","cs","hr","intl"];
 // 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
-const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
+const NO_EDIT_ROLES=["mkt","pick","design","svc","ship","cs","hr"];
 // 這個職位的畫面用不用得到影片資料。
 // ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
 //    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
@@ -40,7 +42,10 @@ const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 // 硬載 986 支影片只是讓手機開得慢。
 // v181：選品行銷（pick）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
 // 那幾欄對她們永遠是「—」，卻要付整包影片的下載成本。
-const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick"];
+// v210：設計師加進來 —— 他只貼商品網址，畫面上一個影片數字都沒有。
+//       量過：整包影片 2.5 MB（1,061 支）。讓他每次開機付這個成本沒有道理。
+//       「這個品以前賣過幾支」改由 Mac mini 每晚算好寫進商品那一筆（見 docs/選品清單-A）。
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick","design"];
 function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
@@ -78,8 +83,12 @@ const ROLE_TABS = {
 // 行銷／客服／出貨：畫面與權限比照「員工」
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
 // 選品行銷：畫面與權限比照「員工」。
-// （選品配對工作台在 v175 整個移除，老闆要重新設計 —— 見下面 route() 的說明。）
 ROLE_TABS.pick = ROLE_TABS.cs;
+// 設計師：**刻意是空的**。他只有「傳訊息」（每個人都有，myTabs 自己加）
+// 加上勾起來的「選品」。看板、影片庫、月排程對他都沒有意義。
+// ⚠️ 一定要明寫成 []，不能不寫 —— myTabs 找不到職位時會退回 ROLE_TABS.editor，
+//    漏寫的話設計師會拿到剪輯的整組分頁。
+ROLE_TABS.design = [];
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 // ── 上片時間一律只選「整點」（v177，老闆指定：「以整點選就好，不用分」）──
 // 為什麼不用 <input type="time">：那個一定會出現分鐘，手機上還要撥兩個滾輪，
@@ -479,6 +488,13 @@ const PERMS = {
   //            沒有哪一頁叫「主管看板」—— 它是同一頁上主管才看得到的那幾區。
   lead:  { label:"看板（主管版）", where:"看板 → 全隊交辦、備片存量、今日成效", zhOnly:true,
            why:"全隊交辦、備片存量、成效" },
+  // v210（選品 A-1）：這兩項先只是「勾得起來」，分頁與畫面在 A-2。
+  // ⚠️ 刻意**還沒有** tab —— 有 tab 就會長出一個點進去空白的分頁。
+  //    A-2 把畫面做出來時才補上 tab:"curate"。
+  curate:{ label:"選品", where:"上面的分頁（A-2 才會出現）", zhOnly:true,
+           why:"貼商品網址、看這個月選了哪些品" },
+  plan:  { label:"排影片", where:"選品 → 點商品（A-2 才會出現）", zhOnly:true,
+           why:"幫選中的商品排二創或開新片" },
 };
 const PERM_KEYS = Object.keys(PERMS);
 function permsOf(u){ return Array.isArray(u&&u.perms) ? u.perms : []; }
@@ -552,13 +568,11 @@ function logTarget(path){ const seg=String(path||"").split("/").filter(Boolean);
   if(seg[1]==="users" && seg[2]) return "成員 "+decodeURIComponent(seg[2]);
   if(seg[1]==="schedule" && seg[2]) return "排程 "+seg[2];
   if(seg[1]==="settings") return "系統設定";
-  // ⚠️ 選品配對工作台在 v175 拿掉了，但這兩行**要留著**：
-  //    操作紀錄裡還有當初那些 products／matches 的舊紀錄，少了這兩行，
-  //    那些歷史紀錄會從「商品 XXX」變成一串看不懂的 id。
-  //    （fb.js 也還在訂閱那兩個集合 —— 合計 4 筆，就是為了讓這兩行查得到名字。）
+  // 商品：選品清單要用（A-2），操作紀錄也靠這一行才看得到名字而不是一串 id
   if(seg[1]==="products" && seg[2]){ const p=(STATE.products||[]).find(x=>x.id===seg[2]); return p?("商品 "+p.name):seg[2]; }
-  if(seg[1]==="matches" && seg[2]){ const m=(STATE.matches||[]).find(x=>x.id===seg[2]);
-    const p=m&&(STATE.products||[]).find(x=>x.id===m.productId); return p?("配對 "+p.name):seg[2]; }
+  // ⚠️ matches 在 v210 退役了（老闆：v175 那版「設計錯誤、沒人用」，重做就好）。
+  //    舊的操作紀錄裡還留著幾筆 matches，現在會顯示成原始 id —— 那是刻意的：
+  //    為了四筆測試資料養一個集合、一條安全規則、一個即時訂閱，不划算。
   return path||""; }
 function logA(action, target){
   try{ if(!window.DB) return; const id=uid("L");
@@ -2052,7 +2066,7 @@ function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改
 // 沒設定時沿用下面這兩組預設，行為跟以前一樣。
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
-const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["pick","選品行銷"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
+const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["pick","選品行銷"],["design","設計師"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
 function dailyTemplates(){
   const s=(STATE&&STATE.settings&&STATE.settings.dailyTemplates);
   if(Array.isArray(s) && s.length) return s.filter(x=>x&&String(x.t||"").trim());
@@ -3296,7 +3310,7 @@ function futureTasksBody(){
 // ===================================================================
 // 員工顯示順序（所有清單共用）：台灣（剪輯 → 行銷 → 客服 → 出貨 → 員工 → 人資）→ 海外一律排最後；同組內中文名在前、英文名在後
 // 職位在台灣區裡的先後：剪輯 → 行銷 →（其餘）客服 → 出貨 → 員工 → 人資
-const ROLE_ORDER={editor:0, mkt:1, pick:1.5, svc:2, ship:3, cs:4, manager:5, hr:6};
+const ROLE_ORDER={design:-1, editor:0, mkt:1, pick:1.5, svc:2, ship:3, cs:4, manager:5, hr:6};   // 設計師排最前：他是整條流程的第一關
 // 台灣（0）在前、巴基斯坦（1）在後
 const regionRank=(role)=> role==="intl" ? 1 : 0;
 function staffRank(u){
@@ -3328,6 +3342,7 @@ function staffRoleGroups(roles){
     [T("剪輯","Editing"),         isEd],
     [T("行銷","Marketing"),       u=>u.role==="mkt"],
     [T("選品行銷","Curation"),    u=>u.role==="pick"],
+    [T("設計師","Designer"),      u=>u.role==="design"],
     [T("客服","Customer service"),u=>u.role==="svc"],
     [T("出貨","Shipping"),        u=>u.role==="ship"],
     [T("員工","Staff"),           u=>u.role==="cs"],
@@ -7644,6 +7659,56 @@ function prodById(id){ return prodAll().find(x=>x&&x.id===id)||null; }
 function prodIsOff(m){ return !!(m && m.status==="off"); }
 function prodNames(m){ return [String((m&&m.name)||"").trim()].concat(((m&&m.aliases)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
 function prodUrls(m){ return [String((m&&m.officialUrl)||"").trim()].concat(((m&&m.oldUrls)||[]).map(x=>String(x||"").trim())).filter(Boolean); }
+
+// ── 選品清單（v210 / A-1）：先做資料形狀，畫面在 A-2 ──────────────────
+//
+// 老闆要的流程：設計師從官網挑商品 → 一次貼十條網址 → 系統抓回名稱／照片／價格。
+// 這一段是那些網址進資料庫**之前**的規矩，全部是純函式，測得到也測得準。
+//
+// ⚠️ 為什麼要正規化網址：它是整條「選品 → 影片 → 投廣 → 算錢」的身分證。
+//    同一個商品貼成兩種寫法就會變成兩列，這個品的營收從此被拆成兩半。
+
+// 網址正規化：去掉追蹤參數與錨點、統一小寫網域、砍掉尾斜線。
+// 路徑大小寫**不動** —— Shopline 的網址帶中文，動了就對不回去。
+function shopUrlNorm(u){
+  const s=String(u||"").trim();
+  if(!s) return "";
+  const m=s.match(/^(https?:)\/\/([^/?#]+)([^?#]*)/i);
+  if(!m) return "";
+  const path=String(m[3]||"").replace(/\/+$/,"");
+  return m[1].toLowerCase()+"//"+m[2].toLowerCase()+path;
+}
+// 只收單一商品頁。實測現有 166 支影片貼的網址，只有 125 支是 /products/，
+// 其餘是分類頁（15）、活動頁（26）、首頁（1）—— 那些對不回單一商品，
+// 收進來就是讓後面的 ROAS 出現「賣了八萬但不知道是哪個商品」。
+function isShopProductUrl(u){
+  const s=shopUrlNorm(u);
+  return !!s && /\/products\/[^/]+$/i.test(s);
+}
+// 把貼上的一整段文字拆成網址。一行一個是主要寫法，但從 Excel 或聊天室
+// 複製過來常常夾著空白、逗號、引號，所以用「抓出所有 http 開頭的東西」而不是逐行切。
+function parseUrlLines(text){
+  const hits=String(text||"").match(/https?:\/\/[^\s,、"'<>）)]+/gi)||[];
+  const out=[], seen=new Set();
+  hits.forEach(h=>{ const n=shopUrlNorm(h); if(!n||seen.has(n)) return; seen.add(n); out.push(n); });
+  return out;
+}
+// 台灣時間的「這個月」。跟 today 同一個基準，不要各算各的。
+function curMonth(){ return String(today||"").slice(0,7); }
+// 這個商品被選過的月份紀錄。picks 是陣列，**商品永遠只有一列** ——
+// 同一個品十月選一次、十二月又選一次，是同一列上多一筆 pick。
+function prodPicks(p){ return Array.isArray(p&&p.picks) ? p.picks.filter(x=>x&&x.month) : []; }
+function prodPickedIn(p, ym){ return prodPicks(p).some(x=>x.month===ym); }
+function prodPickMonths(p){ return [...new Set(prodPicks(p).map(x=>x.month))].sort().reverse(); }
+// 價格是區間不是單一數字：實測一頁有 4 款，售價 990／3,000／3,500。
+function prodPriceText(p, lo, hi){
+  const a=+((p||{})[lo]), b=+((p||{})[hi]);
+  if(!isFinite(a)||!a) return "";
+  const n=(x)=>"NT$"+Math.round(x).toLocaleString();
+  return (isFinite(b)&&b&&b!==a) ? (n(a)+"～"+n(b)) : n(a);
+}
+function prodSaleText(p){ return prodPriceText(p,"priceMin","priceMax"); }
+function prodListText(p){ return prodPriceText(p,"listMin","listMax"); }
 // 連結→主檔、名字→主檔。快取靠陣列身分認（跟 rmkIndex 同一招）。
 let PDX=null, PDX_SRC=null;
 function prodIndex(){

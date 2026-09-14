@@ -75,7 +75,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   const storage = getStorage(app);
 
   // 本地彙整的原始資料（只訂閱實際用到的集合）
-  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [], products: [], matches: [] };
+  const raw = { users: [], videos: [], schedule: {}, settings: {}, tasks: {}, shifts: {}, logs: [], products: [] };
   // 打卡紀錄會一直長（22 人 × 每個工作天一筆），全部訂閱等於每年多幾千筆要同步。
   // 常駐只訂閱最近 62 天（＝本月＋上個月，薪資報表要用的範圍）；
   // 人資往前翻更早的月份時，再由 loadShiftMonth() 一次性補讀那個月。
@@ -88,7 +88,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   //    app 以為不用載、fb 照樣訂閱（或反過來），smoke-v140／v152 會抓。
   // v181：pick（選品行銷）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
   //       永遠是「—」，卻要付整包 986 支影片的下載成本。
-  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "pick"];
+  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "pick", "design"];
   function needVideosByRole() {
     let r = "";
     try { r = localStorage.getItem("ecdr_role") || ""; } catch (e) { return true; }
@@ -335,7 +335,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
         patch.exchangeRates = up;
       }
       if (!cur.reviewSince) patch.reviewSince = DEFAULT_SETTINGS.reviewSince;
-      // v138：新增 products／matches 兩個集合，兩者都是全新集合、無需回填既有資料，只更新版號
+      // v138：新增 products／matches；v210 matches 退役（見 docs/選品清單-A），products 留著給選品清單用
       if (cur.schemaVersion == null || cur.schemaVersion < 16) patch.schemaVersion = 16;
       if (Object.keys(patch).length) await setDoc(sref, patch, { merge: true });
     }
@@ -354,7 +354,6 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push("tasks"); });
     // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
     onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push("products"); });
-    onSnapshot(collection(db, "matches"),  q => { raw.matches  = q.docs.map(d => d.data()); push("matches"); });
     // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀
     // includeMetadataChanges：要拿到 fromCache／hasPendingWrites 才知道「有沒有連上」
     // 與「打卡送出去了沒」。打卡是全公司每天都會寫的東西，拿它當連線狀態的探針最準。
