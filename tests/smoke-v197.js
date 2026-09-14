@@ -124,6 +124,32 @@ function rest(){
   ok("**但是不標不等於不算**：滑出窗期的要數得出來",
      sp.fresh.length===2 && sp.old.length===2, {亮紅:sp.fresh.map(v=>v.id), 存量:sp.old.map(v=>v.id)}); }
 
+// ⑤-b v213：同步對到的貼文就是上片連結 —— publishedLink 只有一格，一支片平均發 3 則
+// 正式資料：已上片卻沒填 publishedLink 的 561 支裡，128 支 metrics 早就有 link。
+{ const M=(link,plat,at)=>({platform:plat||"IG",account:"a",views:1,comments:0,likes:0,postAt:(at||DAY(-3))+"T00:00:00",postId:"p"+link,link});
+  reset([v_("A",{scheduledDate:DAY(-1), metrics:[M("https://www.instagram.com/reel/x/")]}),
+         v_("B",{scheduledDate:DAY(-1)})]);
+  ok("**同步已經對到貼文的，不算缺上片連結**（那條網址在 metrics 裡）", !needsPubLink(vid("A")));
+  ok("（對照）真的一則都沒對到的還是缺", needsPubLink(vid("B")));
+  ok("卡片上的數字跟著少", pubLinkSplit().fresh.map(v=>v.id).join()==="B");
+  // vidPostLinks：人填的那一條＋同步對到的每一則，去重
+  reset([v_("C",{scheduledDate:DAY(-1), publishedLink:"https://www.instagram.com/reel/x/",
+                 metrics:[M("https://www.instagram.com/reel/x/"), M("https://www.facebook.com/reel/1/","FB"), M("https://www.facebook.com/reel/1/","FB",DAY(-9))]})]);
+  const links=vidPostLinks(vid("C"));
+  ok("**一支片列得出好幾則連結**（FB＋IG＋重發）", links.length===2, links);
+  ok("人填的跟同步對到的同一條不重複", links.filter(x=>x.link==="https://www.instagram.com/reel/x/").length===1);
+  ok("每一則帶平台", links.some(x=>x.platform==="FB") && links.some(x=>x.platform==="IG")); }
+
+// ⑤-c 編輯視窗：上片連結那一格底下要講「同步已經對到幾則，不用再填」
+// ⚠️ 突變測試抓到：這句話拿掉，上面全綠 —— 沒有人打開編輯視窗去看。
+{ const M=(link,plat)=>({platform:plat||"IG",account:"a",views:1,comments:0,likes:0,postAt:DAY(-3)+"T00:00:00",postId:"p"+link,link});
+  reset([v_("E",{scheduledDate:DAY(-1), metrics:[M("https://www.instagram.com/reel/e/"), M("https://www.facebook.com/reel/e/","FB")]})]);
+  as("管理員","boss"); modalHTML=""; openVideoModal("E", true);
+  ok("**編輯視窗講得出「同步已經對到 2 則貼文，不用再填」**", /同步已經對到這支片的 <b>2<\/b> 則貼文/.test(modalHTML),
+     (modalHTML.match(/同步已經對到[^<]*<b>[^<]*<\/b>[^<]*/)||[])[0]);
+  reset([v_("F",{scheduledDate:DAY(-1)})]); modalHTML=""; openVideoModal("F", true);
+  ok("一則都沒對到就不寫那句（不要留一句「0 則」）", !/同步已經對到/.test(modalHTML)); }
+
 // ⑥ 看板上那個數字 —— 不讓滑出窗期的默默消失
 { reset([v_("A",{scheduledDate:DAY(-1)}), v_("C",{scheduledDate:DAY(-60)}), v_("D",{scheduledDate:DAY(-90)})]);
   const h=pubLinkCard();

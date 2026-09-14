@@ -147,6 +147,10 @@ ok("python3 tools/postsale_sync.py --write" in META,
    "排程會自己去抓貼文銷售（老闆不用做任何事）")
 ok(META.index("meta_sync.py") < META.index("postsale_sync.py"),
    "排在成效同步後面 —— 它失敗不該影響上面那一段")
+# v213：對到的那一則要回填成 publishedLink（人填的那一格），不然它永遠是空的
+_call = next((l for l in META.splitlines() if "python3 tools/meta_sync.py" in l), "")
+ok("--fill-links" in _call,
+   "**排程有開 --fill-links**（同步對到的貼文自動回填上片連結，不用人補）")
 
 print("\n%d / %d 通過" % (len(RAN) - len(FAILED), len(RAN)))
 if FAILED:

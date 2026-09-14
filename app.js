@@ -8556,11 +8556,29 @@ function prodMissCard(){
 //    不然每天有幾支默默滑出窗期，這個洞會一直長大而且沒有人看得到。
 //    （跟 v184 那條「待審七天就消失＝幫人忘記」是同一個教訓。）
 const PUB_LINK_DAYS=14;
+// 這支片發在哪幾則貼文上 —— 同步每次都把每一則的 link 寫進 metrics[]。
+// 正式資料：559 列 metrics 全部有 link；已上片卻沒填上片連結的 561 支裡，128 支其實這裡早就有。
+// ⚠️ 一支片平均發 3 則（FB＋IG＋重發），publishedLink 只有一格本來就裝不下 ——
+//    這個函式才是「上片連結」真正的來源，publishedLink 只是人補的那一條。
+function vidPostLinks(v){
+  const out=[], seen=new Map();
+  // 同一條網址出現兩次（人填的＋同步對到的）只留一筆，但**平台／帳號／日期要補齊** ——
+  // 人填的那一條沒有平台，同步那一則才有；丟掉後者等於把資訊丟掉。
+  const add=(u,plat,acc,at)=>{ u=String(u||"").trim(); if(!u) return;
+    const at10=String(at||"").slice(0,10);
+    const ex=seen.get(u);
+    if(ex){ if(!ex.platform&&plat) ex.platform=plat; if(!ex.account&&acc) ex.account=acc; if(!ex.at&&at10) ex.at=at10; return; }
+    const row={link:u,platform:plat||"",account:acc||"",at:at10}; seen.set(u,row); out.push(row); };
+  add(v&&v.publishedLink, "", "", "");
+  ((v&&Array.isArray(v.metrics))?v.metrics:[]).forEach(m=>{ if(m) add(m.link, m.platform, m.account, m.postAt); });
+  return out;
+}
 function needsPubLink(v){
   if(!v || isVersion(v)) return false;              // 版本殼走它自己那一段
   const sch=String(v.scheduledDate||"").slice(0,10);
   if(!sch || sch>today) return false;               // 還沒播出，不用急
-  return !String(v.publishedLink||"").trim();
+  // v213：同步已經對到貼文的，就不缺連結 —— 那條網址在 metrics 裡，而且比人填的準
+  return vidPostLinks(v).length===0;
 }
 function pubLinkFresh(v){
   if(!needsPubLink(v)) return false;
@@ -8769,6 +8787,8 @@ function openVideoModal(id, edit, fromWork){
     ${fold(T("上片後","After publishing"), null, `
       <label>${T("上片連結（這支片發在平台上的那一則）","Post link (where this went live)")}</label>
       <input id="e_pub" value="${esc(v.publishedLink||"")}" placeholder="https://www.facebook.com/... / https://www.instagram.com/...">
+      ${(()=>{ const n=vidPostLinks(v).filter(x=>x.link!==String(v.publishedLink||"").trim()).length;
+        return n?`<div class="muted" style="font-size:12px;margin-top:4px">同步已經對到這支片的 <b>${n}</b> 則貼文（看下面「平台成效」，日期點得開）—— 這一格不填也對得回來。</div>`:""; })()}
       <div class="muted" style="font-size:12px;margin-top:4px">${T(
         "貼上這支片實際發出去的那一則貼文網址。之後要對得回觀看數、判斷哪支流量好，靠的就是它。",
         "Paste the actual post URL. This is what ties the video back to its view counts.")}</div>
