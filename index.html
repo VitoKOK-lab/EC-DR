@@ -378,6 +378,54 @@
   .pill.em{background:var(--redbg);color:var(--red)}
   .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
   .pill.ok{background:var(--greenbg);color:var(--green)}
+  /* ===== 選品（v210）=====================================================
+     設計師在用的一頁，他挑的是「看得到的東西」，所以預設是商品卡牆。
+     月份在上面那排標籤切換（不是一路往下捲），右上角切卡片／列表 ——
+     卡片挑品的時候看圖，列表處理一整批的時候欄位對齊掃得快。 */
+  .curseg{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
+          border-radius:var(--rs);padding:3px;flex-wrap:wrap}
+  .curtab{background:none;border:none;border-radius:3px;padding:6px 13px;font-size:13.5px;
+          color:var(--muted);font-family:var(--sans);display:inline-flex;align-items:center;gap:6px}
+  .curtab>span{font-size:12px;opacity:.6}
+  .curtab:hover{color:var(--txt)}
+  .curtab.on{background:#fff;color:var(--txt);font-weight:700;box-shadow:var(--shadow)}
+  .curtab.on>span{opacity:1;font-weight:400;color:var(--muted)}
+  .curgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+  .curcard{padding:0;overflow:hidden;margin:0}
+  .curimgwrap{position:relative;aspect-ratio:1/1;background:var(--panel2);overflow:hidden}
+  .curimg{width:100%;height:100%;object-fit:cover;display:block}
+  /* 沒有圖的時候，底色本身就說明狀態 */
+  .curimg.cur-ok{background:linear-gradient(135deg,#EFEAE0,#E3DCCD)}
+  .curimg.cur-wait{background:repeating-linear-gradient(45deg,#F4F1EA,#F4F1EA 9px,#EFEAE0 9px,#EFEAE0 18px)}
+  .curimg.cur-bad{background:var(--redbg)}
+  .curcard.cur-b-wait{border-style:dashed}
+  .curcard.cur-b-bad{border-color:#E7CFC9}
+  .curchip{background:rgba(255,255,255,.92);color:var(--muted)}
+  .curname{font-weight:700;font-size:14px;line-height:1.45;min-height:40px}
+  .curprice{font-size:17px;font-family:var(--latin);letter-spacing:.01em}
+  .curlist{font-size:12px;text-decoration:line-through}
+  /* 沒有原價時留一樣高的空白，卡片才會對齊 —— 但不要畫成劃掉的空字，
+     那會在畫面上變成一條莫名其妙的短線 */
+  .curgap{height:18.6px}
+  /* 列表：一列一個商品 */
+  .currow{display:grid;grid-template-columns:44px minmax(0,1fr) 168px 100px 164px;
+          gap:16px;align-items:center;padding:11px 18px;border-top:1px solid var(--line)}
+  .currow:first-child{border-top:none}
+  .currow .btn.sm{white-space:nowrap}
+  .curhead{background:var(--panel2);padding:10px 18px;font-size:11px;color:var(--muted);
+           font-weight:600;letter-spacing:.1em;text-transform:uppercase;font-family:var(--latin)}
+  .currow.cur-r-wait{background:#FDFBF6}
+  .currow.cur-r-bad{background:#FDF7F5}
+  .curth{width:44px;height:44px;border-radius:var(--rs);object-fit:cover;flex:none;background:var(--panel2);overflow:hidden}
+  .curth.cur-wait{background:repeating-linear-gradient(45deg,#F4F1EA,#F4F1EA 6px,#EFEAE0 6px,#EFEAE0 12px)}
+  .curth.cur-bad{background:var(--redbg)}
+  /* 列表模式下「貼網址」收成一條，按一下才長出來 */
+  .curfold>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px}
+  .curfold>summary::-webkit-details-marker{display:none}
+  .curfold>summary::after{content:"展開";margin-left:auto;font-size:12px;color:var(--muted);
+    border:1px solid var(--line);border-radius:2px;padding:4px 11px}
+  .curfold[open]>summary::after{content:"收起來"}
+  .cursync{display:flex;align-items:center;gap:16px;border-left:3px solid var(--gold)}
   .pos{color:var(--green);font-weight:800}
   /* 人名色標：同時被交辦的人一眼分得出誰是誰（配色由 app.js 的 groupColors 算） */
   .pchip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
@@ -618,6 +666,16 @@
     table.responsive td{display:flex;justify-content:space-between;align-items:center;border:none;padding:6px 2px;gap:10px;width:100%}
     table.responsive td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700;flex:none}
     table.responsive td:empty{display:none}
+    /* 選品：手機兩欄卡片（拇指滑得動、圖還看得清楚）。
+       列表那五欄在 390px 擠不下，直接改成上下兩排。 */
+    .curgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .curname{font-size:13px;min-height:38px}
+    .curprice{font-size:15px}
+    .currow{grid-template-columns:44px minmax(0,1fr);gap:12px;row-gap:6px;padding:12px 14px}
+    .currow>:nth-child(3),.currow>:nth-child(4),.currow>:nth-child(5){grid-column:2}
+    .curhead{display:none}
+    .curseg{padding:2px}
+    .curtab{padding:8px 11px;font-size:13px}
     /* 權限表在手機上已經轉成一人一張直列卡片了，就不要再吃桌機那個 660px 的最小寬度 ——
        不然每一格的勾選框會整排被推到畫面外，而「都要可以勾選的」就是這一頁的全部意義。
        ⚠️ 這一段在檔案裡比桌機那兩條**早**出現，所以要靠選擇器權重壓過去，不能同名。 */
@@ -887,8 +945,12 @@
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
   .vidscroll table.vtable{margin-top:0}
   .vidscroll thead th{position:sticky;top:0;background:var(--panel);z-index:1;box-shadow:0 1px 0 var(--line)}
-  /* 設定→權限：桌機上九欄要撐開才點得準，橫向捲動由外面的 .permwrap 負責 */
+  /* 設定→權限：桌機上欄位要撐開才點得準，橫向捲動由外面的 .permwrap 負責 */
   table.permtable{min-width:660px}
+  /* ⚠️ 名字那一欄一定要 nowrap。權限欄每一欄都是 nowrap，名字是**唯一縮得動的**——
+     v210 加到十二欄之後它被擠到剩一個字寬，中文就直著排下來（「昱／丞」「選／品／行／銷」），
+     每一列變成 100px 高。欄位再加下去也不會再壓到名字。 */
+  table.permtable th:first-child,table.permtable td:first-child{white-space:nowrap;min-width:76px}
   table.vtable th{white-space:nowrap}
   table.vtable th,table.vtable td{overflow:hidden}
   table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
@@ -966,7 +1028,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=ee0cc97287b6"></script>
-<script type="module" src="fb.js?v=ee0cc97287b6"></script>
+<script src="app.js?v=665919c16978"></script>
+<script type="module" src="fb.js?v=665919c16978"></script>
 </body>
 </html>

@@ -7953,7 +7953,7 @@ function unfiledList(){
 }
 // 未建檔的貼文在排行上長什麼樣：跟影片同一張表、同一個排序，
 // 差別只有「系統裡沒有這一筆」—— 所以類型／剪輯／帶貨／二創那幾欄都是破折號，
-// 最右邊那顆鍵不是「排二創」而是「建案進系統」。
+// 最右邊那顆鍵不是「排二創」而是「新增進系統」。
 function unfiledRowHTML(x, ui, i, canPlan){
   const last=String(x.last||x.first||"").slice(0,10);
   const gap=last?Math.round((new Date(today+"T00:00:00")-new Date(last+"T00:00:00"))/864e5):null;
@@ -7973,7 +7973,7 @@ function unfiledRowHTML(x, ui, i, canPlan){
       <td data-label="上次二創" class="pr-e"><span class="muted">—</span></td>
       ${canPlan?`<td data-label="">${canAddOldVideo()
         ? `<button class="btn sm" style="white-space:nowrap" onclick="event.stopPropagation();unfiledAdd(${ui})"
-             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">建案進系統</button>`
+             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">新增進系統</button>`
         : '<span class="muted" style="font-size:11px">未建檔</span>'}</td>`:""}</tr>`;
 }
 // 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
@@ -8059,7 +8059,7 @@ function perfRankCard(){
     <div class="muted" style="font-size:12px;margin-top:4px">${byRmk
       ? "依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比。片名旁邊的小數字＝這支已經出過幾次（含它的二創）"
       : `依觀看排，前 50 名。點影片看跨平台明細與帶貨${
-          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「建案進系統」就補得進來`:""}`}</div>
+          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「新增進系統」就補得進來`:""}`}</div>
     <div class="row" style="gap:8px;margin-top:8px">
       <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
@@ -8088,10 +8088,10 @@ function perfRankRowsHTML(){
   }else{
     // ⚠️ v207 老闆：「我不是要這樣，我要原本的成效排行…你的排行都是依照 meta 來的
     //    資料，只是說『有的你找的到系統中』，有的沒有，沒有的只要右邊加一個
-    //    『建案進系統』，但排序和排行放在一起。」
+    //    『新增進系統』，但排序和排行放在一起。」
     //    他是對的 —— 另外開一張卡等於把同一件事拆成兩個榜，人要自己在腦裡合併。
     //    **一份排行**：Meta 上的東西全部排在一起，系統裡找得到的照舊，
-    //    找不到的右邊給一顆「建案進系統」。
+    //    找不到的右邊給一顆「新增進系統」。
     list=allLibVideos().filter(v=>!v.deleted && rowsOf(v).length)
       .map(v=>({v, views:sViews(v)}))
       .concat(unfiledList().map((x,i)=>({u:x, ui:i, views:+x.views||0})))
@@ -10213,77 +10213,175 @@ function curByMonth(){
   prodList().forEach(p=>prodPicks(p).forEach(k=>{ (m[k.month]=m[k.month]||[]).push(p); }));
   return Object.keys(m).sort().reverse().map(ym=>({ym, items:m[ym]}));
 }
+// 現在正在看哪一個月。null ＝ 還沒選過 → 用最新那個月（通常就是這個月）。
+// 老闆：「需要用月來整理」—— 月份是上面那排標籤，不是一路往下捲。
+let CUR_YM=null, CUR_VIEW="card";
+function curYM(){ const g=curByMonth(); if(CUR_YM && g.some(x=>x.ym===CUR_YM)) return CUR_YM;
+  return g.length ? g[0].ym : curMonth(); }
+function curSetYM(ym){ CUR_YM=String(ym||""); render(); }
+function curSetView(v){ CUR_VIEW=(v==="list"?"list":"card"); render(); }
+function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); return g?g.items:[]; }
+
+// 月份標籤。每個月旁邊標幾個品 —— 一眼看得出哪個月在做事。
+function curMonthTabs(){
+  const g=curByMonth();
+  if(!g.length) return "";
+  const now=curYM();
+  const tab=(ym,n)=>{ const [y,m]=ym.split("-").map(Number); const on=(ym===now);
+    return `<button type="button" onclick="curSetYM('${esc(ym)}')" class="curtab${on?' on':''}"
+      title="${y} 年 ${m} 月">${m} 月<span>${n}</span></button>`; };
+  return `<div class="curseg">${g.slice(0,12).map(x=>tab(x.ym, x.items.length)).join("")}</div>`;
+}
+// 卡片／列表。挑品的時候看圖，處理一整批的時候看列表。
+function curViewToggle(){
+  const ic={card:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>`,
+             list:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>`};
+  const b=(v,label)=>`<button type="button" onclick="curSetView('${v}')" class="curtab${CUR_VIEW===v?' on':''}">${ic[v]}${label}</button>`;
+  return `<div class="curseg">${b("card","卡片")}${b("list","列表")}</div>`;
+}
 function curPrevHTML(){
   const r=CUR_PREV; if(!r) return "";
-  const line=(dot,label,n,tip)=>n?`<div style="margin-top:4px">
-    <span style="color:${dot}">●</span> <b>${label} ${n} 個</b>
-    ${tip?`<span class="muted" style="font-size:12px">　${esc(tip)}</span>`:""}</div>`:"";
-  const badList=r.bad.length?`<div class="muted" style="font-size:12px;margin-top:6px;line-height:1.7">${
-    r.bad.slice(0,6).map(u=>"・"+esc(prettyUrl(u))).join("<br>")}${r.bad.length>6?"<br>…":""}</div>`:"";
+  const line=(dot,label,n,tip)=>n?`<div class="row" style="gap:9px;margin-top:7px;flex-wrap:nowrap">
+    <span style="width:7px;height:7px;border-radius:999px;background:${dot};flex:none"></span>
+    <b style="flex:1;min-width:0">${label}</b><b>${n}</b>
+    ${tip?`<span class="muted" style="font-size:12px;flex:none">${esc(tip)}</span>`:""}</div>`:"";
+  const badList=r.bad.length?`<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7;
+    border-top:1px solid var(--line);padding-top:8px">${
+    r.bad.slice(0,6).map(u=>esc(prettyUrl(u))).join("<br>")}${r.bad.length>6?"<br>…":""}</div>`:"";
   const total=r.add.length+r.dupOther.length;
   return `<div class="card" style="border-color:var(--accent)">
     <b>檢查結果</b>
-    ${line("#1E8E5A","新的",r.add.length,"會建檔")}
-    ${line("#B8860B","以前選過",r.dupOther.length,"補掛到這個月，不會變成兩筆")}
-    ${line("#777","這個月已經有了",r.dupMonth.length,"跳過")}
-    ${line("#C0392B","不是商品頁",r.bad.length,"分類頁、活動頁都對不回單一商品")}
+    ${line("var(--green)","新的",r.add.length,"會建檔")}
+    ${line("var(--gold-dk)","以前選過",r.dupOther.length,"補掛到這個月，不會變成兩筆")}
+    ${line("var(--faint)","這個月已經有了",r.dupMonth.length,"跳過")}
+    ${line("var(--red)","不是商品頁",r.bad.length,"分類頁、活動頁對不回單一商品")}
     ${badList}
-    <div class="row" style="gap:8px;margin-top:12px">
+    <div class="row" style="gap:8px;margin-top:14px">
       <button class="btn" ${total&&!CUR_BUSY?"":"disabled"} onclick="curConfirm()">
         ${CUR_BUSY?"寫入中…":"確認加入 "+total+" 個"}</button>
       <button class="btn sec" onclick="curCancel()">取消</button>
     </div></div>`;
 }
-function curCardHTML(p){
-  const sale=prodSaleText(p), lst=prodListText(p);
+// 商品的四種狀態，兩個模式共用同一份判斷
+function curState(p){
   const st=String(p.fetchStatus||"");
-  const img=p.image?`<img src="${esc(p.image)}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;flex:none">`
-                   :`<div style="width:56px;height:56px;border-radius:8px;background:var(--panel2);flex:none"></div>`;
-  const state = st==="ok" ? ""
-    : st==="failed" ? `<div style="font-size:12px;color:#C0392B">抓不到：${esc(p.fetchError||"")}　<button class="btn sec sm" style="padding:2px 8px;font-size:11px" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button></div>`
-    : `<div class="muted" style="font-size:12px">還沒抓 —— 按上面的「同步」</div>`;
-  return `<div class="row" style="gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)">
-    ${img}
-    <div style="flex:1;min-width:0">
-      <!-- 還沒抓到名稱時用網址最後那一段：Shopline 的網址本來就是商品名，
-           印整串 https://… 又長又看不懂 -->
-      <div style="font-weight:700">${esc(p.name||prodPageName(p.officialUrl)||prettyUrl(p.officialUrl))}</div>
-      ${sale?`<div style="font-size:13px">售價 ${esc(sale)}${lst?`　<span class="muted">原價 ${esc(lst)}</span>`:""}${
-        (p.variants||[]).length>1?`　<span class="muted">${(p.variants||[]).length} 款</span>`:""}</div>`:""}
-      ${state}
-      <div class="muted" style="font-size:11px;margin-top:2px">
-        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
-        ${prodPicks(p).length>1?`　選過 ${prodPickMonths(p).length} 個月`:""}</div>
+  if(st==="ok")     return {k:"ok",   pill:"ok", label:"已抓好"};
+  if(st==="failed") return {k:"bad",  pill:"em", label:"抓不到"};
+  return                   {k:"wait", pill:"wa", label:"還沒抓"};
+}
+function curTitle(p){
+  // 還沒抓到名稱時用網址最後那一段：Shopline 的網址本來就是商品名，
+  // 印整串 https://… 又長又看不懂
+  return p.name || prodPageName(p.officialUrl) || prettyUrl(p.officialUrl);
+}
+function curActs(p){
+  if(!canCurate()) return "";
+  const s=curState(p);
+  return `<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">${s.k==="bad"?"自己填名稱":"改名"}</button>
+    <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`;
+}
+// ── 卡片模式：挑品的時候看圖 ──
+function curCardHTML(p){
+  const s=curState(p), sale=prodSaleText(p), lst=prodListText(p), n=(p.variants||[]).length;
+  const months=prodPickMonths(p).length;
+  // 圖掛掉（官網換網址、商品下架）就讓它消失，露出底下那塊帶狀態色的底。
+  // 破圖圖示比「沒有圖」更糟 —— 看起來像系統壞了。
+  const cover = p.image
+    ? `<div class="curimg cur-${s.k}"><img src="${esc(p.image)}" alt="" class="curimg"
+         onerror="this.style.display='none'"></div>`
+    : `<div class="curimg cur-${s.k}"></div>`;
+  return `<div class="card curcard cur-b-${s.k}">
+    <div class="curimgwrap">${cover}
+      ${s.k!=="ok"?`<span class="pill ${s.pill}" style="position:absolute;top:10px;left:10px">${s.label}</span>`:""}
+      ${s.k==="ok"&&n>1?`<span class="pill curchip" style="position:absolute;top:10px;left:10px">${n} 款</span>`:""}
+      ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
-    ${canCurate()?`<div style="flex:none"><button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">改名</button>
-      <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button></div>`:""}
+    <div style="padding:13px 14px 15px">
+      <div class="curname">${esc(curTitle(p))}</div>
+      ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
+              ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
+            :`<div class="muted" style="font-size:12px;margin-top:7px">${
+                s.k==="bad"?esc(p.fetchError||"抓不到商品資料"):"按上面的「同步」把資料抓回來"}</div>`}
+      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:nowrap">
+        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener" style="font-size:12px;flex:1">看官網</a>
+        ${curActs(p)}
+      </div>
+    </div>
+  </div>`;
+}
+// ── 列表模式：處理一整批的時候，欄位對齊掃得快 ──
+function curRowHTML(p){
+  const s=curState(p), sale=prodSaleText(p), lst=prodListText(p), n=(p.variants||[]).length;
+  const months=prodPickMonths(p).length;
+  const th = p.image
+    ? `<div class="curth cur-${s.k}"><img src="${esc(p.image)}" alt="" class="curth"
+         onerror="this.style.display='none'"></div>`
+    : `<div class="curth cur-${s.k}"></div>`;
+  return `<div class="currow cur-r-${s.k}">
+    ${th}
+    <div style="min-width:0">
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curTitle(p))}</div>
+      <div style="font-size:12px">
+        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
+        ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}
+        ${months>1?`<span style="color:var(--gold-dk)">　選過 ${months} 個月</span>`:""}
+        ${s.k==="bad"?`<span style="color:var(--red)">　${esc(p.fetchError||"")}</span>`:""}
+      </div>
+    </div>
+    <div>${sale?`<b class="curprice" style="font-size:14.5px">${esc(sale)}</b>
+      ${lst?`<div class="muted curlist">${esc(lst)}</div>`:""}`:`<span class="muted">—</span>`}</div>
+    <div><span class="pill ${s.pill}">${s.label}</span></div>
+    <div class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap">${curActs(p)}</div>
   </div>`;
 }
 function viewCurate(){
   if(!hasPerm("curate")) return `<h2>選品</h2>
     <div class="card muted">這一頁要有「選品」權限才看得到。</div>`;
-  const groups=curByMonth();
-  const pend=curPending().length;
-  const paste=canCurate()?`<div class="card"><b>加商品</b>
-    <div class="muted" style="font-size:12px;margin-top:2px">一行一個網址，貼幾條都可以。只收單一商品頁。</div>
-    <textarea id="cur_paste" rows="4" style="margin-top:8px;font-family:monospace;font-size:12px"
+  const items=curMonthItems(), pend=curPending().length, list=(CUR_VIEW==="list");
+  const [yy,mm]=curYM().split("-").map(Number);
+
+  const head=`<div class="row" style="gap:14px;margin-bottom:18px">
+    <h2 style="margin:0">選品</h2>${curMonthTabs()}
+    <span style="flex:1"></span>${curViewToggle()}</div>`;
+
+  // 列表模式下「貼網址」收成一條，按「展開」才長出來 —— 處理一整批的時候
+  // 不需要一直看到那個大框
+  const pasteBox=`<textarea id="cur_paste" rows="4" style="margin-top:8px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.9"
       placeholder="https://www.tzgrotw.tw/products/…&#10;https://www.tzgrotw.tw/products/…"></textarea>
-    <div class="modalFoot"><button class="btn" onclick="curCheck()">檢查這些網址</button></div>
-  </div>${curPrevHTML()}`:"";
-  const syncCard=(canCurate()&&pend)?`<div class="card" style="border-left:4px solid var(--accent)">
-    <b>${pend} 個商品還沒抓資料</b>
-    <div class="muted" style="font-size:12px;margin-top:2px">
-      ${shopProxy()?"按一下去官網把名稱、照片、價格抓回來。只跑這幾個。"
-                   :"還沒設定抓商品資料的網址（設定 → 平台）。在那之前可以自己填名稱。"}</div>
-    <div class="modalFoot"><button class="btn" ${(!shopProxy()||CUR_BUSY)?"disabled":""} onclick="curSync()">
-      ${CUR_BUSY?"抓取中…":"同步"}</button></div></div>`:"";
-  const body=groups.length?groups.map(g=>{
-    const [y,m]=g.ym.split("-").map(Number);
-    return `<div class="card"><b>${y} 年 ${m} 月</b>
-      <span class="muted" style="font-size:12px">${g.items.length} 個</span>
-      ${g.items.map(curCardHTML).join("")}</div>`;
-  }).join(""):`<div class="card muted">還沒有選品。${canCurate()?"貼幾個商品網址上去就有了。":""}</div>`;
-  return `<h2>選品</h2>${paste}${syncCard}${body}`;
+    <div class="row" style="justify-content:space-between;margin-top:10px">
+      <span class="muted" style="font-size:12px">只收單一商品頁 · 重複的會自動合併</span>
+      <button class="btn" onclick="curCheck()">檢查這些網址</button></div>`;
+  const paste=!canCurate() ? ""
+    : list ? `<details class="card curfold"><summary><b>加商品</b>
+        <span class="muted" style="font-size:12.5px">一行一個網址，貼幾條都可以</span></summary>
+        ${pasteBox}</details>${curPrevHTML()}`
+           : `<div class="card"><b>加商品</b>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">從官網複製商品網址，一行一個，貼幾條都可以。</div>
+        ${pasteBox}</div>${curPrevHTML()}`;
+
+  const syncCard=(canCurate()&&pend)?`<div class="card cursync">
+    <div style="flex:1;min-width:0">
+      <b>${pend} 個商品還沒抓資料</b>
+      <div class="muted" style="font-size:12.5px">
+        ${shopProxy()?"按一下去官網把名稱、照片、價格抓回來。只跑這幾個。"
+                     :"還沒設定抓商品資料的網址（設定 → 平台）。在那之前可以自己填名稱。"}</div>
+    </div>
+    <button class="btn" style="flex:none" ${(!shopProxy()||CUR_BUSY)?"disabled":""} onclick="curSync()">
+      ${CUR_BUSY?"抓取中…":"同步"}</button></div>`:"";
+
+  let body;
+  if(!items.length){
+    body=`<div class="card muted">${yy} 年 ${mm} 月還沒有選品。${canCurate()?"貼幾個商品網址上去就有了。":""}</div>`;
+  }else if(list){
+    body=`<div class="card" style="padding:0;overflow:hidden">
+      <div class="currow curhead"><span></span><span>商品</span><span>售價 ／ 原價</span><span>狀態</span><span></span></div>
+      ${items.map(curRowHTML).join("")}</div>
+      <div class="muted" style="font-size:12.5px;margin-top:10px">${mm} 月共 ${items.length} 個商品${
+        pend?`　·　${pend} 個還沒抓資料`:""}</div>`;
+  }else{
+    body=`<div class="curgrid">${items.map(curCardHTML).join("")}</div>`;
+  }
+  return `${head}${paste}${syncCard}${body}`;
 }
 
 function viewAssets(){
@@ -10695,6 +10793,46 @@ function viewSettings(){
     </div>`;
   })();
 
+  // 成效同步狀態：Mac mini 上的 tools/meta_sync.py 每三天回報到 meta/settings.metaSyncStatus。
+  // 跟備份那張卡同一個理由 —— 沒有人會為了確認同步有沒有跑而去開終端機。
+  //
+  // ⚠️ v211 加這張卡，是因為 2026-09-14 那次：老闆在 Mac mini 上 `git pull` 失敗
+  //    （那台機器停在被 force-push 的分支上），但他是用換行接著同步指令，
+  //    所以**同步照跑、跑的是舊程式**，而畫面上完全看不出來 —— 我們兩個都以為
+  //    新功能上線了。那是最糟的失敗形狀：它不像故障，像正常。
+  //    現在排程自己更新程式（tools/_pull-main.sh），沒更新成功就在這裡變紅字。
+  const ms = s.metaSyncStatus || null;
+  const CODE_OK = ["updated", "current"];
+  const syncCard = (()=>{
+    if(!ms || !ms.at) return `<div class="card">
+      <b style="font-size:16px">📊 平台成效同步</b>
+      <div class="muted" style="font-size:12px;margin-top:4px">
+        還沒收到任何同步回報。若已在 Mac mini 設好排程，第一次跑完就會出現在這裡。</div></div>`;
+    const t = new Date(String(ms.at)+"+08:00").getTime();
+    const days = isNaN(t) ? NaN : Math.floor((Date.now()-t)/864e5);
+    // 排程是每三天跑一次，所以 7 天才算停了（備份是每天，門檻 3 天）
+    const stale = !(days>=0) || days>7;
+    const code  = String(ms.code||"");
+    // ⚠️ 沒回報 code 的是舊版的同步程式，那本身就代表「跑的是舊程式」—— 但不能
+    //    硬當成故障（第一次升級之前每一台都是這樣），所以只提示、不變紅。
+    const codeBad = !!code && CODE_OK.indexOf(code)<0;
+    const bad = stale || !ms.ok || codeBad;
+    const when = String(ms.at).replace("T"," ").slice(0,16);
+    const ago  = isNaN(days) ? "時間不明" : (days<=0 ? "今天" : (days===1 ? "昨天" : days+" 天前"));
+    const why = stale ? "超過 7 天沒更新（排程是每三天跑一次）"
+              : !ms.ok ? "上一次有影片寫不進去（"+num(+ms.failed||0)+" 支失敗）"
+              : codeBad ? String(ms.codeNote||"跑的是舊程式") : "";
+    return `<div class="card"${bad?' style="border-left:4px solid #C0392B"':''}>
+      <b style="font-size:16px">${bad?"⚠️ 平台成效同步有問題":"📊 平台成效同步正常"}</b>
+      <div style="font-size:13px;margin-top:6px">
+        最後一次：<b>${esc(when)}</b>（${esc(ago)}）・更新 ${num(+ms.videos||0)} 支・達標 ${num(+ms.hits||0)} 則・看過 ${num(+ms.posts||0)} 則貼文</div>
+      ${bad?`<div style="font-size:12px;margin-top:6px;color:#C0392B">${esc(why)}</div>`:`
+      <div class="muted" style="font-size:12px;margin-top:4px">
+        Mac mini 每三天自動同步 FB／IG 成效，跑之前會自己把程式更新到最新版。
+        停掉、失敗、或跑到舊程式，這張卡都會變紅。</div>`}
+    </div>`;
+  })();
+
   // ── v188（老闆指定：「管理員的設定太多了，要分類分頁面」）─────────────
   // 正式資料實測：整頁 83,951 字元、14 個區塊、**221 個輸入欄位**擠在同一頁。
   // 光是成員名單 27 個人就佔掉一半以上（每人四顆鍵）。要改「每天上片目標」
@@ -10794,7 +10932,7 @@ function viewSettings(){
              : SET_TAB==="tags"    ? tags
              : SET_TAB==="maint"   ? maint
              : basic;
-  return `<h2>設定</h2>${backupCard}${tabBar}${body}`;
+  return `<h2>設定</h2>${backupCard}${syncCard}${tabBar}${body}`;
 }
 // 一次性：把現有影片的標題/文案簡體字轉繁體並存回（新存的本來就會自動轉）
 // 一次性：把「每日寵粉」標籤改成「寵粉」（影片 tags/subTag ＋ 設定的標籤清單）

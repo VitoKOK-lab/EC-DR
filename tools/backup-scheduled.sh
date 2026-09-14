@@ -34,6 +34,14 @@ notify() {
 
 log "──────── 排程備份開始 ────────"
 
+# 跑之前自己更新程式 —— 備份腳本一樣在跑舊的（那台機器停在被 force-push 的分支上，
+# 老闆手動 git pull 一定失敗）。見 tools/_pull-main.sh 開頭那段。
+# 測試時（有 BACKUP_CMD）不要動 git —— 那是別人的資料夾。
+if [ -z "$BACKUP_CMD" ]; then
+    . "$REPO/tools/_pull-main.sh"
+    log "程式：$CODE_STATE　$CODE_NOTE"
+fi
+
 for i in $(seq 1 "$ATTEMPTS"); do
     if [ -n "$BACKUP_CMD" ]; then
         OUT=$($BACKUP_CMD 2>&1); RC=$?

@@ -248,7 +248,14 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
      /table\.responsive\.permtable\{min-width:0\}/.test(HTML) &&
      /\.vidscroll\.permwrap\{[^}]*overflow:visible/.test(HTML));
   ok("（前提）桌機的 660px 還在，而且排在手機那一條後面",
-     HTML.indexOf("table.permtable{min-width:660px}") > HTML.indexOf("table.responsive.permtable{min-width:0}")); }
+     HTML.indexOf("table.permtable{min-width:660px}") > HTML.indexOf("table.responsive.permtable{min-width:0}"));
+  // 權限欄每一欄都是 nowrap，名字是**唯一縮得動的**那一欄。v210 加到十二欄之後它被擠到
+  // 剩一個字寬，中文直著排下來（「昱／丞」），每一列 100px 高 —— 老闆一眼就看出來了。
+  // 以後還會再加權限欄，這一條要守著。
+  ok("**名字那一欄不准被擠成直的**（權限欄再加下去也一樣）",
+     /table\.permtable th:first-child,table\.permtable td:first-child\{[^}]*white-space:nowrap/.test(HTML));
+  ok("（同一條）而且給得出最小寬度，不是只靠 nowrap 撐",
+     /table\.permtable th:first-child,table\.permtable td:first-child\{[^}]*min-width:\d+px/.test(HTML)); }
 // 例子改成 output／attend：v204 之後 perf 是剪輯的職位預設，那格會顯示「職位」不給勾，
 // 拿它當「逐人勾起來」的例子測不到東西。
 { reset([U("管理員", "boss"), U("小葵", "editor", { perms: ["output", "lead"] })], "管理員", "boss");

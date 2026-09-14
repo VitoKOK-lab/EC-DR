@@ -13,6 +13,7 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 const FB = fs.readFileSync(path.join(__dirname, "..", "fb.js"), "utf8");
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firebase", "firestore.rules"), "utf8");
 const FSPY = fs.readFileSync(path.join(__dirname, "..", "tools", "_fs.py"), "utf8");
+const HTML = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 let src = APP.replace(/^let /gm, "").replace(/^const /gm, "");
 const el = () => ({ value: "", innerHTML: "", textContent: "", className: "", style: {}, checked: false,
   tagName: "DIV", dataset: {}, disabled: false, readOnly: false, isConnected: true, scrollTop: 0, rows: 1,
@@ -221,8 +222,12 @@ function withProds(prods, who, role, perms){
   const h = viewCurate();
   ok("兩個月各一組", /2026 年 9 月/.test(h) && /2026 年 8 月/.test(h));
   ok("新的月份排前面", h.indexOf("2026 年 9 月") < h.indexOf("2026 年 8 月"));
-  ok("售價印成區間", /售價 NT\$990～NT\$3,500/.test(h));
-  ok("原價也看得到", /原價 NT\$6,000～NT\$15,000/.test(h));
+  ok("售價印成區間", /NT\$990～NT\$3,500/.test(h));
+  // ⚠️ 刪除線在 CSS 的 .curlist 裡，不在 HTML 上 ——
+  //    只檢查一邊的話，另一邊被拿掉時原價會變成看起來像現在的售價
+  ok("原價也看得到", /NT\$6,000～NT\$15,000/.test(h));
+  ok("**原價要劃掉**（class 有掛、CSS 規則也在）",
+     /class="muted curlist"/.test(h) && /\.curlist\{[^}]*line-through/.test(HTML));
   ok("多款會標幾款", /4 款/.test(h)); }
 // 同一個商品選兩個月 → 兩個月都看得到，但資料庫只有一列
 { const p = PD({ id:"P9", name:"跨月的品",
@@ -246,11 +251,95 @@ function withProds(prods, who, role, perms){
   ok("設定好之後同步鍵可以按", /onclick="curSync\(\)"/.test(h) && !/disabled[^>]*onclick="curSync/.test(h)); }
 { withProds([PD({ id:"P5", fetchStatus:"failed", fetchError:"這一頁找不到商品資料" })]);
   const h = viewCurate();
-  ok("抓不到時說原因", /抓不到：這一頁找不到商品資料/.test(h));
+  ok("抓不到時說原因（不能只說失敗）", /這一頁找不到商品資料/.test(h));
+  ok("而且標出「抓不到」", /抓不到/.test(h));
   ok("而且給得出手動填名稱的路", /自己填名稱/.test(h)); }
 { withProds([PD({ id:"P6", fetchStatus:"ok", name:"好了" })]);
   ok("已經抓好的不算待抓", curPending().length === 0);
   ok("不會出現同步卡", !/還沒抓資料/.test(viewCurate())); }
+
+// ── 月份切換 ＋ 兩種模式（老闆：「需要用月來整理，然後還需要列表形式」）──
+{ const a = PD({ id:"M1", name:"九月的品", picks:[{month:"2026-09", by:"小設", at:""}] });
+  const b2 = PD({ id:"M2", name:"八月的品", officialUrl:BASE+"/products/b",
+                  picks:[{month:"2026-08", by:"小設", at:""}] });
+  withProds([a,b2]); CUR_YM = null; CUR_VIEW = "card";
+  // ⚠️ 月份是「標籤切換」不是「一路往下捲」—— 一次只看一個月
+  ok("預設看最新的那個月", curYM() === "2026-09", curYM());
+  let h = viewCurate();
+  ok("**一次只列一個月**（不是把所有月份攤成一排）",
+     h.includes("九月的品") && !h.includes("八月的品"));
+  ok("月份標籤兩個月都列得出來", /curSetYM\('2026-09'\)/.test(h) && /curSetYM\('2026-08'\)/.test(h));
+  ok("每個標籤旁邊標幾個品（一眼看得出哪個月在做事）", /9 月<span>1<\/span>/.test(h), h.match(/月<span>\d+<\/span>/g));
+  // ⚠️ 不准只寫 /class="curtab on"/ —— 卡片／列表那個切換鈕用的是同一個 class，
+  //    月份標籤全部不亮了它照樣是綠的（這一條就是這樣漏掉過一次）。要綁到**那一個月**。
+  ok("現在看的那個月要標出來", /curSetYM\('2026-09'\)" class="curtab on"/.test(h), h.match(/class="curtab[^"]*"/g));
+  ok("別的月份不要跟著亮", /curSetYM\('2026-08'\)" class="curtab"/.test(h), h.match(/class="curtab[^"]*"/g));
+  curSetYM("2026-08"); h = viewCurate();
+  ok("切到八月就換八月的", h.includes("八月的品") && !h.includes("九月的品"));
+  curSetYM("2026-09");
+  // 切到一個沒有資料的月份不能整頁空掉，要退回有資料的
+  CUR_YM = "2019-01";
+  ok("月份不存在時退回最新的那個月", curYM() === "2026-09", curYM());
+  CUR_YM = null; }
+{ withProds([PD({ id:"V1", name:"歐泊", priceMin:990, priceMax:3500 })]);
+  CUR_VIEW = "card";
+  let h = viewCurate();
+  ok("卡片模式：是格子牆", /class="curgrid"/.test(h));
+  ok("卡片模式沒有列表的表頭", !/curhead/.test(h));
+  ok("兩個模式都切得過去", /curSetView\('list'\)/.test(h) && /curSetView\('card'\)/.test(h));
+  curSetView("list"); h = viewCurate();
+  ok("列表模式：是一列一列的", /class="currow/.test(h) && !/class="curgrid"/.test(h));
+  ok("列表有表頭（商品／售價／狀態）", /curhead/.test(h) && h.includes("售價 ／ 原價"));
+  ok("**列表模式下貼網址收成一條**（處理一整批時不用一直看到那個大框）",
+     /class="card curfold"/.test(h) && /<summary>/.test(h));
+  ok("但展開之後還是同一個框", /id="cur_paste"/.test(h));
+  ok("列表底下有結算", /共 1 個商品/.test(h));
+  curSetView("card");
+  ok("切回卡片就沒有折疊那一條", !/curfold/.test(viewCurate())); }
+// 官網的圖會換網址、會被刪。掛掉的時候要自己藏起來，不然整面卡片牆都是破圖圖示。
+{ withProds([PD({ id:"IM1", name:"有圖的品", image:"https://img.shoplineapp.com/x.jpg" })]);
+  CUR_VIEW = "card"; const h = viewCurate();
+  ok("圖掛掉要自己藏起來（不然畫面上一排破圖圖示）",
+     /<img[^>]*onerror="this\.style\.display='none'"/.test(h), (h.match(/<img[^>]*>/g)||[]).slice(0,2)); }
+// 版面：桌機是格子牆，手機一定要收欄 —— 老闆大部份在手機上看。
+{ // 把包住某一條規則的 @media 整塊挖出來（大括號配對）；那條規則沒被包住就回空字串。
+  const mediaAround = (rule) => {
+    const i = HTML.indexOf(rule); if (i < 0) return "";
+    const s = HTML.lastIndexOf("@media", i); if (s < 0) return "";
+    let depth = 0;
+    for (let j = HTML.indexOf("{", s); j < HTML.length; j++) {
+      if (HTML[j] === "{") depth++;
+      else if (HTML[j] === "}" && --depth === 0) return j > i ? HTML.slice(s, j + 1) : "";
+    }
+    return "";
+  };
+  ok("桌機：卡片牆是四欄的格子", /\.curgrid\{display:grid;grid-template-columns:repeat\(4,/.test(HTML));
+  ok("**手機上卡片收成兩欄**（四欄在 390px 上每張只剩 80 出頭，圖跟字都看不清）",
+     /max-width:\s*640px/.test(mediaAround(".curgrid{grid-template-columns:repeat(2,")));
+  ok("**手機上列表不硬擠五欄**（會橫向溢出，整頁要左右拖）",
+     /max-width:\s*640px/.test(mediaAround(".currow{grid-template-columns:44px minmax(0,1fr);")) &&
+     /\.currow>:nth-child\(3\),\.currow>:nth-child\(4\),\.currow>:nth-child\(5\)\{grid-column:2\}/.test(HTML));
+  ok("（前提）桌機的五欄排在手機那一條前面，不然手機會被蓋回去",
+     HTML.indexOf(".currow{display:grid;grid-template-columns:44px minmax(0,1fr) 168px") <
+     HTML.indexOf(".currow{grid-template-columns:44px minmax(0,1fr);")); }
+// 四種狀態在兩個模式裡都要看得出來
+{ withProds([PD({ id:"S1", name:"好了", priceMin:100, priceMax:100 }),
+             PD({ id:"S2", fetchStatus:"pending", officialUrl:BASE+"/products/等" }),
+             PD({ id:"S3", fetchStatus:"failed", fetchError:"找不到商品資料", officialUrl:BASE+"/products/壞" }),
+             PD({ id:"S4", name:"跨月", priceMin:50, priceMax:50,
+                  picks:[{month:"2026-09",by:"小設",at:""},{month:"2026-08",by:"小設",at:""}] })]);
+  ["card","list"].forEach(v=>{
+    curSetView(v); const h = viewCurate();
+    ok(`${v}：已抓好標得出來`, /pill ok">已抓好|cur-b-ok|cur-r-ok/.test(h) || /已抓好/.test(h));
+    ok(`${v}：還沒抓標得出來`, /還沒抓/.test(h));
+    ok(`${v}：抓不到標得出來，而且講原因`, /抓不到/.test(h) && /找不到商品資料/.test(h));
+    ok(`${v}：選過兩個月標得出來`, /選過 2 個月/.test(h));
+    ok(`${v}：抓不到那一筆給「自己填名稱」`, /自己填名稱/.test(h));
+  });
+  curSetView("card"); }
+// 沒有那個月的資料時，不要只留一片空白
+{ withProds([]); CUR_YM = null;
+  ok("完全沒有選品時講清楚", /還沒有選品/.test(viewCurate())); }
 
 // ── 寫入路由 ──
 (async () => {

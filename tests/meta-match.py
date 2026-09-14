@@ -442,23 +442,33 @@ g = S.unfiled_groups([_P(LONG, comments=3, pid="a"), _P(LONG, comments=3, pid="b
 ok(len(g) == 1 and g[0]["n"] == 2 and g[0]["comments"] == 6,
    "同一支片重發兩次算一組，留言相加（3+3 才過門檻）")
 
-# 排序：照留言，而且觀看全是 0 也要排得出來
+# 候選的排序：照留言，因為這時候還沒有觀看數（觀看要花呼叫才問得到）。
+# ⚠️ 留言只決定「先問誰的觀看數」，**不決定誰留在清單上** —— 那是 unfiled_rank 的事，
+#    見 tests/meta-unfiled.py。v211 之前兩件事混在一起，成效好但留言少的片就消失了。
 g = S.unfiled_groups([_P("甲的文案內容夠長才進得了比對的門檻編號甲", comments=10, pid="a"),
                       _P("乙的文案內容夠長才進得了比對的門檻編號乙", comments=90, pid="b"),
                       _P("丙的文案內容夠長才進得了比對的門檻編號丙", comments=50, pid="c")])
 ok([x["comments"] for x in g] == [90, 50, 10],
-   "**照留言數排**（改成照觀看排的話，全是 0，等於沒排）")
+   "候選**照留言數排**（這時候觀看全是 0，照觀看排等於沒排）")
 
-# 上限真的有截
+# 候選有上限（不然會問爆），但那個上限**不是**清單的上限
 many = [_P("第%d支影片的文案內容不一樣所以會分成不同組別編號%d" % (i, i), comments=10 + i, pid=str(i))
-        for i in range(S.UNFILED_MAX + 30)]
+        for i in range(S.UNFILED_CAND + 30)]
 res = S.unfiled_groups(many)
-ok(len(res) == S.UNFILED_MAX,
-   "**超過上限就截掉**（%d 組進去只留 %d 組）" % (len(many), S.UNFILED_MAX))
-ok(res[0]["comments"] == 10 + S.UNFILED_MAX + 29, "而且留下的是留言最多的那些")
+ok(len(res) == S.UNFILED_CAND,
+   "候選超過上限就截掉（%d 組進去只留 %d 組）" % (len(many), S.UNFILED_CAND))
+ok(res[0]["comments"] == 10 + S.UNFILED_CAND + 29, "而且留下的是留言最多的那些（先問它們）")
+ok(S.UNFILED_CAND > S.UNFILED_MAX,
+   "**候選要比清單寬** —— 一樣寬就等於「照留言決定誰上榜」，v211 修的就是這個")
 
-# 文案太短的不收（建了檔也對不回來）
-ok(S.unfiled_groups([_P("太短", comments=9999)]) == [], "文案太短不收，留言再多也一樣")
+# v211：文案太短**不再整組丟掉**。老闆 2026-09-14：
+#   「我們要的是他的成效好就可以上去，反正我們會『手動』建新檔。」
+# 舊理由是「建了檔也對不回來」，那個理由不成立：match_post 第一件事就是比**上片連結**
+# （score 999，贏過文案），而畫面上「新增進系統」那個視窗會自動帶入那則貼文的連結。
+# 所以短文案的片建檔之後，下一次同步照樣對得回來。
+短 = S.unfiled_groups([_P("太短", comments=9999)])
+ok(len(短) == 1 and 短[0]["cap"] == "太短",
+   "**文案很短但很多人留言的片要留住**（Reel 常常只有幾個字）")
 # 「分不出是哪一支」不是沒建檔
 amb = _P(LONG, comments=9999); amb["candidates"] = ["V1", "V2"]
 ok(S.unfiled_groups([amb]) == [], "「有好幾支長得一樣」的不算未建檔（那是比對問題）")
@@ -486,8 +496,13 @@ ok('ap.add_argument("--no-unfiled-views"' in SYNC_SRC,
    "關掉的旗標是 --no-unfiled-views（**預設就會問**，不是要人記得加）")
 ok('ap.add_argument("--unfiled-views"' not in SYNC_SRC,
    "舊的 --unfiled-views 已經不在（不要留兩個意思相反的旗標）")
-ok("if unfiled and not args.no_unfiled_views and not args.from_file:" in SYNC_SRC,
+ok("if cand and not args.no_unfiled_views and not args.from_file:" in SYNC_SRC,
    "而且真的接到流程上（不然寫了函式沒人呼叫）")
+# v211 的整個修正就是這三步的順序。順序一調換，成效好但留言少的片又會消失。
+ok(SYNC_SRC.index("cand = unfiled_groups(unmatched)")
+   < SYNC_SRC.index("unfiled_fill_views(cand,")
+   < SYNC_SRC.index("unfiled = unfiled_rank(cand)"),
+   "**先撈候選 → 再問觀看 → 最後才排名次截斷**（順序不准調換）")
 
 # ── 2026-09-13 的事故：178 支全部寫入失敗（v207）──────────────────────
 # 那一次 --write 跑完，**0 支成功、178 支失敗**，每一支都是
@@ -501,8 +516,10 @@ ok("token = _fs.sign_in(cfg_fb)" in SYNC_SRC.split("done, failed = write_back")[
    "**寫之前重新登入** —— 長時間的同步會讓權杖過期，那一次 178 支全部 401")
 ok("MAX_PER_GROUP = 15" in SYNC_SRC,
    "一組超過 15 則就不問（那不是一支片重發，是罐頭句黏成一坨）")
-ok("MAX_ASK = 600" in SYNC_SRC,
+ok("MAX_ASK = int(max_ask or UNFILED_ASK_DEFAULT)" in SYNC_SRC and S.UNFILED_ASK_DEFAULT > 0,
    "**問觀看數的總數要封頂** —— 沒有上限那次問了 10,091 則")
+ok(S.UNFILED_ASK_DEFAULT >= S.UNFILED_MAX,
+   "而且預算至少蓋得住整張清單，不然清單上一堆「—」（名次就是照那個數字排的）")
 ok("if len(reps) + len(ps) > MAX_ASK:" in SYNC_SRC, "封頂真的有被用")
 ok("if len(ps) > MAX_PER_GROUP:" in SYNC_SRC, "每組上限也真的有被用")
 # ── 網路逾時不能把整支打掛（v207）──────────────────────────────────
