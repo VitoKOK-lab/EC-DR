@@ -945,8 +945,12 @@
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
   .vidscroll table.vtable{margin-top:0}
   .vidscroll thead th{position:sticky;top:0;background:var(--panel);z-index:1;box-shadow:0 1px 0 var(--line)}
-  /* 設定→權限：桌機上九欄要撐開才點得準，橫向捲動由外面的 .permwrap 負責 */
+  /* 設定→權限：桌機上欄位要撐開才點得準，橫向捲動由外面的 .permwrap 負責 */
   table.permtable{min-width:660px}
+  /* ⚠️ 名字那一欄一定要 nowrap。權限欄每一欄都是 nowrap，名字是**唯一縮得動的**——
+     v210 加到十二欄之後它被擠到剩一個字寬，中文就直著排下來（「昱／丞」「選／品／行／銷」），
+     每一列變成 100px 高。欄位再加下去也不會再壓到名字。 */
+  table.permtable th:first-child,table.permtable td:first-child{white-space:nowrap;min-width:76px}
   table.vtable th{white-space:nowrap}
   table.vtable th,table.vtable td{overflow:hidden}
   table.vtable td.cv-name{white-space:nowrap;text-overflow:ellipsis}
