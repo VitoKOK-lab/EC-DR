@@ -55,6 +55,19 @@ try {
   failed.push("meta-match.py");
 }
 
+// Shopline 商品頁的解析與把關（Cloudflare 那段程式）。
+// 樣本是真實頁面抽出來的片段，**不打網路** —— 官網改版時這支會變紅，
+// 而不是等設計師回報「抓不到」。
+try {
+  execFileSync(process.execPath, [path.join(dir, "shopline-parse.mjs")], { stdio: "pipe" });
+  console.log("PASS  shopline-parse.mjs（商品頁解析與只准抓自己官網）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  shopline-parse.mjs");
+  out.split("\n").filter(l => l.startsWith("FAIL")).forEach(l => console.log("        " + l));
+  failed.push("shopline-parse.mjs");
+}
+
 // 介面語言洩漏掃描：輸出「(無洩漏)」才算過
 try {
   const out = execFileSync(process.execPath, [path.join(dir, "audit-lang.js")], { encoding: "utf8" });
