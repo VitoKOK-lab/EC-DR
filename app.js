@@ -10245,7 +10245,9 @@ function curCardHTML(p){
   return `<div class="row" style="gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)">
     ${img}
     <div style="flex:1;min-width:0">
-      <div style="font-weight:700">${esc(p.name||prettyUrl(p.officialUrl))}</div>
+      <!-- 還沒抓到名稱時用網址最後那一段：Shopline 的網址本來就是商品名，
+           印整串 https://… 又長又看不懂 -->
+      <div style="font-weight:700">${esc(p.name||prodPageName(p.officialUrl)||prettyUrl(p.officialUrl))}</div>
       ${sale?`<div style="font-size:13px">售價 ${esc(sale)}${lst?`　<span class="muted">原價 ${esc(lst)}</span>`:""}${
         (p.variants||[]).length>1?`　<span class="muted">${(p.variants||[]).length} 款</span>`:""}</div>`:""}
       ${state}

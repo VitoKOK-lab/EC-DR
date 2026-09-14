@@ -285,6 +285,22 @@ function withProds(prods, who, role, perms){
   await route("DELETE","/api/products/PD1",{});
   ok("刪得掉", W.some(x=>x[0]==="del" && x[1]==="products" && x[2]==="PD1"), W);
 
+  // ── 同步：沒設定代抓網址就不要動 ──
+  // ⚠️ 光看畫面上按鍵有沒有變灰是不夠的（突變測試抓到的）——
+  //    按鍵灰掉擋得住手滑，擋不住直接呼叫，而 curSync 一旦跑起來
+  //    就會對每一筆送出 fetch("?url=…")，靜靜失敗，然後把每一筆標成 failed。
+  { withDB([PD({ id:"PX", fetchStatus:"pending" })]);
+    LAST_RAW.settings.shopProxy = ""; STATE = decorate(LAST_RAW);
+    let fetched = 0;
+    global.fetch = async () => { fetched++; return { ok:true, json: async()=>({ok:true}) }; };
+    let said = "";
+    const oldToast = toast; toast = (m)=>{ said = String(m||""); };
+    await curSync();
+    toast = oldToast;
+    ok("**沒設定代抓網址時，按下去不會真的去抓**", fetched === 0, fetched);
+    ok("而且會講清楚為什麼", /還沒設定/.test(said), said);
+    ok("也不會把商品標成失敗", !W.some(x=>x[0]==="update"), W); }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

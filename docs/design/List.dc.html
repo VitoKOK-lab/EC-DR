@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+  <style>
+    :root{
+      --bg:#F7F6F3; --panel:#FFFFFF; --panel2:#F1EFEA; --line:#E5E1DA;
+      --txt:#221C18; --muted:#665F57; --faint:#A49C92;
+      --accent:#8A7338; --gold:#C5B382; --gold-dk:#937C44;
+      --green:#2C8077; --greenbg:#EAF8F6; --amberbg:#FAF6EA;
+      --red:#B0473A; --redbg:#F7EBE8; --chip:#EFEBE3;
+      --serif:"Noto Serif TC","Songti TC","PingFang TC",serif;
+      --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+      --latin:"Helvetica Neue",Helvetica,Arial,sans-serif;
+      --foil:linear-gradient(110deg,#9C8550 0%,#C5B382 18%,#DCCD9E 36%,#F1E9CD 50%,#CFBE8A 64%,#B5A06A 84%,#9C8550 100%);
+      --shadow:0 2px 10px rgba(43,24,34,.06); --r:8px; --rs:5px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+         font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{color:var(--gold-dk);text-decoration:underline}
+    h2{font-family:var(--serif);font-size:22px;margin:0;font-weight:600;letter-spacing:.04em}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+          box-shadow:var(--shadow);overflow:hidden}
+    .muted{color:var(--muted)}
+    .lab{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.1em;
+         text-transform:uppercase;font-family:var(--latin)}
+    .btn{background:var(--txt);border:none;color:#fff;padding:11px 20px;border-radius:2px;
+         font-weight:600;letter-spacing:.1em;font-family:var(--sans);font-size:15px;
+         box-shadow:0 5px 14px rgba(34,28,24,.22);cursor:pointer}
+    .btn.sec{background:#fff;color:var(--muted);border:1px solid var(--line);box-shadow:none}
+    .btn.sm{padding:6px 12px;font-size:12.5px;letter-spacing:.04em}
+    .pill{padding:3px 11px;border-radius:999px;font-size:12px;font-weight:700;display:inline-block}
+    .pill.ok{background:var(--greenbg);color:var(--green)}
+    .pill.wa{background:var(--amberbg);color:var(--gold-dk)}
+    .pill.em{background:var(--redbg);color:var(--red)}
+    /* 列表：一列一個商品，欄位對齊，掃得快 */
+    .lrow{display:grid;grid-template-columns:44px minmax(0,1fr) 168px 104px 132px;
+          gap:16px;align-items:center;padding:11px 18px;border-top:1px solid var(--line)}
+    .lhead{display:grid;grid-template-columns:44px minmax(0,1fr) 168px 104px 132px;
+           gap:16px;align-items:center;padding:10px 18px;background:var(--panel2)}
+    .th{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.1em;
+        text-transform:uppercase;font-family:var(--latin)}
+    .thumb{width:44px;height:44px;border-radius:var(--rs);flex:none}
+  </style>
+</helmet>
+
+<div style="padding:28px 32px 40px">
+
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap">
+    <h2>選品</h2>
+    <div style="display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
+         border-radius:var(--rs);padding:3px">
+      <span style="padding:6px 14px;font-size:13.5px;font-weight:700;background:#fff;
+            border-radius:3px;box-shadow:var(--shadow)">9 月<span class="muted" style="font-weight:400;margin-left:6px">5</span></span>
+      <span style="padding:6px 14px;font-size:13.5px;color:var(--muted)">8 月<span style="margin-left:6px;opacity:.6">2</span></span>
+      <span style="padding:6px 14px;font-size:13.5px;color:var(--muted)">7 月<span style="margin-left:6px;opacity:.6">9</span></span>
+      <span style="padding:6px 11px;font-size:13.5px;color:var(--faint)">⋯</span>
+    </div>
+    <span style="flex:1"></span>
+    <div style="display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
+         border-radius:var(--rs);padding:3px">
+      <span style="padding:6px 12px;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+        卡片</span>
+      <span style="padding:6px 12px;background:#fff;border-radius:3px;box-shadow:var(--shadow);
+            display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>
+        列表</span>
+    </div>
+  </div>
+
+  <!-- 貼網址：列表模式下收成一條，不佔版面 -->
+  <div class="card" style="display:flex;align-items:center;gap:14px;padding:12px 18px;margin-bottom:14px">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A7338" stroke-width="1.8"
+         stroke-linecap="round" style="flex:none"><path d="M12 5v14M5 12h14"></path></svg>
+    <span style="font-size:14px">貼商品網址加進這個月</span>
+    <span class="muted" style="font-size:12.5px;flex:1">一行一個，貼幾條都可以</span>
+    <button class="btn sec sm">展開</button>
+  </div>
+
+  <div class="card" style="display:flex;align-items:center;gap:14px;padding:12px 18px;margin-bottom:14px;
+       border-left:3px solid var(--gold)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#937C44" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" style="flex:none">
+      <path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 3v6h-6"></path></svg>
+    <span style="font-size:14px"><b style="font-family:var(--serif)">2 個</b> 還沒抓資料</span>
+    <span style="flex:1"></span>
+    <button class="btn sm">同步</button>
+  </div>
+
+  <!-- 列表本體 -->
+  <div class="card">
+    <div class="lhead">
+      <span class="th"></span>
+      <span class="th">商品</span>
+      <span class="th">售價 ／ 原價</span>
+      <span class="th">狀態</span>
+      <span class="th" style="text-align:right">　</span>
+    </div>
+
+    <div class="lrow">
+      <div class="thumb" style="background:linear-gradient(135deg,#EFEAE0,#E3DCCD)"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">自帶光芒｜手鏈｜項鍊｜天然歐泊</div>
+        <a href="#" style="font-size:12px">看官網</a>
+        <span class="muted" style="font-size:12px">　4 款</span>
+      </div>
+      <div>
+        <b style="font-family:var(--latin);font-size:14.5px">NT$990～3,500</b>
+        <div class="muted" style="font-size:11.5px;text-decoration:line-through">NT$6,000～15,000</div>
+      </div>
+      <div><span class="pill ok">已抓好</span></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sec sm">改名</button><button class="btn sec sm" style="color:#B0473A">移除</button>
+      </div>
+    </div>
+
+    <div class="lrow">
+      <div class="thumb" style="background:linear-gradient(135deg,#E8E4DB,#DCD5C6)"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">12星座守護寶石</div>
+        <a href="#" style="font-size:12px">看官網</a>
+      </div>
+      <div><b style="font-family:var(--latin);font-size:14.5px">NT$1,280</b></div>
+      <div><span class="pill ok">已抓好</span></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sec sm">改名</button><button class="btn sec sm" style="color:#B0473A">移除</button>
+      </div>
+    </div>
+
+    <div class="lrow" style="background:#FDFBF6">
+      <div class="thumb" style="background:repeating-linear-gradient(45deg,#F4F1EA,#F4F1EA 6px,#EFEAE0 6px,#EFEAE0 12px)"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">限量盲盒・蓮花色雙寶</div>
+        <a href="#" style="font-size:12px">看官網</a>
+      </div>
+      <div class="muted" style="font-size:12.5px">—</div>
+      <div><span class="pill wa">還沒抓</span></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sec sm">改名</button><button class="btn sec sm" style="color:#B0473A">移除</button>
+      </div>
+    </div>
+
+    <div class="lrow" style="background:#FDF7F5">
+      <div class="thumb" style="background:var(--redbg)"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">埃及特產 幸運石之王</div>
+        <span style="font-size:12px;color:var(--red)">這一頁找不到商品資料</span>
+      </div>
+      <div class="muted" style="font-size:12.5px">—</div>
+      <div><span class="pill em">抓不到</span></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sec sm">自己填名稱</button>
+      </div>
+    </div>
+
+    <div class="lrow">
+      <div class="thumb" style="background:linear-gradient(135deg,#E6E1D6,#D8D0BE)"></div>
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">綠意財富｜天然胖三角綠水晶裸石</div>
+        <a href="#" style="font-size:12px">看官網</a>
+        <span style="font-size:12px;color:var(--gold-dk)">　選過 2 個月</span>
+      </div>
+      <div><b style="font-family:var(--latin);font-size:14.5px">NT$590</b></div>
+      <div><span class="pill ok">已抓好</span></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sec sm">改名</button><button class="btn sec sm" style="color:#B0473A">移除</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="muted" style="font-size:12.5px;margin-top:12px">
+    9 月共 5 個商品 · 3 個已抓好 · 1 個還沒抓 · 1 個抓不到
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
