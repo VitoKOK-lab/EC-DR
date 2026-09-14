@@ -20,7 +20,11 @@ const el=()=>({value:"",innerHTML:"",textContent:"",className:"",style:{},checke
 const store={};
 global.localStorage={getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=String(v);},removeItem:k=>{delete store[k];}};
 let modalHTML="", viewEl=el(), fields={};
+// showModal 把確認鍵掛在 getElementById("modalConfirm").onclick 上，要給穩定的同一個節點才按得到
+const confirmBtn=el();
+async function MODAL_CONFIRM(){ if(typeof confirmBtn.onclick==="function") return await confirmBtn.onclick(); }
 global.document={getElementById:(id)=>{ if(id==="view") return viewEl;
+    if(id==="modalConfirm") return confirmBtn;
     if(Object.prototype.hasOwnProperty.call(fields,id)){ const e=el();
       Object.defineProperty(e,"value",{get(){return fields[id];},set(v){fields[id]=v;}}); return e; }
     const e=el(); if(id==="modalRoot"){Object.defineProperty(e,"innerHTML",{set(v){modalHTML=v;},get(){return modalHTML;}});} return e;},
@@ -330,16 +334,38 @@ function reset(vids, users){
     await clockIn("小葵"); await wait(20);
     ok("（對照）自己人照樣打得進去", WRITES.some(w=>w[1]==="shifts"), WRITES); }
 
-  // 下班匯報：鍵不畫，而且直接呼叫也擋
+  // 下班匯報 → 外包改成「今日回報」：照樣回報今天做了什麼，但**不寫班表**
+  // ⚠️ v212 第一版把這顆鍵對外包整個藏掉。老闆當天就抓到：「以前員工有一個下班回報的
+  //    選項不見了，他是外包員工」。那顆鍵做兩件事（回報＋打卡），我把兩件綁在一起砍了。
   { reset(); as("陳鋒","editor"); CUR_TAB="work";
-    ok("外包的工作頁沒有「下班匯報」那顆鍵", !viewWork().includes("clockOutReport()"));
+    const w=viewWork();
+    ok("**外包的工作頁還是有回報那顆鍵**（老闆：以前有下班回報，不見了）", w.includes("clockOutReport()"), w.slice(-300));
+    ok("但字是「今日回報」不是「下班匯報」（他沒有下班卡可以打）", /今日回報/.test(w) && !/下班匯報/.test(w));
     reset(); as("小葵","editor"); CUR_TAB="work";
-    ok("（對照）自己人有那顆鍵", viewWork().includes("clockOutReport()"));
-    // ⚠️ 按鍵不畫擋得住手滑，擋不住直接呼叫 —— 真正寫進 shifts 的那一層也要擋
-    reset(); as("陳鋒","editor"); modalHTML="";
+    ok("（對照）自己人還是「下班匯報」", /下班匯報/.test(viewWork()));
+    // 按下去：看得到今天做了什麼，確認之後**不寫 shifts**
+    reset(); as("陳鋒","editor"); modalHTML=""; WRITES=[];
     clockOutReport();
-    ok("**直接呼叫下班匯報也擋得住**（不畫鍵只是畫面上的說法）",
-       modalHTML==="" && TOASTS.some(t=>/不需要打卡/.test(t)), {modalHTML:modalHTML.slice(0,60), TOASTS}); }
+    ok("外包按下去看得到回報視窗", /今日回報/.test(modalHTML), modalHTML.slice(0,80));
+    ok("視窗裡有交辦工作那一區（那才是回報的內容）", /交辦工作/.test(modalHTML));
+    await MODAL_CONFIRM(); await wait(20);
+    ok("**確認之後沒有寫任何班表**（外包不打卡）", !WRITES.some(x=>x[1]==="shifts"), WRITES);
+    ok("而且不會跳「沒記錄成功」的錯（對他來說沒寫就是對的）", !TOASTS.some(t=>/沒有記錄成功/.test(t)), TOASTS);
+    // 直接呼叫寫班表那一層也擋得住
+    reset(); as("陳鋒","editor"); WRITES=[];
+    const r=await doClockOut(); await wait(20);
+    ok("**直接呼叫 doClockOut 也不會替外包寫班表**", r===false && !WRITES.some(x=>x[1]==="shifts"), {r, WRITES});
+    // 客服的工作頁是另一個模板（viewWorkCS）—— 外包客服也要有同一顆鍵、同樣的字。
+    // ⚠️ 突變測試抓到：只改那個模板，上面用剪輯測的全部照樣綠。兩個模板都要顧。
+    reset(null,[{name:"外包客服",role:"cs",outsourced:true},{name:"Regina",role:"manager"}]);
+    as("外包客服","cs"); CUR_TAB="work";
+    const wc=viewWork();
+    ok("**外包客服的工作頁也有回報那顆鍵**（客服是另一個模板）", wc.includes("clockOutReport()"), wc.slice(-300));
+    ok("而且字一樣是「今日回報」", /今日回報/.test(wc) && !/下班匯報/.test(wc));
+    // 對照：自己人確認之後真的有寫
+    reset(); as("小葵","editor"); modalHTML=""; WRITES=[];
+    clockOutReport(); await MODAL_CONFIRM(); await wait(20);
+    ok("（對照）自己人確認下班真的寫進 shifts", WRITES.some(x=>x[1]==="shifts"), WRITES); }
 
   // 出勤異常提醒不要跳給他
   // ⚠️ 這一條第一次寫成「設好 attIssueAsk 就呼叫 workIssueCard」—— 那是**假綠燈**：

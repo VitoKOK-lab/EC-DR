@@ -3542,9 +3542,9 @@ function viewWorkCS(me){
         這不是說好要整合在一起嗎?」這一頁現在只留「今天要做什麼」。
         我的出勤也搬走了（跟看板放在一起）。 */''}
   ${fold(T("預排工作提醒","Reminders"), nFuture, futureTasksBody())}
-  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
-    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
-  </div>`:""}`;
+  <div class="card" style="text-align:center">
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${needsClock(currentUser())?"下班匯報":"今日回報"}</button></div>
+  </div>`;
 }
 function viewWork(){
   const me = currentUser();
@@ -3653,9 +3653,9 @@ function viewWork(){
           <div class="tsub">${T("完成","Done")} ${esc(String(v.finishedAt||"").slice(11,16))}・${T("剪 ","")}${editDaysLabel(v)||"-"} ${T("天","d")}</div></div></div>`).join("")
       : "")}
 
-  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
-    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
-  </div>`:""}`
+  <div class="card" style="text-align:center">
+    <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${needsClock(currentUser())?T("下班匯報","Clock-out report"):T("今日回報","Daily report")}</button></div>
+  </div>`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
@@ -3755,9 +3755,10 @@ function createZoneCard(){
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，無法代為下班打卡",true); return; }
-  // 外包不打卡。畫面上已經不畫這顆鍵了，但**按鍵不畫擋得住手滑，擋不住直接呼叫** ——
-  // 真正寫進 shifts 的那一層也要擋，不然「外包不打卡」只是畫面上的說法。
-  if(!needsClock(currentUser())){ toast("外包人員不需要打卡",true); return; }
+  // ⚠️ v212 第一版把這顆鍵對外包整個藏掉 —— 老闆當天就抓到：「以前員工有一個下班回報
+  //    的選項不見了，他是外包員工」。這顆鍵其實做兩件事：列今天做了什麼（回報）＋
+  //    寫下班卡（打卡）。外包不打卡，**但他每天照樣要回報**。拆開：外包走「只回報」。
+  const clock=needsClock(currentUser());
   const me=currentUser();
   const doneVids=(STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
@@ -3773,20 +3774,25 @@ function clockOutReport(){
       ${tasks.length?tasks.map(t=>`<div style="margin-top:6px">• ${esc(t.title)} ${t.done?`<span class="pill ok" style="font-size:10px">${T("已完成","Done")}</span>`:`<span class="pill em" style="font-size:10px">${T("未完成","Not done")}</span>`}${t.report?` <span class="muted" style="font-size:12px">— ${esc(t.report)}</span>`:''}</div>`).join("")
         :`<p class="muted" style="margin:6px 0 0">${T("今日無交辦工作","No tasks today")}</p>`}
     </div>`;
-  showModal(T("下班匯報","Clock-out report"), body, async ()=>{
+  showModal(clock?T("下班匯報","Clock-out report"):T("今日回報","Daily report"), body, async ()=>{
+    // 外包：回報看完就結束，**不寫班表**。
+    if(!clock){ closeModal(); toast(T("辛苦了，今天的回報收到了","Great work — report received")); setTimeout(showGoodbye,300); return true; }
     // 沒有真的寫進去就不能把人登出 —— 他會以為自己下班了，隔天才發現沒有紀錄
     if(!await doClockOut()){
       toast(T("下班沒有記錄成功，可能是網路斷了。確認有網路之後再按一次；一直不行請跟主管說一聲。",
               "Clock-out didn't save — you may be offline. Check your connection and press it again."), true);
       return false; }
     closeModal(); toast(T("辛苦了，已下班 ","Great work — clocked out")); setTimeout(showGoodbye,300); return true;
-  }, T("確認下班","Confirm clock-out"));
+  }, clock?T("確認下班","Confirm clock-out"):T("送出回報","Send report"));
 }
 // 回傳「有沒有真的寫進資料庫」。
 // 以前這裡把所有錯誤吞掉，外面照樣說「辛苦了，已下班」然後把人登出 ——
 // 寫失敗的人根本沒有下班紀錄，卻完全不知道。這是「無法下班」最惡劣的一種：它裝作成功。
 async function doClockOut(){
   if(!window.DB) return false;
+  // 外包沒有班表要寫。這裡回 false 是對的：**沒有寫、也不該寫**，呼叫的人不准把它當成功。
+  // （clockOutReport 對外包根本不會走到這裡；這一行是擋直接呼叫的。）
+  if(!needsClock(currentUser())) return false;
   let id, env;
   try{ refreshToday(); id=shiftId(currentUser(),today); env=punchEnv(); }catch(e){ return false; }
   try{
@@ -5531,6 +5537,7 @@ function viewBoard(){
       dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
   ${flowReviewQueueCard()}
   ${pubLinkCard()}
+  ${prodMissCard()}
   ${dashProgressCard(D, isToday, dayLabel, present, editors, teamDone, teamTasks, teamTasksDone, teamAssignedOpen)}
   ${dashRunwayCard(g, runwayEnd, stripHTML, gapN, poolN, wipN, noSchedN)}
   <h3 style="margin:26px 0 10px;padding-top:14px;border-top:2px solid var(--line)">${T("團隊今天在做什麼","What the team is doing")}
@@ -8483,6 +8490,59 @@ function prodMissing(v){
   return !hasName && !hasUrl ? {k:"prod", zh:"缺商品與連結", en:"needs product & link"}
        : !hasName          ? {k:"prod", zh:"缺商品名稱",   en:"needs product name"}
                            : {k:"prod", zh:"缺商品官網連結", en:"needs product URL"};
+}
+// ── 寵粉／銷售片缺商品頁：看板上的那張卡（v212）────────────────────
+// 老闆 2026-09-14：「沒有商品頁的影片如果是寵粉或銷售類的要提醒。」
+//
+// ⚠️ 這個提醒**本來就有**（v184 的 missingPill，每一列旁邊那顆燈）——
+//    問題是它看不見。正式資料實測：31 支寵粉／銷售片商品資料不全，
+//    其中 **28 支那顆燈被別的缺漏蓋掉**（missingPill 只把第一項寫成字，
+//    商品排在最後）。V002 被「缺文案」蓋掉、V196 被「缺上片連結」蓋掉。
+//
+//    所以不是再加一顆燈，是**在看板上給它一個自己的數字** ——
+//    跟 🔗 上片連結那張卡同一個做法、同一個理由：
+//    「不標」很容易變成「不存在」。
+//
+// ⚠️ 已經上片的排在最前面：觀眾已經看到那支片了，卻沒有地方可以買 ——
+//    那不是「資料不齊」，是**當下正在漏單**。
+// ⚠️ 只看影片庫A，**不含大流**。老闆 2026-09-14：「大流量影片這一頁是手動的，
+//    未來要刪掉，跟我們流程無關。」量過：31 支缺商品頁的全部在影片庫A、大流 0 支，
+//    而大流那 47 支一個商品頁網址都沒填 —— 算進來只會在它被刪掉之前灌一堆雜訊進這張卡。
+function prodMissList(){
+  const out=[];
+  ((STATE&&STATE.videos)||[]).forEach(v=>{ if(v.deleted) return;
+    const m=prodMissing(v); if(!m) return;
+    out.push({v, m, aired:!!v.published});
+  });
+  out.sort((a,b)=>(b.aired-a.aired) ||
+    String(b.v.scheduledDate||"").localeCompare(String(a.v.scheduledDate||"")));
+  return out;
+}
+function prodMissCard(){
+  const list=prodMissList(); if(!list.length) return "";
+  const aired=list.filter(x=>x.aired);
+  return `<div class="card" style="padding:12px${aired.length?';border-left:4px solid #C0392B':''}">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🛒 寵粉／銷售片的商品頁</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap">
+        ${aired.length?`<span class="pill em">已上片但沒有導購連結 ${aired.length} 支</span>`:""}
+        ${list.length-aired.length?`<span class="pill wa">還沒上片的 ${list.length-aired.length} 支</span>`:""}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:8px;line-height:1.8">
+      標了「寵粉」或「銷售」就是要導購的片。沒有商品名稱與官網連結，
+      觀眾看完不知道去哪買 —— 那支片等於白剪。${aired.length?`<br>
+      <b style="color:#C0392B">上面那 ${aired.length} 支已經發出去了，現在就在漏單。</b>`:""}
+      ${/* 這顆燈在影片列上會被「缺文案」「缺上片連結」蓋掉（只寫第一項），
+            所以這張卡才是唯一看得到全部的地方。 */''}
+      <br>點片名進去，在「商品與導購」那一區補商品名稱與官網連結。</div>
+    <details class="fold" style="margin-top:8px"><summary style="font-size:13px">看是哪幾支<span class="n">${list.length}</span></summary>
+      <div class="foldbody" style="max-height:280px;overflow:auto">${list.slice(0,200).map(x=>
+        `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px">
+          ${x.aired?'<span class="pill em" style="font-size:10px">已上片</span> ':''}
+          <span class="muted">${esc(String(x.v.scheduledDate||"").slice(5))||"　　"}</span>
+          <a href="javascript:void(0)" onclick="${vidOpenFn(x.v)}">${esc(vidTitle(x.v))}</a>
+          <span class="muted" style="font-size:12px">　${esc(x.m.zh)}</span></div>`).join("")}
+        ${list.length>200?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${list.length-200} 支</div>`:""}</div></details>
+  </div>`;
 }
 // ── 缺上片連結：只提醒「還補得回來」的那幾支（v197）──────────────────
 // 正式資料實測（2026-09-11）：416 支已播出的片一支都沒有上片連結，
