@@ -337,6 +337,149 @@ function withProds(prods, who, role, perms){
     ok(`${v}：抓不到那一筆給「自己填名稱」`, /自己填名稱/.test(h));
   });
   curSetView("card"); }
+// ── 這個品推過幾次（v211）──────────────────────────────────────────
+// 老闆指著 meta 報告：「貼過幾次都找的出來，可是你的都沒有。」
+// 資料是 Shopline 的「貼文銷售」，由 tools/postsale_sync.py 寫進 meta/settings.postsale。
+//
+// ⚠️ 這一段一定要**把畫面畫出來**驗。第一次我寫成 `"psLine(p)" in APP` ——
+//    那也會match到函式定義本身，把呼叫整行刪掉照樣綠，突變測試裡它活了下來。
+function withPS(ps, prods){
+  withProds(prods || [PD({ id:"PS1", name:"幸運守護｜四葉草手鍊", priceMin:2800, priceMax:2800 })]);
+  LAST_RAW.settings.postsale = ps; STATE = decorate(LAST_RAW);
+}
+const PSDATA = (o) => Object.assign({
+  at: FROZEN + "T09:00:00", dataAt: FROZEN.slice(0,8) + "10", rows: 1234, posts: 9,
+  items: [{ k: psKey("幸運守護-四葉草手鍊"), p: "幸運守護-四葉草手鍊", n: 9,
+            first: "2025-10-31", last: "2026-07-28", c: 917, a: 12, s: 0 }],
+}, o || {});
+{ withPS(PSDATA()); CUR_VIEW = "card";
+  const h = viewCurate();
+  // 選品清單上是「幸運守護｜四葉草手鍊」，Shopline 那邊是「幸運守護-四葉草手鍊」
+  ok("**分隔符號寫法不同也對得上**（官網 ｜ ／ Shopline -）", /推過 9 次/.test(h), h.slice(0,0));
+  ok("最近一次看得到", /2026-07-28/.test(h));
+  ok("留言數看得到", /917/.test(h));
+  curSetView("list");
+  ok("列表模式也標得出來", /推過 9 次/.test(curRowHTML(prodList()[0])));
+  curSetView("card"); }
+// ⚠️ 查不到就**什麼都不顯示**，不准寫「推過 0 次」——
+//    那是在講一件我們其實不知道的事（很可能只是名字對不上）。
+{ withPS(PSDATA({ items: [{ k: psKey("完全不相干的商品"), p: "完全不相干的商品", n: 5,
+                            first:"", last:"2026-01-01", c: 1, a: 0, s: 0 }] }));
+  const h = viewCurate();
+  // ⚠️ 比對「推過 N 次」這個形狀，不要只比「推過」兩個字 ——
+  //    底下那行說明裡本來就有「『推過幾次』來自 Shopline…」，比兩個字會誤判。
+  ok("**對不上就整句不顯示**（不准寫成「推過 0 次」）",
+     !/推過 \d+ 次/.test(h), (h.match(/推過[^<]*/g)||[])); }
+// 資料有多新一定要看得到 —— 那份 CSV 是人手動匯出的，會默默變舊
+{ withPS(PSDATA());
+  ok("畫面上看得到資料到哪一天", /資料到 <b>|<b>資料到/.test(viewCurate()) || /資料到/.test(viewCurate()));
+  const 舊 = PSDATA({ dataAt: "2020-01-01" });
+  ok("**資料舊了要標紅**（默默變舊比沒有資料更糟）", /#C0392B/.test((withPS(舊), viewCurate())));
+  ok("而且講得出來要重新匯出", /重新從 Shopline 匯出/.test(viewCurate()));
+  withPS(PSDATA());
+  ok("（對照）資料新的時候不要亂喊", !/#C0392B/.test(viewCurate())); }
+{ withPS(null);
+  ok("還沒接上這份資料時明講，不要裝沒事", /還沒接上/.test(viewCurate())); }
+// psOf 為了快才建索引。⚠️ 快取的鍵不准用時間戳 —— 內容換掉、時間戳一樣的時候
+// （重新整理狀態）索引不會重建，查出來是**上一份的答案**，而畫面上看起來完全正常。
+{ const at = FROZEN + "T09:00:00";
+  withPS(PSDATA({ at, items:[{ k: psKey("甲商品"), p:"甲商品", n:3, first:"", last:"2026-01-01", c:1, a:0, s:0 }] }));
+  const 先 = psOf("甲商品");
+  withPS(PSDATA({ at, items:[{ k: psKey("乙商品"), p:"乙商品", n:7, first:"", last:"2026-02-02", c:2, a:0, s:0 }] }));
+  ok("（前提）第一份查得到甲", !!(先 && 先.n === 3), 先);
+  ok("**換了資料就要查到新的那一份**（時間戳一樣也一樣）",
+     psOf("甲商品") === null && !!(psOf("乙商品") && psOf("乙商品").n === 7),
+     { 甲: psOf("甲商品"), 乙: psOf("乙商品") }); }
+
+// ── 點商品 → 排二創／開新片（v211，行銷那一段）────────────────────────
+// 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
+// 「排影片」這個權限（PERMS.plan）在 v210 勾得起來但**不做事** —— 這一段補上。
+const VD = (o) => Object.assign({ id:"V1", name:"賣過它的片", rawName:"", videoCopy:"", tags:[],
+  stage:"已完成", products:[], metrics:[], usageHistory:[], lib:"", locale:"", channel:"",
+  sourceVideoId:"", editor:"阿剪", claimedBy:"", assignedTo:"", createdAt:"", productUrl:"" }, o||{});
+function withCurVids(prods, vids, who, role, perms){
+  reset([U(who||"行銷", role||"mkt", { perms: perms||["curate","plan"] })], who||"行銷", role||"mkt");
+  LAST_RAW.products = prods; LAST_RAW.videos = vids || []; STATE = decorate(LAST_RAW);
+}
+const PURL = BASE + "/products/歐泊手鏈";
+{ const p = PD({ id:"OP", name:"天然歐泊手鏈", officialUrl:PURL, priceMin:990, priceMax:3500 });
+  const 賣過的 = VD({ id:"A1", name:"賣過歐泊的片", productUrl:PURL,
+                      metrics:[{platform:"IG",account:"a",views:50000,comments:80,likes:0,postAt:FROZEN+"T00:00:00"}] });
+  const 另一個商品 = VD({ id:"A2", name:"賣別的品的片", productUrl:BASE+"/products/別的東西" });
+  withCurVids([p], [賣過的, 另一個商品]);
+  // 用**官網連結**認，不是用名字 —— 同一個商品在不同影片上寫成不同名字
+  ok("**賣過這個品的影片找得出來**（用官網連結認，不是用名字）",
+     curVidsFor(p).map(v=>v.id).join() === "A1", curVidsFor(p).map(v=>v.id));
+  // 網址帶追蹤參數、尾斜線的也要算同一個
+  const 髒網址 = VD({ id:"A3", name:"網址帶參數的片", productUrl:PURL+"/?utm_source=fb" });
+  withCurVids([p], [賣過的, 髒網址]);
+  ok("網址帶參數或尾斜線也算同一個品", curVidsFor(p).length === 2, curVidsFor(p).map(v=>v.id));
+  // products[].link 填的也要算
+  const 填在商品上 = VD({ id:"A4", name:"連結填在商品那一格", products:[{name:"歐泊", link:PURL}] });
+  withCurVids([p], [填在商品上]);
+  ok("連結填在「商品與導購」那一格的也找得到", curVidsFor(p).map(v=>v.id).join() === "A4");
+  // ⚠️ **選品清單上那一筆自己的網址**也要正規化 —— 設計師貼進來的常常帶 ?fbclid=…
+  //    或尾斜線。只正規化影片那一邊的話，這種品一支影片都找不到。
+  const 髒的品 = PD({ id:"OP2", name:"歐泊", officialUrl:PURL+"/?fbclid=abc" });
+  withCurVids([髒的品], [賣過的]);
+  ok("**選品清單那一筆的網址帶參數也認得出來**",
+     curVidsFor(髒的品).map(v=>v.id).join() === "A1", curVidsFor(髒的品).map(v=>v.id)); }
+
+// 視窗長什麼樣
+{ const p = PD({ id:"OP", name:"天然歐泊手鏈", officialUrl:PURL, priceMin:990, priceMax:3500 });
+  const 賣過的 = VD({ id:"A1", name:"賣過歐泊的片", productUrl:PURL,
+                      metrics:[{platform:"IG",account:"a",views:50000,comments:80,likes:0,postAt:FROZEN+"T00:00:00"}] });
+  withCurVids([p], [賣過的]);
+  LAST_RAW.settings.postsale = PSDATA({ items:[{ k: psKey("天然歐泊手鏈"), p:"天然歐泊手鏈",
+    n:11, first:"2025-10-01", last:"2026-08-06", c:347, a:5, s:0 }] });
+  STATE = decorate(LAST_RAW);
+  modalHTML = ""; curOpen("OP");
+  const h = modalHTML;
+  ok("點得開，而且看得到推過幾次", /推過 11 次/.test(h), h.slice(0,120));
+  ok("看得到哪一支影片賣過它", /賣過歐泊的片/.test(h));
+  ok("看得到觀看數", /50,000/.test(h));
+  ok("**有「排影片」權限就排得了二創**", /openRmkPlan\('A1'\)/.test(h));
+  ok("而且開得了新片", /curNewVideo\('OP'\)/.test(h));
+  // ⚠️ 上面是直接呼叫 curOpen 驗視窗內容。**畫面上點不點得開是另一件事** ——
+  //    第一次我漏測，把商品名上的 onclick 整個拿掉，測試照樣全綠。
+  CUR_VIEW = "card";
+  ok("**卡片上的商品名真的點得開**", /curOpen\('OP'\)/.test(curCardHTML(p)), curCardHTML(p).slice(0,160));
+  ok("**列表上也點得開**", /curOpen\('OP'\)/.test(curRowHTML(p)));
+  // 沒有那個權限就只能看
+  withCurVids([p], [賣過的], "小設", "design", ["curate"]);
+  modalHTML = ""; curOpen("OP");
+  ok("**沒有「排影片」權限的人看得到、但按不動**",
+     /賣過歐泊的片/.test(modalHTML) && !/openRmkPlan/.test(modalHTML) && !/curNewVideo/.test(modalHTML)); }
+// 查不到貼文銷售就整段不顯示「推過 N 次」，但要講清楚為什麼
+{ const p = PD({ id:"OP", name:"查不到的品", officialUrl:PURL });
+  withCurVids([p], []);
+  modalHTML = ""; curOpen("OP");
+  ok("查不到就不寫「推過 0 次」", !/推過 \d+ 次/.test(modalHTML));
+  ok("但要講得出可能是名字對不上", /名字寫法對不上/.test(modalHTML));
+  ok("沒有影片賣過它也講得出來", /還沒有影片賣過這個品/.test(modalHTML)); }
+// 員工視角是唯讀預覽 —— 全站同一條規矩
+// ⚠️ 要預覽一個**本身就有權限**的人。第一次我預覽的是沒有權限的「小設」——
+//    那不管有沒有防護都會回 false，是假綠燈（突變測試裡它活了下來）。
+{ const p = PD({ id:"OP", name:"歐泊", officialUrl:PURL });
+  reset([U("管理員","boss"), U("小行","mkt",{perms:["curate","plan"]})], "管理員", "boss");
+  LAST_RAW.products=[p]; LAST_RAW.videos=[]; STATE=decorate(LAST_RAW);
+  VIEW_AS = "小行";
+  ok("（前提）被預覽的那個人本身有權限 —— 不然這條測不到東西", hasPerm("plan","小行"));
+  ok("**員工視角預覽時排不動**（全站唯讀的規矩）", canPlanVideo() === false);
+  VIEW_AS = null;
+  reset([U("小行","mkt",{perms:["curate","plan"]})], "小行", "mkt");
+  ok("（對照）他自己進來是排得動的", canPlanVideo() === true); }
+// 開新片要把商品帶進去 —— 行銷不用再複製貼上
+{ const p = PD({ id:"OP", name:"天然歐泊手鏈", officialUrl:PURL, priceMin:990, priceMax:3500 });
+  withCurVids([p], []);
+  modalHTML = ""; curNewVideo("OP");
+  ok("**開新片時商品名與官網連結已經填好**",
+     /天然歐泊手鏈/.test(modalHTML) && modalHTML.includes(PURL), modalHTML.slice(0,200));
+  // 沒權限的人直接呼叫也要擋 —— 按鍵不畫擋得住手滑，擋不住直接呼叫
+  withCurVids([p], [], "小設", "design", ["curate"]);
+  modalHTML = ""; curNewVideo("OP");
+  ok("**沒權限直接呼叫開新片也擋得住**", modalHTML === "", modalHTML.slice(0,80)); }
+
 // 沒有那個月的資料時，不要只留一片空白
 { withProds([]); CUR_YM = null;
   ok("完全沒有選品時講清楚", /還沒有選品/.test(viewCurate())); }

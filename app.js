@@ -1006,6 +1006,9 @@ function writeWithin(p, ms){
     new Promise(r=>setTimeout(()=>r(false), ms||PUNCH_WAIT)) ]);
 }
 async function clockIn(name){ refreshToday();
+  // 外包不打卡（見 needsClock）。擋在這裡而不是擋在登入那一行 —— 這是唯一
+  // 真正寫進 shifts 的地方，擋在這裡就不會有第二條路繞過去。
+  if(!needsClock(name)) return true;
   // 員工視角是唯讀預覽。write()／writeAdmin()／dbWrite() 三個入口都擋了，
   // 只有這裡直接呼叫 window.DB.set，繞過了全部三個 —— 實測管理員在預覽底下
   // 叫這個函式會**真的幫員工打一張上班卡**。
@@ -3484,6 +3487,16 @@ function isOutsourced(name){
   const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===n);
   return !!(u && u.outsourced);
 }
+// 這個人要不要打卡（v211，老闆指定：「外包人員是不用打卡的，也不會出現在出勤畫面，
+// 但可以對話」）。
+//
+// 外包不是我們的員工 —— 他沒有上下班時間，替他記遲到早退是假的數字，
+// 而且會讓人資的出勤頁每天掛著一排永遠不會消失的「未打卡」。
+//
+// ⚠️ 規則只寫在這一個地方。打卡、出勤名單、下班匯報、異常提醒、手機打卡名單
+//    全部問這個函式 —— 散成五份的話，改一個忘四個，而畫面上看不出來。
+// ⚠️ 只擋出勤，**不擋對話**。老闆那句話的後半段就是這個：他照樣要能傳訊息。
+function needsClock(name){ return !isOutsourced(name); }
 function seesZone(z){ const m=myZone(); return m==="both" || m===z; }
 function seesTW(){ return seesZone("tw"); }
 function seesIntl(){ return seesZone("intl"); }
@@ -3529,9 +3542,9 @@ function viewWorkCS(me){
         這不是說好要整合在一起嗎?」這一頁現在只留「今天要做什麼」。
         我的出勤也搬走了（跟看板放在一起）。 */''}
   ${fold(T("預排工作提醒","Reminders"), nFuture, futureTasksBody())}
-  <div class="card" style="text-align:center">
+  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">下班匯報</button></div>
-  </div>`;
+  </div>`:""}`;
 }
 function viewWork(){
   const me = currentUser();
@@ -3640,9 +3653,9 @@ function viewWork(){
           <div class="tsub">${T("完成","Done")} ${esc(String(v.finishedAt||"").slice(11,16))}・${T("剪 ","")}${editDaysLabel(v)||"-"} ${T("天","d")}</div></div></div>`).join("")
       : "")}
 
-  <div class="card" style="text-align:center">
+  ${needsClock(currentUser())?`<div class="card" style="text-align:center">
     <div><button class="btn" style="font-size:16px;padding:14px 34px" onclick="clockOutReport()">${T("下班匯報","Clock-out report")}</button></div>
-  </div>`
+  </div>`:""}`
 }
 // 建立二創版本卡（整合原本的 蝦皮/馬來/海外 三個二創區分頁）：平台下拉切換來源清單
 let WORK_ZONE="shopee";
@@ -3742,6 +3755,9 @@ function createZoneCard(){
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
   if(VIEW_AS){ toast("員工視角為唯讀預覽，無法代為下班打卡",true); return; }
+  // 外包不打卡。畫面上已經不畫這顆鍵了，但**按鍵不畫擋得住手滑，擋不住直接呼叫** ——
+  // 真正寫進 shifts 的那一層也要擋，不然「外包不打卡」只是畫面上的說法。
+  if(!needsClock(currentUser())){ toast("外包人員不需要打卡",true); return; }
   const me=currentUser();
   const doneVids=(STATE.videos||[]).filter(v=>v.editor===me && isPublished(v) && String(v.finishedAt||"").slice(0,10)===today);
   const wip=(STATE.videos||[]).filter(v=>(v.claimedBy===me||v.editor===me) && v.stage==="剪輯中");
@@ -4040,6 +4056,7 @@ function attIssueAskOn(){ const s=(STATE&&STATE.settings)||{}; return s.attIssue
 // 工作頁最上面的異常提醒卡（有未說明的異常、且已開啟這個功能才出現）
 function workIssueCard(){
   if(!attIssueAskOn()) return "";
+  if(!needsClock(currentUser())) return "";   // 外包不打卡，就不會有出勤異常
   const list=myIssueShifts(); if(!list.length) return "";
   return `<div class="card" style="border-color:var(--red)">
     <b style="font-size:16px;color:var(--red)">⚠ ${T("出勤異常待說明","Attendance to explain")}（${list.length}）</b>
@@ -4079,7 +4096,10 @@ function taskEnsureMonth(ym){
     window.DB.loadTaskMonth(ym).catch(()=>{});
   }catch(e){}
 }
-function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor"))); }
+// ⚠️ 外包不列進出勤（老闆指定）。他不打卡，列進來就是每天一排「未打卡」，
+//    紅字久了人資就不看了 —— 那會把真正沒打卡的人一起蓋掉。
+function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>
+  STAFF_ROLES.includes(u.role||"editor") && needsClock(u.name))); }
 // 某人某月的每日出勤
 function attRows(name, ym){
   return Object.values((STATE&&STATE.shifts)||{})
@@ -5957,7 +5977,9 @@ function copyStr(enc){ const t=decodeURIComponent(enc);
   else fallbackCopy(t); }
 function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("已複製連結"); }catch(e){ toast("複製失敗，請手動",true); } }
 // 新增影片：原始片名 ＋ 影片文案 ＋ 商品
-function newSimpleVideo(){
+// prefill：從選品清單開新片時帶進來的商品（名稱＋官網連結），行銷不用再複製貼上。
+// ⚠️ 預設是空陣列 —— 原本所有呼叫點都不帶參數，行為一個字都不能變。
+function newSimpleVideo(prefill){
   showModal(T("新增影片","Add video"), `
     <label>${T("原本語言（這支影片是什麼語言拍的）","Original language (what language was it shot in)")}</label>
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
@@ -5975,7 +5997,7 @@ function newSimpleVideo(){
       <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
         <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
     </div>
-    ${productRows("sv", [])}
+    ${productRows("sv", Array.isArray(prefill)?prefill:[])}
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
     if(!name){ toast(T("請輸入原始片名","Enter the raw title"),true); return false; }
@@ -7271,7 +7293,9 @@ function isRemake(v){ return !!(v && v.channel===RMK_CH && String(v.sourceVideoI
 // 那個權限系統裡已經有了：設定→成員的「工作指派」勾勾（users.canAssign），
 // 泓儒早就打勾了。排二創跟指派毛片本來就是同一件事（把工作分給誰），
 // 共用同一個開關，換人的時候只要改一個地方 —— 兩份定義遲早會不一致。
-function canPlanRemake(){ return canAssignWork(); }
+// v211：加上 hasPerm("plan")。那個權限的說明本來就寫著「幫選中的商品排二創或開新片」——
+// 勾了卻排不動，等於那一格是假的。（本來只有「指派工作」那一群人排得動。）
+function canPlanRemake(){ return canAssignWork() || hasPerm("plan"); }
 // 原片 → 它的二創。建一次表，不要每問一支就掃一次全庫 ——
 // 排序那裡是「每支片都問一次」，掃全庫的話 1,045 支就變成一百萬次比對。
 // 快取靠陣列本身的身分認（跟 allLibVideos 同一招）：資料一換就自動重建。
@@ -8065,6 +8089,34 @@ function perfRankCard(){
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
     </div>
     <div id="rmk_rows" style="margin-top:8px">${perfRankRowsHTML()}</div>
+    ${perfNoDataNote()}
+  </div>`;
+}
+// 排行上看不到的那幾支：已經上片了，但一個成效數字都沒有。
+//
+// 老闆 2026-09-14 看著排行說「我覺得你找出來的好像太少」。查下去一部分原因在這裡：
+// 正式資料上這兩年標「已上片」的 319 支，**上片連結只有 1 支有填**。
+// 那條網址是「我們這支片」對上「平台上那則貼文」的唯一鑰匙；沒有它就只能拿文案硬比，
+// 比不到就一個數字都沒有，而那支片**在排行上根本不出現**。
+//
+// ⚠️ 不出現比排在最後面更糟：排在最後面看得出「它成效差」，不出現看起來像「沒這支片」。
+//    老闆：「這個就注明缺上片連結就好」—— 所以這裡只把數字說出來、指去補的地方，
+//    不自作主張改比對規則（門檻降下去會把 A 片的成效算到 B 片頭上，比沒資料更糟）。
+function perfNoData(){
+  return allLibVideos().filter(v=>{
+    if(!v || v.deleted) return false;
+    if((Array.isArray(v.metrics)?v.metrics:[]).length) return false;   // 有數字就不算
+    const sch=String(v.scheduledDate||"").slice(0,10);
+    return !!sch && sch<=today;                                        // 已經播出去了
+  });
+}
+function perfNoDataNote(){
+  const list=perfNoData(); if(!list.length) return "";
+  const nolink=list.filter(v=>!String(v.publishedLink||"").trim()).length;
+  return `<div class="muted" style="font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);line-height:1.8">
+    另外有 <b>${num(list.length)}</b> 支已經上片的影片<b>完全沒有成效數字</b>，所以不在這張排行上。${
+    nolink?`<br>其中 <b>${num(nolink)}</b> 支<b>缺上片連結</b> —— 那條網址是這支片對上平台那則貼文的唯一鑰匙，
+      沒有它就只能拿文案硬比，比不到就一個數字都沒有。到<b>看板 → 🔗 上片連結</b>補。`:""}
   </div>`;
 }
 function perfRankRowsHTML(){
@@ -10262,6 +10314,47 @@ function curPrevHTML(){
       <button class="btn sec" onclick="curCancel()">取消</button>
     </div></div>`;
 }
+// ── 這個品賣過嗎（v211）────────────────────────────────────────────────
+// 老闆指著 meta 報告：「貼過幾次都找的出來，可是你的都沒有。」
+//
+// 資料是 Shopline 匯出的「貼文銷售」，由 tools/postsale_sync.py 寫進
+// meta/settings.postsale。設計師挑品的時候一眼看得到「這個品我們推過幾次、
+// 最近一次什麼時候、帶了多少留言」—— 重複推同一個品之前，先知道推過。
+//
+// ⚠️ psKey 的規則跟 tools/postsale_sync.py 的 prod_key **必須一模一樣**。
+//    不一樣的話，同步寫進去的東西畫面上查不到，而畫面只會顯示「沒有資料」，
+//    看不出是兩邊的比對規則不同步。tests/postsale.py 逐字盯著這兩份。
+//
+// ⚠️ 只放寬到分隔符號、空白、括號、大小寫。再往下猜（去掉「寵粉」這種前綴、
+//    比相似度）就會把不同材質的兩個商品合成一個 —— 那比查不到更糟。
+function psKey(s){
+  return String(s==null?"":s)
+    .replace(/[｜|·・\-－—_/\\、,，.。\s]+/g,"")
+    .replace(/[（）()【】\[\]「」『』]/g,"")
+    .toLowerCase();
+}
+function psData(){ const d=(STATE&&STATE.settings&&STATE.settings.postsale)||null;
+  return (d&&Array.isArray(d.items)) ? d : null; }
+let PS_INDEX=null, PS_INDEX_SRC=null;
+function psOf(name){
+  const d=psData(); if(!d) return null;
+  const k=psKey(name); if(!k) return null;
+  // 索引只建一次 —— 選品頁一次要查幾十個商品，每次線性掃 523 筆是白花的。
+  // ⚠️ 快取的鍵要用 items 這個**陣列本身**，不要用 at 那個時間戳：
+  //    時間戳一樣、內容換掉的時候（重新整理狀態、測試裡換一份假資料）索引不會重建，
+  //    查出來的是上一份的答案 —— 而畫面上看起來完全正常。
+  if(PS_INDEX_SRC!==d.items){ PS_INDEX={}; (d.items||[]).forEach(x=>{ if(x&&x.k) PS_INDEX[x.k]=x; }); PS_INDEX_SRC=d.items; }
+  return PS_INDEX[k]||null;
+}
+// 「推過 N 次・最近 X」。沒查到就回空字串 —— 不要寫「推過 0 次」，
+// 那是在講一件我們其實不知道的事（很可能只是名字對不上）。
+function psLine(p){
+  const g=psOf(curTitle(p)); if(!g||!(+g.n)) return "";
+  const when=String(g.last||"").slice(0,10);
+  return `<div class="muted" style="font-size:12px;margin-top:6px">
+    <b style="color:var(--gold-dk)">推過 ${+g.n} 次</b>${when?`　最近 ${esc(when)}`:""}
+    ${(+g.c)?`　留言 ${num(+g.c)}`:""}${(+g.a)?`　加購 ${num(+g.a)}`:""}</div>`;
+}
 // 商品的四種狀態，兩個模式共用同一份判斷
 function curState(p){
   const st=String(p.fetchStatus||"");
@@ -10280,6 +10373,70 @@ function curActs(p){
   return `<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">${s.k==="bad"?"自己填名稱":"改名"}</button>
     <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`;
 }
+// ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
+// 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
+// 「排影片」這個權限（PERMS.plan）之前勾得起來但不做事，就是缺這一段。
+//
+// 這個視窗要回答行銷三件事，然後讓他當場動手：
+//   ① 這個品我們推過幾次（Shopline 貼文銷售）
+//   ② 哪幾支影片賣過它、成效如何
+//   ③ 要拿哪一支去二創，還是開一支新片
+function canPlanVideo(){ return !VIEW_AS && hasPerm("plan"); }
+// 賣過這個品的影片。用**官網連結**認，不是用名字 ——
+// 同一個商品在不同影片上被寫成不同名字（v205 量過），名字認不得，連結認得出來。
+function curVidsFor(p){
+  const want=shopUrlNorm(p&&p.officialUrl); if(!want) return [];
+  const out=[];
+  allLibVideos().forEach(v=>{ if(v.deleted) return;
+    let hit = shopUrlNorm(v.productUrl)===want;
+    if(!hit) (v.products||[]).forEach(x=>{ if(x&&shopUrlNorm(x.link)===want) hit=true; });
+    if(hit) out.push(v);
+  });
+  return out.sort((a,b)=>vidViews(b)-vidViews(a));
+}
+function curOpen(id){
+  const p=(STATE.products||[]).find(x=>x&&x.id===id); if(!p){ toast("找不到這個商品",true); return; }
+  const g=psOf(curTitle(p)), vids=curVidsFor(p), plan=canPlanVideo();
+  const s=curState(p), sale=prodSaleText(p), lst=prodListText(p);
+  const rows=vids.map(v=>`<tr>
+    <td data-label="影片"><a href="javascript:void(0)" onclick="closeModal();${jsEsc(vidOpenFn(v))}">${esc(vidTitle(v))}</a></td>
+    <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
+    <td data-label="觀看" class="pr-v">${vidViews(v)?`<b>${num(vidViews(v))}</b>`:'<span class="muted">—</span>'}</td>
+    ${plan?`<td data-label="">${isVersion(v)?'<span class="muted" style="font-size:11px">版本片</span>'
+      :`<button class="btn sm" style="white-space:nowrap" onclick="closeModal();openRmkPlan('${esc(jsEsc(v.id))}')">排二創</button>`}</td>`:""}
+  </tr>`).join("");
+  showModal(curTitle(p), `
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:baseline">
+      ${sale?`<b class="curprice" style="font-size:17px">${esc(sale)}</b>`:""}
+      ${lst?`<span class="muted curlist">${esc(lst)}</span>`:""}
+      <span class="pill ${s.pill}">${s.label}</span>
+    </div>
+    <div style="margin-top:6px;word-break:break-all">
+      <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener noreferrer">${esc(prettyUrl(p.officialUrl))} ↗</a></div>
+    ${/* ⚠️ 查不到就整段不顯示，不要寫「推過 0 次」—— 那是在講一件我們不知道的事。 */''}
+    ${(g&&+g.n)?`<div class="card" style="background:var(--panel2);margin-top:10px">
+      <b style="color:var(--gold-dk)">Shopline 上推過 ${+g.n} 次</b>
+      <div class="muted" style="font-size:12.5px;margin-top:4px">
+        ${g.first?esc(String(g.first).slice(0,10))+" ～ ":""}${esc(String(g.last||"").slice(0,10))}
+        ${(+g.c)?`　·　留言 ${num(+g.c)}`:""}${(+g.a)?`　·　留言加購 ${num(+g.a)}`:""}</div></div>`
+      :`<div class="muted" style="font-size:12.5px;margin-top:10px">Shopline 的貼文銷售裡查不到這個品 —— 可能還沒推過，也可能是名字寫法對不上。</div>`}
+    <div class="muted" style="font-size:13px;margin:12px 0 6px">
+      <b>${vids.length}</b> 支影片賣過它${vids.length?`，觀看合計 <b>${num(vids.reduce((a,v)=>a+vidViews(v),0))}</b>（觸及，不是銷售）`:""}</div>
+    ${vids.length?`<div class="${vids.length>8?'vidscroll':''}">
+      <table class="responsive perfrank"><thead><tr><th>影片</th><th>剪輯</th><th>觀看</th>${plan?"<th></th>":""}</tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+      :`<div class="muted" style="font-size:12.5px">還沒有影片賣過這個品。${plan?"下面開一支新的。":""}</div>`}
+    ${plan?`<div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" onclick="closeModal();curNewVideo('${esc(jsEsc(p.id))}')">開新片</button>
+      <span class="muted" style="font-size:12px;flex:1;min-width:160px">拿上面某一支去二創，或開一支新的 —— 商品名與官網連結會自動帶進去。</span>
+      </div>`:""}`);
+}
+// 從選品清單開一支新片：把商品名與官網連結先填好，行銷不用再複製貼上。
+function curNewVideo(id){
+  const p=(STATE.products||[]).find(x=>x&&x.id===id); if(!p){ toast("找不到這個商品",true); return; }
+  if(!canPlanVideo()){ toast("你沒有「排影片」的權限",true); return; }
+  newSimpleVideo([{name:curTitle(p), link:p.officialUrl, salePrice:(+p.priceMin||0)||null}]);
+}
 // ── 卡片模式：挑品的時候看圖 ──
 function curCardHTML(p){
   const s=curState(p), sale=prodSaleText(p), lst=prodListText(p), n=(p.variants||[]).length;
@@ -10297,7 +10454,8 @@ function curCardHTML(p){
       ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
     <div style="padding:13px 14px 15px">
-      <div class="curname">${esc(curTitle(p))}</div>
+      <div class="curname"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
             :`<div class="muted" style="font-size:12px;margin-top:7px">${
@@ -10320,11 +10478,13 @@ function curRowHTML(p){
   return `<div class="currow cur-r-${s.k}">
     ${th}
     <div style="min-width:0">
-      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(curTitle(p))}</div>
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       <div style="font-size:12px">
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}
         ${months>1?`<span style="color:var(--gold-dk)">　選過 ${months} 個月</span>`:""}
+        ${(()=>{ const g=psOf(curTitle(p)); return (g&&+g.n)
+          ? `<span style="color:var(--gold-dk)" title="${esc("最近 "+String(g.last||"").slice(0,10)+"・留言 "+num(+g.c||0))}">　推過 ${+g.n} 次</span>` : ""; })()}
         ${s.k==="bad"?`<span style="color:var(--red)">　${esc(p.fetchError||"")}</span>`:""}
       </div>
     </div>
@@ -10381,7 +10541,24 @@ function viewCurate(){
   }else{
     body=`<div class="curgrid">${items.map(curCardHTML).join("")}</div>`;
   }
-  return `${head}${paste}${syncCard}${body}`;
+  return `${head}${paste}${syncCard}${body}${psFootNote()}`;
+}
+// 「推過幾次」這份資料有多新。
+//
+// ⚠️ 這一行是必要的，不是裝飾。那份「貼文銷售」CSV **不是自動產生的** ——
+//    是人從 Shopline 匯出的。沒有這一行，資料停在三個月前也看不出來，
+//    設計師會拿著舊數字判斷「這個品沒推過」。默默變舊的資料比沒有資料更糟。
+function psFootNote(){
+  const d=psData();
+  if(!d) return `<div class="muted" style="font-size:12px;margin-top:14px">
+    還沒接上「這個品推過幾次」的資料（Shopline 貼文銷售）。</div>`;
+  const day=String(d.dataAt||"").slice(0,10);
+  const age=day?Math.floor((new Date(today+"T00:00:00")-new Date(day+"T00:00:00"))/864e5):null;
+  const old=(age==null)||age>45;
+  return `<div class="muted" style="font-size:12px;margin-top:14px${old?";color:#C0392B":""}">
+    「推過幾次」來自 Shopline 貼文銷售，<b>資料到 ${esc(day||"不明")}</b>${
+    age!=null?`（${age<=0?"今天":age+" 天前"}）`:""}・${num((d.items||[]).length)} 個商品。${
+    old?"<b>這份資料舊了</b> —— 要重新從 Shopline 匯出一次。":""}</div>`;
 }
 
 function viewAssets(){
@@ -10598,7 +10775,8 @@ function setWorkHoursCard(s){
     <label style="margin-top:12px;display:flex;align-items:center;gap:8px">
       <input type="checkbox" id="set_pconly" ${s.pcOnly!==false?"checked":""} style="width:auto;margin:0"> 只能用電腦登入（一般員工不給手機登入；經理人／人資／管理員不受限）</label>
     ${(()=>{ const allow=mobileAllowList();
-      const list=staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
+      const list=staffSorted((STATE.users||[]).filter(u=>
+        STAFF_ROLES.includes(u.role||"editor") && needsClock(u.name)));
       if(!list.length) return "";
       return `<div style="margin:8px 0 0 24px">
         <div class="muted" style="font-size:12px">上面打開的時候，這裡勾到的人<b>可以</b>用手機打卡（外務、跑倉庫、外派用）。
