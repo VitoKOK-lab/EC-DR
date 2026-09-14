@@ -27,7 +27,12 @@ mkdir -p "$LOG_DIR"
     echo ""
     echo "===== $(date '+%Y-%m-%d %H:%M:%S') ====="
     cd "$REPO" || exit 1
-    python3 tools/meta_sync.py --write --every "$EVERY" --days "$DAYS"
+    # 跑之前自己更新程式 —— 老闆不必再手動 git（見 tools/_pull-main.sh 開頭那段）。
+    # ⚠️ 結果要**傳給 meta_sync**，讓「跑的是舊程式」出現在畫面上而不是只在這個檔裡。
+    . "$REPO/tools/_pull-main.sh"
+    echo "程式：$CODE_STATE　$CODE_NOTE"
+    EC_DR_CODE_STATE="$CODE_STATE" EC_DR_CODE_NOTE="$CODE_NOTE" \
+        python3 tools/meta_sync.py --write --every "$EVERY" --days "$DAYS"
     echo "[結束碼 $?]"
 } >> "$LOG" 2>&1
 

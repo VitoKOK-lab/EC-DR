@@ -1524,6 +1524,14 @@ def main():
     info = {"at": _fs.taipei_now(), "ok": not failed, "videos": done,
             "failed": failed, "hits": len(hits), "posts": len(posts),
             "matched": len(matched), "days": args.days}
+    # 排程外殼（meta-scheduled.sh）跑之前會先更新程式，結果從環境變數帶進來。
+    # ⚠️ 這一格的意義是**讓「跑的是舊程式」看得見**。
+    #    2026-09-14：老闆的 git pull 失敗，同步照跑、跑的是舊的，畫面上完全看不出來，
+    #    我們兩個都以為新功能上線了。那是最糟的失敗形狀 —— 它不像故障，像正常。
+    _code = os.environ.get("EC_DR_CODE_STATE") or ""
+    if _code:
+        info["code"] = _code
+        info["codeNote"] = os.environ.get("EC_DR_CODE_NOTE") or ""
     try:
         report_status(cfg_fb, fb_token, info)
         # 清單跟著這次的結果一起寫。⚠️ 就算這次一支都沒有也要寫（空陣列）——

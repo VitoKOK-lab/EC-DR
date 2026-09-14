@@ -127,6 +127,53 @@ function withStatus(bs){
     ok("子頁「"+tab+"」也看得到備份警示", /資料備份可能停了/.test(h), h.slice(0,160));
   } }
 
+// ══════════ ⑦ 平台成效同步的狀態卡（v211）══════════
+//
+// 為什麼加這張卡：2026-09-14 老闆在 Mac mini 上 `git pull` 失敗（那台機器停在
+// 被 force-push 的分支上），但他是用換行接著同步指令，所以**同步照跑、跑的是
+// 舊程式**，而畫面上完全看不出來 —— 我們兩個都以為新功能上線了。
+// 那是最糟的失敗形狀：它不像故障，像正常。
+function withSync(ms){
+  reset(); as("管理員","boss");
+  if(ms) STATE.settings.metaSyncStatus = ms;
+  return viewSettings();
+}
+const SYNC_OK = {at:daysAgo(1), ok:true, videos:190, hits:341, posts:18586,
+                 failed:0, matched:855, days:730, code:"updated", codeNote:"程式已更新到最新的 main"};
+{ const h = withSync(null);
+  ok("**沒收到同步回報時明講「還沒收到」**（不能顯示成正常）",
+     /還沒收到任何同步回報/.test(h) && !/平台成效同步正常/.test(h)); }
+{ const h = withSync(SYNC_OK);
+  ok("剛同步完顯示正常", /平台成效同步正常/.test(h) && !/平台成效同步有問題/.test(h));
+  ok("而且更新幾支、看過幾則貼文都看得到", /190/.test(h) && /18,586/.test(h), (h.match(/更新[^<]*/)||[])[0]); }
+// 排程是每三天跑一次，所以門檻是 7 天（備份是每天，門檻 3 天）—— 兩張卡不能共用同一條線
+{ ok("4 天沒同步還算正常（排程本來就是三天一次）",
+     !/平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(4)}))));
+  ok("**8 天沒同步 → 變成警告**", /平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(8)})))); }
+{ const h = withSync(Object.assign({}, SYNC_OK, {ok:false, failed:178}));
+  ok("有影片寫不進去也是警告（2026-09-13 那次 178 支全失敗）",
+     /平台成效同步有問題/.test(h) && /178/.test(h)); }
+// ⚠️ 這一條就是這張卡存在的理由
+{ const h = withSync(Object.assign({}, SYNC_OK,
+    {code:"dirty", codeNote:"這台機器上有還沒存的改動，所以沒有更新程式（跑的是舊的）"}));
+  ok("**跑的是舊程式 → 變紅，而且講出原因**（不然它長得跟正常一模一樣）",
+     /平台成效同步有問題/.test(h) && /還沒存的改動/.test(h), (h.match(/色:#C0392B">[^<]*/)||[])[0]);
+  const h2 = withSync(Object.assign({}, SYNC_OK, {code:"offline", codeNote:"連不上 GitHub"}));
+  ok("連不上 GitHub 沒更新到也要講", /平台成效同步有問題/.test(h2));
+  const h3 = withSync(Object.assign({}, SYNC_OK, {code:"current"}));
+  ok("本來就是最新版＝正常，不要亂喊", !/平台成效同步有問題/.test(h3)); }
+// 舊版的同步程式不會回報 code。那本身就代表跑的是舊程式，但**第一次升級之前
+// 每一台都是這樣** —— 硬當成故障會讓這張卡一上線就全紅，紅久了就沒人看了。
+{ const noCode = Object.assign({}, SYNC_OK); delete noCode.code; delete noCode.codeNote;
+  ok("舊版同步程式（沒回報 code）不要當成故障", !/平台成效同步有問題/.test(withSync(noCode))); }
+// 跟備份那張卡一樣，五個子頁都要看得到
+{ for(const tab of ["basic","members","plat","tags","maint"]){
+    reset(); as("管理員","boss");
+    STATE.settings.metaSyncStatus = Object.assign({}, SYNC_OK, {at:daysAgo(30)});
+    SET_TAB = tab;
+    ok("子頁「"+tab+"」也看得到同步警示", /平台成效同步有問題/.test(viewSettings()));
+  } }
+
 console.log("");
 console.log(pass+" passed, "+fail+" failed");
 process.exit(fail?1:0);

@@ -74,6 +74,19 @@ try {
   failed.push("meta-unfiled.py");
 }
 
+// 排程跑之前自己更新程式（v211）。這支會動到 Mac mini 上的 git，
+// 寫錯了會吃掉老闆沒存的東西 —— 所以它**真的開 git 倉庫**來測，不是比對字串。
+try {
+  extras++;
+  execFileSync(process.execPath, [path.join(dir, "pull-main.js")], { stdio: "pipe" });
+  console.log("PASS  pull-main.js（排程跑之前自己更新程式）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  pull-main.js");
+  out.split("\n").filter(l => l.startsWith("FAIL")).forEach(l => console.log("        " + l));
+  failed.push("pull-main.js");
+}
+
 // Shopline 商品頁的解析與把關（Cloudflare 那段程式）。
 // 樣本是真實頁面抽出來的片段，**不打網路** —— 官網改版時這支會變紅，
 // 而不是等設計師回報「抓不到」。
