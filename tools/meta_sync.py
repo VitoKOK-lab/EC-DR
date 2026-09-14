@@ -908,6 +908,15 @@ def _mark_success(info):
 #    而且它本來就是達標條件的一半。
 UNFILED_MIN_COMMENTS = 5     # 跟達標同一條線（觀看 >= 5,000 **且** 留言 >= 5）
 UNFILED_MAX = 200            # 清單上限。不是省空間，是**人一次看不完兩百筆以上**
+# 先撈幾組進來問觀看數。留言多**不等於**成效好，所以留言只拿來決定「先問誰」，
+# 不拿來決定「誰留在清單上」——後者要看觀看數（見 unfiled_rank）。
+UNFILED_CAND = 600
+# 問觀看數的預算（則數，不是組數）。v211 從 600 提到 1200：
+# 名次現在是照觀看數排的，問不到的只能排在後面 —— 預算給多少，
+# 直接決定「成效好但留言少的片能不能被看見」。
+# 上限仍然必要：2026-09-13 沒有上限，問了 10,091 則，跑太久 Firebase 權杖過期，
+# 178 支全部寫入失敗。要一次挖乾淨就自己加大 --unfiled-ask，然後盯著跑完。
+UNFILED_ASK_DEFAULT = 1200
 
 
 def unfiled_groups(unmatched):
@@ -916,6 +925,9 @@ def unfiled_groups(unmatched):
     同一支片會被重發好幾次，文案幾乎一模一樣 —— 不分組的話，一支片會在清單上
     出現七八次，人根本挑不下去。分組的 key 用正規化後的文案前 60 字：
     整段比會因為結尾多一個 emoji 就分開，前 60 字夠認出是不是同一支。
+
+    ⚠️ 回傳的是**候選**，不是最後的清單。排序與截斷在 unfiled_rank，
+       那要等觀看數問回來以後才做。
     """
     groups = {}
     for u in unmatched:
@@ -923,9 +935,13 @@ def unfiled_groups(unmatched):
             continue                      # 那是「分不出是哪一支」，不是沒建檔
         p = u["post"]
         cap = meta_match.normalize(p.get("caption") or "")
-        if len(cap) < meta_match.MIN_CHARS:
-            continue                      # 文案太短，建了檔也對不回來
-        g = groups.setdefault(cap[:60], {
+        # ⚠️ v211：文案太短**不再整組丟掉**。老闆：「我們要的是他的成效好就可以上去，
+        #    反正我們會手動建新檔」。以前這裡直接 continue，所以一支「文案只有五個字、
+        #    五十萬觀看」的 Reel 在清單上**完全不存在** —— 不是排在後面，是看不到。
+        #    文案短的確實對不回影片庫，但那正是要「手動新增進系統」的情況。
+        #    短文案不分組（沒有文案可以當 key，硬分會把不同的片黏成一組），一則一組。
+        key = cap[:60] if len(cap) >= meta_match.MIN_CHARS else "id:" + str(p.get("id") or id(p))
+        g = groups.setdefault(key, {
             "cap": (p.get("caption") or "").strip(),
             "n": 0, "views": 0, "comments": 0,
             "first": "9999", "last": "", "link": "", "best": -1, "plats": set(),
@@ -943,16 +959,40 @@ def unfiled_groups(unmatched):
             g["best"] = int(p.get("views") or 0)
             g["link"] = p.get("permalink") or ""
     out = [g for g in groups.values() if g["comments"] >= UNFILED_MIN_COMMENTS]
+    # 留言數是免費的（清單裡就有），拿它決定「先問誰的觀看數」。
     out.sort(key=lambda g: (-g["comments"], -g["views"]))
-    return out[:UNFILED_MAX]
+    return out[:UNFILED_CAND]
 
 
-def unfiled_fill_views(groups, cfg, token, verbose=False):
-    """替清單上那幾組去問真正的觀看數（要花呼叫，所以是 --unfiled-views 才做）。
+def unfiled_rank(groups):
+    """問完觀看數之後才排名次、才截斷。
+
+    ⚠️ v211 修的就是這個順序。原本是「照留言排 → 砍成 200 筆 → 才去問觀看數」，
+       所以一支「90 萬觀看、80 則留言」的片，在還沒有人知道它有 90 萬觀看之前
+       就被砍掉了 —— 它的成效永遠沒有機會被看到。
+       2026-09-13 的正式資料上，那 200 筆的最低留言數是 **87** ——
+       換句話說留言 87 以下的片，不管多紅，一律不在清單上。
+       老闆：「我們要的是他的成效好就可以上去。」
+
+    沒問到觀看數的（預算用完、或整組超過 MAX_PER_GROUP）排在有數字的後面，
+    彼此之間照留言排 —— 不知道成效不等於成效差，但也不能插隊到已知的前面。
+    """
+    known = [g for g in groups if int(g.get("views") or 0) > 0]
+    unknown = [g for g in groups if int(g.get("views") or 0) <= 0]
+    known.sort(key=lambda g: (-int(g["views"]), -int(g["comments"])))
+    unknown.sort(key=lambda g: -int(g["comments"]))
+    return (known + unknown)[:UNFILED_MAX]
+
+
+def unfiled_fill_views(groups, cfg, token, verbose=False, max_ask=0):
+    """替候選的那幾組去問真正的觀看數（要花呼叫，所以是 --unfiled-views 才做）。
 
     平常的每日同步不做這一段：對不上的貼文有一萬七千則，全問等於一萬七千次呼叫。
-    只問清單上這 200 組裡的貼文（每組通常 1～3 則），大約四五百次，
-    而且只有在人真的要挖舊片的時候才跑。
+    只問候選這幾百組裡的貼文（每組通常 1～3 則），而且只有在人真的要挖舊片的時候才跑。
+
+    ⚠️ 這一段問到的數字，**就是名次本身**（見 unfiled_rank）——
+       問不到的那幾組只能排在後面。所以預算給多少，直接決定「成效好的片
+       能不能被看見」。要調用 --unfiled-ask。
     """
     # ⚠️ 這裡一定要有上限。2026-09-13 沒有上限，結果問了 **10,091 則** ——
     #    我當時估「每組 8 則、共四五百次」，但分組是用文案前 60 字當 key，
@@ -966,7 +1006,7 @@ def unfiled_fill_views(groups, cfg, token, verbose=False):
     #      ② 總數封頂 MAX_ASK，超過就不問了 —— 排行上那幾組顯示「—」，
     #         總比整批寫不進去好
     MAX_PER_GROUP = 15          # V166 真的重發過 10 次，15 已經很寬
-    MAX_ASK = 600
+    MAX_ASK = int(max_ask or UNFILED_ASK_DEFAULT)
     reps, skipped = [], 0
     for g in groups:
         ps = g["posts"]
@@ -1079,6 +1119,11 @@ def main():
     #    （它們的 views 是 0，會全部沉到最底下，等於沒排）。
     #    代價是每次同步多四五百次呼叫（只問清單上那 200 組底下的貼文，
     #    不是那一萬七千則）。真的嫌慢再用 --no-unfiled-views 關掉。
+    ap.add_argument("--unfiled-ask", type=int, default=0,
+                    help="未建檔清單要問幾則貼文的觀看數（預設 %d）。"
+                         "名次是照觀看數排的，問不到的只能排在後面 —— "
+                         "要一次挖乾淨就加大這個數字，但要盯著跑完"
+                         % UNFILED_ASK_DEFAULT)
     ap.add_argument("--no-unfiled-views", action="store_true",
                     help="不要替未建檔的貼文問觀看數（省幾百次呼叫，但它們排不進排行）")
     ap.add_argument("--save-posts", default="", help="把平台原始回應存成 JSON")
@@ -1383,9 +1428,13 @@ def main():
     # ── 未在資料庫裡的影片（老闆指定，見 unfiled_groups 上面那段）──────────
     # 這些不是「比對失敗」，是**系統裡根本沒有這支片** —— 平台上有兩年的資料，
     # 系統才做不到半年。成效數字都在，缺的只是影片那一筆。
-    unfiled = unfiled_groups(unmatched)
-    if unfiled and not args.no_unfiled_views and not args.from_file:
-        unfiled_fill_views(unfiled, cfg, meta_token, args.verbose)
+    # ⚠️ 順序是**先問觀看、再排名次、最後才截斷**（v211）。三個步驟不准調換：
+    #    以前是「照留言排 → 砍成 200 筆 → 才問觀看」，成效好但留言少的片
+    #    在還沒有人知道它多紅之前就被砍掉了。
+    cand = unfiled_groups(unmatched)
+    if cand and not args.no_unfiled_views and not args.from_file:
+        unfiled_fill_views(cand, cfg, meta_token, args.verbose, args.unfiled_ask)
+    unfiled = unfiled_rank(cand)
     if unfiled:
         tot_c = sum(g["comments"] for g in unfiled)
         tot_v = sum(g["views"] for g in unfiled)

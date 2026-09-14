@@ -7953,7 +7953,7 @@ function unfiledList(){
 }
 // 未建檔的貼文在排行上長什麼樣：跟影片同一張表、同一個排序，
 // 差別只有「系統裡沒有這一筆」—— 所以類型／剪輯／帶貨／二創那幾欄都是破折號，
-// 最右邊那顆鍵不是「排二創」而是「建案進系統」。
+// 最右邊那顆鍵不是「排二創」而是「新增進系統」。
 function unfiledRowHTML(x, ui, i, canPlan){
   const last=String(x.last||x.first||"").slice(0,10);
   const gap=last?Math.round((new Date(today+"T00:00:00")-new Date(last+"T00:00:00"))/864e5):null;
@@ -7973,7 +7973,7 @@ function unfiledRowHTML(x, ui, i, canPlan){
       <td data-label="上次二創" class="pr-e"><span class="muted">—</span></td>
       ${canPlan?`<td data-label="">${canAddOldVideo()
         ? `<button class="btn sm" style="white-space:nowrap" onclick="event.stopPropagation();unfiledAdd(${ui})"
-             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">建案進系統</button>`
+             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">新增進系統</button>`
         : '<span class="muted" style="font-size:11px">未建檔</span>'}</td>`:""}</tr>`;
 }
 // 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
@@ -8059,7 +8059,7 @@ function perfRankCard(){
     <div class="muted" style="font-size:12px;margin-top:4px">${byRmk
       ? "依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比。片名旁邊的小數字＝這支已經出過幾次（含它的二創）"
       : `依觀看排，前 50 名。點影片看跨平台明細與帶貨${
-          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「建案進系統」就補得進來`:""}`}</div>
+          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「新增進系統」就補得進來`:""}`}</div>
     <div class="row" style="gap:8px;margin-top:8px">
       <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
@@ -8088,10 +8088,10 @@ function perfRankRowsHTML(){
   }else{
     // ⚠️ v207 老闆：「我不是要這樣，我要原本的成效排行…你的排行都是依照 meta 來的
     //    資料，只是說『有的你找的到系統中』，有的沒有，沒有的只要右邊加一個
-    //    『建案進系統』，但排序和排行放在一起。」
+    //    『新增進系統』，但排序和排行放在一起。」
     //    他是對的 —— 另外開一張卡等於把同一件事拆成兩個榜，人要自己在腦裡合併。
     //    **一份排行**：Meta 上的東西全部排在一起，系統裡找得到的照舊，
-    //    找不到的右邊給一顆「建案進系統」。
+    //    找不到的右邊給一顆「新增進系統」。
     list=allLibVideos().filter(v=>!v.deleted && rowsOf(v).length)
       .map(v=>({v, views:sViews(v)}))
       .concat(unfiledList().map((x,i)=>({u:x, ui:i, views:+x.views||0})))
