@@ -144,7 +144,7 @@ function rest(){
 // ⚠️ 突變測試抓到：這句話拿掉，上面全綠 —— 沒有人打開編輯視窗去看。
 { const M=(link,plat)=>({platform:plat||"IG",account:"a",views:1,comments:0,likes:0,postAt:DAY(-3)+"T00:00:00",postId:"p"+link,link});
   reset([v_("E",{scheduledDate:DAY(-1), metrics:[M("https://www.instagram.com/reel/e/"), M("https://www.facebook.com/reel/e/","FB")]})]);
-  as("管理員","boss"); modalHTML=""; openVideoModal("E", true);
+  localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss"); modalHTML=""; openVideoModal("E", true);
   ok("**編輯視窗講得出「同步已經對到 2 則貼文，不用再填」**", /同步已經對到這支片的 <b>2<\/b> 則貼文/.test(modalHTML),
      (modalHTML.match(/同步已經對到[^<]*<b>[^<]*<\/b>[^<]*/)||[])[0]);
   reset([v_("F",{scheduledDate:DAY(-1)})]); modalHTML=""; openVideoModal("F", true);
