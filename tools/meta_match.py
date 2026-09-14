@@ -323,6 +323,20 @@ def match_post(post, index):
     回傳 {"videoId":.., "familyId":.., "score":.., "why":..} 或
          {"videoId":None, "why":"...", "candidates":[...]}
     """
+    # ⚠️ v213：**這則貼文之前對過哪支片，就還是那支片。**
+    #    每次同步都把 postId 寫進 metrics[]，所以「對過一次」是有紀錄的。
+    #    以前只認 publishedLink（人填的，正式資料 561 支已上片只有 1 支填），
+    #    對不到就退回文案 —— 小編改一個字文案、或那支片文案本來就短，
+    #    上次對得到的這次就對不到，成效前後不連續。
+    #    postId 是平台給的、不會變；先認它，文案只給第一次用。
+    pid = str(post.get("id") or "").strip()
+    if pid:
+        for root, e in index.entries.items():
+            for m in e["members"]:
+                for row in (m["v"].get("metrics") or []):
+                    if isinstance(row, dict) and str(row.get("postId") or "").strip() == pid:
+                        return {"videoId": m["id"], "familyId": root, "score": 999,
+                                "why": "這則貼文之前就對過這支片（postId）"}
     link = str(post.get("permalink") or "").strip()
     if link:
         for root, e in index.entries.items():
@@ -330,6 +344,11 @@ def match_post(post, index):
                 if str(m["v"].get("publishedLink") or "").strip() == link:
                     return {"videoId": m["id"], "familyId": root, "score": 999,
                             "why": "上片連結一模一樣"}
+                # 同步寫進 metrics 的每一則都帶 link —— 那也是這支片發過的地方
+                for row in (m["v"].get("metrics") or []):
+                    if isinstance(row, dict) and str(row.get("link") or "").strip() == link:
+                        return {"videoId": m["id"], "familyId": root, "score": 999,
+                                "why": "這則貼文的連結在這支片的成效紀錄裡"}
 
     np_ = normalize(post.get("caption"))
     if len(np_) < MIN_CHARS:

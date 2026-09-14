@@ -123,6 +123,53 @@ function reset(vids, tasks){
 { ok("版本殼標了也會叫", vidMissing(v_("V1",{tags:["銷售"],locale:"en",publishedLink:"https://x",
      scheduledDate:T0})).some(x=>x.k==="prod")); }
 
+// ══════════ ②-a 看板上要有自己的一張卡（v212）══════════
+//
+// 老闆 2026-09-14：「沒有商品頁的影片如果是寵粉或銷售類的要提醒。」
+//
+// ⚠️ 提醒本來就有（上面那顆燈），問題是**它看不見**：missingPill 只把第一項
+//    寫成字，而商品排在最後。正式資料實測：31 支寵粉／銷售片商品資料不全，
+//    其中 **28 支**那顆燈被「缺文案」「缺上片連結」蓋掉。
+//    所以不是再加一顆燈，是在看板上給它一個自己的數字。
+{ reset([v_("V1",{tags:["寵粉"],name:"缺商品的片",videoCopy:""}),
+         v_("V2",{tags:["銷售"],name:"另一支缺商品的",published:true}),
+         v_("V3",{tags:["流量型"],name:"不用導購的片"}),
+         v_("V4",{tags:["寵粉"],name:"補齊了的片",products:[{name:"項鍊"}],productUrl:"https://x.tw/p/1"})]);
+  // ⚠️ 要比**看得到的字**，不是整段 HTML：商品那一項其實寫在 title 裡
+  //    （滑鼠停著才看得到），畫面上只剩「缺上片連結+2」。這正是它被蓋掉的形狀。
+  { const pill=missingPill(STATE.videos[0]);
+    const 看得到的字=(pill.match(/>([^<]*)</)||[])[1]||"";
+    ok("（前提）那顆燈畫面上看不到「商品」兩個字 —— 不然這張卡沒有存在的必要",
+       !!看得到的字 && 看得到的字.indexOf("商品")<0, {看得到的字, pill});
+    ok("（而且商品那一項其實在 tooltip 裡 —— 滑鼠停著才看得到）",
+       pill.indexOf("商品")>=0); }
+  const ids=prodMissList().map(x=>x.v.id);
+  ok("**缺商品的寵粉／銷售片都列得出來**", ids.slice().sort().join()==="V1,V2", ids);
+  ok("沒標寵粉／銷售的不進來", ids.indexOf("V3")<0);
+  ok("補齊了的不進來", ids.indexOf("V4")<0);
+  // 已經上片的最急：觀眾已經看到那支片了，卻沒有地方可以買
+  ok("**已經上片的排最前面**（那不是資料不齊，是當下正在漏單）", ids[0]==="V2", ids);
+  const c=prodMissCard();
+  ok("卡片上寫得出「已上片但沒有導購連結」幾支", /已上片但沒有導購連結 1 支/.test(c), c.slice(0,240));
+  ok("還沒上片的另外數", /還沒上片的 1 支/.test(c));
+  ok("點得進那支片去補", /另一支缺商品的/.test(c) && /onclick=/.test(c));
+  ok("而且講得出去哪裡補", /商品與導購/.test(c)); }
+// ⚠️ 上面是直接呼叫 prodMissCard() 驗內容。**看板上有沒有畫出來是另一件事** ——
+//    突變測試把 `${prodMissCard()}` 那一行拿掉，上面全綠。要把看板真的畫出來。
+{ reset([v_("V2",{tags:["銷售"],name:"另一支缺商品的",published:true})]); as("管理員","boss"); CUR_TAB="board";
+  // 這張卡在看板的主管區（seesLeadBoard），用管理員看 —— 他不需要誰來勾權限
+  const b=viewBoard();
+  ok("**看板上真的畫出這張卡**（不是只有函式回得出東西）", /寵粉／銷售片的商品頁/.test(b) && /另一支缺商品的/.test(b), b.length); }
+// 全部補齊了就整張卡消失 —— 不要留一張「0 支」的卡
+{ reset([v_("V1",{tags:["寵粉"],products:[{name:"項鍊"}],productUrl:"https://x.tw/p/1"})]);
+  ok("全部補齊了整張卡消失", prodMissList().length===0 && prodMissCard()===""); }
+// ⚠️ 大流不算。老闆：「大流量影片這一頁是手動的，未來要刪掉，跟我們流程無關。」
+//    量過：31 支缺商品頁的全部在影片庫A、大流 0 支，而大流那 47 支一個商品頁網址都沒填。
+{ reset([Object.assign(v_("D1",{tags:["寵粉"],name:"大流的片"}),{lib:"大流"}),
+         v_("A1",{tags:["寵粉"],name:"影片庫的片"})]);
+  ok("**大流的片不算進這張卡**（那一頁跟流程無關，未來要刪）",
+     prodMissList().map(x=>x.v.id).join()==="A1", prodMissList().map(x=>x.v.id)); }
+
 // ══════════ ②-b 月排程與影片庫都看得到這顆燈 ══════════
 // 老闆：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」
 { reset([v_("V1",{tags:["寵粉"],name:"要導購的片",scheduledDate:T0})]);

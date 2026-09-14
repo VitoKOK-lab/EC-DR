@@ -233,6 +233,32 @@ r = M.match_post(post("隨便什麼字都可以反正連結一樣就是它" * 3,
                       permalink="https://www.instagram.com/p/ABC/"), idx5)
 ok(r["videoId"] == "L1" and "連結" in r["why"], "連結一樣就是同一則，優先於文案比對")
 
+print("— v213：對過一次的貼文，用 postId 永久認回來 —")
+# 正式資料：559 列 metrics 全部有 postId 跟 link；已上片卻沒填上片連結的 561 支裡 128 支這裡早就有。
+# 以前只認 publishedLink（人填的，只有 1 支填），對不到就退回文案 —— 小編改一個字文案，
+# 上次對得到的這次就對不到，成效前後不連續。postId 是平台給的、不會變。
+idx6 = M.Index([vid("P1", "這支片的文案本來長這樣才對得到" * 3, "2026-08-20",
+                    metrics=[{"platform": "IG", "postId": "18070979840396064",
+                              "link": "https://www.instagram.com/reel/Da-GeEzTBAS/"}]),
+                vid("P2", "完全不同的另一段文案" * 6, "2026-08-20")])
+r = M.match_post(post("小編把文案整個改掉了 這句話跟原本一個字都不像" * 3, permalink="https://x/nope",
+                      id="18070979840396064"), idx6)
+ok(r["videoId"] == "P1" and "postId" in r["why"],
+   "**文案整個改掉也認得回來 —— 靠 postId**（對過一次就不會再對丟）")
+r = M.match_post(post("小編把文案整個改掉了 這句話跟原本一個字都不像" * 3,
+                      permalink="https://www.instagram.com/reel/Da-GeEzTBAS/", id="別的id"), idx6)
+ok(r["videoId"] == "P1" and "成效紀錄" in r["why"],
+   "postId 對不上但連結在 metrics 裡 —— 也認得回來（同步寫進去的每一則都帶 link）")
+r = M.match_post(post("這支片的文案本來長這樣才對得到" * 3, id="沒對過的新貼文"), idx6)
+ok(r["videoId"] == "P1", "（對照）沒對過的新貼文照樣走文案比對，沒有被 postId 那一段擋掉")
+r = M.match_post(post("不相干" * 8, id="18070979840396064"), M.Index([vid("Q1", "不相干" * 8, "2026-08-20")]))
+ok(r["videoId"] == "Q1", "postId 在庫裡找不到就不硬對（回到原本的規則）")
+# ⚠️ postId 要贏過文案：兩支片文案一樣時，有 postId 紀錄的那支才是它
+idx7 = M.Index([vid("T1", COPY, "2026-08-20"),
+                vid("T2", COPY, "2026-08-21", metrics=[{"postId": "pid-2", "link": ""}])])
+r = M.match_post(post(COPY, id="pid-2"), idx7)
+ok(r["videoId"] == "T2", "**兩支片文案一樣時，postId 對過的那支贏**（不是猜日期）")
+
 print("— 整批比對 —")
 m, u, ix = M.match_all([post(COPY), post("不相干的文字" * 6)], [vid("V3", COPY, "2026-08-20")])
 ok(len(m) == 1 and len(u) == 1, "整批跑完會分成「對上的」與「對不上的」兩疊")

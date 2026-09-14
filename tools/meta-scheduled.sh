@@ -32,7 +32,7 @@ mkdir -p "$LOG_DIR"
     . "$REPO/tools/_pull-main.sh"
     echo "程式：$CODE_STATE　$CODE_NOTE"
     EC_DR_CODE_STATE="$CODE_STATE" EC_DR_CODE_NOTE="$CODE_NOTE" \
-        python3 tools/meta_sync.py --write --every "$EVERY" --days "$DAYS"
+        python3 tools/meta_sync.py --write --fill-links --every "$EVERY" --days "$DAYS"
     echo "[結束碼 $?]"
     # 貼文銷售（「這個品推過幾次」）。跟成效同步搭同一班車 —— 它只抓一個 CSV，
     # 很便宜，而且失敗了也不該影響上面那一段（所以放在後面、不看它的結束碼）。
