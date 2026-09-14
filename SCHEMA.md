@@ -67,6 +67,8 @@
 | `metrics` | object[] | 平台成效 | 後端以**文案**比對平台貼文後自動填（v198，`tools/meta_sync.py`）；每筆 `{platform, account, views, likes, comments, shares, at, postId, postAt, link}`。`at`＝抓取時間、`postAt`＝發文時間、`postId`＝平台那則的 id（同一支片在同一個帳號重播兩次＝兩則不同貼文、兩列，用 `postId` 當 key 才不會互相蓋掉） |
 | `metricsAt` | string(ISO) | 成效更新時間 | 後端最後一次寫入的時間 |
 | `metricsHist` | object[] | 成效快照（v201） | 每筆 `{postId, d, views, comments}`；`d`＝抓取日。`metrics` 只留每則貼文的**最新**累計，這裡才留得住「上片後第 N 天是多少」—— 沒有它，二創跟原片只能拿「30 天」去比「半年」。上片超過 35 天不再記，一則最多 15 個點。詳見下方「二創流程」 |
+| `ads` | object[] | 廣告花費（v214） | `tools/ads_sync.py` 自動填（老闆選 A：系統自己去跟 Meta 要）。每筆 `{adId, name, status, postId, spend, impressions, reach, clicks, purchases, since, until, at}`，一列＝**一則廣告在一個區間**；同一則同區間只留最新。廣告→貼文靠 Meta 的 `effective_object_story_id`／`effective_instagram_media_id`，貼文→影片靠 `metrics[].postId`，**兩步都是平台給的 id，不猜**；同一則貼文掛在兩支片上就兩支都不給。`clicks` 用 `inline_link_clicks`（點連結，不是點圖）。⚠️ 只有「花了多少」，「賺回多少」要等 Shopline 訂單對回來 |
+| `adsAt` | string(ISO) | 廣告花費更新時間 | 後端最後一次寫入的時間 |
 | `locale` | string | 語言別 | `""`＝台灣中文源片（預設）；`"en"`／`"th"`＝英／泰在地化二創版（海外剪輯做）。馬來西亞已改走 `channel:"ms"`（台灣區，schemaVersion 14 起；既有 `locale:"ms"` 資料已遷移） |
 | `sourceVideoId` | string | 來源片 | 在地化版本指回台灣源片的 `id`；源片本身為 `""`（同一源片同語言可有多支＝不同帳號/成片） |
 | `account` | string | 上傳帳號 | 在地化版本上傳的海外 TikTok 帳號名（取自 `settings.intlAccounts`）；每支＝一個帳號一個成片 |
@@ -433,6 +435,9 @@ Firestore 裡既有的舊文件留著不影響任何功能，可自行刪除。
 |---|---|---|
 | `schemaVersion` | number | 結構版本（目前 9） |
 | `backupStatus` | map | **備份回報**（Mac mini 上的 `tools/backup.py` 每天寫入，見 [`BACKUP.md`](BACKUP.md)）。`{at, docs, covers, sizeMB, host, ok}`；`at` 是台灣時間 ISO 字串。設定頁用它畫「資料備份」狀態卡，超過 3 天沒更新變紅。<br>**由外部工具寫入，前端只讀不寫**，且一律用 `updateMask` 只改這個欄位——整份覆寫會把系統設定洗掉。<br>沒有這個欄位是正常的（還沒設排程），畫面會顯示「還沒收到回報」而不是假裝正常。 |
+| `metaSyncStatus` | map | **成效同步回報**（`tools/meta_sync.py` 每三天寫入）。`{at, ok, videos, failed, hits, posts, matched, days, code, codeNote}`；`code`＝排程跑之前程式有沒有更新成功（`updated`／`current`／`dirty`／`offline`／`diverged`，見 `tools/_pull-main.sh`）。設定頁用它畫「平台成效同步」卡：超過 7 天沒更新、上次有失敗、或 `code` 不是前兩種，都變紅並寫出原因。**沒有 `code` 的是舊版同步程式**，不當成故障。 |
+| `adsSyncStatus` | map | **廣告花費同步回報**（`tools/ads_sync.py`，v214）。`{at, ok, videos, failed, ads, matched, orphan, spend, orphanSpend, days, account, code, codeNote}`；`orphan`＝對不到影片的廣告則數、`orphanSpend`＝它們的花費（推的貼文不在系統裡，或那支片還沒對到成效）。 |
+| `postsale` | map | **Shopline 貼文銷售彙總**（`tools/postsale_sync.py`，v211）。`{at, dataAt, rows, posts, src, items[]}`；`items` 一個商品一筆 `{k, p, n, first, last, c, a, s}`（`k`＝比對身分、`p`＝顯示名、`n`＝推過幾次、`c`＝留言、`a`＝留言加購、`s`＝銷售額）。`dataAt`＝CSV 最後一筆活動日 —— 那份 CSV 是人手動匯出的，選品頁用它標「資料到哪一天」，超過 45 天變紅。`k` 的規則在 Python 與 JS 各一份，`tests/postsale.py` 把同一批字餵進兩邊比結果。 |
 | `dailyTarget` | number | **每日應上片數（單一數字，不分類型）**；月排程以此判斷已排滿／缺幾支。未設定時沿用 `weekdayTargets` 加總 |
 | `weekdayTargets` | map | （舊）`{0..6: {流量型, 帶貨型, 寵粉}}` 每星期幾各類型上片數；已被 `dailyTarget` 取代，僅作未設定時的後備加總 |
 | `reviewSince` | string | 審片流程上線日 `YYYY-MM-DD`；這天之前完成的舊片不列入待審核（預設 `2026-07-27`） |

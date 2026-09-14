@@ -39,6 +39,12 @@ mkdir -p "$LOG_DIR"
     echo "── 貼文銷售 ──"
     python3 tools/postsale_sync.py --write
     echo "[貼文銷售結束碼 $?]"
+    # 廣告花費（老闆選 A：系統自己去跟 Meta 要）。靠 metrics 裡的 postId 對回影片，
+    # 所以排在成效同步後面。沒設廣告帳號 ID 會自己說明然後結束，不影響上面。
+    echo "── 廣告花費 ──"
+    EC_DR_CODE_STATE="$CODE_STATE" EC_DR_CODE_NOTE="$CODE_NOTE" \
+        python3 tools/ads_sync.py --write --days 30
+    echo "[廣告花費結束碼 $?]"
 } >> "$LOG" 2>&1
 
 # 只保留最後 2000 行，不要讓紀錄檔無限長大

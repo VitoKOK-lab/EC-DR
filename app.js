@@ -8342,11 +8342,27 @@ function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModa
 function vcopyOpen(id){ const t=document.getElementById(id||"e_vcopy");
   if(t && !(t.classList&&t.classList.contains("open"))){ t.rows=6; if(t.classList) t.classList.add("open"); } }
 // 影片視窗：平台成效卡（管理員／經理人可見）
+// 一支片投了多少廣告（v214，老闆選 A：系統自己去跟 Meta 要）。
+// tools/ads_sync.py 把每一則廣告每一個區間寫成 v.ads[] 一列。
+// ⚠️ 這裡只有「花了多少」。「賺回多少」要等 Shopline 月報表對訂單，那是另一段。
+function vidAdSpend(v){
+  const rows=(v&&Array.isArray(v.ads))?v.ads.filter(r=>r&&typeof r==="object"):[];
+  const sum=(k)=>rows.reduce((a,r)=>a+(+r[k]||0),0);
+  return {n:rows.length, spend:sum("spend"), reach:sum("reach"), clicks:sum("clicks"), purchases:sum("purchases"),
+          last:rows.reduce((m,r)=>String(r.until||"")>m?String(r.until||""):m,"")};
+}
+function vidAdLine(v){
+  const a=vidAdSpend(v); if(!a.n) return "";
+  return `<div style="font-size:12.5px;margin-top:6px"><b>廣告</b>　花費 <b>NT$${num(Math.round(a.spend))}</b>${
+    a.reach?`　觸及 ${num(a.reach)}`:""}${a.clicks?`　點連結 ${num(a.clicks)}`:""}${
+    a.purchases?`　購買 ${num(a.purchases)}`:""}<span class="muted">　${a.n} 則廣告${a.last?"・到 "+esc(a.last.slice(5)):""}</span></div>`;
+}
 function vidMetricsCard(v){
   const mx=Array.isArray(v.metrics)?v.metrics:[];
   const mTotal=mx.reduce((a,m)=>a+(+m.views||0),0);
   const html = (currentRole()==="boss"||currentRole()==="manager") ? `<div class="card" style="background:var(--panel2)"><div class="row" style="justify-content:space-between;align-items:center">
       <b>平台成效</b><span class="row" style="gap:6px">${typePill(v)}${mx.length?`<span class="pill ok" style="font-size:10px">總觀看 ${mTotal.toLocaleString()}</span>`:''}</span></div>
+    ${vidAdLine(v)}
     ${/* ⚠️ 一定要有「發文日」這一欄。老闆看到三列都寫「FB 粉專（Zanagems）」問
           「出現三個一樣的平台、帳號，什麼意思」—— 那其實是同一支片在同一個粉專
           發了三次（8/10、9/08、9/12），不是重複資料。沒有日期就分不出來。
@@ -10538,7 +10554,8 @@ function curOpen(id){
         ${(+g.c)?`　·　留言 ${num(+g.c)}`:""}${(+g.a)?`　·　留言加購 ${num(+g.a)}`:""}</div></div>`
       :`<div class="muted" style="font-size:12.5px;margin-top:10px">Shopline 的貼文銷售裡查不到這個品 —— 可能還沒推過，也可能是名字寫法對不上。</div>`}
     <div class="muted" style="font-size:13px;margin:12px 0 6px">
-      <b>${vids.length}</b> 支影片賣過它${vids.length?`，觀看合計 <b>${num(vids.reduce((a,v)=>a+vidViews(v),0))}</b>（觸及，不是銷售）`:""}</div>
+      <b>${vids.length}</b> 支影片賣過它${vids.length?`，觀看合計 <b>${num(vids.reduce((a,v)=>a+vidViews(v),0))}</b>（觸及，不是銷售）`:""}${
+      (()=>{ const sp=vids.reduce((a,v)=>a+vidAdSpend(v).spend,0); return sp?`　·　廣告花費 <b>NT$${num(Math.round(sp))}</b>`:""; })()}</div>
     ${vids.length?`<div class="${vids.length>8?'vidscroll':''}">
       <table class="responsive perfrank"><thead><tr><th>影片</th><th>剪輯</th><th>觀看</th>${plan?"<th></th>":""}</tr></thead>
       <tbody>${rows}</tbody></table></div>`
