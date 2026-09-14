@@ -96,6 +96,29 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   }
   // 操作紀錄只抓最近一個月：at 存的是 "YYYY-MM-DDTHH:MM:SS"，字串比大小就等於比時間
   const LOGS_FROM = new Date(Date.now() + 288e5 - 31 * 864e5).toISOString().slice(0, 10);
+  // 交辦事項也只訂閱最近 45 天。
+  //
+  // ⚠️ 為什麼要限制：tasks 是唯一一個**完全沒有邊界**的常駐訂閱。
+  //    正式資料實測（2026-09）：1,824 筆，比影片（1,068）還多，
+  //    而且一個月長一千筆 —— 2026-08 有 1,037 筆、2026-09 半個月就 771 筆。
+  //    照這個速度，一年後每個人每次冷開機要讀一萬多筆，只為了看今天要做什麼。
+  //    logs 限了筆數、shifts 限了 62 天，就 tasks 漏掉。
+  //
+  // 三個監聽合起來才是完整的，少一個就會有人的東西憑空消失：
+  //    ① date >= TASKS_FROM   最近的工作與看板要用的
+  //    ② done == false        沒做完的，不管多舊（實測有一筆 6/22 的還沒做完）
+  //    ③ kind == "draft"      草稿**沒有 date 欄位**，只靠 ① 會整個不見
+  const TASK_WINDOW_DAYS = 45;
+  const TASKS_FROM = new Date(Date.now() + 288e5 - TASK_WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+  const tasksRecent = {};       // 窗內（即時）
+  const tasksOpen   = {};       // 沒做完的舊工作（即時）
+  const tasksDraft  = {};       // 草稿（即時）
+  const tasksOld    = {};       // 往前翻月份時補讀的（讀一次就好）
+  const loadedTaskMonths = new Set();
+  function mergeTasks() {
+    raw.tasks = Object.assign({}, tasksOld, tasksRecent, tasksOpen, tasksDraft);
+  }
+
   const shiftsLive = {};        // 訂閱窗內（會即時更新）
   const shiftsOld  = {};        // 另外補讀的舊月份（讀一次就好，不會再變）
   const loadedMonths = new Set();
@@ -237,6 +260,21 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     // 常駐訂閱的起始日；app.js 用它判斷某個月份要不要另外補讀
     shiftsFrom: SHIFTS_FROM,
     // 補讀某個月的打卡紀錄（只讀一次，不建立訂閱）。回傳有沒有真的去讀。
+    // 團隊看板往前翻月份時，一次性補讀那個月的交辦事項。
+    // 跟 loadShiftMonth 同一招：補讀的放 tasksOld，只讀一次，不再變。
+    // 沒有這個，翻到 45 天以前的月份，「交辦完成 x/y」會變成 0/0 而不是真的沒有。
+    tasksFrom: TASKS_FROM,
+    async loadTaskMonth(ym) {
+      if (!/^\d{4}-\d{2}$/.test(String(ym || "")) || loadedTaskMonths.has(ym)) return false;
+      if (ym + "-31" >= TASKS_FROM) return false;      // 窗內的本來就有，不用再讀一次
+      loadedTaskMonths.add(ym);
+      const s = await getDocs(query(collection(db, "tasks"),
+        where("date", ">=", ym + "-01"), where("date", "<=", ym + "-31")));
+      s.docs.forEach(d => { tasksOld[d.id] = d.data(); });
+      mergeTasks(); push("tasks");
+      return true;
+    },
+
     async loadShiftMonth(ym) {
       if (!/^\d{4}-\d{2}$/.test(String(ym || "")) || loadedMonths.has(ym)) return false;
       loadedMonths.add(ym);
@@ -351,7 +389,17 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
     // 職位存在 localStorage，登入過就有；沒有或看不懂就當作要下載（寧可多下載，不能少）。
     if (needVideosByRole()) window.DB.watchVideos();
     onSnapshot(collection(db, "schedule"), q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.schedule = s; push("schedule"); });
-    onSnapshot(collection(db, "tasks"),    q => { const s = {}; q.docs.forEach(d => s[d.id] = d.data()); raw.tasks = s; push("tasks"); });
+    // 交辦事項：三個監聽合起來（見上面 TASKS_FROM 的說明）。
+    // 每一個都只管自己那一份，合併後才是 raw.tasks —— 這樣一筆工作
+    // 從「沒做完」變成「做完了」時，它還在窗內的話不會從畫面上消失。
+    const watchTasks = (part, q2) => onSnapshot(q2, q => {
+      Object.keys(part).forEach(k => delete part[k]);
+      q.docs.forEach(d => { part[d.id] = d.data(); });
+      mergeTasks(); push("tasks");
+    });
+    watchTasks(tasksRecent, query(collection(db, "tasks"), where("date", ">=", TASKS_FROM)));
+    watchTasks(tasksOpen,   query(collection(db, "tasks"), where("done", "==", false)));
+    watchTasks(tasksDraft,  query(collection(db, "tasks"), where("kind", "==", "draft")));
     // 選品配對（v138）：商品庫（選品行銷維護）與配對紀錄，量小，常駐訂閱即可
     onSnapshot(collection(db, "products"), q => { raw.products = q.docs.map(d => d.data()); push("products"); });
     // 打卡紀錄只訂閱最近 62 天；更早的月份由 window.DB.loadShiftMonth() 按需補讀

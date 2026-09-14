@@ -4033,6 +4033,17 @@ function attEnsureMonth(ym){
     window.DB.loadShiftMonth(ym).catch(()=>{});
   }catch(e){}
 }
+// 交辦事項常駐只訂閱最近 45 天（省讀取量，見 fb.js 的 TASKS_FROM）。
+// 往前翻到更早的月份時，跟資料庫補讀那一個月 —— 少了這個，
+// 舊月份的「交辦完成 x/y」會顯示成 0/0，看起來像那個月沒人做事。
+function taskEnsureMonth(ym){
+  try{
+    const from=(window.DB&&window.DB.tasksFrom)||"";
+    if(!from || !window.DB.loadTaskMonth) return;
+    if(ym > from.slice(0,7)) return;        // 整個月都在訂閱範圍內，不用補讀
+    window.DB.loadTaskMonth(ym).catch(()=>{});
+  }catch(e){}
+}
 function attStaff(){ return staffSorted((STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor"))); }
 // 某人某月的每日出勤
 function attRows(name, ym){
@@ -5272,8 +5283,10 @@ function teamYM(){
 function teamSetYM(ym){
   if(!/^\d{4}-\d{2}$/.test(String(ym||"")) || ym>today.slice(0,7)) return;
   TEAM_YM=ym;
-  // 出勤天數要看打卡紀錄，而打卡常駐只訂閱最近兩個月 —— 往前翻要補讀那一個月
+  // 出勤天數要看打卡紀錄、交辦完成要看交辦事項，兩個常駐訂閱都有時間窗 ——
+  // 往前翻要各自補讀那一個月，不然那個月會看起來像沒人做事
   attEnsureMonth(ym);
+  taskEnsureMonth(ym);
   render();
 }
 // 有資料的月份：從最早那一筆到這個月。
