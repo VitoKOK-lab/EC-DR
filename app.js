@@ -4717,7 +4717,8 @@ function dashViewAsCard(){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <div><b style="font-size:16px">👁 員工視角</b></div>
       <div class="row" style="gap:8px">
-        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${staffOptGroups(["editor","intl","cs","manager","hr","mkt","pick","svc","ship"])}</select>
+        <select id="va_who" style="min-width:140px"><option value="">— 選擇員工 —</option>${/* ⚠️ v217：以前這裡是手寫的職位清單，加了「設計師」沒人記得改，老闆：「我看不到 Jessica 的員工視角」。
+      員工視角就是「每一個人」—— 直接用 STAFF_ROLES，以後加職位不會再漏。 */''}${staffOptGroups(STAFF_ROLES.concat("manager"))}</select>
         <button class="btn sm" onclick="enterViewAs(document.getElementById('va_who').value)">進入</button>
       </div>
     </div>
