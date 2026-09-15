@@ -105,6 +105,16 @@ ok("needVideos 也說不用", needVideos("design") === false);
   ok("全體還是全體（外包也在）", noticeTargets("__all__").length===4);
   ok("直接指名一個人照舊", noticeTargets("阿剪").join()==="阿剪"); }
 
+// v216：外包的設計師勾了「選品」也要看得到那一頁。
+// myTabs 裡「外包不給月排程」那一行以前是 return，先回傳、跳過「勾起來的權限補成分頁」——
+// 外包的人不管勾了什麼，分頁永遠只有傳訊息。老闆：「Jessica 為什麼有選品 但沒有這一頁」。
+{ reset([U("Jessica","design",{perms:["curate","perf"],outsourced:true})], "Jessica", "design");
+  const tabs=myTabs().map(t=>t[0]);
+  ok("**外包的設計師勾了選品就看得到選品那一頁**", tabs.includes("curate"), tabs);
+  ok("勾了影片成效也看得到", tabs.includes("perf"), tabs);
+  ok("外包照舊沒有月排程（v185 那條還在）", !tabs.includes("cal"), tabs);
+  ok("傳訊息還在最前面", tabs[0]==="chat", tabs); }
+
 // ══════════ ② 兩個新權限 ══════════
 ok("有「選品」這一項", PERMS.curate && PERMS.curate.label === "選品");
 ok("有「排影片」這一項", PERMS.plan && PERMS.plan.label === "排影片");

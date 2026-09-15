@@ -419,6 +419,13 @@ function reset(vids, users){
     ok("**陳鋒在「外包」那一區底下，不在剪輯行銷底下**", i陳鋒>i外包 && i小葵>i剪輯 && i小葵<i其他, {nodes});
     ok("外包那一區排在台灣兩區後面", i外包>i其他); }
 
+  // v216：外包的剪輯勾了權限也要拿得到那一頁（陳鋒一直拿不到，跟 Jessica 同一個病）
+  { reset(null,[{name:"陳鋒",role:"editor",outsourced:true,perms:["perf","output"]},{name:"Regina",role:"manager"}]);
+    as("陳鋒","editor"); const tabs=myTabs().map(t=>t[0]);
+    ok("**外包的剪輯勾了影片成效／剪輯產出就看得到**", tabs.includes("perf") && tabs.includes("output"), tabs);
+    ok("月排程照舊不給外包", !tabs.includes("cal"), tabs);
+    ok("剪輯本來的分頁還在", tabs.includes("work") && tabs.includes("videos"), tabs); }
+
   // ⚠️ 只擋出勤，**不擋對話** —— 老闆那句話的後半段
   { reset(); as("陳鋒","editor");
     ok("**外包照樣看得到「傳訊息」**（老闆：但可以對話）",
