@@ -532,6 +532,27 @@ const PURL = BASE + "/products/歐泊手鏈";
   modalHTML = ""; curNewVideo("OP");
   ok("**沒權限直接呼叫開新片也擋得住**", modalHTML === "", modalHTML.slice(0,80)); }
 
+// ── 狀態：缺圖文／急件（v218，老闆指定）──────────────────────────────
+// 「這裡改名字不需要 另外要提供狀態 缺圖文，急件 然後急件要有日期，有狀態的要排序在上面」
+{ const ym=curMonth();
+  const P=(id,name,extra)=>PD(Object.assign({ id, name, officialUrl:BASE+"/products/"+id, picks:[{month:ym,by:"小設",at:""}] }, extra||{}));
+  withProds([ P("A","普通的品"), P("B","急件晚一點",{flag:"urgent",flagDate:"2026-10-20"}),
+              P("C","缺圖文的品",{flag:"noasset"}), P("D","急件早一點",{flag:"urgent",flagDate:"2026-09-30"}),
+              P("E","另一個普通的品"), P("F","急件沒填日期",{flag:"urgent"}) ]);
+  CUR_YM=null;
+  const order=curMonthItems().map(p=>p.id).join();
+  ok("**有狀態的排最上面：急件（日期近的先）→ 缺圖文 → 其餘**", order==="D,B,F,C,A,E", order);
+  ok("沒狀態的維持原本順序（穩定排序）", order.endsWith("A,E"));
+  // 卡片與列表都看得到
+  CUR_VIEW="card";
+  ok("**急件的藥丸帶日期**", /pill em[^>]*>急件 09-30</.test(curCardHTML(prodById("D"))), (curCardHTML(prodById("D")).match(/pill em[^<]*/)||[])[0]);
+  ok("缺圖文的藥丸", /pill wa[^>]*>缺圖文</.test(curCardHTML(prodById("C"))));
+  ok("列表模式也看得到", /急件 09-30/.test(curRowHTML(prodById("D"))) && /缺圖文/.test(curRowHTML(prodById("C"))));
+  ok("沒狀態的不畫藥丸", !/pill (em|wa)/.test(curCardHTML(prodById("A"))));
+  // 抓好的不用「改名」；抓不到的才給「自己填名稱」
+  ok("**抓好的商品沒有「改名」鍵**", !/curRename/.test(curActs(prodById("A"))), curActs(prodById("A")));
+  withProds([ P("X","", {fetchStatus:"failed",fetchError:"找不到"}) ]);
+  ok("抓不到的才有「自己填名稱」", /curRename/.test(curActs(prodById("X"))) && /自己填名稱/.test(curActs(prodById("X")))); }
 // 沒有那個月的資料時，不要只留一片空白
 { withProds([]); CUR_YM = null;
   ok("完全沒有選品時講清楚", /還沒有選品/.test(viewCurate())); }
@@ -584,6 +605,41 @@ const PURL = BASE + "/products/歐泊手鏈";
     ok("**沒設定代抓網址時，按下去不會真的去抓**", fetched === 0, fetched);
     ok("而且會講清楚為什麼", /還沒設定/.test(said), said);
     ok("也不會把商品標成失敗", !W.some(x=>x[0]==="update"), W); }
+
+  // 誰標得動、寫進去什麼
+  { const ym=curMonth();
+    const P=(id,extra)=>PD(Object.assign({ id, name:"品"+id, officialUrl:BASE+"/products/"+id, picks:[{month:ym,by:"小設",at:""}] }, extra||{}));
+    // 設計師（curate）標得動
+    withProds([P("A")], "小設", "design", ["curate"]);
+    ok("設計師看得到狀態下拉", /curSetFlag\('A'/.test(curActs(prodById("A"))));
+    // 行銷（只有 plan）也標得動 —— 急件是行銷定的
+    withProds([P("A")], "小行", "mkt", ["plan"]);
+    ok("**只有「排影片」權限的行銷也標得動**（急件是行銷定的）", /curSetFlag\('A'/.test(curActs(prodById("A"))));
+    ok("但行銷沒有「移除」（那是選品的事）", !/curDel/.test(curActs(prodById("A"))));
+    // 真的寫進去：急件要日期
+    const W=[]; global.window.DB.update=async(c,id,patch)=>{ W.push([c,id,patch]); };
+    global.prompt=()=>"2026-10-05";
+    await curSetFlag("A","urgent"); await new Promise(r=>setTimeout(r,20));
+    const w=W.find(x=>x[0]==="products"&&x[1]==="A");
+    ok("**急件寫進 flag＋flagDate**", !!w && w[2].flag==="urgent" && w[2].flagDate==="2026-10-05", w);
+    // 日期壞掉不寫
+    W.length=0; global.prompt=()=>"下週";
+    await curSetFlag("A","urgent"); await new Promise(r=>setTimeout(r,20));
+    ok("急件的日期不像日期就不寫", !W.some(x=>x[0]==="products"));
+    // 清掉狀態：兩格一起清
+    W.length=0; global.prompt=()=>null;
+    await curSetFlag("A",""); await new Promise(r=>setTimeout(r,20));
+    const w2=W.find(x=>x[0]==="products");
+    ok("清掉狀態時 flag 跟 flagDate 一起清空", !!w2 && w2[2].flag==="" && w2[2].flagDate==="", w2);
+    global.prompt=()=>null;
+    // 員工視角唯讀。⚠️ 要預覽一個**本身有權限**的人 —— 預覽沒權限的人，不管有沒有防護都是 false（假綠燈，突變測試抓到）。
+    reset([U("管理員","boss"), U("小設","design",{perms:["curate"]})], "管理員", "boss");
+    LAST_RAW.products=[P("A")]; STATE=decorate(LAST_RAW); VIEW_AS="小設";
+    ok("（前提）被預覽的那個人本身標得動", hasPerm("curate","小設"));
+    ok("**員工視角預覽時標不動**", curCanFlag()===false && curActs(prodById("A"))==="", curActs(prodById("A")));
+    VIEW_AS=null;
+    // 白名單：flag／flagDate 收得進，別的欄位照樣擋
+    ok("寫入白名單收 flag 與 flagDate", /"flag","flagDate"\]/.test(APP)); }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

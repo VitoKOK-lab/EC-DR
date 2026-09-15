@@ -752,7 +752,8 @@ async function route(method, path, body){
     if(method==="PUT"){
       // ⚠️ 白名單：沒列進來的欄位會被默默丟掉。加新欄位時很容易忘記這裡。
       const patch={};
-      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt"]
+      // v218：flag（急件／缺圖文）與 flagDate（急件的日期）。⚠️ status 是「下架」那一格（v205），不要混用。
+      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt","flag","flagDate"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=String(body[k]); });
       ["priceMin","priceMax","listMin","listMax"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=+body[k]||0; });
@@ -10389,7 +10390,11 @@ function curYM(){ const g=curByMonth(); if(CUR_YM && g.some(x=>x.ym===CUR_YM)) r
   return g.length ? g[0].ym : curMonth(); }
 function curSetYM(ym){ CUR_YM=String(ym||""); render(); }
 function curSetView(v){ CUR_VIEW=(v==="list"?"list":"card"); render(); }
-function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); return g?g.items:[]; }
+function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); if(!g) return [];
+  // v218 老闆：「有狀態的要排序在上面」。急件照日期近的先；其餘保持原本順序（穩定排序）。
+  return g.items.map((p,i)=>({p,i,r:curFlagRank(p)}))
+    .sort((a,b)=>(a.r[0]-b.r[0]) || (a.r[1]<b.r[1]?-1:a.r[1]>b.r[1]?1:0) || (a.i-b.i))
+    .map(x=>x.p); }
 
 // 月份標籤。每個月旁邊標幾個品 —— 一眼看得出哪個月在做事。
 function curMonthTabs(){
@@ -10472,6 +10477,48 @@ function psLine(p){
     <b style="color:var(--gold-dk)">推過 ${+g.n} 次</b>${when?`　最近 ${esc(when)}`:""}
     ${(+g.c)?`　留言 ${num(+g.c)}`:""}${(+g.a)?`　加購 ${num(+g.a)}`:""}</div>`;
 }
+// ── 商品的「狀態」（v218，老闆指定）：缺圖文／急件（急件要有日期），有狀態的排最上面 ──
+// 這是**人標的**，跟 fetchStatus（抓沒抓到資料）是兩回事，分開存在 flag／flagDate。
+// 設計師跟行銷都標得動（選品／排影片任一個權限）—— 缺圖文是設計師發現的，急件是行銷定的。
+const CUR_FLAGS={ urgent:{zh:"急件", pill:"em"}, noasset:{zh:"缺圖文", pill:"wa"} };
+function curFlagOf(p){ const f=String((p&&p.flag)||""); return CUR_FLAGS[f]?f:""; }
+function curCanFlag(){ return !VIEW_AS && (hasPerm("curate")||hasPerm("plan")); }
+// 排序用的權重：急件（日期近的先、沒填日期的排急件最後）→ 缺圖文 → 其餘照原本順序
+function curFlagRank(p){
+  const f=curFlagOf(p);
+  if(f==="urgent") return [0, String(p.flagDate||"9999-99-99")];
+  if(f==="noasset") return [1, ""];
+  return [2, ""];
+}
+function curFlagPill(p){
+  const f=curFlagOf(p); if(!f) return "";
+  const d=f==="urgent"?String(p.flagDate||"").slice(5,10):"";
+  return `<span class="pill ${CUR_FLAGS[f].pill}" style="font-size:10px">${CUR_FLAGS[f].zh}${d?" "+esc(d):""}</span>`;
+}
+function curFlagCtl(p){
+  if(!curCanFlag()) return "";
+  const f=curFlagOf(p);
+  return `<select onchange="curSetFlag('${esc(jsEsc(p.id))}',this.value)" style="width:auto;font-size:12px;padding:4px 6px" title="標狀態：缺圖文／急件（急件要填日期）">
+    <option value="" ${f?"":"selected"}>無狀態</option>
+    <option value="noasset" ${f==="noasset"?"selected":""}>缺圖文</option>
+    <option value="urgent" ${f==="urgent"?"selected":""}>急件${f==="urgent"&&p.flagDate?"（"+esc(String(p.flagDate).slice(5,10))+"）":""}</option>
+  </select>`;
+}
+function curSetFlag(id, flag){
+  const p=prodById(id); if(!p) return;
+  if(!curCanFlag()){ toast("你沒有標狀態的權限",true); return; }
+  flag=CUR_FLAGS[flag]?flag:"";
+  let flagDate="";
+  if(flag==="urgent"){
+    // 急件一定要有日期 —— 沒有日期的急件等於「都很急」，那就沒有急件了
+    const d=prompt("急件要在哪一天之前？（YYYY-MM-DD）", p.flagDate||today);
+    if(d===null){ render(); return; }
+    flagDate=String(d).trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(flagDate) || isNaN(new Date(flagDate+"T00:00:00"))){ toast("日期要像 2026-09-30 這樣",true); render(); return; }
+  }
+  const label=flag?(CUR_FLAGS[flag].zh+(flagDate?" "+flagDate.slice(5):"")):"無狀態";
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), {flag, flagDate}, "已標成「"+label+"」");
+}
 // 商品的四種狀態，兩個模式共用同一份判斷
 function curState(p){
   const st=String(p.fetchStatus||"");
@@ -10485,10 +10532,11 @@ function curTitle(p){
   return p.name || prodPageName(p.officialUrl) || prettyUrl(p.officialUrl);
 }
 function curActs(p){
-  if(!canCurate()) return "";
   const s=curState(p);
-  return `<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">${s.k==="bad"?"自己填名稱":"改名"}</button>
-    <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`;
+  // v218 老闆：「這裡改名字不需要」—— 名稱是官網抓回來的，只有抓不到的才給「自己填名稱」。
+  const rename=(canCurate()&&s.k==="bad")?`<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button>`:"";
+  const del=canCurate()?`<button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`:"";
+  return `${curFlagCtl(p)}${rename}${del}`;
 }
 // ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
 // 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
@@ -10571,7 +10619,7 @@ function curCardHTML(p){
       ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
     <div style="padding:13px 14px 15px">
-      <div class="curname"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname">${curFlagPill(p)}${curFlagOf(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
@@ -10595,7 +10643,7 @@ function curRowHTML(p){
   return `<div class="currow cur-r-${s.k}">
     ${th}
     <div style="min-width:0">
-      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${curFlagPill(p)}${curFlagOf(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       <div style="font-size:12px">
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}
