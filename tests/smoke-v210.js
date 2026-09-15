@@ -568,6 +568,14 @@ const PURL = BASE + "/products/歐泊手鏈";
     ok("卡片上的狀態勾選框跟「看官網」不在同一列", !/看官網[\s\S]{0,400}curflag/.test(card) && /curflag[\s\S]*看官網/.test(card));
     ok("急件的日期鍵在", /class="curflagdate"[^>]*>09-30</.test(card));
     ok("列表模式一列放得下：勾選框也是 .curflag", (curRowHTML(prodById("D")).match(/<label class="curflag"/g)||[]).length===2); }
+  // 往下一步的入口（老闆：「我現在用管理員的也看不到」）：有「排影片」權限的人，卡片和列表上都要有一顆「排片」。
+  withProds([ P("A","普通的品") ], "小行", "mkt", ["plan"]);
+  ok("**行銷的卡片上有「排片」鍵，按了開商品視窗**", /<button[^>]*onclick="curOpen\('A'\)"[^>]*>排片</.test(curCardHTML(prodById("A"))), curCardHTML(prodById("A")).match(/<button[^<]*/g));
+  ok("列表上也有「排片」", /onclick="curOpen\('A'\)"[^>]*>排片</.test(curRowHTML(prodById("A"))));
+  withProds([ P("A","普通的品") ], "小設", "design", ["curate"]);
+  ok("只有選品權限的設計師沒有「排片」（那是行銷的事）", !/排片/.test(curCardHTML(prodById("A"))));
+  reset([U("管理員","boss")], "管理員", "boss"); LAST_RAW.products=[P("A","普通的品")]; STATE=decorate(LAST_RAW); CUR_YM=null;
+  ok("**管理員也看得到「排片」**", /排片/.test(curCardHTML(prodById("A"))), curCardHTML(prodById("A")).match(/<button[^<]*/g));
   // 抓好的不用「改名」；抓不到的才給「自己填名稱」
   withProds([ P("A","普通的品") ]);
   ok("**抓好的商品沒有「改名」鍵**", !/curRename/.test(curActs(prodById("A"))), curActs(prodById("A")));
