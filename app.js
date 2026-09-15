@@ -10558,9 +10558,13 @@ function curActs(p, part){
   // v218 老闆：「這裡改名字不需要」—— 名稱是官網抓回來的，只有抓不到的才給「自己填名稱」。
   const rename=(canCurate()&&s.k==="bad")?`<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button>`:"";
   const del=canCurate()?`<button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`:"";
+  // 往下一步的入口（v219 老闆：「我現在用管理員的也看不到」）——
+  // 開新片／排二創本來只藏在「點商品名」開出來的視窗裡，卡片上沒有一顆鍵說要去哪。
+  // 有「排影片」權限的人在每個品上都看得到一顆「排片」，按了就是那個視窗。
+  const plan=canPlanVideo()?`<button class="btn sm" onclick="curOpen('${esc(jsEsc(p.id))}')" title="看成效、開新片或排二創">排片</button>`:"";
   if(part==="flags") return curFlagCtl(p);
-  if(part==="btns")  return `${rename}${del}`;
-  return `${curFlagCtl(p)}${rename}${del}`;
+  if(part==="btns")  return `${plan}${rename}${del}`;
+  return `${curFlagCtl(p)}${plan}${rename}${del}`;
 }
 // ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
 // 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
