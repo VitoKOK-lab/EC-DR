@@ -557,6 +557,17 @@ const PURL = BASE + "/products/歐泊手鏈";
   withProds([ P("O1","舊急件",{flag:"urgent",flagDate:"2026-10-01"}), P("O2","舊缺圖文",{flag:"noasset"}) ]);
   ok("舊資料的急件還讀得到（連日期）", curIsUrgent(prodById("O1")) && curUrgentDate(prodById("O1"))==="2026-10-01");
   ok("舊資料的缺圖文還讀得到", curIsNoasset(prodById("O2")) && !curIsUrgent(prodById("O2")));
+  // 版面（2026-09-15 老闆截圖）：全站 input 預設 width:100%＋padding 11px，裸的 checkbox 會被撐成一大塊壓在字上；
+  // 而且勾選框跟按鍵擠在卡片同一列會把「看官網」壓成直排。
+  withProds([ P("A","普通的品"), P("D","急件",{urgentDate:"2026-09-30"}) ], "小設", "design", ["curate"]);
+  { const card=curCardHTML(prodById("D"));
+    const boxes=(card.match(/<input type="checkbox"[^>]*>/g)||[]);
+    ok("**卡片上的勾選框都包在 .curflag 裡**（不然會被全站 input 樣式撐大）",
+       boxes.length===2 && (card.match(/<label class="curflag"[^>]*><input type="checkbox"/g)||[]).length===2, boxes);
+    ok("**.curflag 的 input 有把 width 縮回 auto**", /\.curflag input\{[^}]*width:auto/.test(HTML));
+    ok("卡片上的狀態勾選框跟「看官網」不在同一列", !/看官網[\s\S]{0,400}curflag/.test(card) && /curflag[\s\S]*看官網/.test(card));
+    ok("急件的日期鍵在", /class="curflagdate"[^>]*>09-30</.test(card));
+    ok("列表模式一列放得下：勾選框也是 .curflag", (curRowHTML(prodById("D")).match(/<label class="curflag"/g)||[]).length===2); }
   // 抓好的不用「改名」；抓不到的才給「自己填名稱」
   withProds([ P("A","普通的品") ]);
   ok("**抓好的商品沒有「改名」鍵**", !/curRename/.test(curActs(prodById("A"))), curActs(prodById("A")));

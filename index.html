@@ -402,13 +402,18 @@
   .curcard.cur-b-bad{border-color:#E7CFC9}
   .curchip{background:rgba(255,255,255,.92);color:var(--muted)}
   .curname{font-weight:700;font-size:14px;line-height:1.45;min-height:40px}
+  /* 狀態勾選框（缺圖文／急件）。全站 input 預設是 width:100%＋padding 11px，
+     裸的 checkbox 會被撐成一大塊壓在字上 —— 這裡把它縮回一個勾勾 */
+  .curflag{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap;cursor:pointer;color:var(--txt)}
+  .curflag input{width:auto;height:auto;margin:0;padding:0;flex:none;accent-color:var(--accent)}
+  .curflagdate{font:inherit;font-size:12px;padding:2px 7px;border-radius:var(--rs);border:1px solid var(--line);background:#fff;color:var(--red);cursor:pointer;white-space:nowrap}
   .curprice{font-size:17px;font-family:var(--latin);letter-spacing:.01em}
   .curlist{font-size:12px;text-decoration:line-through}
   /* 沒有原價時留一樣高的空白，卡片才會對齊 —— 但不要畫成劃掉的空字，
      那會在畫面上變成一條莫名其妙的短線 */
   .curgap{height:18.6px}
   /* 列表：一列一個商品 */
-  .currow{display:grid;grid-template-columns:44px minmax(0,1fr) 168px 100px 164px;
+  .currow{display:grid;grid-template-columns:44px minmax(0,1fr) 168px 100px 250px;
           gap:16px;align-items:center;padding:11px 18px;border-top:1px solid var(--line)}
   .currow:first-child{border-top:none}
   .currow .btn.sm{white-space:nowrap}
@@ -1028,7 +1033,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=be3cef81d27a"></script>
-<script type="module" src="fb.js?v=be3cef81d27a"></script>
+<script src="app.js?v=29f859838d51"></script>
+<script type="module" src="fb.js?v=29f859838d51"></script>
 </body>
 </html>
