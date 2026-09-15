@@ -3149,6 +3149,12 @@ function commUnread(){
 }
 // 從「每日工作」點「回覆」跳過來時，要打開的是哪一則
 let COMM_OPEN="";
+// 從一張卡跳到另一個分頁。只跳得到這個人本來就有的分頁 —— 沒有那一頁就講清楚，
+// 不要切到一個空白畫面（v220，飛輪的卡片要互相跳）。
+function goTab(k){
+  if(!myTabs().some(t=>t[0]===k)){ toast("你沒有那一頁的權限",true); return false; }
+  CUR_TAB=k; buildNav(); render(); return true;
+}
 function gotoComm(id){
   COMM_OPEN=String(id||"");
   // 跳到「那一則真的在的」分頁 —— 已經收起來的留在進行中頁會找不到，
@@ -4417,6 +4423,13 @@ function pubLinkCard(){
       沒有它，平台的觀看數接不回任何一支片，「哪支流量好、該拿去二創」就永遠判斷不了。
       ${old.length?`<br>更早的 ${old.length} 支不會在月排程上標紅（人已經想不起來是哪一則了），要靠平台對接自動補。`:""}
     </div>
+    ${/* v220 飛輪：最近要補的直接列出來、一鍵開片 —— 以前只有數字，要補的人得去月排程一格一格找紅的 */''}
+    ${fresh.length?`<div style="margin-top:8px">${fresh.slice().sort((a,b)=>String(b.scheduledDate||"").localeCompare(String(a.scheduledDate||""))).slice(0,30).map(v=>
+      `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:8px;align-items:center">
+        <span class="muted" style="flex:none">${esc(String(v.scheduledDate||"").slice(5))}</span>
+        <a href="javascript:void(0)" onclick="${vidOpenFn(v)}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidTitle(v))}</a>
+        <button class="btn sm" style="flex:none" onclick="${vidOpenFn(v)}">補連結</button></div>`).join("")}
+      ${fresh.length>30?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${fresh.length-30} 支</div>`:""}</div>`:""}
     ${sample.length?`<details class="fold" style="margin-top:8px"><summary style="font-size:13px">看更早那 ${old.length} 支<span class="n">${old.length}</span></summary>
       <div class="foldbody" style="max-height:260px;overflow:auto">${sample.slice(0,200).map(v=>
         `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px">
@@ -4444,6 +4457,27 @@ function flowStockCard(staff, pool, unassigned, stockDays){
   </div>`;
 }
 // 流程中控③：待你審片（剪輯完成、還沒審的片，含各平台二創殼）
+// ── 飛輪 v220：待拍 —— 排了片、寫了文案，但還沒有毛片 ──
+// 老闆的飛輪第三步「拍片」以前完全在系統外：行銷開了新片，拍片的人要自己去影片庫翻「未拍」。
+// 這張卡把它拉到看板最上面：急件先、日期近的先，文案跟商品都印出來，看完就能去拍。
+function shootQueue(){
+  return (STATE.videos||[]).filter(v=>v&&!v.deleted&&isSourceVid(v)&&v.stage==="待處理"&&!vidShot(v))   // STATE.videos 本來就沒有大流（decorate 抽掉了），不用再擋一次
+    .sort((a,b)=>(isUrgent(b)?1:0)-(isUrgent(a)?1:0)
+      || String(a.scheduledDate||"9999").localeCompare(String(b.scheduledDate||"9999")));
+}
+function shootQueueCard(){
+  const list=shootQueue(); if(!list.length) return "";
+  const rows=list.slice(0,30).map(v=>{ const d=String(v.scheduledDate||"").slice(0,10);
+    const prods=(Array.isArray(v.products)?v.products:[]).map(p=>p&&p.name).filter(Boolean).join("、");
+    return `<div style="padding:7px 2px;border-bottom:1px solid var(--line);font-size:13px">
+      <div style="display:flex;gap:8px;align-items:center">
+        ${urgentPill(v)}<span class="muted" style="flex:none${d&&d<today?";color:var(--red);font-weight:700":""}">${esc(d?d.slice(5):"沒排日期")}</span>
+        <a href="javascript:void(0)" onclick="${vidOpenFn(v)}" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(vidTitle(v))}</a>
+        ${prods?`<span class="muted" style="font-size:12px;flex:none">🛒 ${esc(prods)}</span>`:""}</div>
+      ${v.videoCopy?`<div class="muted" style="font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(String(v.videoCopy).slice(0,80))}</div>`:""}</div>`; }).join("");
+  return fold("🎥 待拍（排了片、還沒有毛片）", list.length, `<div class="muted" style="font-size:12.5px;margin:2px 0 6px">拍好、毛片上傳後，到片子裡按「毛片已上傳」，它就會從這裡消失、進待認領。</div>${rows}${
+    list.length>30?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${list.length-30} 支</div>`:""}`);
+}
 function flowReviewQueueCard(){
   // ---- ③ 待你審片：剪輯完成、還沒審的（審過剪輯才會上傳雲端）----
   const pendingReview=(STATE.videos||[]).filter(v=>!v.deleted && needsReview(v))
@@ -5575,6 +5609,8 @@ function viewBoard(){
   ${flowStockCard(staff.filter(u=>!NO_EDIT_ROLES.includes(u.role)), pool, unassigned, Math.floor(pool.length/daily))}
   ${canAssignWork()?fold(T("🎬 指派毛片給員工","Assign footage"), unassignedPool.length,
       dashAssignFootageCard(editors, poolN, unassignedPool, assignCount)):""}
+  ${curUrgentCard()}
+  ${shootQueueCard()}
   ${flowReviewQueueCard()}
   ${pubLinkCard()}
   ${prodMissCard()}
@@ -6026,8 +6062,12 @@ function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.v
 // 新增影片：原始片名 ＋ 影片文案 ＋ 商品
 // prefill：從選品清單開新片時帶進來的商品（名稱＋官網連結），行銷不用再複製貼上。
 // ⚠️ 預設是空陣列 —— 原本所有呼叫點都不帶參數，行為一個字都不能變。
-function newSimpleVideo(prefill){
+// opts（v220）：從選品「排片」開過來時帶的 —— urgent＝商品是急件、date＝急件日期（拿來當上片日預設）。
+function newSimpleVideo(prefill, opts){
+  opts=opts||{};
+  const urgentDate=String(opts.date||"").slice(0,10);
   showModal(T("新增影片","Add video"), `
+    ${opts.urgent?`<div class="prodhint" style="display:block">這個商品標了<b>急件</b>${urgentDate?`（${esc(urgentDate.slice(5))} 前）`:""}—— 這支片存檔後會直接是急件，上片日先幫你填了那一天。</div>`:""}
     <label>${T("原本語言（這支影片是什麼語言拍的）","Original language (what language was it shot in)")}</label>
     <select id="sv_lang">${ORIG_LANGS.map(([k,l],i)=>`<option value="${k}" ${VID_LANG===k?'selected':''}>${T(l,["Chinese","Thai","English","Malaysia"][i])}</option>`).join("")}</select>
     <label>${T("原始片名","Raw title")}</label><input id="sv_name" placeholder="${T("毛片名稱","Raw footage name")}">
@@ -6040,7 +6080,7 @@ function newSimpleVideo(prefill){
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
     <div class="grid cols2">
       <div><label>${T("預排上片日期 · 必填","Scheduled upload date · required")}</label>
-        <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value=""></div></div>
+        <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value="${esc(urgentDate)}"></div></div>
       <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
         <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
     </div>
@@ -6065,6 +6105,8 @@ function newSimpleVideo(prefill){
     const video={name, rawName:name, driveFolder:svLink, videoCopy:vcopy, products:svProducts,
       origLang:val("sv_lang")||"", scheduledDate:svDate, publishTime:svTime,
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
+    // v220：急件商品開的片就是急件 —— 跟主管在指派清單上按的那顆寫一樣的欄位
+    if(opts.urgent){ video.urgent=true; video.urgentAt=nowIso(); video.urgentBy=currentUser(); }
     return await write("POST","/api/videos",{video},T("已新增影片","Video added"));
   });
 }
@@ -10645,7 +10687,9 @@ function curOpen(id){
 function curNewVideo(id){
   const p=(STATE.products||[]).find(x=>x&&x.id===id); if(!p){ toast("找不到這個商品",true); return; }
   if(!canPlanVideo()){ toast("你沒有「排影片」的權限",true); return; }
-  newSimpleVideo([{name:curTitle(p), link:p.officialUrl, salePrice:(+p.priceMin||0)||null}]);
+  // v220 飛輪：商品是急件的話，這支片直接就是急件、上片日預設那一天 —— 行銷不用再填第二次。
+  newSimpleVideo([{name:curTitle(p), link:p.officialUrl, salePrice:(+p.priceMin||0)||null}],
+    { urgent:curIsUrgent(p), date:curUrgentDate(p) });
 }
 // ── 卡片模式：挑品的時候看圖 ──
 function curCardHTML(p){
@@ -10705,15 +10749,87 @@ function curRowHTML(p){
     <div class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap">${curActs(p)}</div>
   </div>`;
 }
+// ── 飛輪 v220：選品頁上面那一條「急件／缺圖文」＋ 看板的「急件還沒排片」 ──
+// 老闆：「這一頁要怎連到後面的步驟」。急件、缺圖文標了之後不能只是排序，
+// 要變成有人的工作：急件 → 行銷排片；缺圖文 → 設計師補。
+let CUR_FILTER=null;   // null＝全部、"urgent"＝只看急件、"noasset"＝只看缺圖文
+function curSetFilter(k){ CUR_FILTER=(CUR_FILTER===k)?null:k; render(); }
+function curFilterFn(){ return CUR_FILTER==="urgent"?curIsUrgent : CUR_FILTER==="noasset"?curIsNoasset : null; }
+// 急件、但一支片都還沒開（新片或二創都算開了）
+function curUnplanned(p){ return curIsUrgent(p) && !curVidsFor(p).length; }
+function curFlagStrip(items){
+  const urg=items.filter(curIsUrgent), noa=items.filter(curIsNoasset);
+  if(!urg.length && !noa.length) return "";
+  const unpl=urg.filter(curUnplanned).length;
+  return `<div class="row" style="gap:8px;margin:-8px 0 14px;flex-wrap:wrap">
+    ${urg.length?`<button class="btn sm ${CUR_FILTER==="urgent"?"":"sec"}" onclick="curSetFilter('urgent')">急件 ${urg.length}${unpl?`・${unpl} 個還沒排片`:""}</button>`:""}
+    ${noa.length?`<button class="btn sm ${CUR_FILTER==="noasset"?"":"sec"}" onclick="curSetFilter('noasset')">缺圖文 ${noa.length}</button>`:""}
+    ${CUR_FILTER?`<span class="muted" style="font-size:12px">只看${CUR_FILTER==="urgent"?"急件":"缺圖文"}，再按一次回到全部</span>`:""}</div>`;
+}
+// 所有月份裡「急件但還沒排片」的品，日期早的先、沒日期的最後
+function curUrgentList(){
+  const k=(p)=>curUrgentDate(p)||"9999-99-99";
+  return prodList().filter(curUnplanned).sort((a,b)=>k(a)<k(b)?-1:k(a)>k(b)?1:0);
+}
+// 看板那張卡：只給看得到選品、又排得了片的人（其他人看到也做不了什麼）
+function curUrgentCard(){
+  if(!hasPerm("curate")||!hasPerm("plan")) return "";
+  const list=curUrgentList(); if(!list.length) return "";
+  const late=list.filter(p=>{ const d=curUrgentDate(p); return d && d<today; }).length;
+  return `<div class="card" style="padding:12px;border-left:4px solid var(--red)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <b style="font-size:16px">🔥 急件還沒排片</b>
+      <span class="row" style="gap:6px;flex-wrap:wrap"><span class="pill em">${list.length} 個品</span>${late?`<span class="pill em">${late} 個已過日期</span>`:""}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:8px;line-height:1.8">
+      設計師標了急件，但一支片都還沒開。按「排片」開新片或拿舊片二創 —— 商品名、連結、急件、日期都會自動帶進去。</div>
+    <div style="margin-top:8px">${list.slice(0,30).map(p=>{ const d=curUrgentDate(p);
+      return `<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:8px;align-items:center">
+        <span class="muted" style="flex:none${d&&d<today?";color:var(--red);font-weight:700":""}">${esc(d?d.slice(5):"沒日期")}</span>
+        <a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(curTitle(p))}</a>
+        <button class="btn sm" style="flex:none" onclick="curOpen('${esc(jsEsc(p.id))}')">排片</button></div>`; }).join("")}
+      ${list.length>30?`<div class="muted" style="font-size:12px;padding:6px 2px">…還有 ${list.length-30} 個</div>`:""}</div></div>`;
+}
+// ── 飛輪 v220：成效回到選品 —— 「以前選過、成效好、這個月還沒選」 ──
+// 老闆的飛輪最後一步是「成效回來 → 下個月再選」。以前這一步靠人記得；現在把它擺在選品頁最上面。
+function curRepickList(){
+  const ym=curMonth();
+  return prodList()
+    .filter(p=>Array.isArray(p.picks)&&p.picks.length&&!p.picks.some(k=>k&&k.month===ym))
+    .map(p=>({ p, views:curVidsFor(p).reduce((a,v)=>a+vidViews(v),0), n:+((psOf(curTitle(p))||{}).n||0),
+               last:p.picks.map(k=>String((k&&k.month)||"")).sort().pop()||"" }))
+    .filter(x=>x.views>0||x.n>0)
+    .sort((a,b)=>(b.views-a.views)||(b.n-a.n)||(b.last<a.last?-1:b.last>a.last?1:0))
+    .slice(0,5);
+}
+function curRepickCard(){
+  if(!canCurate()||curYM()!==curMonth()) return "";
+  const l=curRepickList(); if(!l.length) return "";
+  return `<div class="card" style="border-left:4px solid var(--gold-dk)">
+    <b>📈 以前選過、成效好、這個月還沒選</b>
+    <div class="muted" style="font-size:12.5px;margin-top:2px">影片觀看加起來最多的前 ${l.length} 個。要再推的話按一下就加進這個月。</div>
+    <div style="margin-top:8px">${l.map(x=>`<div style="padding:5px 2px;border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(x.p.id))}')" style="flex:1;min-width:160px">${esc(curTitle(x.p))}</a>
+        <span class="muted" style="font-size:12px;flex:none">${x.views?`觀看 ${num(x.views)}`:""}${x.n?`　推過 ${x.n} 次`:""}　上次 ${esc(x.last.replace("-","/"))}</span>
+        <button class="btn sm sec" style="flex:none" onclick="curRepick('${esc(jsEsc(x.p.id))}')">再選這個月</button></div>`).join("")}</div></div>`;
+}
+function curRepick(id){
+  const p=prodById(id); if(!p){ toast("找不到這個商品",true); return; }
+  if(!canCurate()){ toast("你沒有「選品」的權限",true); return; }
+  const ym=curMonth();
+  if((p.picks||[]).some(k=>k&&k.month===ym)){ toast("這個月已經選過了"); return; }
+  const picks=(Array.isArray(p.picks)?p.picks:[]).concat([{month:ym, by:currentUser(), at:nowIso(), note:"從「成效好、這個月還沒選」再選"}]);
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), {picks}, "已加進這個月的選品");
+}
 function viewCurate(){
   if(!hasPerm("curate")) return `<h2>選品</h2>
     <div class="card muted">這一頁要有「選品」權限才看得到。</div>`;
-  const items=curMonthItems(), pend=curPending().length, list=(CUR_VIEW==="list");
+  const all=curMonthItems(), pend=curPending().length, list=(CUR_VIEW==="list");
+  const ff=curFilterFn(), items=ff?all.filter(ff):all;
   const [yy,mm]=curYM().split("-").map(Number);
 
   const head=`<div class="row" style="gap:14px;margin-bottom:18px">
     <h2 style="margin:0">選品</h2>${curMonthTabs()}
-    <span style="flex:1"></span>${curViewToggle()}</div>`;
+    <span style="flex:1"></span>${curViewToggle()}</div>${curFlagStrip(all)}`;
 
   // 列表模式下「貼網址」收成一條，按「展開」才長出來 —— 處理一整批的時候
   // 不需要一直看到那個大框
@@ -10741,7 +10857,9 @@ function viewCurate(){
       ${CUR_BUSY?"抓取中…":"同步"}</button></div>`:"";
 
   let body;
-  if(!items.length){
+  if(!items.length && all.length){
+    body=`<div class="card muted">${mm} 月沒有${CUR_FILTER==="urgent"?"急件":"缺圖文"}的品。</div>`;
+  }else if(!items.length){
     body=`<div class="card muted">${yy} 年 ${mm} 月還沒有選品。${canCurate()?"貼幾個商品網址上去就有了。":""}</div>`;
   }else if(list){
     body=`<div class="card" style="padding:0;overflow:hidden">
@@ -10752,7 +10870,7 @@ function viewCurate(){
   }else{
     body=`<div class="curgrid">${items.map(curCardHTML).join("")}</div>`;
   }
-  return `${head}${paste}${syncCard}${body}${psFootNote()}`;
+  return `${head}${curRepickCard()}${paste}${syncCard}${body}${psFootNote()}`;
 }
 // 「推過幾次」這份資料有多新。
 //
