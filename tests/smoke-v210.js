@@ -115,6 +115,17 @@ ok("needVideos 也說不用", needVideos("design") === false);
   ok("外包照舊沒有月排程（v185 那條還在）", !tabs.includes("cal"), tabs);
   ok("傳訊息還在最前面", tabs[0]==="chat", tabs); }
 
+// v217：員工視角那張卡要列得出每一種職位（老闆：「我看不到 Jessica 的員工視角」）
+// 以前是手寫的職位清單，加了設計師沒人記得改。改成直接用 STAFF_ROLES —— 這裡守著：
+// 每一種職位各放一個人，每一個都要在下拉裡。
+{ const users=STAFF_ROLES.map((r,i)=>U("員"+i+"_"+r, r)).concat([U("Jessica","design",{outsourced:true}), U("Regina","manager"), U("管理員","boss")]);
+  reset(users, "管理員", "boss");
+  const h=dashViewAsCard();
+  const missing=users.filter(u=>u.role!=="boss" && !h.includes('value="'+u.name+'"')).map(u=>u.name+"("+u.role+")");
+  ok("**員工視角的下拉列得出每一種職位的人**（以後加職位不會再漏）", missing.length===0, missing);
+  ok("外包的設計師 Jessica 也在裡面", h.includes('value="Jessica"'));
+  ok("經理人也在（老闆要看 Regina 的畫面）", h.includes('value="Regina"')); }
+
 // ══════════ ② 兩個新權限 ══════════
 ok("有「選品」這一項", PERMS.curate && PERMS.curate.label === "選品");
 ok("有「排影片」這一項", PERMS.plan && PERMS.plan.label === "排影片");
