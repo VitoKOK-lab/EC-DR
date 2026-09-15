@@ -393,6 +393,32 @@ function reset(vids, users){
        !/class="mba_u" value="陳鋒"/.test(h), (h.match(/class="mba_u" value="[^"]*"/g)||[]));
     ok("（對照）自己人在名單上", /class="mba_u" value="小葵"/.test(h)); }
 
+  // ══════════ ⑧ 外包自成一區（v215，老闆：「外包的 統一一個群組」）══════════
+  // 函式對了不算數 —— 突變測試抓到兩個**用它的地方**繞過去了：通知的呼叫端、登入頁。
+  // 這裡從呼叫端測：真的發通知、真的畫登入頁。
+  { reset(); as("HR小姐","hr"); WRITES=[]; fields.hrn_who="__twmake__"; fields.hrn_txt="明天開會";
+    await hrNotify(); await wait(20);
+    const got=WRITES.filter(w=>w[1]==="tasks").map(w=>w[3].user).sort();
+    ok("**「全體台灣・剪輯行銷」的通知不會發給外包的剪輯**（畫面上他不在那一區）",
+       got.join()==="小葵" , got);
+    reset(); as("HR小姐","hr"); WRITES=[]; fields.hrn_who="__ext__"; fields.hrn_txt="外包請款";
+    await hrNotify(); await wait(20);
+    const got2=WRITES.filter(w=>w[1]==="tasks").map(w=>w[3].user).sort();
+    ok("**「全體外包」的通知只發給外包**", got2.join()==="陳鋒", got2); }
+  // 登入頁：真的把它畫出來，看外包那一區在不在、陳鋒在不在裡面
+  { reset(); localStorage.removeItem("ecdr_user"); localStorage.removeItem("ecdr_role"); localStorage.removeItem("ecdr_last");
+    LOGIN_ALL=true;
+    const nodes=[]; const grid=el(); grid.appendChild=(n)=>{ nodes.push(String(n.textContent||n.innerHTML||"")); };
+    const orig=global.document.getElementById;
+    global.document.getElementById=(id)=>{ const e=orig(id); return (e && e!==viewEl && id!=="modalRoot") ? grid : e; };
+    let err=""; try{ bootLogin(); }catch(e){ err=String(e&&e.message||e); }
+    global.document.getElementById=orig;
+    ok("登入頁畫得出來", !err, err);
+    const i外包=nodes.indexOf("外包"), i陳鋒=nodes.indexOf("陳鋒"), i剪輯=nodes.indexOf("台灣・剪輯行銷"), i其他=nodes.indexOf("台灣・其他"), i小葵=nodes.indexOf("小葵");
+    ok("**登入頁有「外包」這一區**", i外包>=0, nodes);
+    ok("**陳鋒在「外包」那一區底下，不在剪輯行銷底下**", i陳鋒>i外包 && i小葵>i剪輯 && i小葵<i其他, {nodes});
+    ok("外包那一區排在台灣兩區後面", i外包>i其他); }
+
   // ⚠️ 只擋出勤，**不擋對話** —— 老闆那句話的後半段
   { reset(); as("陳鋒","editor");
     ok("**外包照樣看得到「傳訊息」**（老闆：但可以對話）",

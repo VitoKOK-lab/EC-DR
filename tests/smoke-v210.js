@@ -74,6 +74,37 @@ ok("needVideos 也說不用", needVideos("design") === false);
   ok("**fb.js 的清單跟 app.js 一致**", fbList.slice().sort().join() === NO_VIDEO_ROLES.slice().sort().join(),
      { fb: fbList, app: NO_VIDEO_ROLES }); }
 
+// ⚠️ 登入頁是照 STAFF_GROUPS 那張表分區的：一個職位沒落在任何一區，那個人**登入頁上直接消失**。
+//    v210 加了設計師沒加進去，Jessica 就不見了（老闆 2026-09-15 截圖抓到）。
+//    這裡守兩件事：每個職位都在表裡、而且只在一區（在兩區會出現兩次）。
+{ const where=(role)=>STAFF_GROUPS.filter(g=>g[3].includes(role)).map(g=>g[0]);
+  const missing=STAFF_ROLES.filter(r=>where(r).length===0);
+  const doubled=STAFF_ROLES.filter(r=>where(r).length>1);
+  ok("**每一個職位都落在登入頁的某一區**（漏了的人登入頁上直接消失）", missing.length===0, missing);
+  ok("而且只在一區（在兩區會出現兩次）", doubled.length===0, doubled);
+  ok("設計師跟剪輯行銷同一排（挑品是做內容的事）", where("design").join()==="twmake", where("design"));
+  // 真的照登入頁那段邏輯跑一次：小設要分得進某一區
+  reset([U("小設","design"),U("阿剪","editor")], "小設", "design");
+  const all=staffSorted(STATE.users.filter(u=>STAFF_ROLES.concat("manager").includes(u.role||"editor")));
+  const shown=[].concat(...STAFF_GROUPS.map(g=>all.filter(u=>g[3].includes(u.role||"editor")).map(u=>u.name)));
+  ok("**Jessica 那種設計師登入頁上看得到**", shown.includes("小設"), shown); }
+// v215 老闆：「外包的 統一一個群組」—— 外包不是職位是旗標，先抽出來自成一區
+{ reset([U("小設","design",{outsourced:true}), U("陳鋒","editor",{outsourced:true}), U("阿剪","editor"), U("Ali","intl")], "阿剪", "editor");
+  const secs=staffSections(staffSorted(STATE.users));
+  const of=(name)=>(secs.find(g=>g.people.some(u=>u.name===name))||{}).key;
+  ok("**外包的設計師在「外包」那一區，不在剪輯行銷**", of("小設")==="ext", of("小設"));
+  ok("外包的剪輯也在「外包」那一區", of("陳鋒")==="ext", of("陳鋒"));
+  ok("自己人照職位分，不受影響", of("阿剪")==="twmake" && of("Ali")==="pk", [of("阿剪"),of("Ali")]);
+  ok("一個人只出現在一區", secs.reduce((a,g)=>a+g.people.filter(u=>u.name==="小設").length,0)===1);
+  const keys=secs.map(g=>g.key);
+  ok("外包排在台灣兩區後面、巴基斯坦前面", keys.indexOf("ext")>keys.indexOf("twrest") && keys.indexOf("ext")<keys.indexOf("pk"), keys);
+  ok("沒有外包的時候那一區不會出現（看板不留空標題）", !staffByGroup([{name:"阿剪",role:"editor"}]).some(g=>g.key==="ext"));
+  // 整區通知跟畫面上的分區要一致
+  ok("**「全體外包」發得到外包、只發給外包**", noticeTargets("__ext__").sort().join()==="小設,陳鋒", noticeTargets("__ext__"));
+  ok("「全體剪輯行銷」不再包含外包的剪輯（畫面上他也不在那一區）", noticeTargets("__twmake__").join()==="阿剪", noticeTargets("__twmake__"));
+  ok("全體還是全體（外包也在）", noticeTargets("__all__").length===4);
+  ok("直接指名一個人照舊", noticeTargets("阿剪").join()==="阿剪"); }
+
 // ══════════ ② 兩個新權限 ══════════
 ok("有「選品」這一項", PERMS.curate && PERMS.curate.label === "選品");
 ok("有「排影片」這一項", PERMS.plan && PERMS.plan.label === "排影片");
