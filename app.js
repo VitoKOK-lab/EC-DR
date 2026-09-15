@@ -752,9 +752,11 @@ async function route(method, path, body){
     if(method==="PUT"){
       // ⚠️ 白名單：沒列進來的欄位會被默默丟掉。加新欄位時很容易忘記這裡。
       const patch={};
-      // v218：flag（急件／缺圖文）與 flagDate（急件的日期）。⚠️ status 是「下架」那一格（v205），不要混用。
-      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt","flag","flagDate"]
+      // v218：urgentDate（急件，值就是日期）與 noasset（缺圖文）—— 兩個各自獨立、可以同時標。
+      // flag／flagDate 是 v218 第一版的單選欄位，留著只為了把舊值清掉。⚠️ status 是「下架」那一格（v205），不要混用。
+      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt","urgentDate","flag","flagDate"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=String(body[k]); });
+      if(body.noasset!=null) patch.noasset=(body.noasset===true||body.noasset==="true");   // 布林，不要存成 "false" 字串（那是 truthy）
       ["priceMin","priceMax","listMin","listMax"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=+body[k]||0; });
       if(Array.isArray(body.variants)) patch.variants=body.variants.map(String).slice(0,20);
@@ -10393,7 +10395,7 @@ function curSetView(v){ CUR_VIEW=(v==="list"?"list":"card"); render(); }
 function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); if(!g) return [];
   // v218 老闆：「有狀態的要排序在上面」。急件照日期近的先；其餘保持原本順序（穩定排序）。
   return g.items.map((p,i)=>({p,i,r:curFlagRank(p)}))
-    .sort((a,b)=>(a.r[0]-b.r[0]) || (a.r[1]<b.r[1]?-1:a.r[1]>b.r[1]?1:0) || (a.i-b.i))
+    .sort((a,b)=>(a.r[0]-b.r[0]) || (a.r[1]<b.r[1]?-1:a.r[1]>b.r[1]?1:0) || (a.r[2]-b.r[2]) || (a.i-b.i))
     .map(x=>x.p); }
 
 // 月份標籤。每個月旁邊標幾個品 —— 一眼看得出哪個月在做事。
@@ -10478,46 +10480,62 @@ function psLine(p){
     ${(+g.c)?`　留言 ${num(+g.c)}`:""}${(+g.a)?`　加購 ${num(+g.a)}`:""}</div>`;
 }
 // ── 商品的「狀態」（v218，老闆指定）：缺圖文／急件（急件要有日期），有狀態的排最上面 ──
-// 這是**人標的**，跟 fetchStatus（抓沒抓到資料）是兩回事，分開存在 flag／flagDate。
+// 這是**人標的**，跟 fetchStatus（抓沒抓到資料）是兩回事。
+// ⚠️ 老闆：「這兩種都會並行，不是擇一」—— 所以是兩個獨立的欄位，不是一個下拉：
+//    urgentDate（非空就是急件，值就是日期）、noasset（true 就是缺圖文）。
+//    第一版做成單選的 flag／flagDate，這裡還讀得懂舊值，寫的時候順手清掉。
 // 設計師跟行銷都標得動（選品／排影片任一個權限）—— 缺圖文是設計師發現的，急件是行銷定的。
-const CUR_FLAGS={ urgent:{zh:"急件", pill:"em"}, noasset:{zh:"缺圖文", pill:"wa"} };
-function curFlagOf(p){ const f=String((p&&p.flag)||""); return CUR_FLAGS[f]?f:""; }
+function curUrgentDate(p){
+  if(!p) return "";
+  if(p.urgentDate) return String(p.urgentDate);
+  return p.flag==="urgent" ? String(p.flagDate||"") : "";
+}
+function curIsUrgent(p){ return !!(p && (p.urgentDate || p.flag==="urgent")); }
+function curIsNoasset(p){ return !!(p && (p.noasset || p.flag==="noasset")); }
 function curCanFlag(){ return !VIEW_AS && (hasPerm("curate")||hasPerm("plan")); }
-// 排序用的權重：急件（日期近的先、沒填日期的排急件最後）→ 缺圖文 → 其餘照原本順序
+// 排序用的權重：急件（日期近的先、沒填日期的排急件最後）→ 缺圖文 → 其餘照原本順序。
+// 同一天的急件，兼缺圖文的排前面（它比較沒著落）。
 function curFlagRank(p){
-  const f=curFlagOf(p);
-  if(f==="urgent") return [0, String(p.flagDate||"9999-99-99")];
-  if(f==="noasset") return [1, ""];
-  return [2, ""];
+  const u=curIsUrgent(p), n=curIsNoasset(p);
+  return [u?0:(n?1:2), u?(curUrgentDate(p)||"9999-99-99"):"", n?0:1];
 }
 function curFlagPill(p){
-  const f=curFlagOf(p); if(!f) return "";
-  const d=f==="urgent"?String(p.flagDate||"").slice(5,10):"";
-  return `<span class="pill ${CUR_FLAGS[f].pill}" style="font-size:10px">${CUR_FLAGS[f].zh}${d?" "+esc(d):""}</span>`;
+  let h="";
+  if(curIsUrgent(p)){ const d=curUrgentDate(p).slice(5,10);
+    h+=`<span class="pill em" style="font-size:10px">急件${d?" "+esc(d):""}</span>`; }
+  if(curIsNoasset(p)) h+=`<span class="pill wa" style="font-size:10px">缺圖文</span>`;
+  return h;
 }
 function curFlagCtl(p){
   if(!curCanFlag()) return "";
-  const f=curFlagOf(p);
-  return `<select onchange="curSetFlag('${esc(jsEsc(p.id))}',this.value)" style="width:auto;font-size:12px;padding:4px 6px" title="標狀態：缺圖文／急件（急件要填日期）">
-    <option value="" ${f?"":"selected"}>無狀態</option>
-    <option value="noasset" ${f==="noasset"?"selected":""}>缺圖文</option>
-    <option value="urgent" ${f==="urgent"?"selected":""}>急件${f==="urgent"&&p.flagDate?"（"+esc(String(p.flagDate).slice(5,10))+"）":""}</option>
-  </select>`;
+  const id=esc(jsEsc(p.id)), u=curIsUrgent(p), n=curIsNoasset(p), d=curUrgentDate(p).slice(5,10);
+  return `<label style="font-size:12px;white-space:nowrap;cursor:pointer" title="缺圖文：還沒有圖或文案"><input type="checkbox" ${n?"checked":""} onchange="curSetNoasset('${id}',this.checked)"> 缺圖文</label>
+    <label style="font-size:12px;white-space:nowrap;cursor:pointer" title="急件：要填哪一天之前"><input type="checkbox" ${u?"checked":""} onchange="curSetUrgent('${id}',this.checked)"> 急件</label>${u?`<button class="btn sec sm" onclick="curSetUrgent('${id}',true)" title="改日期">${d?esc(d):"填日期"}</button>`:""}`;
 }
-function curSetFlag(id, flag){
+// 舊版單選欄位有值的話，一起清掉 —— 不然勾掉之後舊值又會把它讀回來
+function curFlagPatch(p, patch){ if(p.flag||p.flagDate){ patch.flag=""; patch.flagDate=""; } return patch; }
+function curSetNoasset(id, on){
   const p=prodById(id); if(!p) return;
   if(!curCanFlag()){ toast("你沒有標狀態的權限",true); return; }
-  flag=CUR_FLAGS[flag]?flag:"";
-  let flagDate="";
-  if(flag==="urgent"){
+  const patch=curFlagPatch(p,{ noasset: !!on });
+  // 舊值是 urgent 的話清掉 flag 會連急件一起丟 —— 把它搬到新欄位
+  if(p.flag==="urgent" && !p.urgentDate) patch.urgentDate=String(p.flagDate||"");
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), patch, on?"已標「缺圖文」":"已取消「缺圖文」");
+}
+function curSetUrgent(id, on){
+  const p=prodById(id); if(!p) return;
+  if(!curCanFlag()){ toast("你沒有標狀態的權限",true); return; }
+  let urgentDate="";
+  if(on){
     // 急件一定要有日期 —— 沒有日期的急件等於「都很急」，那就沒有急件了
-    const d=prompt("急件要在哪一天之前？（YYYY-MM-DD）", p.flagDate||today);
+    const d=prompt("急件要在哪一天之前？（YYYY-MM-DD）", curUrgentDate(p)||today);
     if(d===null){ render(); return; }
-    flagDate=String(d).trim();
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(flagDate) || isNaN(new Date(flagDate+"T00:00:00"))){ toast("日期要像 2026-09-30 這樣",true); render(); return; }
+    urgentDate=String(d).trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(urgentDate) || isNaN(new Date(urgentDate+"T00:00:00"))){ toast("日期要像 2026-09-30 這樣",true); render(); return; }
   }
-  const label=flag?(CUR_FLAGS[flag].zh+(flagDate?" "+flagDate.slice(5):"")):"無狀態";
-  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), {flag, flagDate}, "已標成「"+label+"」");
+  const patch=curFlagPatch(p,{ urgentDate });
+  if(p.flag==="noasset" && !p.noasset) patch.noasset=true;
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), patch, on?"已標「急件 "+urgentDate.slice(5)+"」":"已取消「急件」");
 }
 // 商品的四種狀態，兩個模式共用同一份判斷
 function curState(p){
@@ -10619,7 +10637,7 @@ function curCardHTML(p){
       ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
     <div style="padding:13px 14px 15px">
-      <div class="curname">${curFlagPill(p)}${curFlagOf(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname">${curFlagPill(p)}${curFlagPill(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
@@ -10643,7 +10661,7 @@ function curRowHTML(p){
   return `<div class="currow cur-r-${s.k}">
     ${th}
     <div style="min-width:0">
-      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${curFlagPill(p)}${curFlagOf(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${curFlagPill(p)}${curFlagPill(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       <div style="font-size:12px">
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}
