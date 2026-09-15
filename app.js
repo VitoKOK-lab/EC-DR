@@ -10509,8 +10509,10 @@ function curFlagPill(p){
 function curFlagCtl(p){
   if(!curCanFlag()) return "";
   const id=esc(jsEsc(p.id)), u=curIsUrgent(p), n=curIsNoasset(p), d=curUrgentDate(p).slice(5,10);
-  return `<label style="font-size:12px;white-space:nowrap;cursor:pointer" title="缺圖文：還沒有圖或文案"><input type="checkbox" ${n?"checked":""} onchange="curSetNoasset('${id}',this.checked)"> 缺圖文</label>
-    <label style="font-size:12px;white-space:nowrap;cursor:pointer" title="急件：要填哪一天之前"><input type="checkbox" ${u?"checked":""} onchange="curSetUrgent('${id}',this.checked)"> 急件</label>${u?`<button class="btn sec sm" onclick="curSetUrgent('${id}',true)" title="改日期">${d?esc(d):"填日期"}</button>`:""}`;
+  // ⚠️ 勾選框一定要掛 .curflag —— 全站的 input 預設是 width:100%＋padding 11px（給文字欄用的），
+  //    裸的 checkbox 會被撐成一大塊壓在字上面（2026-09-15 老闆截圖抓到的）。
+  return `<label class="curflag" title="缺圖文：還沒有圖或文案"><input type="checkbox" ${n?"checked":""} onchange="curSetNoasset('${id}',this.checked)">缺圖文</label>
+    <label class="curflag" title="急件：要填哪一天之前"><input type="checkbox" ${u?"checked":""} onchange="curSetUrgent('${id}',this.checked)">急件</label>${u?`<button class="curflagdate" onclick="curSetUrgent('${id}',true)" title="改日期">${d?esc(d):"填日期"}</button>`:""}`;
 }
 // 舊版單選欄位有值的話，一起清掉 —— 不然勾掉之後舊值又會把它讀回來
 function curFlagPatch(p, patch){ if(p.flag||p.flagDate){ patch.flag=""; patch.flagDate=""; } return patch; }
@@ -10549,11 +10551,15 @@ function curTitle(p){
   // 印整串 https://… 又長又看不懂
   return p.name || prodPageName(p.officialUrl) || prettyUrl(p.officialUrl);
 }
-function curActs(p){
+// part：不給就是全部（列表一列放得下）；"flags"／"btns" 是卡片用的 —— 卡片一格只有四分之一寬，
+// 狀態勾選框跟按鍵擠同一列會把「看官網」壓成直排（2026-09-15 老闆截圖），所以分兩列。
+function curActs(p, part){
   const s=curState(p);
   // v218 老闆：「這裡改名字不需要」—— 名稱是官網抓回來的，只有抓不到的才給「自己填名稱」。
   const rename=(canCurate()&&s.k==="bad")?`<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button>`:"";
   const del=canCurate()?`<button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`:"";
+  if(part==="flags") return curFlagCtl(p);
+  if(part==="btns")  return `${rename}${del}`;
   return `${curFlagCtl(p)}${rename}${del}`;
 }
 // ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
@@ -10643,9 +10649,10 @@ function curCardHTML(p){
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
             :`<div class="muted" style="font-size:12px;margin-top:7px">${
                 s.k==="bad"?esc(p.fetchError||"抓不到商品資料"):"按上面的「同步」把資料抓回來"}</div>`}
-      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:nowrap">
-        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener" style="font-size:12px;flex:1">看官網</a>
-        ${curActs(p)}
+      ${curCanFlag()?`<div class="row" style="gap:10px;margin-top:10px">${curActs(p,"flags")}</div>`:""}
+      <div class="row" style="gap:6px;margin-top:10px;flex-wrap:nowrap">
+        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener" style="font-size:12px;flex:1;white-space:nowrap">看官網</a>
+        ${curActs(p,"btns")}
       </div>
     </div>
   </div>`;
