@@ -197,7 +197,11 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   t.unshift(["chat", currentRole()==="intl"?"Messages":"傳訊息"]);
   // v185（老闆指定）：外包人員看不到月排程 —— 那是全公司的上片計畫，
   // 他只做被指派的片。（看板與成效那一層在 teamBoardBody 擋。）
-  if(isOutsourced()) return t.filter(x=>x[0]!=="cal");
+  // ⚠️ v216：這裡以前是 `return t.filter(...)` —— **先回傳，跳過下面「勾起來的權限補成分頁」**
+  //    那一段。結果外包的人不管在權限表勾了什麼，分頁永遠只有「傳訊息」。
+  //    老闆 2026-09-15：「Jessica 為什麼有選品 但沒有這一頁」—— 陳鋒也一直是這樣。
+  //    權限是老闆一格一格勾的，外包也算數；只有月排程照舊不給。改成最後才把 cal 拿掉。
+  const ext=isOutsourced();
   // v196：「找影片」給拿到權限的人（老闆、經理人、或設定裡勾過的人）。
   // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
   //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
@@ -207,6 +211,7 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   if(currentRole()!=="intl") PERM_KEYS.forEach(k=>{ const P=PERMS[k];
     if(P.tab && hasPerm(k) && !t.some(x=>x[0]===P.tab)) t.push([P.tab, P.label]); });
   if(isOwner()){ t.push(["settings","設定"]); }
+  if(ext) return t.filter(x=>x[0]!=="cal").sort((a,b)=>tabPos(a[0])-tabPos(b[0]));
   // v207：分頁順序由 TAB_ORDER 決定，不是由「誰先被 push 進來」決定。
   // 權限改成逐人勾之後，同樣一個人今天勾兩項、明天勾三項，導覽列就會換位置 ——
   // 每天在用的人是靠位置點的，位置會跳比少一頁還難用。
