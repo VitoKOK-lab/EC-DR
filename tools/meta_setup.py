@@ -185,12 +185,34 @@ def main():
         print("  這幾個通常是：還沒切成『專業帳號』，或沒有連到你管理的粉專。")
         print("  （LINE 社群沒有這種 API，本來就抓不到，所以不列在這裡。）")
 
+    # ── 廣告花費（v214，老闆選 A：系統自己去跟 Meta 要）──
+    # 這把權杖要多一個 ads_read 才拿得到廣告資料；缺了的話 ads_sync 會拿到空的，
+    # 而錯誤訊息不會講。在這裡就先講。
+    ad_account = ""
+    try:
+        got = set(d.get("permission") for d in
+                  (_call("me/permissions", token).get("data") or []) if d.get("status") == "granted")
+    except Exception:                                           # noqa: BLE001
+        got = set()
+    if "ads_read" in got:
+        print("\n這把權杖有 ads_read ✓（可以抓廣告花費）")
+    else:
+        print("\n⚠ 這把權杖沒有 ads_read —— 廣告花費會抓不到。")
+        print("  要抓的話：回圖形 API 測試工具重新產生權杖時多勾 ads_read，再跑一次這支。")
+    print("\n廣告帳號 ID（廣告管理員網址列 act= 後面那串數字；不用就直接按 Enter）")
+    ad_account = input("  廣告帳號 ID：").strip().replace("act_", "")
+    if ad_account and not ad_account.isdigit():
+        print("  看起來不像 ID（應該是一串數字），先不存。")
+        ad_account = ""
+
     print("\n要把上面這些寫進 %s 嗎？" % DEFAULT_CONFIG)
     if input("輸入 y 確認：").strip().lower() != "y":
         print("沒有寫入，結束。")
         return 1
 
     body = {"token": token, "accounts": accounts}
+    if ad_account:
+        body["adAccountId"] = ad_account
     with open(DEFAULT_CONFIG, "w", encoding="utf-8") as f:
         json.dump(body, f, ensure_ascii=False, indent=2)
     os.chmod(DEFAULT_CONFIG, stat.S_IRUSR | stat.S_IWUSR)    # 只有你讀得到

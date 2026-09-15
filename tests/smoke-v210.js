@@ -532,6 +532,24 @@ const PURL = BASE + "/products/歐泊手鏈";
   modalHTML = ""; curNewVideo("OP");
   ok("**沒權限直接呼叫開新片也擋得住**", modalHTML === "", modalHTML.slice(0,80)); }
 
+// ── 廣告花費（v214）：影片視窗一行、商品視窗加總 ──
+{ const AD=(spend,reach,purchases,until)=>({adId:"a"+spend,name:"廣告",status:"ACTIVE",postId:"p",spend,reach,clicks:3,purchases,since:"2026-08-15",until:until||"2026-09-14",at:""});
+  const a=vidAdSpend({ads:[AD(1500.5,800,2),AD(300,100,0,"2026-07-31")]});
+  ok("花費、觸及、購買都是加起來的", Math.round(a.spend)===1801 && a.reach===900 && a.purchases===2 && a.n===2, a);
+  ok("「到哪一天」取最晚的區間", a.last==="2026-09-14");
+  ok("沒有廣告就不畫那一行（不要寫 NT$0）", vidAdLine({ads:[]})==="" && vidAdLine({})==="");
+  const line=vidAdLine({ads:[AD(1500.5,800,2)]});
+  ok("**影片視窗那一行看得到花費**", /NT\$1,501/.test(line) && /2 則廣告|1 則廣告/.test(line), line);
+  // 商品視窗：賣過它的影片一共投了多少
+  const p=PD({ id:"ADP", name:"投過廣告的品", officialUrl:PURL });
+  withCurVids([p], [VD({ id:"A1", name:"片一", productUrl:PURL, ads:[AD(1000,0,0)] }),
+                    VD({ id:"A2", name:"片二", productUrl:PURL, ads:[AD(250,0,0)] })]);
+  modalHTML=""; curOpen("ADP");
+  ok("**商品視窗看得到這個品的廣告花費合計**", /廣告花費 <b>NT\$1,250<\/b>/.test(modalHTML), (modalHTML.match(/廣告花費[^<]*<b>[^<]*/)||[])[0]);
+  withCurVids([p], [VD({ id:"A1", name:"片一", productUrl:PURL })]);
+  modalHTML=""; curOpen("ADP");
+  ok("沒投過廣告就不寫那一段", !/廣告花費/.test(modalHTML)); }
+
 // ── 狀態：缺圖文／急件（v218，老闆指定）──────────────────────────────
 // 「這裡改名字不需要 另外要提供狀態 缺圖文，急件 然後急件要有日期，有狀態的要排序在上面」
 // 「這兩種都會並行，不是擇一」—— 所以是兩個獨立欄位，一個品可以同時是急件＋缺圖文。

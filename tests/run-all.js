@@ -88,6 +88,19 @@ try {
   failed.push("postsale.py");
 }
 
+// 廣告花費對回影片（v214）。盯的是「錢對到誰頭上」—— A 片的廣告費算在 B 片頭上，
+// ROAS 從此全是假的。每一步都是平台給的 id，分不出來就不給。
+try {
+  extras++;
+  execFileSync("python3", [path.join(dir, "ads.py")], { stdio: "pipe" });
+  console.log("PASS  ads.py（廣告花費對回影片・對不到就不給）");
+} catch (e) {
+  const out = String(e.stdout || "") + String(e.stderr || "");
+  console.log("FAIL  ads.py");
+  out.split("\n").filter(l => l.startsWith("FAIL")).forEach(l => console.log("        " + l));
+  failed.push("ads.py");
+}
+
 // 排程跑之前自己更新程式（v211）。這支會動到 Mac mini 上的 git，
 // 寫錯了會吃掉老闆沒存的東西 —— 所以它**真的開 git 倉庫**來測，不是比對字串。
 try {
