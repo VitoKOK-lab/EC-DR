@@ -752,8 +752,11 @@ async function route(method, path, body){
     if(method==="PUT"){
       // ⚠️ 白名單：沒列進來的欄位會被默默丟掉。加新欄位時很容易忘記這裡。
       const patch={};
-      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt"]
+      // v218：urgentDate（急件，值就是日期）與 noasset（缺圖文）—— 兩個各自獨立、可以同時標。
+      // flag／flagDate 是 v218 第一版的單選欄位，留著只為了把舊值清掉。⚠️ status 是「下架」那一格（v205），不要混用。
+      ["name","image","sku","fetchStatus","fetchError","fetchedAt","note","status","offAt","urgentDate","flag","flagDate"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=String(body[k]); });
+      if(body.noasset!=null) patch.noasset=(body.noasset===true||body.noasset==="true");   // 布林，不要存成 "false" 字串（那是 truthy）
       ["priceMin","priceMax","listMin","listMax"]
         .forEach(k=>{ if(body[k]!=null) patch[k]=+body[k]||0; });
       if(Array.isArray(body.variants)) patch.variants=body.variants.map(String).slice(0,20);
@@ -10405,7 +10408,11 @@ function curYM(){ const g=curByMonth(); if(CUR_YM && g.some(x=>x.ym===CUR_YM)) r
   return g.length ? g[0].ym : curMonth(); }
 function curSetYM(ym){ CUR_YM=String(ym||""); render(); }
 function curSetView(v){ CUR_VIEW=(v==="list"?"list":"card"); render(); }
-function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); return g?g.items:[]; }
+function curMonthItems(){ const g=curByMonth().find(x=>x.ym===curYM()); if(!g) return [];
+  // v218 老闆：「有狀態的要排序在上面」。急件照日期近的先；其餘保持原本順序（穩定排序）。
+  return g.items.map((p,i)=>({p,i,r:curFlagRank(p)}))
+    .sort((a,b)=>(a.r[0]-b.r[0]) || (a.r[1]<b.r[1]?-1:a.r[1]>b.r[1]?1:0) || (a.r[2]-b.r[2]) || (a.i-b.i))
+    .map(x=>x.p); }
 
 // 月份標籤。每個月旁邊標幾個品 —— 一眼看得出哪個月在做事。
 function curMonthTabs(){
@@ -10488,6 +10495,66 @@ function psLine(p){
     <b style="color:var(--gold-dk)">推過 ${+g.n} 次</b>${when?`　最近 ${esc(when)}`:""}
     ${(+g.c)?`　留言 ${num(+g.c)}`:""}${(+g.a)?`　加購 ${num(+g.a)}`:""}</div>`;
 }
+// ── 商品的「狀態」（v218，老闆指定）：缺圖文／急件（急件要有日期），有狀態的排最上面 ──
+// 這是**人標的**，跟 fetchStatus（抓沒抓到資料）是兩回事。
+// ⚠️ 老闆：「這兩種都會並行，不是擇一」—— 所以是兩個獨立的欄位，不是一個下拉：
+//    urgentDate（非空就是急件，值就是日期）、noasset（true 就是缺圖文）。
+//    第一版做成單選的 flag／flagDate，這裡還讀得懂舊值，寫的時候順手清掉。
+// 設計師跟行銷都標得動（選品／排影片任一個權限）—— 缺圖文是設計師發現的，急件是行銷定的。
+function curUrgentDate(p){
+  if(!p) return "";
+  if(p.urgentDate) return String(p.urgentDate);
+  return p.flag==="urgent" ? String(p.flagDate||"") : "";
+}
+function curIsUrgent(p){ return !!(p && (p.urgentDate || p.flag==="urgent")); }
+function curIsNoasset(p){ return !!(p && (p.noasset || p.flag==="noasset")); }
+function curCanFlag(){ return !VIEW_AS && (hasPerm("curate")||hasPerm("plan")); }
+// 排序用的權重：急件（日期近的先、沒填日期的排急件最後）→ 缺圖文 → 其餘照原本順序。
+// 同一天的急件，兼缺圖文的排前面（它比較沒著落）。
+function curFlagRank(p){
+  const u=curIsUrgent(p), n=curIsNoasset(p);
+  return [u?0:(n?1:2), u?(curUrgentDate(p)||"9999-99-99"):"", n?0:1];
+}
+function curFlagPill(p){
+  let h="";
+  if(curIsUrgent(p)){ const d=curUrgentDate(p).slice(5,10);
+    h+=`<span class="pill em" style="font-size:10px">急件${d?" "+esc(d):""}</span>`; }
+  if(curIsNoasset(p)) h+=`<span class="pill wa" style="font-size:10px">缺圖文</span>`;
+  return h;
+}
+function curFlagCtl(p){
+  if(!curCanFlag()) return "";
+  const id=esc(jsEsc(p.id)), u=curIsUrgent(p), n=curIsNoasset(p), d=curUrgentDate(p).slice(5,10);
+  // ⚠️ 勾選框一定要掛 .curflag —— 全站的 input 預設是 width:100%＋padding 11px（給文字欄用的），
+  //    裸的 checkbox 會被撐成一大塊壓在字上面（2026-09-15 老闆截圖抓到的）。
+  return `<label class="curflag" title="缺圖文：還沒有圖或文案"><input type="checkbox" ${n?"checked":""} onchange="curSetNoasset('${id}',this.checked)">缺圖文</label>
+    <label class="curflag" title="急件：要填哪一天之前"><input type="checkbox" ${u?"checked":""} onchange="curSetUrgent('${id}',this.checked)">急件</label>${u?`<button class="curflagdate" onclick="curSetUrgent('${id}',true)" title="改日期">${d?esc(d):"填日期"}</button>`:""}`;
+}
+// 舊版單選欄位有值的話，一起清掉 —— 不然勾掉之後舊值又會把它讀回來
+function curFlagPatch(p, patch){ if(p.flag||p.flagDate){ patch.flag=""; patch.flagDate=""; } return patch; }
+function curSetNoasset(id, on){
+  const p=prodById(id); if(!p) return;
+  if(!curCanFlag()){ toast("你沒有標狀態的權限",true); return; }
+  const patch=curFlagPatch(p,{ noasset: !!on });
+  // 舊值是 urgent 的話清掉 flag 會連急件一起丟 —— 把它搬到新欄位
+  if(p.flag==="urgent" && !p.urgentDate) patch.urgentDate=String(p.flagDate||"");
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), patch, on?"已標「缺圖文」":"已取消「缺圖文」");
+}
+function curSetUrgent(id, on){
+  const p=prodById(id); if(!p) return;
+  if(!curCanFlag()){ toast("你沒有標狀態的權限",true); return; }
+  let urgentDate="";
+  if(on){
+    // 急件一定要有日期 —— 沒有日期的急件等於「都很急」，那就沒有急件了
+    const d=prompt("急件要在哪一天之前？（YYYY-MM-DD）", curUrgentDate(p)||today);
+    if(d===null){ render(); return; }
+    urgentDate=String(d).trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(urgentDate) || isNaN(new Date(urgentDate+"T00:00:00"))){ toast("日期要像 2026-09-30 這樣",true); render(); return; }
+  }
+  const patch=curFlagPatch(p,{ urgentDate });
+  if(p.flag==="noasset" && !p.noasset) patch.noasset=true;
+  writeAdmin("PUT","/api/products/"+encodeURIComponent(id), patch, on?"已標「急件 "+urgentDate.slice(5)+"」":"已取消「急件」");
+}
 // 商品的四種狀態，兩個模式共用同一份判斷
 function curState(p){
   const st=String(p.fetchStatus||"");
@@ -10500,11 +10567,20 @@ function curTitle(p){
   // 印整串 https://… 又長又看不懂
   return p.name || prodPageName(p.officialUrl) || prettyUrl(p.officialUrl);
 }
-function curActs(p){
-  if(!canCurate()) return "";
+// part：不給就是全部（列表一列放得下）；"flags"／"btns" 是卡片用的 —— 卡片一格只有四分之一寬，
+// 狀態勾選框跟按鍵擠同一列會把「看官網」壓成直排（2026-09-15 老闆截圖），所以分兩列。
+function curActs(p, part){
   const s=curState(p);
-  return `<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">${s.k==="bad"?"自己填名稱":"改名"}</button>
-    <button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`;
+  // v218 老闆：「這裡改名字不需要」—— 名稱是官網抓回來的，只有抓不到的才給「自己填名稱」。
+  const rename=(canCurate()&&s.k==="bad")?`<button class="btn sec sm" onclick="curRename('${esc(jsEsc(p.id))}')">自己填名稱</button>`:"";
+  const del=canCurate()?`<button class="btn sm danger" onclick="curDel('${esc(jsEsc(p.id))}')">移除</button>`:"";
+  // 往下一步的入口（v219 老闆：「我現在用管理員的也看不到」）——
+  // 開新片／排二創本來只藏在「點商品名」開出來的視窗裡，卡片上沒有一顆鍵說要去哪。
+  // 有「排影片」權限的人在每個品上都看得到一顆「排片」，按了就是那個視窗。
+  const plan=canPlanVideo()?`<button class="btn sm" onclick="curOpen('${esc(jsEsc(p.id))}')" title="看成效、開新片或排二創">排片</button>`:"";
+  if(part==="flags") return curFlagCtl(p);
+  if(part==="btns")  return `${plan}${rename}${del}`;
+  return `${curFlagCtl(p)}${plan}${rename}${del}`;
 }
 // ── 點商品：看它的成效，然後排二創／開新片（v211）────────────────────
 // 老闆的流程：設計師挑品 → **行銷排檔期** → 二創或新片 → FB 投廣 → ROAS。
@@ -10588,15 +10664,16 @@ function curCardHTML(p){
       ${months>1?`<span class="pill curchip" style="position:absolute;top:10px;right:10px;color:var(--gold-dk)">選過 ${months} 個月</span>`:""}
     </div>
     <div style="padding:13px 14px 15px">
-      <div class="curname"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname">${curFlagPill(p)}${curFlagPill(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       ${psLine(p)}
       ${sale?`<div style="margin-top:7px"><b class="curprice">${esc(sale)}</b></div>
               ${lst?`<div class="muted curlist">${esc(lst)}</div>`:`<div class="curgap"></div>`}`
             :`<div class="muted" style="font-size:12px;margin-top:7px">${
                 s.k==="bad"?esc(p.fetchError||"抓不到商品資料"):"按上面的「同步」把資料抓回來"}</div>`}
-      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:nowrap">
-        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener" style="font-size:12px;flex:1">看官網</a>
-        ${curActs(p)}
+      ${curCanFlag()?`<div class="row" style="gap:10px;margin-top:10px">${curActs(p,"flags")}</div>`:""}
+      <div class="row" style="gap:6px;margin-top:10px;flex-wrap:nowrap">
+        <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener" style="font-size:12px;flex:1;white-space:nowrap">看官網</a>
+        ${curActs(p,"btns")}
       </div>
     </div>
   </div>`;
@@ -10612,7 +10689,7 @@ function curRowHTML(p){
   return `<div class="currow cur-r-${s.k}">
     ${th}
     <div style="min-width:0">
-      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
+      <div class="curname" style="min-height:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${curFlagPill(p)}${curFlagPill(p)?" ":""}<a href="javascript:void(0)" onclick="curOpen('${esc(jsEsc(p.id))}')">${esc(curTitle(p))}</a></div>
       <div style="font-size:12px">
         <a href="${esc(p.officialUrl)}" target="_blank" rel="noopener">看官網</a>
         ${s.k==="ok"&&n>1?`<span class="muted">　${n} 款</span>`:""}

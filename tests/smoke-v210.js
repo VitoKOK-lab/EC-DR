@@ -550,6 +550,55 @@ const PURL = BASE + "/products/歐泊手鏈";
   modalHTML=""; curOpen("ADP");
   ok("沒投過廣告就不寫那一段", !/廣告花費/.test(modalHTML)); }
 
+// ── 狀態：缺圖文／急件（v218，老闆指定）──────────────────────────────
+// 「這裡改名字不需要 另外要提供狀態 缺圖文，急件 然後急件要有日期，有狀態的要排序在上面」
+// 「這兩種都會並行，不是擇一」—— 所以是兩個獨立欄位，一個品可以同時是急件＋缺圖文。
+{ const ym=curMonth();
+  const P=(id,name,extra)=>PD(Object.assign({ id, name, officialUrl:BASE+"/products/"+id, picks:[{month:ym,by:"小設",at:""}] }, extra||{}));
+  withProds([ P("A","普通的品"), P("B","急件晚一點",{urgentDate:"2026-10-20"}),
+              P("C","缺圖文的品",{noasset:true}), P("D","急件早一點",{urgentDate:"2026-09-30"}),
+              P("E","另一個普通的品"), P("F","急件沒填日期（舊資料）",{flag:"urgent"}),
+              P("G","急件又缺圖文",{urgentDate:"2026-09-30",noasset:true}) ]);
+  CUR_YM=null;
+  const order=curMonthItems().map(p=>p.id).join();
+  ok("**有狀態的排最上面：急件（日期近的先）→ 缺圖文 → 其餘**", order==="G,D,B,F,C,A,E", order);
+  ok("同一天的急件，兼缺圖文的排前面", order.startsWith("G,D"));
+  ok("沒狀態的維持原本順序（穩定排序）", order.endsWith("A,E"));
+  // 卡片與列表都看得到
+  CUR_VIEW="card";
+  ok("**急件的藥丸帶日期**", /pill em[^>]*>急件 09-30</.test(curCardHTML(prodById("D"))), (curCardHTML(prodById("D")).match(/pill em[^<]*/)||[])[0]);
+  ok("缺圖文的藥丸", /pill wa[^>]*>缺圖文</.test(curCardHTML(prodById("C"))));
+  ok("**兩種並行：同一個品兩個藥丸都畫**", /急件 09-30/.test(curCardHTML(prodById("G"))) && /缺圖文/.test(curCardHTML(prodById("G"))), curCardHTML(prodById("G")).match(/pill (em|wa)[^<]*/g));
+  ok("列表模式也看得到", /急件 09-30/.test(curRowHTML(prodById("D"))) && /缺圖文/.test(curRowHTML(prodById("C"))));
+  ok("沒狀態的不畫藥丸", !/pill (em|wa)/.test(curCardHTML(prodById("A"))));
+  // 第一版（單選 flag／flagDate）留下的舊值還讀得懂
+  withProds([ P("O1","舊急件",{flag:"urgent",flagDate:"2026-10-01"}), P("O2","舊缺圖文",{flag:"noasset"}) ]);
+  ok("舊資料的急件還讀得到（連日期）", curIsUrgent(prodById("O1")) && curUrgentDate(prodById("O1"))==="2026-10-01");
+  ok("舊資料的缺圖文還讀得到", curIsNoasset(prodById("O2")) && !curIsUrgent(prodById("O2")));
+  // 版面（2026-09-15 老闆截圖）：全站 input 預設 width:100%＋padding 11px，裸的 checkbox 會被撐成一大塊壓在字上；
+  // 而且勾選框跟按鍵擠在卡片同一列會把「看官網」壓成直排。
+  withProds([ P("A","普通的品"), P("D","急件",{urgentDate:"2026-09-30"}) ], "小設", "design", ["curate"]);
+  { const card=curCardHTML(prodById("D"));
+    const boxes=(card.match(/<input type="checkbox"[^>]*>/g)||[]);
+    ok("**卡片上的勾選框都包在 .curflag 裡**（不然會被全站 input 樣式撐大）",
+       boxes.length===2 && (card.match(/<label class="curflag"[^>]*><input type="checkbox"/g)||[]).length===2, boxes);
+    ok("**.curflag 的 input 有把 width 縮回 auto**", /\.curflag input\{[^}]*width:auto/.test(HTML));
+    ok("卡片上的狀態勾選框跟「看官網」不在同一列", !/看官網[\s\S]{0,400}curflag/.test(card) && /curflag[\s\S]*看官網/.test(card));
+    ok("急件的日期鍵在", /class="curflagdate"[^>]*>09-30</.test(card));
+    ok("列表模式一列放得下：勾選框也是 .curflag", (curRowHTML(prodById("D")).match(/<label class="curflag"/g)||[]).length===2); }
+  // 往下一步的入口（老闆：「我現在用管理員的也看不到」）：有「排影片」權限的人，卡片和列表上都要有一顆「排片」。
+  withProds([ P("A","普通的品") ], "小行", "mkt", ["plan"]);
+  ok("**行銷的卡片上有「排片」鍵，按了開商品視窗**", /<button[^>]*onclick="curOpen\('A'\)"[^>]*>排片</.test(curCardHTML(prodById("A"))), curCardHTML(prodById("A")).match(/<button[^<]*/g));
+  ok("列表上也有「排片」", /onclick="curOpen\('A'\)"[^>]*>排片</.test(curRowHTML(prodById("A"))));
+  withProds([ P("A","普通的品") ], "小設", "design", ["curate"]);
+  ok("只有選品權限的設計師沒有「排片」（那是行銷的事）", !/排片/.test(curCardHTML(prodById("A"))));
+  reset([U("管理員","boss")], "管理員", "boss"); LAST_RAW.products=[P("A","普通的品")]; STATE=decorate(LAST_RAW); CUR_YM=null;
+  ok("**管理員也看得到「排片」**", /排片/.test(curCardHTML(prodById("A"))), curCardHTML(prodById("A")).match(/<button[^<]*/g));
+  // 抓好的不用「改名」；抓不到的才給「自己填名稱」
+  withProds([ P("A","普通的品") ]);
+  ok("**抓好的商品沒有「改名」鍵**", !/curRename/.test(curActs(prodById("A"))), curActs(prodById("A")));
+  withProds([ P("X","", {fetchStatus:"failed",fetchError:"找不到"}) ]);
+  ok("抓不到的才有「自己填名稱」", /curRename/.test(curActs(prodById("X"))) && /自己填名稱/.test(curActs(prodById("X")))); }
 // 沒有那個月的資料時，不要只留一片空白
 { withProds([]); CUR_YM = null;
   ok("完全沒有選品時講清楚", /還沒有選品/.test(viewCurate())); }
@@ -602,6 +651,75 @@ const PURL = BASE + "/products/歐泊手鏈";
     ok("**沒設定代抓網址時，按下去不會真的去抓**", fetched === 0, fetched);
     ok("而且會講清楚為什麼", /還沒設定/.test(said), said);
     ok("也不會把商品標成失敗", !W.some(x=>x[0]==="update"), W); }
+
+  // 誰標得動、寫進去什麼
+  { const ym=curMonth();
+    const P=(id,extra)=>PD(Object.assign({ id, name:"品"+id, officialUrl:BASE+"/products/"+id, picks:[{month:ym,by:"小設",at:""}] }, extra||{}));
+    // 設計師（curate）標得動 —— 兩個勾選框都在
+    withProds([P("A")], "小設", "design", ["curate"]);
+    ok("設計師看得到兩個狀態勾選框", /curSetNoasset\('A'/.test(curActs(prodById("A"))) && /curSetUrgent\('A'/.test(curActs(prodById("A"))), curActs(prodById("A")));
+    // 行銷（只有 plan）也標得動 —— 急件是行銷定的
+    withProds([P("A")], "小行", "mkt", ["plan"]);
+    ok("**只有「排影片」權限的行銷也標得動**（急件是行銷定的）", /curSetUrgent\('A'/.test(curActs(prodById("A"))));
+    ok("但行銷沒有「移除」（那是選品的事）", !/curDel/.test(curActs(prodById("A"))));
+    // 真的寫進去：急件要日期
+    const W=[]; global.window.DB.update=async(c,id,patch)=>{ W.push([c,id,patch]); };
+    global.prompt=()=>"2026-10-05";
+    await curSetUrgent("A",true); await new Promise(r=>setTimeout(r,20));
+    let w=W.find(x=>x[0]==="products"&&x[1]==="A");
+    ok("**急件寫進 urgentDate**", !!w && w[2].urgentDate==="2026-10-05", w);
+    ok("標急件不會動到缺圖文那一格", !!w && !("noasset" in w[2]), w && Object.keys(w[2]));
+    // 日期壞掉不寫
+    W.length=0; global.prompt=()=>"下週";
+    await curSetUrgent("A",true); await new Promise(r=>setTimeout(r,20));
+    ok("急件的日期不像日期就不寫", !W.some(x=>x[0]==="products"));
+    // 缺圖文是獨立的一格
+    W.length=0; global.prompt=()=>null;
+    await curSetNoasset("A",true); await new Promise(r=>setTimeout(r,20));
+    w=W.find(x=>x[0]==="products");
+    ok("**缺圖文寫進 noasset，不動急件**", !!w && w[2].noasset===true && !("urgentDate" in w[2]), w);
+    // 取消
+    W.length=0;
+    await curSetUrgent("A",false); await new Promise(r=>setTimeout(r,20));
+    w=W.find(x=>x[0]==="products");
+    ok("取消急件時 urgentDate 清空、不跳日期", !!w && w[2].urgentDate==="", w);
+    W.length=0;
+    await curSetNoasset("A",false); await new Promise(r=>setTimeout(r,20));
+    w=W.find(x=>x[0]==="products");
+    ok("取消缺圖文寫 noasset:false", !!w && w[2].noasset===false, w);
+    // 舊資料（單選 flag）：改任何一格都要把舊欄位清掉，而且不能把另一個狀態弄丟
+    withProds([P("O",{flag:"urgent",flagDate:"2026-10-01"})], "小設", "design", ["curate"]);
+    global.window.DB.update=async(c,id,patch)=>{ W.push([c,id,patch]); };
+    W.length=0;
+    await curSetNoasset("O",true); await new Promise(r=>setTimeout(r,20));
+    w=W.find(x=>x[0]==="products");
+    ok("**舊急件勾缺圖文：舊欄位清掉、急件搬到新欄位、缺圖文也標上**",
+       !!w && w[2].flag==="" && w[2].flagDate==="" && w[2].urgentDate==="2026-10-01" && w[2].noasset===true, w);
+    withProds([P("O",{flag:"noasset"})], "小設", "design", ["curate"]);
+    global.window.DB.update=async(c,id,patch)=>{ W.push([c,id,patch]); };
+    W.length=0; global.prompt=()=>"2026-10-05";
+    await curSetUrgent("O",true); await new Promise(r=>setTimeout(r,20));
+    w=W.find(x=>x[0]==="products");
+    ok("舊缺圖文標急件：舊欄位清掉、缺圖文搬到新欄位", !!w && w[2].flag==="" && w[2].noasset===true && w[2].urgentDate==="2026-10-05", w);
+    global.prompt=()=>null;
+    // 員工視角唯讀。⚠️ 要預覽一個**本身有權限**的人 —— 預覽沒權限的人，不管有沒有防護都是 false（假綠燈，突變測試抓到）。
+    reset([U("管理員","boss"), U("小設","design",{perms:["curate"]})], "管理員", "boss");
+    LAST_RAW.products=[P("A")]; STATE=decorate(LAST_RAW); VIEW_AS="小設";
+    ok("（前提）被預覽的那個人本身標得動", hasPerm("curate","小設"));
+    ok("**員工視角預覽時標不動**", curCanFlag()===false && curActs(prodById("A"))==="", curActs(prodById("A")));
+    VIEW_AS=null;
+    // 白名單：urgentDate／noasset 收得進（舊的 flag／flagDate 也要收，才清得掉），別的欄位照樣擋
+    withProds([P("PD1")], "小設", "design", ["curate"]);
+    global.window.DB.update=async(c,id,patch)=>{ W.push([c,id,patch]); };
+    W.length=0;
+    await route("PUT","/api/products/PD1",{urgentDate:"2026-10-05", noasset:true, flag:"", flagDate:"", 亂七八糟:"x"});
+    let u2=W.find(x=>x[0]==="products");
+    ok("**寫入白名單收 urgentDate／noasset／flag／flagDate**", !!u2 && u2[2].urgentDate==="2026-10-05" && u2[2].noasset===true && u2[2].flag==="" && u2[2].flagDate==="" && !("亂七八糟" in u2[2]), u2 && u2[2]);
+    // ⚠️ noasset 要存成布林。存成 "false" 字串的話它是 truthy，勾掉的品永遠是缺圖文。
+    W.length=0;
+    await route("PUT","/api/products/PD1",{noasset:false});
+    u2=W.find(x=>x[0]==="products");
+    ok("**noasset 存布林，不是字串**", !!u2 && u2[2].noasset===false, u2 && u2[2]); }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
