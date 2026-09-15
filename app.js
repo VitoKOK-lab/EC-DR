@@ -902,8 +902,10 @@ function bootLogin(){
   const section=(title, list)=>{ if(!list.length) return;
     const h=document.createElement("div"); h.className="loginGroup"; h.textContent=title; g.appendChild(h);
     list.forEach(u=>g.appendChild(mkBtn(u))); };
-  // 分區順序：台灣（剪輯行銷 → 其他）→ 巴基斯坦 → 管理層（Regina 放最下面，靠近「管理員登入」）
-  STAFF_GROUPS.forEach(([key,zh,en,roles])=> section(zh, all.filter(u=>roles.includes(u.role||"editor"))));
+  // 分區順序：台灣（剪輯行銷 → 其他）→ 外包 → 巴基斯坦 → 管理層（Regina 放最下面，靠近「管理員登入」）
+  // ⚠️ 跟看板、整區通知共用 staffSections —— 不要在這裡自己再篩一次職位（v215 之前就是這樣，
+  //    設計師沒加進那張表，Jessica 在登入頁上直接消失）。
+  staffSections(all.filter(u=>u.role!=="manager")).forEach(g=> section(g.zh, g.people));
   section("管理層", all.filter(u=>u.role==="manager"));
 }
 // 上下班要用公司電腦打卡：一般員工不給手機登入（經理人／人資／管理員不受限，他們要能隨時處理事情）
@@ -2369,8 +2371,7 @@ function delDraft(id){
 async function hrNotify(){ refreshToday(); if(dbBlocked()) return;
   const who=val("hrn_who"); const txt=val("hrn_txt").trim();
   if(!txt){ toast("請輸入通知內容",true); return; }
-  const roles=noticeTargetRoles(who);
-  const targets = roles ? staffNamesSorted(roles) : (who?[who]:[]);
+  const targets = noticeTargets(who);
   if(!targets.length){ toast("請先選擇要通知的對象",true); return; }
   try{
     for(const name of targets){
@@ -3402,16 +3403,33 @@ function staffOptGroups(roles){
 }
 // 分區塊：台灣先分兩排（做內容的／其餘），巴基斯坦自成一區排最後。
 // 每一區列出屬於它的職位，之後要調哪個職位歸哪一排，改這裡就好。
+// ⚠️ 每一個 STAFF_ROLES 裡的職位都必須落在某一區 —— 沒落在任何一區的人**登入頁上直接消失**。
+//    v210 加了「設計師」沒有加進來，Jessica 就從登入頁不見了（老闆 2026-09-15 截圖抓到）。
+//    smoke-v210 現在守著這一條：STAFF_ROLES 每一個職位都要在這張表裡出現一次。
 const STAFF_GROUPS=[
-  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt","pick"]],
+  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt","pick","design"]],
   ["twrest", "台灣・其他",     "Taiwan · Others",              ["svc","ship","cs","hr"]],
   ["pk",     "巴基斯坦",       "Pakistan",                     ["intl"]],
 ];
+// 外包自成一區（v215，老闆：「外包的 統一一個群組」）。
+// 外包不是職位、是旗標 —— 陳鋒是剪輯、Jessica 是設計師，都是外包。照職位分的話
+// 他們散在兩區，而且看不出是外包。所以**先把外包抽出來**，其餘的再照職位分。
+// ⚠️ 登入頁、看板分組、整區通知三個地方都走這一個函式。各寫一份的話，
+//    哪天有人只改一邊，登入頁跟通知名單就對不起來。
+const EXT_GROUP=["ext", "外包", "Contractors"];
+function staffSections(pool){
+  const out=[];
+  STAFF_GROUPS.forEach(([key,zh,en,roles])=>{
+    out.push({role:key, key, zh, en, roles, people:pool.filter(u=>!u.outsourced && roles.includes(u.role||"editor"))});
+    // 外包排在台灣兩區後面、巴基斯坦前面（他們是台灣這邊的外包）
+    if(key==="twrest") out.push({role:"ext", key:"ext", zh:EXT_GROUP[1], en:EXT_GROUP[2], roles:[],
+      people:pool.filter(u=>u.outsourced && STAFF_ROLES.includes(u.role||"editor"))});
+  });
+  return out;
+}
 function staffByGroup(list){
   const pool = staffSorted(list || (STATE.users||[]).filter(u=>STAFF_ROLES.includes(u.role||"editor")));
-  return STAFF_GROUPS.map(([key,zh,en,roles])=>({role:key, key, zh, en, roles,
-      people:pool.filter(u=>roles.includes(u.role||"editor"))}))
-    .filter(g=>g.people.length);
+  return staffSections(pool).filter(g=>g.people.length);
 }
 // HR 通知的收件對象代碼 → 職位清單。
 // 支援 __all__、每個區塊（__twmake__／__twrest__／__pk__）與每個職位（__editor__…）。
@@ -3422,6 +3440,19 @@ function noticeTargetRoles(who){
   if(g) return g[3];
   const m=/^__(.+)__$/.exec(String(who||""));
   return (m && STAFF_ROLES.includes(m[1])) ? [m[1]] : null;
+}
+// 整區通知的收件人（名單，不是職位）。「全體外包」是旗標不是職位，職位解不出來，
+// 所以這裡直接照 staffSections 的分區給名單 —— 畫面上列在哪一區，通知就發給那一區。
+function noticeTargets(who){
+  if(who==="__all__") return staffNamesSorted(STAFF_ROLES);
+  const m=/^__(.+)__$/.exec(String(who||""));
+  if(m){
+    const g=staffByGroup().find(x=>x.key===m[1]);
+    if(g) return g.people.map(u=>u.name);
+    if(STAFF_ROLES.includes(m[1])) return staffNamesSorted([m[1]]);
+    return [];
+  }
+  return who ? [who] : [];
 }
 function staffNamesSorted(roles){
   const rs = roles || ["editor","intl"];
