@@ -122,7 +122,7 @@ const hasPost=(h)=>/上片後|After publishing/.test(h);
   ok("剪輯＋有上片紀錄：裡面看得到使用紀錄", !!b && b.includes("使用紀錄"));
   ok("剪輯＋有上片紀錄：而且是自動展開的（有料就不該還要再按一次）",
      /上片後<\/summary>/.test(modalHTML.replace(/<span class="n">\d+<\/span>/g,"")) &&
-     /<details class="fold" data-fold="[^"]+" open><summary>上片後/.test(modalHTML),
+     /<details class="fold" id="e_postfold" data-fold="[^"]+" open><summary>上片後/.test(modalHTML),
      modalHTML.slice(modalHTML.indexOf("上片後")-90, modalHTML.indexOf("上片後")+12)); }
 
 { reset([v_("V3",{metrics:[{platform:"TikTok",account:"tw",views:1234,likes:5,comments:1,shares:0}]})], "管理員", "boss");
@@ -130,7 +130,7 @@ const hasPost=(h)=>/上片後|After publishing/.test(h);
   const b=foldBody(modalHTML,"上片後");
   ok("老闆＋有成效：看得到數字", !!b && b.includes("1,234"));
   ok("老闆＋有成效：自動展開",
-     /<details class="fold" data-fold="[^"]+" open><summary>上片後/.test(modalHTML)); }
+     /<details class="fold" id="e_postfold" data-fold="[^"]+" open><summary>上片後/.test(modalHTML)); }
 
 // ══════════ ⑥ 全站掃描：任何職位、任何分頁都不准有空盒子 ══════════
 { const roles=[["小葵","editor"],["管理員","boss"],["Anna","intl"]];

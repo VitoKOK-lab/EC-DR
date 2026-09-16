@@ -7912,7 +7912,12 @@ function openProdVids(key){
   const link=(m&&String(m.officialUrl||"").trim())||(hits.map(h=>prodLink(h.p,h.v)).find(Boolean))||"";
   hits.sort((a,b)=>vidViews(b.v)-vidViews(a.v));
   const rows=hits.map(h=>{ const v=h.v, d=rmkAired(v);
-    return `<tr style="cursor:pointer" onclick="closeModal();${jsEsc(vidOpenFn(v))}">
+    // ⚠️ v223（老闆回報「點下去跳不到影片」）：vidOpenFn(v) 回的已經是一段可以直接嵌進
+    //    onclick 的程式碼（例如 editVideo('V1')），不是一個要塞進單引號裡的「值」——
+    //    之前多包了一層 jsEsc()，把程式碼裡本來就有的單引號也跳脫成 \'，
+    //    瀏覽器把 onclick 屬性編譯成函式時整段變成無效語法，點了自然沒反應
+    //    （全站其他地方都是 onclick="${vidOpenFn(v)}"，不加 jsEsc，這裡是唯一一個包錯的）。
+    return `<tr style="cursor:pointer" onclick="closeModal();${vidOpenFn(v)}">
       <td data-label="影片"><a href="javascript:void(0)">${esc(vidTitle(v))}</a>${rmkUsedBadge(v)}</td>
       <td data-label="剪輯">${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
       <td data-label="最近出片">${d.length?esc(d[d.length-1]):'<span class="muted">還沒出</span>'}</td>
@@ -8092,7 +8097,7 @@ function unfiledRowHTML(x, ui, i, canPlan){
       <td data-label="上次二創" class="pr-e"><span class="muted">—</span></td>
       ${canPlan?`<td data-label="">${canAddOldVideo()
         ? `<button class="btn sm" style="white-space:nowrap" onclick="event.stopPropagation();unfiledAdd(${ui})"
-             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">新增進系統</button>`
+             title="把這支片補進影片庫（文案與上片連結會自動帶進去）">補登到資料庫</button>`
         : '<span class="muted" style="font-size:11px">未建檔</span>'}</td>`:""}</tr>`;
 }
 // 誰能把舊片補進來：能加片的人（跟「大流」那顆同一批，但**不是**建進大流）。
@@ -8111,10 +8116,16 @@ function canAddOldVideo(){ return !VIEW_AS && hasPerm("df"); }
 //    看板上會出現一支今天根本沒人剪的片。
 // ⚠️ 檔名與雲端資料夾**故意不代填**：那要人自己去 Drive 找回毛片，
 //    代填一個猜的名字只會讓人按過去就存檔，然後留下一支找不到原檔的片。
+// v223 老闆把這顆鍵改名：「新增進系統」→「補登到資料庫」，同時要求補進來的片
+// 如果是寵粉／帶貨，要能填商品名稱跟官網連結 —— 不然它補進來也上不了「帶貨商品排行」，
+// 選品那邊的「以前選過、成效好」也找不到它（那兩處都靠 products[].link 認商品）。
 function unfiledAdd(i){
   const x=unfiledList()[i]; if(!x) return;
   if(dbBlocked()) return;
   const when=String(x.first||x.last||"").slice(0,10);
+  // 用同一套關鍵字規則猜這支是不是寵粉（v221 已經在算未建檔候選的類型），猜是的話
+  // 商品那一折直接打開 —— 不用人先點開才發現有這一區可以填。
+  const guessSell=unfiledType(x)==="寵粉";
   showModal("把這支舊片補進影片庫", `
     <div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.7">
       這支片平台上發過，系統裡沒有。補進來之後，下一次同步就會把觀看數對回它 ——
@@ -8131,6 +8142,10 @@ function unfiledAdd(i){
     <input id="uf_pub" value="${esc(String(x.link||""))}">
     <label style="margin-top:10px">文案（跟平台上那則一樣，不要改）</label>
     <textarea id="uf_copy" style="min-height:110px">${esc(String(x.cap||""))}</textarea>
+    ${fold("商品與導購（這支如果是寵粉／帶貨，填了才會進「帶貨商品排行」）", null, `
+      ${productRows("uf", [])}
+      <label style="margin-top:10px">商品官網連結（有填商品名稱才需要）</label>
+      <input id="uf_url" placeholder="https://www.tzgrotw.tw/products/...">`, guessSell, "uf_prodfold")}
   `, async ()=>{
     const name=zhTW((val("uf_name")||"").trim());
     if(!name){ toast("請填檔名",true); return false; }
@@ -8138,13 +8153,19 @@ function unfiledAdd(i){
     if(!when2){ toast("請選上片日期 —— 沒有日期，「多久沒用」就算不出來",true); return false; }
     const copy=(val("uf_copy")||"").trim();
     if(!copy){ toast("文案不要清掉 —— 那是下次同步對回成效的唯一依據",true); return false; }
-    const video={ name, rawName:name, videoCopy:copy,
+    // 跟一般編輯視窗（saveVideo）同一條規矩：商品名稱與官網連結要一起填或一起空白，
+    // 只填一邊會讓這支片有商品卻導不了購、或有連結卻不知道連的是哪個商品。
+    const products=collectProducts("uf"); const productUrl=(val("uf_url")||"").trim();
+    const hasProd=products.some(p=>p&&p.name);
+    if(hasProd && !productUrl){ toast("有填商品名稱就要一起填「商品官網連結」，否則無法導購",true); return false; }
+    if(productUrl && !hasProd){ toast("有填「商品官網連結」就要至少填一個商品名稱",true); return false; }
+    const video={ name, rawName:name, videoCopy:copy, products, productUrl,
       driveFolder:(val("uf_drive")||"").trim(), publishedLink:(val("uf_pub")||"").trim(),
       scheduledDate:when2,
       // 已經是成品：一步到位，不進待處理、不進待認領、不進審片
       stage:"已完成", published:true, finishedAt:when2, backupDone:true, socialScheduled:true,
       reviewStatus:"通過", reviewedBy:currentUser(), reviewedAt:nowIso(),
-      tags:["舊片"] };
+      tags:hasProd?["舊片","寵粉"]:["舊片"] };   // 有填商品 → 跟一般新增影片同一條規矩，自動帶「寵粉」標籤
     return await write("POST","/api/videos",{video},"已補進影片庫");
   });
 }
@@ -8178,7 +8199,7 @@ function perfRankCard(){
     <div class="muted" style="font-size:12px;margin-top:4px">${byRmk
       ? "依「成效 × 隔多久沒用 × 用過幾次」排，成效在同類型裡比。片名旁邊的小數字＝這支已經出過幾次（含它的二創）"
       : `依觀看排，前 50 名。點影片看跨平台明細與帶貨${
-          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「新增進系統」就補得進來`:""}`}</div>
+          unfiledList().length?`。<b>系統裡沒有的片也排在裡面</b>（標「未建檔」），右邊按「補登到資料庫」就補得進來`:""}`}</div>
     <div class="row" style="gap:8px;margin-top:8px">
       <input id="rmk_q" placeholder="先有商品？打商品名或關鍵字找影片" value="${esc(RMK_Q)}"
              oninput="rmkSetQ(this.value)" style="flex:1;min-width:170px">
@@ -8752,6 +8773,22 @@ function vidMissing(v){
   if(isPublished(v) && !ownDrive(v))   out.push({k:"drive", zh:"缺存檔連結", en:"needs file link"});
   return done();
 }
+// v223（老闆：「缺上片連結、缺文案、缺商品與連結」這三個提示，點下去要能自動打開視窗，
+// 遊標要自動移到該輸入的位置）：這三項各對應編輯視窗裡唯一一個欄位，點了就直接跳過去。
+// ⚠️ 只接這三個 —— 其餘（缺毛片／沒排日期／缺存檔連結）沒有單一對應的輸入欄位可以跳
+//    （缺毛片是「按一下標記」不是打字；存檔連結依片的種類走不同函式，欄位 id 不固定）。
+const JUMP_FIELD={pub:"e_pub", copy:"e_vcopy", prod:"e_url"};
+const JUMP_FOLD ={pub:"e_postfold", prod:"e_prodfold"};
+function jumpToField(id, k){
+  const fid=JUMP_FIELD[k]; if(!fid) return;
+  editVideo(id);   // 片被鎖住的話這裡會直接 toast 擋下、視窗開不出來，下面找不到欄位自然沒事發生
+  const foldId=JUMP_FOLD[k];
+  if(foldId){ const d=document.getElementById(foldId); if(d && "open" in d) d.open=true; }
+  const el=document.getElementById(fid); if(!el) return;
+  if(fid==="e_vcopy") vcopyOpen();   // 文案欄平常收成一排，跳過去之前先展開，不然看不到游標在哪
+  if(el.scrollIntoView) el.scrollIntoView({block:"center"});
+  el.focus();
+}
 // 小燈號：只寫最要緊的那一項，其餘掛在 title 裡（手機上點不到 hover，所以主要那項一定用文字寫出來）
 // implied＝這個畫面／分頁已經說明過的事，不用在每一列再寫一次。
 // 例：人在「未拍」分頁，整頁都是缺毛片，每列再標一次「缺毛片」是廢話（v122）。
@@ -8762,7 +8799,11 @@ function missingPill(v, implied){
   const first=m[0], late=!!first.late;
   const all=m.map(x=>T(x.zh,x.en)).join("、");
   const more=m.length>1?`+${m.length-1}`:"";
-  return `<span class="misspill${late?' late':''}" title="${esc(all)}">${esc(T(first.zh,first.en))}${more}</span>`;
+  // 二創殼／海外／蝦皮／馬來走的是別的視窗（openChModal／openIntlModal），欄位 id
+  // 跟一般片不一樣，貿然套用會點了沒反應 —— 只給一般片跟大流成品（都走 editVideo）點。
+  const clickable=!isVersion(v) && JUMP_FIELD[first.k];
+  const attrs=clickable?` onclick="event.stopPropagation();jumpToField('${esc(jsEsc(v.id))}','${esc(first.k)}')" style="cursor:pointer"`:"";
+  return `<span class="misspill${late?' late':''}"${attrs} title="${esc(all)}${clickable?"　·　點一下直接跳過去填":""}">${esc(T(first.zh,first.en))}${more}</span>`;
 }
 // 舊的「沒文案」小圓點：保留函式名，改成走同一套燈號
 function coverThumbHTML(v, cls){
@@ -8905,7 +8946,7 @@ function openVideoModal(id, edit, fromWork){
         "貼上這支片實際發出去的那一則貼文網址。之後要對得回觀看數、判斷哪支流量好，靠的就是它。",
         "Paste the actual post URL. This is what ties the video back to its view counts.")}</div>
       ${metricsCard}
-      ${usageCard}`, hasPost)}
+      ${usageCard}`, hasPost, "e_postfold")}
     ${localizedCard?fold(T("其他語言版本","Other language versions"), null, localizedCard, false):''}
     ${fold(T("進階","Advanced"), advFilled||null, `
       <label>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</label>

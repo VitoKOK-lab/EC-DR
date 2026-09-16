@@ -133,6 +133,15 @@ ok(prodPageName("") === "" && prodPageName(null) === "", "沒有網址不會爆�
      "**兩支影片都列出來**（這就是老闆要的：有什麼影片賣過這個商品）");
   ok(!SHOWN.inner.includes("不相干的片"), "不相干的不會混進來");
   ok(SHOWN.inner.indexOf("賣過它的片一") < SHOWN.inner.indexOf("賣過它的片二"), "觀看高的排前面");
+  // v223 老闆回報：「配對的『影片名稱及超連結』點下去要跳到該影片的頁面，目前點沒有反應」。
+  // 查到的原因：那一列的 onclick 把 vidOpenFn(v) 多包了一層 jsEsc() —— vidOpenFn 回的
+  // 已經是可以直接嵌進 onclick 的一段程式碼（例如 editVideo('E')），不是要塞進單引號裡的
+  // 「值」；jsEsc 把程式碼裡本來就有的單引號也跳脫成 \'，瀏覽器編譯這個屬性當函式時
+  // 整段變無效語法，點了自然沒反應，而且不會有任何錯誤畫面 —— 看起來像「壞了」。
+  const rowOc=SHOWN.inner.match(/onclick="closeModal\(\);[^"]*"/)?.[0]||"";
+  ok(rowOc===`onclick="closeModal();editVideo('E')"`,
+     "**影片名稱那一列的 onclick 是合法的一段程式碼**（不能被多包一層跳脫，不然瀏覽器編譯不出函式，點了沒反應）",
+     rowOc);
   ok(SHOWN.inner.includes("阿剪") && SHOWN.inner.includes("阿二"), "看得到是誰剪的");
   ok(SHOWN.inner.includes("2,800"), "看得到當時的售價");
   ok(SHOWN.inner.includes("100,680"), "觀看合計算出來（88,680 + 12,000）");
@@ -398,10 +407,10 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(h.indexOf("未建檔但觀看很高的舊片") < h.indexOf("系統裡的低觀看片"),
      "而且 30 萬 > 1,000 —— 未建檔的不會被丟到最後面");
   ok(h.includes("未建檔"), "未建檔的那一列標出來");
-  // v211 老闆把這顆鍵改名：「你的『建案進系統』名字改『新增進系統』」。
-  // 舊名字不准留在畫面上 —— 兩個名字同時存在，員工會以為是兩顆不同的鍵。
-  ok(h.includes("新增進系統") && !h.includes("建案進系統"),
-     "**右邊那顆鍵是「新增進系統」**（老闆的用字），而且舊名字不留在畫面上");
+  // v211 把「建案進系統」改成「新增進系統」；v223 老闆又改了一次：「補登到資料庫」。
+  // 舊名字（含更早那個）都不准留在畫面上 —— 兩個名字同時存在，員工會以為是兩顆不同的鍵。
+  ok(h.includes("補登到資料庫") && !h.includes("新增進系統") && !h.includes("建案進系統"),
+     "**右邊那顆鍵是「補登到資料庫」**（老闆的用字），舊名字都不留在畫面上");
   ok(h.includes("unfiledAdd("), "而且按得下去");
   ok(h.includes("發過 6 次"), "重發幾次也看得到");
   ok(h.includes("1,880"), "留言數在"); }
@@ -528,14 +537,32 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(/id="uf_name" placeholder/.test(SHOWN.inner) && !/id="uf_name" value=/.test(SHOWN.inner),
      "**檔名故意留空** —— 代填一個猜的名字，人會按過去就存檔，留下一支找不到原檔的片");
   ok(/id="uf_drive" placeholder/.test(SHOWN.inner) && !/id="uf_drive" value=/.test(SHOWN.inner),
-     "雲端資料夾也留空（那要人自己去 Drive 找回毛片）"); }
+     "雲端資料夾也留空（那要人自己去 Drive 找回毛片）");
+  // v223 老闆：「補登到資料庫」也要能填商品名稱與官網連結，不然補進來的寵粉片
+  // 上不了「帶貨商品排行」，選品那邊的「成效好、還沒選」也認不出它。
+  ok(/id="uf_prows"/.test(SHOWN.inner) && /加商品/.test(SHOWN.inner),
+     "**商品那一區在**（跟一般新增影片同一套：品名／原價／售價／官網連結，最多 4 個）");
+  ok(/id="uf_url" placeholder/.test(SHOWN.inner), "商品官網連結那一格也在");
+  ok(!/details class="fold" id="uf_prodfold"[^>]* open>/.test(SHOWN.inner),
+     "**這支文案看不出是寵粉，商品那一折預設收起來**（不是每支未建檔的都要人填商品）"); }
+
+{ // 文案照系統的關鍵字規則猜得出是寵粉的，商品那一折直接打開 —— 不用先點開才發現有這一區
+  const v = V({ id: "Z5", name: "片", metrics: M(5000, 10), scheduledDate: D(40) });
+  mount([v], "管理員", "boss", [], UF([
+    UITEM({ cap: "留言「星座」發給您 寵粉價800 市價2000 限量50條", link: "https://www.facebook.com/reel/1/" })]));
+  let SHOWN = null; showModal = (t, inner) => { SHOWN = { t, inner }; };
+  unfiledAdd(0);
+  ok(/<details class="fold" id="uf_prodfold"[^>]* open>/.test(SHOWN.inner),
+     "**猜是寵粉的話，商品那一折自動展開**",
+     SHOWN.inner.match(/<details class="fold" id="uf_prodfold"[^>]*>/)?.[0]); }
 
 { // 建出來的是「已上片的舊片」，不會跑進待認領、毛片庫存或待審
   // ⚠️ 擋住生產面的不是 lib，是 stage：poolAll() 與 rawStock() 都要求
   //    stage==="待處理"，needsReview() 要求沒有 reviewStatus。
   const src = APP.slice(APP.indexOf("function unfiledAdd("), APP.indexOf("function unfiledAdd(") + 3000);
   ok(!/lib:\s*DF_LIB/.test(src) && !/lib:\s*"大流"/.test(src), "**沒有把 lib 設成大流**");
-  ok(/tags:\["舊片"\]/.test(src), "帶「舊片」標籤");
+  ok(/tags:hasProd\?\["舊片","寵粉"\]:\["舊片"\]/.test(src),
+     "沒填商品只帶「舊片」，填了商品才多帶「寵粉」（跟一般新增影片同一條規矩：有銷售商品才算寵粉）");
   ok(/stage:"已完成", published:true/.test(src), "一步到位（不進待處理 → 不進待認領、不進毛片庫存）");
   ok(/reviewStatus:"通過"/.test(src), "審核也先標好（成品不需要審，免得跑進審片清單）");
   ok(/finishedAt:when2/.test(src),
