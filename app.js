@@ -7220,6 +7220,12 @@ function typeTagOf(v){
 
 // 每一種類型旁邊那句話 —— 講它的目的，不是講它的好壞
 const TYPE_WHY={"寵粉":"帶貨：文案會引導留言關鍵字","代理招商":"招代理／招商","流量型":"衝觸及，不直接賣"};
+// 「未建檔」的候選也用同一套規則猜類型（v221，老闆：「可是你才91支，我其實有2~300支能被選中」）。
+// ⚠️ 只用在**數不確定要不要算進去**的地方（成效頁上面那張卡的數字、按了「只看寵粉」還看不看得到它）——
+//    排行那一列的「類型」欄故意留破折號，不把這個猜測寫進去（見 unfiledRowHTML，smoke-v205 在守這一條：
+//    系統裡根本沒有那一筆，不要編一個型別出來當成定案）。這裡只是用來決定「算不算進候選」，不是在斷言事實。
+//    未建檔沒有 tags 可看，只能靠文案猜，猜不出代理招商（那要靠人標的標籤，文案沒有固定寫法）。
+function unfiledType(x){ return TYPE_CTA.test(String((x&&x.cap)||"")) ? "寵粉" : "流量型"; }
 
 // ===================================================================
 // 二創建議（v200）：哪幾支片值得再剪一次
@@ -8239,8 +8245,10 @@ function perfRankRowsHTML(){
       .sort((a,b)=>b.views-a.views);
   }
   const total=list.length;
-  // 未建檔的沒有類型可分（系統裡根本沒有那一筆），所以篩類型的時候不列它們
-  const show=list.filter(o=>!PERF_KIND||(o.v&&vidType(o.v)===PERF_KIND)).slice(0,50);
+  // 未建檔的也篩得進來（v221）：類型欄照樣留破折號（不編一個定案出來），
+  // 但按「只看寵粉」的時候，它們是排行上真正找得到的候選，不該無聲消失。
+  const kindOfEntry=(o)=> o.v ? vidType(o.v) : unfiledType(o.u);
+  const show=list.filter(o=>!PERF_KIND||kindOfEntry(o)===PERF_KIND).slice(0,50);
   const cols=canPlan?10:9;
   // ⚠️ rmkLastCut 在「這支從來沒二創過」的時候會退回原片自己的剪輯 —— 那在原本
   //    「上次誰剪」那一欄是對的，但這一欄叫「上次二創」，印出來會變成「昱丞剪過
@@ -8299,6 +8307,12 @@ function viewPerf(){
   const kindOf=(o)=>vidType(o.v);
   const kindCount={};
   vAll.forEach(o=>{ kindCount[kindOf(o)]=(kindCount[kindOf(o)]||0)+1; });
+  // 「未建檔」的候選（下面排行上標橘色「未建檔」那些）以前完全不算進這幾張卡 ——
+  // 於是卡片上的數字只講得出「系統裡已經有、也對得到成效的」那一小塊，跟排行上
+  // 真正找得到的候選對不起來（老闆按下「只看寵粉」，一堆他覺得算數的片憑空消失）。
+  // 一起算進去、但分開記——卡片上把兩塊都講出來，不是只丟一個總數讓人猜。
+  const unfiledByKind={};
+  unfiledList().forEach(u=>{ const k=unfiledType(u); unfiledByKind[k]=(unfiledByKind[k]||0)+1; kindCount[k]=(kindCount[k]||0)+1; });
   const kindKeys=["寵粉","代理招商","流量型"].filter(k=>kindCount[k]);
   // 商品排行（reach＝帶此商品影片的觀看加總；不是銷售）
   // v205 老闆：「點商品，我要能看到有什麼影片賣過這個商品（用相同官網連結為主）。」
@@ -8337,7 +8351,7 @@ function viewPerf(){
     kindKeys.map(k=>
     `<button class="card" onclick="perfSetKind('${esc(jsEsc(k))}')" style="text-align:left;cursor:pointer;border-color:${PERF_KIND===k?'var(--accent)':'var(--line)'};min-width:140px;flex:1">
       <b>${esc(k)}</b><div style="font-family:var(--serif);font-size:24px;font-weight:900;margin-top:4px">${kindCount[k]}</div>
-      <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}</div></button>`).join("")
+      <div class="muted" style="font-size:12px">${esc(TYPE_WHY[k]||"")}${unfiledByKind[k]?`　·　含 ${unfiledByKind[k]} 支未建檔（照文案猜的）`:""}</div></button>`).join("")
     }</div>`:''}
   ${perfRankCard()}
   ${rmkPerfCard()}
