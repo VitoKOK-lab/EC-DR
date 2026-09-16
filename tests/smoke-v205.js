@@ -417,6 +417,34 @@ const UITEM = (o) => Object.assign({ cap: "某則貼文的文案", n: 1, views: 
   ok(/data-label="上次二創"[^>]*><span class="muted">—/.test(row), "上次二創是破折號");
   ok(!row.includes("排二創"), "**未建檔的不能排二創**（系統裡沒有那一筆，排不了）"); }
 
+// ══════════ v221：頂上那幾張卡的數字要含未建檔候選 ══════════
+// 老闆：「可是你才91支，我其實有2~300支能被選中」—— 頂上卡片以前只數系統裡
+// 已經建檔、也對到成效的片，未建檔那些排行上看得到、卡片數字卻不算它們。
+{ const 寵 = V({ id: "S1", name: "片", tags: ["寵粉"], metrics: M(50000, 80), scheduledDate: D(40) });
+  const 流 = V({ id: "F1", name: "片", metrics: M(80000, 3), scheduledDate: D(40) });
+  const 未寵 = UITEM({ cap: "留言「星座」發給您 寵粉價800 市價2000 限量", views: 20000, comments: 400 });
+  const 未流 = UITEM({ cap: "中東女性包頭巾文化，一段歷史故事", views: 10000, comments: 2 });
+  mount([寵, 流], "管理員", "boss", [], UF([未寵, 未流]));
+  const h = viewPerf();
+  ok(/寵粉<\/b><div[^>]*>2</.test(h), "**寵粉卡：1 支已建檔 + 1 支未建檔猜得出來 = 2**", h.match(/寵粉<\/b>[^<]*<div[^>]*>\d+/)?.[0]);
+  ok(/含 1 支未建檔（照文案猜的）/.test(h), "卡片上寫清楚含幾支是猜的，不是含混成一個數字");
+  ok(/流量型<\/b><div[^>]*>2</.test(h), "流量型卡也一樣：1 已建檔 + 1 未建檔 = 2");
+  // 按下「只看寵粉」：未建檔那支符合條件的要留著，不符合的要消失；已建檔的一樣照舊
+  PERF_KIND = "寵粉";
+  const hk = viewPerf();
+  ok(hk.includes("留言「星座」") , "**符合寵粉文案的未建檔候選，按篩選後還在**（不會無聲消失）");
+  ok(!hk.includes("中東女性包頭巾"), "不符合的未建檔候選被篩掉");
+  ok(hk.includes("片"), "已建檔的寵粉片還在");
+  const rowAfterFilter = hk.slice(hk.indexOf("留言「星座」"), hk.indexOf("留言「星座」") + 400);
+  ok(/data-label="類型"[^>]*><span class="muted">—/.test(rowAfterFilter),
+     "**類型欄還是破折號**（篩選用猜的可以，欄位上斷言是定案不行 —— smoke-v205 原本那條規矩沒被繞過）");
+  PERF_KIND = null;
+  // 沒有未建檔資料時完全不受影響（不多印任何「含 N 支」）
+  mount([寵, 流], "管理員", "boss", [], null);
+  const h0 = viewPerf();
+  ok(/寵粉<\/b><div[^>]*>1</.test(h0), "沒有未建檔資料時，寵粉卡照舊是 1");
+  ok(!h0.includes("未建檔"), "也不會冒出「含 N 支未建檔」這行字"); }
+
 { // 沒問過觀看數的（--no-unfiled-views 或 --from-file）→ 顯示破折號，不是 0
   const v = V({ id: "K2", name: "片", metrics: M(1000, 5), scheduledDate: D(40) });
   mount([v], "管理員", "boss", [], UF([UITEM({ cap: "沒問過觀看數的", views: 0, comments: 30 })]));
