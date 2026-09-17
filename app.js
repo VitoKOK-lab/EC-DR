@@ -2687,11 +2687,19 @@ function workRecent7Card(me){
   if(!list.length) return "";
   const nWait=list.filter(needsReview).length;
   const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
+  // ⚠️（老闆截圖回報：「這些鴻儒還是不能按已審核」）這張卡以前**只講狀態、不給動作**——
+  // 「還沒審／等 N 天」是給剪輯自己盤點、拿去問 Regina 用的參考清單，真正能按的
+  // 「✓ 審過」鍵原本只長在上面那張「審片進度」卡的「待審核」那一段。同一支片在
+  // 同一頁分成兩張卡出現，一張能按一張不能按，剪輯很自然會點著看得到「還沒審」
+  // 字樣的這一張，點不下去就以為系統壞了。兩張卡背後是同一份 needsReview 清單，
+  // 沒有理由讓其中一張變成「看得到、按不到」——這裡比照那邊的鍵，一併補上。
   const rows=list.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
       <span style="min-width:0;flex:1 1 220px">
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
         <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
-      <span style="flex:none">${reviewStateHTML(v)}</span></div>`).join("");
+      <span style="flex:none;display:flex;gap:6px;align-items:center">${reviewStateHTML(v)}${
+        needsReview(v)&&canReview()?`<button class="btn sec sm" style="padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`:""
+      }</span></div>`).join("");
   return `<details class="fold" ${foldState("work.recent7", false)}>
     <summary>${nWait?T("剪完等審的片","Finished — waiting on review"):T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
       nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
