@@ -101,7 +101,23 @@ STATE.videos=[
   ok("看得出誰審的、誰是自己標的", c.includes("Regina") && c.includes("自己標的"));
   ok("看得出等了幾天", c.includes("等 3 天"));
   ok("點得進影片", c.includes("editVideo('A')"));
-  ok("新的排在上面", c.indexOf("Regina 審過的")<c.indexOf("等三天還沒審")); }
+  ok("新的排在上面", c.indexOf("Regina 審過的")<c.indexOf("等三天還沒審"));
+  // v224 老闆截圖：「這些鴻儒還是不能按已審核」—— 這張卡以前只講狀態、不給按鍵，
+  // 剪輯自己看得到「還沒審」字樣的正是這一張，不是另一張「審片進度」卡。
+  ok("**還沒審的那支點得下去「✓ 審過」**",
+     /editVideo\('A'\)[\s\S]{0,600}editorMarkReviewed\('A'\)/.test(c), c.slice(c.indexOf("等三天還沒審"),c.indexOf("等三天還沒審")+400));
+  ok("**已經審過（無論誰按的）的不會再冒出這顆鍵**",
+     !/editorMarkReviewed\('B'\)/.test(c) && !/editorMarkReviewed\('C'\)/.test(c));
+  ok("被退回的也不會有這顆鍵（它要先改，不是再審一次）", !/editorMarkReviewed\('D'\)/.test(c));
+  ok("八天前那支還沒審，一樣點得下去", /editorMarkReviewed\('E'\)/.test(c)); }
+// 員工視角（唯讀預覽）：字樣還在，鍵不能出現——按不動的畫一顆鍵比沒有還糟（會以為系統壞了）
+{ reset(); as("小葵","editor");
+  STATE.videos=[ V("A","等三天還沒審",{finishedAt:D(-2)+"T15:00:00"}) ];
+  VIEW_AS="小葵";
+  const c=workRecent7Card("小葵");
+  ok("**員工視角預覽時，還沒審的字樣還在，但沒有「✓ 審過」鍵**",
+     c.includes("還沒審") && !c.includes("editorMarkReviewed"), c);
+  VIEW_AS=null; }
 // v184：很久以前剪完、**還沒審**的照樣要出現（那正是老闆要看到的）
 reset(); as("小葵","editor");
 STATE.videos=[ V("Z","很久以前還沒審的",{finishedAt:D(-30)+"T15:00:00"}) ];
