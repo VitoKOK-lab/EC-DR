@@ -1568,16 +1568,18 @@ function calTWBody(){
   </div>`;
 }
 function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++;} CAL_YM=[y,m]; render(); }
-// ── 月排程「清單」檢視（v172，老闆指定）────────────────────────────
+// ── 月排程「清單」檢視（v172，老闆指定；v225 加編號／原始片名欄）──────
 // 月曆一格只放得下一個數字，看得到「這天排了幾支」，看不到「排了哪幾支」。
 // 想核對整個月排了什麼，只能一天一天點開 —— 三十天就是三十次。
-// 清單模式把整個月攤成一張表：日期／幾點／影片貼文文案，由上往下一路看完。
+// 清單模式把整個月攤成一張表：日期／幾點／編號與原始片名／影片貼文文案，
+// 由上往下一路看完。
 //
 // 兩條規矩：
 //   ① **只能看**。要改還是照舊 —— 點日期，開那天的視窗，一次改一天。
 //      （所以每一列的日期都是可以點的，點下去就是原本那個視窗。）
-//   ② **不印編號**。編號是系統流水號，每一列長得都差不多，只會把真正要看的
-//      貼文文案擠掉。這裡一律 vidName()＝影片貼文文案（沒填才退回原始片名）。
+//   ② v172 原本「不印編號」，v225 老闆改口：貼文文案跟原始片名常常不一樣，
+//      要能對得回系統裡的那一筆，所以拆成兩欄 —— 左邊編號／原始片名，
+//      右邊才是貼文文案（沒填才退回原始片名）。
 let CAL_MODE="grid";                     // grid＝月曆｜list＝清單
 function calSetMode(m){ CAL_MODE=(m==="list")?"list":"grid"; render(); }
 function calModeTabs(){
@@ -1590,6 +1592,17 @@ function calRowName(v){
   const own=stripHash(zhTW(v.name||v.rawName||""));
   if(own) return own;
   const s=srcOf(v); return (s?vidName(s):"") || T("(未命名)","(untitled)");
+}
+// 左欄：編號／原始片名（v225，老闆指定）。跟 calRowName 分開算 —— 那個抓的是
+// 「貼文文案，沒填退回原始片名」；這個要的是「原始片名本身」，兩者常常不一樣，
+// 混在一起就對不回系統裡的那一筆。版本殼自己沒填原始片名時，比照 calRowName 退回源片。
+function calRowRaw(v){
+  if(!v) return "";
+  let raw=stripHash(zhTW(v.rawName||""));
+  if(!raw){ const s=srcOf(v); raw=s?stripHash(zhTW(s.rawName||s.name||"")):""; }
+  raw=raw||T("(未命名)","(untitled)");
+  const code=esc(v.code||"");
+  return `${code?`<span class="cl-code">${code}</span>`:""}<span class="cl-rawt">${esc(raw)}</span>`;
 }
 const calTimeSort=(a,b)=>String(a.time||"99:99").localeCompare(String(b.time||"99:99"));
 // 台灣社群那一條：排程格（含大流二創）＋預排上片日落在這天的片
@@ -1618,7 +1631,7 @@ function calListBody(cfg){
         title="${T("點日期改這天的排程","Click the date to edit this day")}">${m+1}/${d}</a><span class="muted" style="font-size:11px">（${wd}）</span></span>${isToday?`<span class="pill wa" style="font-size:10px">${T("今天","Today")}</span>`:""}`;
     if(!list.length){
       body+=`<tr class="${isToday?'cl-today':''}"><td class="cl-when">${dcell}</td>
-        <td class="muted" style="font-style:italic">${T("（這天還沒排）","(nothing scheduled)")}</td></tr>`;
+        <td class="muted" colspan="2" style="font-style:italic">${T("（這天還沒排）","(nothing scheduled)")}</td></tr>`;
       continue;
     }
     list.forEach((r,i)=>{
@@ -1635,6 +1648,9 @@ function calListBody(cfg){
               然後時間數字可以小一點，空間要留給文字」。兩欄併一欄、時間縮成小字排在
               日期底下 —— 省下來的寬度全部給片名，手機上一行才裝得下比較多字。 */''}
         <td class="cl-when">${i===0?dcell:""}<span class="cl-tm">${esc(r.time)||'—'}</span></td>
+        ${/* v225（老闆指定）：貼文文案跟原始片名常常不一樣，要能對回系統裡的那一筆 ——
+              拆一欄出來印編號＋原始片名，跟右邊的貼文文案分開看。 */''}
+        <td class="cl-raw">${calRowRaw(r.v)}</td>
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
@@ -1654,8 +1670,8 @@ function calListBody(cfg){
     </div>
     <div class="muted" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
     <div style="overflow-x:auto">
-      <table class="vtable callist"><colgroup><col class="cl-cw"><col></colgroup>
-        <thead><tr><th>${T("日期・時間","Date · time")}</th><th>${T("影片貼文文案","Post caption")}</th></tr></thead>
+      <table class="vtable callist"><colgroup><col class="cl-cw"><col class="cl-rw"><col></colgroup>
+        <thead><tr><th>${T("日期・時間","Date · time")}</th><th>${T("編號／原始片名","ID / raw title")}</th><th>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</th></tr></thead>
         <tbody>${body}</tbody></table>
     </div>
   </div>`;

@@ -247,9 +247,15 @@ function reset(vids, users){
     ok("（前提）下拉挑得到影片", sel.includes("人生這麼苦，為什麼放不下"));
     ok("**「排一支影片到這天」的下拉也不出現編號**", !sel.includes("1150731005"),
        (sel.match(/.{0,30}1150731005.{0,30}/)||[])[0]);
-    ok("清單檢視本來就沒有（v173 拿掉的，不要被改回去）", (()=>{
+    // v225（老闆指定）：清單檢視的貼文文案欄還是不印編號 —— 編號只在另外
+    // 拆出來的「編號／原始片名」欄（同一列，不同格），兩件事沒有互相矛盾
+    // （見 smoke-v173）。要抓「貼文文案那一格」本身，不能只看名字前面幾百字，
+    // 那樣會連到隔壁「編號／原始片名」格 —— 兩格緊挨著、編號本來就該在那格。
+    ok("清單檢視的貼文文案欄不出現編號", (()=>{
        CAL_MODE="list"; const li=viewCal(); CAL_MODE="grid";
-       return !li.includes("2609241"); })());
+       const i=li.indexOf("30歲以後的面向為什麼會變");
+       const capCell=li.slice(li.lastIndexOf("<td>",i), li.indexOf("</td>",i)+5);
+       return capCell.includes("30歲以後的面向為什麼會變") && !capCell.includes("2609241"); })());
     // 編號還是查得到 —— 只是不擺在片名前面
     ok("**搜尋框照樣打得到編號**", (()=>{
        OD_Q="2609241"; const n=odCandidates(D(2)).length; OD_Q="";
