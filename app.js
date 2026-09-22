@@ -1618,7 +1618,7 @@ function calRowsLine(list){
   return (list||[]).map(v=>({time:v.publishTime||"", name:calRowName(v), open:"", v:v||null})).sort(calTimeSort);
 }
 function calListBody(cfg){
-  const {ym, move, dayOpen, rows, head} = cfg;
+  const {ym, move, dayOpen, rows, head, printLabel} = cfg;
   const [y,m]=ym, days=new Date(y,m+1,0).getDate();
   let total=0, body="";
   for(let d=1;d<=days;d++){
@@ -1661,14 +1661,29 @@ function calListBody(cfg){
         <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
-  return `<div class="card">
-    ${head||""}
-    <div class="calhead">
-      <button class="calnav" onclick="${move(-1)}" title="${T("上月","Previous month")}">‹</button>
-      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
-      <button class="calnav" onclick="${move(1)}" title="${T("下月","Next month")}">›</button>
+  // v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
+  // 不做另一套匯出檔案——清單本來就是攤成一張表，印表機／存 PDF 本來就是瀏覽器
+  // 內建功能，缺的只是「印出來要長得像一張表」。做法：
+  //   ① 整張卡包一層 print-target，@media print 只留它可見（其他一律隱藏），
+  //      不用去追殺 header／nav／登入畫面／彈窗這些跟清單無關的東西。
+  //   ② 卡片裡再分兩種：.noprint（按鈕、上下月箭頭、下拉選單、「只能看」提示——
+  //      紙本上按不動、選不了，印出來只是佔位置）平常看得到、印的時候藏起來；
+  //      .printonly（帳號／平台這行字）平常藏起來、印的時候才冒出來，因為那些
+  //      資訊平常是靠螢幕上的下拉選單傳達的，下拉選單一藏，紙上就沒人知道印的
+  //      是哪個帳號。
+  //   ③ 一次一個月：本來就是這樣——清單本來就只顯示 ym 這一個月，跟印表機沒關係。
+  return `<div class="card print-target">
+    <div class="row noprint" style="justify-content:flex-end;margin-bottom:6px">
+      <button class="btn sm sec" onclick="window.print()">🖨 ${T("列印本月（A4）","Print this month (A4)")}</button>
     </div>
-    <div class="muted" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
+    ${printLabel?`<div class="printonly" style="font-weight:700;margin-bottom:4px">${esc(printLabel)}</div>`:""}
+    <div class="noprint">${head||""}</div>
+    <div class="calhead">
+      <button class="calnav noprint" onclick="${move(-1)}" title="${T("上月","Previous month")}">‹</button>
+      <div class="calmonth">${currentRole()==="intl"?`${MONTHS_EN[m]} ${y}`:`${y} <span>年</span> ${m+1} <span>月</span>`}</div>
+      <button class="calnav noprint" onclick="${move(1)}" title="${T("下月","Next month")}">›</button>
+    </div>
+    <div class="muted noprint" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
     <div style="overflow-x:auto">
       <table class="vtable callist"><colgroup><col class="cl-cw"><col class="cl-rw"><col></colgroup>
         <thead><tr><th>${T("日期・時間","Date · time")}</th><th>${T("編號／原始片名","ID / raw title")}</th><th>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</th></tr></thead>
@@ -1688,6 +1703,7 @@ function calListFor(plat){
     const acc=intlCurAcct();
     return calListBody({ ym:INTL_CAL_YM, move:(n)=>`calMoveIntl(${n})`, dayOpen:(ds)=>`openDayIntl('${ds}')`,
       rows:(ds)=>calRowsLine(intlDayList(ds,acc)),
+      printLabel:`${loc==="en"?T("英文","English"):T("泰文","Thai")} · ${acc}`,
       head:`<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b>
         <select onchange="intlSetAcct(this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select></div>` });
   }
@@ -1698,11 +1714,13 @@ function calListFor(plat){
     const acc=chCurAcct(plat);
     return calListBody({ ym:st.ym, move:(n)=>`calMoveCh('${plat}',${n})`, dayOpen:(ds)=>`openDayCh('${plat}','${ds}')`,
       rows:(ds)=>calRowsLine(chDayList(plat,ds,acc)),
+      printLabel:`${plat==="shopee"?T("蝦皮","Shopee"):T("馬來西亞","Malaysia")} · ${acc}`,
       head:`<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><b>${T("帳號","Account")}</b>
         <select onchange="chSetAcct('${plat}',this.value)" style="font-size:13px;padding:6px 10px">${accts.map(a=>`<option ${a===acc?'selected':''}>${esc(a)}</option>`).join("")}</select></div>` });
   }
   if(!CAL_YM){ const t=new Date(); CAL_YM=[t.getFullYear(), t.getMonth()]; }
-  return calListBody({ ym:CAL_YM, move:(n)=>`calMove(${n})`, dayOpen:(ds)=>`openDay('${ds}')`, rows:calRowsTW });
+  return calListBody({ ym:CAL_YM, move:(n)=>`calMove(${n})`, dayOpen:(ds)=>`openDay('${ds}')`, rows:calRowsTW,
+    printLabel:T("中文社群媒體","Chinese social media") });
 }
 // ---- 月排程合一：一個分頁、下面選平台（社群媒體／海外 TikTok／蝦皮／馬來）----
 // CAL_PLAT_FOR＝這個預設是為哪個職位套的。職位沒變就不再套，使用者選了什麼就是什麼。

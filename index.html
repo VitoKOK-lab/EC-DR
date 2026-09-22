@@ -953,6 +953,25 @@
     table.callist .cl-code{font-size:10.5px}
   }
   table.callist tbody tr:hover{background:var(--panel2)}
+  /* v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
+     .printonly 平常藏起來，只在紙上冒出來（帳號／平台這行字，平常靠下拉選單
+     傳達，下拉選單一到紙上就沒用了，得換成純文字）；.noprint 相反，平常看
+     得到、印的時候藏起來（按鈕、上下月箭頭、下拉選單，紙上按不動、選不了）。 */
+  .printonly{display:none}
+  @media print{
+    @page{size:A4;margin:12mm}
+    body *{visibility:hidden}
+    .print-target,.print-target *{visibility:visible}
+    .print-target{position:absolute;left:0;top:0;width:100%;margin:0;border:none;box-shadow:none;background:#fff}
+    .print-target .noprint{display:none!important}
+    .print-target .printonly{display:block!important}
+    table.callist{width:100%;font-size:11px}
+    table.callist td,table.callist th{border:1px solid #999;padding:4px 6px}
+    table.callist tr{break-inside:avoid}
+    table.callist td .cl-t{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+    table.callist col.cl-cw{width:14%}
+    table.callist col.cl-rw{width:26%}
+  }
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
   .vidscroll table.vtable{margin-top:0}
@@ -1040,7 +1059,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=3808ce08a1f5"></script>
-<script type="module" src="fb.js?v=3808ce08a1f5"></script>
+<script src="app.js?v=4462b6910858"></script>
+<script type="module" src="fb.js?v=4462b6910858"></script>
 </body>
 </html>
