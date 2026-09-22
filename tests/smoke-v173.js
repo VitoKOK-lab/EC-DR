@@ -78,18 +78,25 @@ function reset(videos, schedule, who, role){
   // v194（老闆指定）：「日期跟時間不需要佔到兩個格子，他在同一個就可以了」——
   // 三欄併成兩欄。日期與時間都還在（下面「時間印出來了／日期印出來了」兩條在盯），
   // 只是同一格；省下來的寬度給貼文文案。
-  ok("兩個欄位：日期・時間／影片貼文文案",
-     l.includes(">日期・時間<") && l.includes(">影片貼文文案<") && !l.includes(">時間</th>"),
+  // v225（老闆指定）：又加回一欄「編號／原始片名」——現在是三個欄位。
+  ok("三個欄位：日期・時間／編號原始片名／影片貼文文案",
+     l.includes(">日期・時間<") && l.includes(">編號／原始片名<") && l.includes(">影片貼文文案（不填則同原始片名）<") && !l.includes(">時間</th>"),
      (l.match(/<th>[^<]*<\/th>/g)||[]));
   calSetMode("grid"); ok("切得回月曆", CAL_MODE==="grid" && viewCal().includes('class="cal"')); }
 
-// ══════════ ② 印的是貼文文案，不是編號 ══════════
+// ══════════ ② 貼文文案那一格印的是貼文文案，不是編號 ══════════
+// v172 原本整條规矩是「不印編號」；v225 老闆改口，加回「編號／原始片名」獨立一欄，
+// 但貼文文案那一格本身還是不能混進編號 —— 兩件事不衝突，編號在自己的欄位裡。
 { reset([v_("V1",{name:"這才是頂級男人的樣子 #珠寶 #傳承", rawName:"（P323）麥特戴蒙的家庭鐵律",
                   scheduledDate:D(3), publishTime:"12:00", code:"777"})]);
   calSetMode("list");
   const l=viewCal();
   ok("**印的是影片貼文文案**", l.includes("這才是頂級男人的樣子"), l.slice(l.indexOf("callist"), l.indexOf("callist")+900));
-  ok("**沒有印編號**", !/>777[ <]/.test(l) && !l.includes("777 這才是"), (l.match(/777[^<]{0,20}/g)||[]));
+  { const i=l.indexOf("這才是頂級男人的樣子");
+    const capCell=l.slice(l.lastIndexOf("<td>",i), l.indexOf("</td>",i)+5);
+    ok("**編號沒有混進貼文文案那一格**", !capCell.includes("777"), capCell.slice(0,200));
+    ok("**編號印在「編號／原始片名」那一欄**", l.includes(">777<"), (l.match(/>777</g)||[])); }
+  ok("**「編號／原始片名」欄印的是原始片名**", l.includes("（P323）麥特戴蒙的家庭鐵律"));
   ok("貼文後面那一串 #標籤 不要塞進清單（會把每一列撐成三行）", !l.includes("#珠寶"));
   ok("時間印出來了", l.includes("12:00"));
   ok("日期印出來了", l.includes(`${M}/3`));
