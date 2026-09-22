@@ -10,7 +10,8 @@
 # 會裝兩個工作：
 #   com.ecdr.backup       每天 03:00 跑備份（失敗會跳通知）
 #   com.ecdr.healthcheck  每天 09:00 檢查「備份有沒有默默停掉」
-#   com.ecdr.metasync     每天 03:30 叫起來，上次成功不到 3 天就自己跳過
+#   com.ecdr.metasync     每天 03:30 同步一次（上次成功不到 1 天，也就是今天已經
+#                         跑過，才會跳過，防止重複跑）
 #                         （設定檔 ~/.ecdr-meta.json 不存在就不安裝這一個）
 #
 # 用 launchd 不用 cron 的原因：Mac 在排程時間睡著的話，
@@ -30,7 +31,7 @@ MS_PLIST="$AGENTS/$MS_LABEL.plist"
 META_CONF="$HOME/.ecdr-meta.json"
 MS_HOUR=3
 MS_MINUTE=30
-MS_EVERY=3
+MS_EVERY=1
 LOG_DIR="$HOME/EC-DR-Backups/_logs"
 
 HOUR=3
@@ -216,7 +217,7 @@ if [ -f "$META_CONF" ]; then
 </plist>
 PLIST
     PLISTS+=("$MS_PLIST")
-    printf "  平台成效：每天 %02d:%02d 叫起來，上次成功不到 %d 天就跳過\n" "$MS_HOUR" "$MS_MINUTE" "$MS_EVERY"
+    printf "  平台成效：每天 %02d:%02d 同步一次（上次成功不到 %d 天就跳過，防止重複跑）\n" "$MS_HOUR" "$MS_MINUTE" "$MS_EVERY"
 else
     echo "  平台成效：跳過（找不到 $META_CONF，先跑 python3 tools/meta_setup.py）"
 fi
@@ -245,7 +246,7 @@ echo ""
 printf "   每天 %02d:%02d 自動備份，失敗會跳 macOS 通知\n" "$HOUR" "$MINUTE"
 printf "   每天 %02d:00 檢查備份有沒有默默停掉\n" "$HC_HOUR"
 if [ -f "$MS_PLIST" ]; then
-    printf "   每天 %02d:%02d 叫平台成效同步起來（上次成功不到 %d 天就自己跳過）\n" \
+    printf "   每天 %02d:%02d 平台成效同步一次（上次成功不到 %d 天就自己跳過，防止重複跑）\n" \
         "$MS_HOUR" "$MS_MINUTE" "$MS_EVERY"
     echo "   同步紀錄：$LOG_DIR/meta-sync.log"
 fi
