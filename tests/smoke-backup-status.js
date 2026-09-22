@@ -146,10 +146,11 @@ const SYNC_OK = {at:daysAgo(1), ok:true, videos:190, hits:341, posts:18586,
 { const h = withSync(SYNC_OK);
   ok("剛同步完顯示正常", /平台成效同步正常/.test(h) && !/平台成效同步有問題/.test(h));
   ok("而且更新幾支、看過幾則貼文都看得到", /190/.test(h) && /18,586/.test(h), (h.match(/更新[^<]*/)||[])[0]); }
-// 排程是每三天跑一次，所以門檻是 7 天（備份是每天，門檻 3 天）—— 兩張卡不能共用同一條線
-{ ok("4 天沒同步還算正常（排程本來就是三天一次）",
-     !/平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(4)}))));
-  ok("**8 天沒同步 → 變成警告**", /平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(8)})))); }
+// v226：排程改成每天跑一次，門檻比照備份那張卡，一樣是 3 天
+{ ok("3 天沒同步還在容忍範圍，不誤報",
+     !/平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(3)}))));
+  ok("**4 天沒同步 → 變成警告**", /平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(4)}))));
+  ok("8 天沒同步當然也是警告", /平台成效同步有問題/.test(withSync(Object.assign({}, SYNC_OK, {at:daysAgo(8)})))); }
 { const h = withSync(Object.assign({}, SYNC_OK, {ok:false, failed:178}));
   ok("有影片寫不進去也是警告（2026-09-13 那次 178 支全失敗）",
      /平台成效同步有問題/.test(h) && /178/.test(h)); }

@@ -10,7 +10,7 @@
     python3 tools/meta_sync.py --min-views 3000    放寬「成效好」的門檻（預設 5000 觀看 / 5 留言）
     python3 tools/meta_sync.py --save-posts x.json 把平台原始回應存起來
     python3 tools/meta_sync.py --from-file x.json  用存起來的回應重跑比對（不連網）
-    python3 tools/meta_sync.py --write --every 3   排程用：上次成功不到 3 天就跳過
+    python3 tools/meta_sync.py --write --every 1   排程用：上次成功不到 1 天（今天跑過）就跳過
 
 【預設是「只看不寫」】
 第一次跑一定要先看清單：哪一則對到哪一支、哪幾則對不上。
@@ -777,7 +777,12 @@ def merge_metrics(old, rows):
 
 
 HIST_MAX_DAYS = 35        # 上片後這麼多天內才留快照（老闆：「約三十天就夠」）
-HIST_MAX_PER_POST = 15    # 一則貼文最多留幾個點（每 3 天一點，30 天約 10 個）
+# v226：排程改成每天同步，一則貼文追蹤期內最多存到 HIST_MAX_DAYS 天份的
+# 每日快照——跟 HIST_MAX_DAYS 設同一個數字，保證追蹤期內的點一個都不會被這裡
+# 的「留最後幾個」truncate 掉（不然「同齡 30 天比較」要靠的 age>=30 那個點，
+# 有可能被砍到只剩比 30 還新的，反而比不出來）。以前每 3 天一點時 15 就已經
+# 夠鬆（30 天大概只存 10 個點），現在改成每天一點，鬆緊要重新算。
+HIST_MAX_PER_POST = 35
 
 
 def merge_hist(old, rows, day):

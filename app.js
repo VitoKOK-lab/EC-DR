@@ -7578,7 +7578,7 @@ function rmkVersionsCard(v){
 // 老片補不回來 —— 那種只能用累計比，畫面上會標出原片幾天。
 const RMK_CMP_DAYS=30;
 function rmkHist(v){ return Array.isArray(v&&v.metricsHist)?v.metricsHist:[]; }
-// 這支片「上片後第 n 天」的觀看。每 3 天一個點，所以取第一個 age>=n 的點。
+// 這支片「上片後第 n 天」的觀看。每天一個點（v226 起），所以取第一個 age>=n 的點。
 // ⚠️ 要**每一則貼文都有**那個點才算數：一支片在兩個帳號各發一次，只拿到其中
 //    一則的數字就去比，等於拿半支片比整支片 —— 那比沒有數字更糟。
 function rmkViewsAtAge(v, n){
@@ -7722,7 +7722,7 @@ function rmkPerfCard(){
     ${anySame?"":`<div class="muted" style="font-size:11px;margin-top:6px">
       ⚠ 現在的比值是拿<b>累計</b>算的：原片累積了好幾個月，二創才跑幾週，比值天生偏低。
       「他分到的原片」那一欄就是在講這件事 —— 有人平均分到 150 天的老片，比值難看不一定是他的問題。
-      系統從現在開始存每 3 天一個點，等新片累積兩三個月，就會自動換成「同齡 ${RMK_CMP_DAYS} 天對 ${RMK_CMP_DAYS} 天」。</div>`}
+      系統從現在開始存每天一個點，等新片累積兩三個月，就會自動換成「同齡 ${RMK_CMP_DAYS} 天對 ${RMK_CMP_DAYS} 天」。</div>`}
     <button class="btn sm" style="margin-top:8px" onclick="rmkListToggle()">${
       RMK_LIST_OPEN?"收起每一支":`看每一支二創（${shells.length}）`}</button>
     ${RMK_LIST_OPEN?`<div class="${shells.length>10?'vidscroll':''}" style="margin-top:8px">
@@ -11379,7 +11379,7 @@ function viewSettings(){
     </div>`;
   })();
 
-  // 成效同步狀態：Mac mini 上的 tools/meta_sync.py 每三天回報到 meta/settings.metaSyncStatus。
+  // 成效同步狀態：Mac mini 上的 tools/meta_sync.py 每天回報到 meta/settings.metaSyncStatus。
   // 跟備份那張卡同一個理由 —— 沒有人會為了確認同步有沒有跑而去開終端機。
   //
   // ⚠️ v211 加這張卡，是因為 2026-09-14 那次：老闆在 Mac mini 上 `git pull` 失敗
@@ -11396,8 +11396,8 @@ function viewSettings(){
         還沒收到任何同步回報。若已在 Mac mini 設好排程，第一次跑完就會出現在這裡。</div></div>`;
     const t = new Date(String(ms.at)+"+08:00").getTime();
     const days = isNaN(t) ? NaN : Math.floor((Date.now()-t)/864e5);
-    // 排程是每三天跑一次，所以 7 天才算停了（備份是每天，門檻 3 天）
-    const stale = !(days>=0) || days>7;
+    // v226：排程改成每天跑一次，門檻比照備份那張卡，一樣是 3 天
+    const stale = !(days>=0) || days>3;
     const code  = String(ms.code||"");
     // ⚠️ 沒回報 code 的是舊版的同步程式，那本身就代表「跑的是舊程式」—— 但不能
     //    硬當成故障（第一次升級之前每一台都是這樣），所以只提示、不變紅。
@@ -11405,7 +11405,7 @@ function viewSettings(){
     const bad = stale || !ms.ok || codeBad;
     const when = String(ms.at).replace("T"," ").slice(0,16);
     const ago  = isNaN(days) ? "時間不明" : (days<=0 ? "今天" : (days===1 ? "昨天" : days+" 天前"));
-    const why = stale ? "超過 7 天沒更新（排程是每三天跑一次）"
+    const why = stale ? "超過 3 天沒更新"
               : !ms.ok ? "上一次有影片寫不進去（"+num(+ms.failed||0)+" 支失敗）"
               : codeBad ? String(ms.codeNote||"跑的是舊程式") : "";
     return `<div class="card"${bad?' style="border-left:4px solid #C0392B"':''}>
@@ -11414,7 +11414,7 @@ function viewSettings(){
         最後一次：<b>${esc(when)}</b>（${esc(ago)}）・更新 ${num(+ms.videos||0)} 支・達標 ${num(+ms.hits||0)} 則・看過 ${num(+ms.posts||0)} 則貼文</div>
       ${bad?`<div style="font-size:12px;margin-top:6px;color:#C0392B">${esc(why)}</div>`:`
       <div class="muted" style="font-size:12px;margin-top:4px">
-        Mac mini 每三天自動同步 FB／IG 成效，跑之前會自己把程式更新到最新版。
+        Mac mini 每天自動同步 FB／IG 成效，跑之前會自己把程式更新到最新版。
         停掉、失敗、或跑到舊程式，這張卡都會變紅。</div>`}
     </div>`;
   })();

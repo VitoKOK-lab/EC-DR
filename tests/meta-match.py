@@ -622,13 +622,20 @@ ok(S.merge_hist(None, [hrow("P3", 0, "2026-09-01", viewsMissing=True)], "2026-09
 ok(S.merge_hist(None, [{"views": 5, "postAt": "2026-09-01T10:00:00"}], "2026-09-04") == [],
    "沒有 postId 就不知道是誰的點，不記")
 
-# 不能無限長：一則貼文最多留 HIST_MAX_PER_POST 個點
+# 不能無限長：一則貼文最多留 HIST_MAX_PER_POST 個點。
+# ⚠️ HIST_MAX_DAYS（35）本身就會擋掉 age>35 的點，所以一則貼文最多能記到的
+# 點數本來就封頂在 36（age 0～35 天，一天一點）—— 要真的測到 HIST_MAX_PER_POST
+# 這條線在裁，天數要跨過 35 這個邊界，不能再用「每次加一天」硬湊字串日期。
+import datetime as _dt
 long_h = None
-for i in range(1, 26):
-    long_h = S.merge_hist(long_h, [hrow("P4", i * 100, "2026-09-01")],
-                          "2026-09-%02d" % i if i <= 30 else "2026-10-01")
+base = _dt.date(2026, 9, 1)
+n_days = S.HIST_MAX_PER_POST + 1     # 剛好比上限多一天，才踩得到裁切
+for i in range(n_days):
+    day = (base + _dt.timedelta(days=i)).isoformat()
+    long_h = S.merge_hist(long_h, [hrow("P4", (i + 1) * 100, base.isoformat())], day)
 ok(len(long_h) == S.HIST_MAX_PER_POST, "一則貼文最多留 %d 個點" % S.HIST_MAX_PER_POST)
-ok(long_h[-1]["views"] == 2500, "留下來的是最新的那幾個，不是最舊的")
+ok(long_h[-1]["views"] == n_days * 100, "留下來的是最新的那幾個，不是最舊的")
+ok(long_h[0]["views"] == 200, "最舊那一個（第一天）被裁掉了，留下來的從第二天開始")
 
 two = S.merge_hist(None, [hrow("P5", 10, "2026-09-01"), hrow("P6", 20, "2026-09-02")], "2026-09-04")
 ok(len(two) == 2, "同一支片有兩則貼文（重播）→ 各記各的")
@@ -775,9 +782,10 @@ finally:
     S._call = _real_call
 
 print("— 排程：每天叫起來，自己決定要不要跑 —")
-# 老闆要「每三天更新一次」。不用 launchd 直接排每三天，是因為那樣只要有一次
-# 失敗（權杖過期、網路斷），就要再等三天才會重試，而且沒人知道。
-# 改成每天醒來，看上次成功是幾天前 —— 失敗的隔天就會自己再試一次。
+# v226：老闆改成要「每天更新一次」（原本是每三天）。不用 launchd 直接排區間，
+# 是因為那樣只要有一次失敗（權杖過期、網路斷），就要再等一整個區間才會重試，
+# 而且沒人知道。改成每天醒來，看上次成功是幾天前 —— 失敗的隔天就會自己再試一次；
+# 這個「自己判斷」機制不管區間是一天還是三天都用得到，見 tools/meta-scheduled.sh。
 import json as _json
 import tempfile as _tmp
 _old_state = S.STATE_FILE
