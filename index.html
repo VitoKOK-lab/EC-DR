@@ -956,6 +956,16 @@
      原始片名接在下面，兩者都要能換行（片名有時候比貼文文案還長）。 */
   table.callist .cl-code{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   table.callist .cl-rawt{display:block}
+  /* v238（老闆指定）：「現在的片名，有的會出現（podcast)這個部分能不能用成一個
+     紅色的正方形簡化或者是用一個麥克風簡化不要那麼長我不想出現這個（)」——
+     選了麥克風圖示＋紅色方塊底那個做法（老闆原話：「用你第一個麥克風圖示，
+     然後在他下面加底色或者+1個正方形框」）。原始片名開頭是「(podcast)」的話，
+     直接把這段文字換成這顆小方塊，省下來的寬度讓片名本身多顯示幾個字。
+     inline-flex 是為了讓圖示自己置中，同時整顆方塊在 .cl-rawt 的單行省略號裡
+     還是當成一個不會被拆開的字元──真的窄到連這顆都放不下時才會被省略號吃掉。 */
+  .cl-podcast{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    border-radius:3px;background:var(--red);color:#fff;font-size:10px;line-height:1;
+    margin-right:4px;vertical-align:-2px}
   /* v234（老闆指定）：手機上標「原名：」「貼文：」用的小字標籤——桌機／列印
      都不需要（有表頭撐著），平常就藏起來，手機那段 media query 裡才冒出來。 */
   .cl-lbl{display:none}
@@ -1118,7 +1128,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=0b288dafc87c"></script>
-<script type="module" src="fb.js?v=0b288dafc87c"></script>
+<script src="app.js?v=1e0b77bb65eb"></script>
+<script type="module" src="fb.js?v=1e0b77bb65eb"></script>
 </body>
 </html>
