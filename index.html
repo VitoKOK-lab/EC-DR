@@ -966,28 +966,35 @@
      各自單行、超過就刪節號（貼文文案早就是這樣，這次是原始片名也比照辦理）。
      v234（老闆指定，看了 v233 的成果之後追加）：「不對，我看了不是這樣，
      不是左右，幫我用上下二排，先原片名、下排貼文文案」——v233 把三欄縮
-     窄之後仍然是**並排**的三個窄欄；老闆要的其實是每一列**上下疊**成三行
-     （日期時間 → 原名 → 貼文），不是擠在同一行的三個小格子。做法：手機上
-     把這張表從「表格」改成「每個 <td> 自己一整行」的區塊排版（跟別處的
-     .responsive 同一個原理，但不套用它——那個會把每一列包成一張獨立卡片、
-     加邊框留白，這裡只要換行不要卡片，才不會失去「一路往下核對」的作用）。
+     窄之後仍然是**並排**的三個窄欄；改成每一列上下疊成三行
+     （日期時間 → 原名 → 貼文）。
+     v235（老闆指定，看了 v234 的成果之後又追加）：「不要這樣，這樣就變
+     很高，原名、貼文，要在同一行就好」——三行疊起來滑起來太長，日期時間
+     還是自己一行，但原名跟貼文改回同一行，只是這次**有標籤分開**（不是
+     v233 那種擠在三個小欄位、分不清楚是哪個的並排）。做法：<tr> 用
+     flex（不是 block）：日期時間那一格 flex-basis 100% 自己佔一整行，
+     原名／貼文那兩格各佔一半、同一行並排；min-width:0 是讓省略號在
+     flex 子項目裡真的裁得動（flex 子項目預設不會縮到比內容還窄，省略號
+     會失效，這是最容易漏掉的一步）。
      ⚠️ 只在這個 media query 裡動，桌機／列印都不受影響——老闆講得很清楚
      是「只for手機介面」。 */
   @media(max-width:600px){
     table.callist{display:block}
     table.callist thead{display:none}
     table.callist tbody{display:block}
-    table.callist tbody tr{display:block;padding:8px 4px;border-bottom:1px solid var(--line)}
+    table.callist tbody tr{display:flex;flex-wrap:wrap;padding:8px 4px;border-bottom:1px solid var(--line)}
     table.callist tbody tr:last-child{border-bottom:none}
     /* 還沒剪好／缺上片連結那條警示色帶，並排欄位時畫在第一格左邊就等於畫在
-       整列左邊；疊成上下三行之後第一格只剩日期時間那一小塊，色帶要改畫在
-       整個 <tr> 上，才能跟三行一樣高。 */
+       整列左邊；疊成上下兩行之後第一格只剩日期時間那一小塊，色帶要改畫在
+       整個 <tr> 上，才能跟兩行一樣高。 */
     table.callist tbody tr.cl-warn>td:first-child{box-shadow:none}
     table.callist tbody tr.cl-warn{box-shadow:inset 4px 0 0 var(--amber)}
     table.callist tbody tr.cl-warn.late{box-shadow:inset 4px 0 0 var(--red)}
     table.callist tbody tr.cl-warn.miss{box-shadow:inset 4px 0 0 var(--gold)}
-    table.callist td{display:block;padding:2px 4px}
-    table.callist td.cl-raw,table.callist td:last-child{padding-left:14px}
+    table.callist td{display:block;padding:2px 4px;box-sizing:border-box;flex:1 1 100%}
+    table.callist td.cl-raw,table.callist td.cl-raw~td{flex:1 1 0;min-width:0}
+    table.callist td.cl-raw{padding-left:14px;padding-right:6px}
+    table.callist td.cl-raw~td{padding-left:6px}
     table.callist td.cl-when{padding:2px 4px 4px}
     table.callist .cl-tm{margin-left:4px;font-size:10.5px}
     table.callist .cl-code{display:none}

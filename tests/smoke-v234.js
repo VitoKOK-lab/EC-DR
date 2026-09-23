@@ -1,12 +1,15 @@
-// v234：月排程清單，手機版從「並排窄欄位」改成「上下疊三行」。
+// v234／v235：月排程清單，手機版反覆調整過兩輪，最後定案「兩行」。
 //
-// 老闆看了 v233 的成果，回報：「不對，我看了不是這樣，不是左右，幫我用
-// 上下二排，先原片名、下排貼文文案（在前面寫小字　原名：　下面寫　貼文：）」
+// 第一輪（v234）老闆看了並排的窄欄位說：「不對，我看了不是這樣，不是左右，
+// 幫我用上下二排，先原片名、下排貼文文案（在前面寫小字　原名：　下面寫
+// 貼文：）」——改成每一列上下疊成三行（日期時間 → 原名 → 貼文）。
 //
-// v233 把三個欄位（日期時間／原始片名／貼文文案）縮窄，但仍然是**並排**的
-// 三個小格子；老闆要的其實是每一列變成上下疊的三行：日期時間 → 原名 →
-// 貼文，中間用小字標籤區分。這裡把 table.callist 在手機（≤600px）上從
-// 「表格」改成「每個 <td> 自己一整行」的區塊排版。
+// 第二輪（v235）老闆看了三行疊起來的成果，又說：「不要這樣，這樣就變很
+// 高，原名、貼文，要在同一行就好」，並且specifically強調「不要換成四行」。
+// 最後定案：**兩行**——日期時間自己一行，原名跟貼文標籤分開、但擠在
+// 同一行（不是三行、更不是四行）。
+//
+// 這裡只測最後定案的樣子：
 const fs=require("fs"), path=require("path");
 const APP=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8");
 const HTML=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
@@ -73,26 +76,32 @@ function reset(videos){
 // ══════════ ① 每一列有「原名：」「貼文：」這兩個小標籤，桌機平常藏起來 ══════════
 { reset([v_("V1",{name:"貼文文案在這",rawName:"原始片名在這",scheduledDate:D(3)})]);
   const l=viewCal();
-  ok("**清單裡有「原名：」標籤**", l.includes('<span class="cl-lbl">原名：</span>'), l.slice(0,50));
-  ok("**清單裡有「貼文：」標籤**", l.includes('<span class="cl-lbl">貼文：</span>'));
-  ok("「原名：」緊接在原始片名前面（同一個 cl-raw 格子）",
+  ok("**清單裡有「原名：」標籤，緊接在原始片名前面**",
      /<td class="cl-raw"><span class="cl-lbl">原名：<\/span>/.test(l));
-  ok("「貼文：」緊接在貼文文案前面（同一個格子）",
+  ok("**清單裡有「貼文：」標籤，緊接在貼文文案前面**",
      /<td><span class="cl-lbl">貼文：<\/span><span class="cl-t">/.test(l));
   ok("**桌機／列印平常看不到這兩個標籤**（.cl-lbl 預設 display:none）",
      /^\s*\.cl-lbl\{display:none\}/m.test(rest), rest.match(/\.cl-lbl\{[^}]*\}/g)); }
 
-// ══════════ ② 手機上：整張表變成上下疊的區塊排版，不是並排窄欄位 ══════════
+// ══════════ ② 手機上：日期時間自己一行；原名跟貼文擠在下一行，不是三行也不是四行 ══════════
 { ok("**手機上 table.callist 整個變成區塊排版**", /table\.callist\{display:block\}/.test(mob));
   ok("**表頭（日期・時間／編號原始片名／貼文文案那三個 <th>）手機上藏起來**（有標籤取代了）",
      /table\.callist thead\{display:none\}/.test(mob));
-  ok("**每一列（<tr>）也是區塊，上下疊**", /table\.callist tbody tr\{display:block/.test(mob));
-  ok("**每一格（<td>）也是區塊**", /table\.callist td\{display:block/.test(mob));
+  ok("**每一列（<tr>）改用 flex 排版**（讓原名跟貼文能並排擠在同一行，不是各自一整行）",
+     /table\.callist tbody tr\{display:flex/.test(mob), mob.match(/table\.callist tbody tr\{[^}]*\}/));
+  ok("**每一格預設佔滿一整行**（flex-basis 100%——日期時間格不特別處理也會自己一整行）",
+     /table\.callist td\{[^}]*flex:1 1 100%/.test(mob), mob.match(/table\.callist td\{[^}]*\}/));
+  ok("**原名／貼文那兩格各佔半行、同一行並排**（flex:1 1 0，跟預設的 100% 不一樣）",
+     /table\.callist td\.cl-raw,table\.callist td\.cl-raw~td\{flex:1 1 0/.test(mob),
+     mob.match(/table\.callist td\.cl-raw[^{]*\{[^}]*\}/));
+  ok("**有 min-width:0**（flex 子項目預設不會縮到比內容窄，省略號會失效——這是最容易漏的一步）",
+     /table\.callist td\.cl-raw,table\.callist td\.cl-raw~td\{[^}]*min-width:0/.test(mob));
   ok("**手機上有分隔線，看得出一列在哪裡結束**", /table\.callist tbody tr\{[^}]*border-bottom/.test(mob));
-  ok("桌機／列印沒有被改成區塊排版（那邊本來的並排三欄還在）",
-     !/table\.callist\{display:block\}/.test(rest) && !/table\.callist thead\{display:none\}/.test(rest)); }
+  ok("桌機／列印沒有被改成 flex／區塊排版（那邊本來的並排三欄還在）",
+     !/table\.callist\{display:block\}/.test(rest) && !/table\.callist thead\{display:none\}/.test(rest)
+     && !/table\.callist tbody tr\{display:flex/.test(rest)); }
 
-// ══════════ ③ 警示色帶（還沒剪好／缺上片連結…）疊成上下三行之後改畫在整個 <tr> 上 ══════════
+// ══════════ ③ 警示色帶（還沒剪好／缺上片連結…）畫在整個 <tr> 上 ══════════
 { ok("**手機上警示色帶畫在整個 <tr>，不是只畫在第一格**",
      /table\.callist tbody tr\.cl-warn\{box-shadow:inset/.test(mob), mob.match(/table\.callist tbody tr\.cl-warn\{[^}]*\}/));
   ok("**手機上蓋掉「只畫在第一格」的舊規則**（不然色帶會變成兩條、對不齊）",
@@ -106,5 +115,5 @@ function reset(videos){
   ok("日期照舊點得開那天的視窗", l.includes(`openDay('${D(3)}')`));
   ok("沒有夾帶任何會寫資料庫的東西", !/reschedule|unschedule|scheduleSet/i.test(l.slice(l.indexOf('class="vtable callist"')))); }
 
-console.log(`\nv234（月排程清單：手機上下疊三行＋原名／貼文標籤）: ${pass} passed, ${fail} failed`);
+console.log(`\nv234／v235（月排程清單：手機兩行——日期時間一行、原名貼文同一行）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
