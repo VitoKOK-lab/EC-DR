@@ -956,14 +956,23 @@
      原始片名接在下面，兩者都要能換行（片名有時候比貼文文案還長）。 */
   table.callist .cl-code{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   table.callist .cl-rawt{display:block}
+  /* v233（老闆指定，手機截圖圈起來）：「用手機看的時候，我要簡化看清楚，只
+     for手機介面，給我『原片名一條，短文案一條』寫的滿，不要換行，超過一行
+     的就…，其他的資訊不用顯示」。編號、警示藥丸（還沒剪好／缺上片連結…）、
+     改時間鍵——手機上全部藏起來，只留日期時間、原始片名、貼文文案三樣，
+     各自單行、超過就刪節號（貼文文案早就是這樣，這次是原始片名也比照辦理）。
+     ⚠️ 只在這個 media query 裡動，桌機／列印都不受影響——老闆講得很清楚
+     是「只for手機介面」。 */
   @media(max-width:600px){
     table.callist td{padding:6px 8px}
-    table.callist td .misspill,table.callist td>.pill{margin:3px 4px 0 0}
     table.callist col.cl-cw{width:100px}
     table.callist col.cl-rw{width:96px}
     table.callist td.cl-when{padding-right:4px}
     table.callist .cl-tm{margin-left:4px;font-size:10.5px}
-    table.callist .cl-code{font-size:10.5px}
+    table.callist .cl-code{display:none}
+    table.callist td .cl-rawt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    table.callist td button{display:none}
+    table.callist td .misspill,table.callist td .pill{display:none}
   }
   table.callist tbody tr:hover{background:var(--panel2)}
   /* v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
