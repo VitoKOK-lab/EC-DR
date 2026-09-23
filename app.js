@@ -1619,14 +1619,19 @@ function calRowName(v){
 // v238（老闆指定）：「(podcast)」這種標籤太長，換成麥克風圖示＋紅色方塊，
 // 不要再印出括號跟英文字——只動這一欄（原始片名），因為老闆截圖裡太長的
 // 正是這一段；半形全形括號、大小寫都要認得出來，畢竟是剪輯自己手動打的。
+// v239（老闆指定）：「在編輯影片內容的時候在下面的關鍵字可以有一個Podcast的
+// 選項，只要有打勾的都可以出現這個圖案不用另外在檔案名稱輸入這個字」——
+// 勾了「Podcast」標籤（見 videoTags()）也要冒出同一顆圖示，不必再手動把
+// 「(podcast)」打進片名裡；但舊片名裡還留著這段文字的，照舊認得出來、照樣拿掉
+// （兩條路徑都留著，才不會讓已經打好的舊片名一夕之間看起來「沒轍到」）。
 const PODCAST_TAG=/[（(]\s*podcast\s*[）)]\s*/i;
 function calRowRaw(v){
   if(!v) return "";
   let raw=stripHash(zhTW(v.rawName||""));
   if(!raw){ const s=srcOf(v); raw=s?stripHash(zhTW(s.rawName||s.name||"")):""; }
   raw=raw||T("(未命名)","(untitled)");
-  const hasPodcast=PODCAST_TAG.test(raw);
-  if(hasPodcast) raw=raw.replace(PODCAST_TAG,"");
+  const hasPodcast=PODCAST_TAG.test(raw) || (v.tags||[]).includes("Podcast");
+  if(PODCAST_TAG.test(raw)) raw=raw.replace(PODCAST_TAG,"");
   const badge=hasPodcast?'<span class="cl-podcast" title="Podcast">🎙</span>':"";
   const code=esc(v.code||"");
   return `${code?`<span class="cl-code">${code}</span>`:""}<span class="cl-rawt">${badge}${esc(raw)}</span>`;
@@ -6202,7 +6207,12 @@ function videoTags(){ const t=brandSetting("videoTags");
   // 長照的關鍵字跟珠寶毫無關係，硬塞給它等於每次選標籤都要跳過一半（v132）。
   const src=(Array.isArray(t)&&t.length)?t : (BRAND?["新片","舊片"]:DEFAULT_TAGS);
   const out=[]; src.forEach(x=>{ const r=renameTag(x); if(r&&!out.includes(r)) out.push(r); });
-  if(!BRAND) ["寵粉","珠寶介紹","子女傳承","代理招商"].forEach(x=>{ if(!out.includes(x)) out.push(x); });
+  // v239（老闆指定）：「在編輯影片內容的時候在下面的關鍵字可以有一個Podcast的
+  // 選項，只要有打勾的都可以出現這個圖案不用另外在檔案名稱輸入這個字」——
+  // 「Podcast」不管 Firestore 的 settings.videoTags 裡存的是什麼，永遠讓它
+  // 出現在標籤清單裡可以勾（跟下面那組寵粉／珠寶介紹一樣的做法），不用先手動
+  // 用「新增標籤」加過一次才看得到。
+  if(!BRAND) ["寵粉","珠寶介紹","子女傳承","代理招商","Podcast"].forEach(x=>{ if(!out.includes(x)) out.push(x); });
   return out; }
 // 「其他標籤」= 設定的標籤清單，去掉新舊片（新舊由預排上片日自動判斷，僅供排序）
 function otherTags(){ const skip=new Set(NEWOLD_TAGS); return videoTags().filter(t=>!skip.has(t)); }
