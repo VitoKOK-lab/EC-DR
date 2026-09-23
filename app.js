@@ -1581,7 +1581,27 @@ function calMove(n){ let [y,m]=CAL_YM; m+=n; if(m<0){m=11;y--;} if(m>11){m=0;y++
 //      要能對得回系統裡的那一筆，所以拆成兩欄 —— 左邊編號／原始片名，
 //      右邊才是貼文文案（沒填才退回原始片名）。
 let CAL_MODE="grid";                     // grid＝月曆｜list＝清單
-function calSetMode(m){ CAL_MODE=(m==="list")?"list":"grid"; render(); }
+// v231（老闆指定）：「我只切換到這一頁『清單』頁，就要自動跳到今天的日期」。
+// 清單不像月曆有月份格子可以一眼看出「現在是哪個月」，之前看到哪個月、切模式
+// 照樣停在那個月，容易忘記自己在看的不是這個月。切進清單一律跳回今天所在的
+// 那個月，再把畫面捲到今天那一列（cl-today 那個 class 本來就有，直接拿來當錨點）。
+function calSetMode(m){
+  CAL_MODE=(m==="list")?"list":"grid";
+  if(CAL_MODE==="list") calJumpToday();
+  render();
+  if(CAL_MODE==="list") calScrollToday();
+}
+// 跳到今天所在的月份 —— 依目前選的平台，各自的月份狀態各存各的（見 calListFor）。
+function calJumpToday(){
+  const [y,mo]=today.split("-").map(Number), ym=[y, mo-1];
+  if(CAL_PLAT==="en"||CAL_PLAT==="th") INTL_CAL_YM=ym;
+  else if(CAL_PLAT==="shopee"||CAL_PLAT==="ms"){ if(!CH_CAL[CAL_PLAT]) CH_CAL[CAL_PLAT]={}; CH_CAL[CAL_PLAT].ym=ym; }
+  else CAL_YM=ym;
+}
+function calScrollToday(){
+  const row=document.querySelector(".callist tr.cl-today");
+  if(row && row.scrollIntoView) row.scrollIntoView({block:"center"});
+}
 function calModeTabs(){
   const b=(k,label)=>`<button class="vtab ${CAL_MODE===k?'on':''}" onclick="calSetMode('${k}')"><span>${label}</span></button>`;
   return `<div class="vtabs" style="margin:0 0 12px">${b("grid",T("月曆","Calendar"))}${b("list",T("清單","List"))}</div>`;
@@ -1658,7 +1678,12 @@ function calListBody(cfg){
               還沒剪好，還沒有審查或者是缺影片這些才是重點」。
               片名包一層 .cl-t，手機上才切得成一行（超過就 …）；警示標籤自己一行。
               沒問題的那些變成一列一行，101 支滑起來才看得完。 */''}
-        <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
+        <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${
+          /* v231（老闆指定）：清單裡的片名旁邊也要有「改時間」——本來只有影片庫的
+             鎖住列有這顆鍵，這裡的每一列都對應著一支真的影片，同一個 openQuickSchedule
+             搬過來就能用，不用另外寫一套（它本來就不挑「有沒有被指派鎖住」）。 */
+          r.v?`<button class="btn sm sec noprint" style="margin-left:6px;padding:1px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(r.v.id))}')">${T("改時間","Change time")}</button>`:""
+        }${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
     });
   }
   // v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
