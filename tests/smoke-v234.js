@@ -1,28 +1,17 @@
-// v234～v236：月排程清單，手機版反覆調整過三輪，最後定案「兩欄」。
+// v234～v237：月排程清單，手機版反覆調整過四輪，最後定案「三行、字縮小」。
 //
-// 第一輪（v234）老闆看了並排的窄欄位說：「不對，我看了不是這樣，不是左右，
-// 幫我用上下二排，先原片名、下排貼文文案（在前面寫小字　原名：　下面寫
-// 貼文：）」——改成每一列上下疊成三行（日期時間 → 原名 → 貼文）。
+// 第一輪（v234）三行疊（日期時間 → 原名 → 貼文），老闆嫌高。
+// 第二輪（v235）改成日期時間一行、原名貼文同一行對半分，老闆說「全錯」。
+// 第三輪（v236）改成兩欄並排（左時段、右名稱兩行），先用文字確認過才做，
+// 老闆回「對，就這樣」——合併上線。
+// 第四輪（v237）上線後老闆看著正式資料裡的真實長片名說：「這樣子不夠好，
+// 我也需要看到更完整的名稱，所以你幫我把左邊時間日期的移到上面讓名稱可以
+// 完整的更多的空間可以顯示然後字的大小縮小2號」——v236 的左欄時段佔掉將近
+// 四分之一寬度，真實片名一截斷就看不出是哪一支。最終改回時段自己一整行、
+// 原名／貼文各自一整行接在下面（等於回到 v234 的排法，但這次是為了**騰出
+// 寬度**，不是排版好不好看的問題），原名／貼文的字體另外縮小（15px→13px）。
 //
-// 第二輪（v235）老闆看了三行疊起來說：「不要這樣，這樣就變很高，原名、
-// 貼文，要在同一行就好」——改成日期時間自己一行、原名跟貼文同一行對半分。
-//
-// 第三輪（v236）老闆看了同一行對半分的成果說「全錯」，改口要：「兩欄，
-// 只要兩欄，第一欄時段，第二欄名稱；名稱中第一行原片名、換行貼文文案」。
-// 這次先用文字畫表格請老闆確認過一次（「對，就這樣」）才動手：
-//
-//   ┌──────────┬──────────────────────┐
-//   │ 時段      │ 名稱                  │
-//   ├──────────┼──────────────────────┤
-//   │ 9/23（三）│ 原名：(BOSS)當女兒...  │
-//   │  09:00   │ 貼文：(BOSS)當女兒...  │
-//   └──────────┴──────────────────────┘
-//
-// 左欄時段（跟桌機一樣窄），右欄「名稱」內部自己分兩行：原名在上、貼文在下。
-// 用 CSS Grid 做：<tr> 兩欄格線，日期那格橫跨兩個格線列（不管右邊一行還是
-// 兩行，日期都貼齊左邊整塊，不會被切成上下兩截）。
-//
-// 這裡只測最後定案（v236）的樣子：
+// 這裡只測最後定案（v237）的樣子：
 const fs=require("fs"), path=require("path");
 const APP=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8");
 const HTML=fs.readFileSync(path.join(__dirname,"..","index.html"),"utf8");
@@ -96,25 +85,28 @@ function reset(videos){
   ok("**桌機／列印平常看不到這兩個標籤**（.cl-lbl 預設 display:none）",
      /^\s*\.cl-lbl\{display:none\}/m.test(rest), rest.match(/\.cl-lbl\{[^}]*\}/g)); }
 
-// ══════════ ② 手機上：兩欄並排（左時段、右名稱），不是三行疊、也不是擠成一行 ══════════
+// ══════════ ② 手機上：日期時間自己一整行在最上面，原名／貼文各自一整行接在下面 ══════════
+// v237：這次是為了給名稱騰出「整行寬度」，不是排版好不好看的問題——真實
+// 片名比測試資料長很多，左邊留一欄時段會把僅剩的寬度吃掉一大塊。
 { ok("**手機上 table.callist 整個變成區塊排版**", /table\.callist\{display:block\}/.test(mob));
   ok("**表頭（日期・時間／編號原始片名／貼文文案那三個 <th>）手機上藏起來**（有標籤取代了）",
      /table\.callist thead\{display:none\}/.test(mob));
-  ok("**每一列（<tr>）改用 CSS Grid，兩欄格線**",
-     /table\.callist tbody tr\{display:grid;grid-template-columns:[^;]+;grid-template-rows:auto auto/.test(mob),
-     mob.match(/table\.callist tbody tr\{[^}]*\}/));
-  ok("**日期時間那一格放進第一欄、橫跨兩個格線列**（右邊不管一行還是兩行，日期都貼齊整塊，不會被切一半）",
-     /table\.callist td\.cl-when\{grid-column:1;grid-row:1\/3/.test(mob), mob.match(/table\.callist td\.cl-when\{[^}]*\}/));
-  ok("**其餘格子（原名、貼文）預設丟進第二欄**（瀏覽器自動排成上下兩行，不用手動指定第幾行）",
-     /table\.callist td\{[^}]*grid-column:2/.test(mob), mob.match(/table\.callist td\{[^}]*\}/));
-  ok("**有 min-width:0**（grid 子項目預設也不會縮到比內容窄，省略號一樣要靠這個才裁得動）",
-     /table\.callist td\{[^}]*min-width:0/.test(mob));
+  ok("**每一列（<tr>）是區塊、不是 flex 也不是 grid**（三個 <td> 各自一整行，由上往下疊）",
+     /table\.callist tbody tr\{display:block/.test(mob), mob.match(/table\.callist tbody tr\{[^}]*\}/));
+  ok("**每一格（<td>）也是區塊**（日期時間、原名、貼文各自佔滿一整行寬度）",
+     /table\.callist td\{display:block/.test(mob));
   ok("**手機上有分隔線，看得出一列在哪裡結束**", /table\.callist tbody tr\{[^}]*border-bottom/.test(mob));
-  ok("桌機／列印沒有被改成區塊／Grid 排版（那邊本來的並排三欄還在）",
-     !/table\.callist\{display:block\}/.test(rest) && !/table\.callist thead\{display:none\}/.test(rest)
-     && !/table\.callist tbody tr\{display:grid/.test(rest)); }
+  ok("桌機／列印沒有被改成區塊排版（那邊本來的並排三欄還在）",
+     !/table\.callist\{display:block\}/.test(rest) && !/table\.callist thead\{display:none\}/.test(rest)); }
 
-// ══════════ ③ 警示色帶（還沒剪好／缺上片連結…）畫在整個 <tr> 上 ══════════
+// ══════════ ③ 手機上原名／貼文的字縮小（15px → 13px），騰出更多字數 ══════════
+{ ok("**手機上原名（.cl-rawt）跟貼文（.cl-t）的字級縮小**",
+     /table\.callist td \.cl-rawt,table\.callist td \.cl-t\{font-size:13px\}/.test(mob),
+     mob.match(/table\.callist td \.cl-rawt[^{]*\{[^}]*\}/));
+  ok("桌機／列印沒有被縮小字級（那邊本來空間就夠）",
+     !/\.cl-rawt,table\.callist td \.cl-t\{font-size:13px\}/.test(rest)); }
+
+// ══════════ ④ 警示色帶（還沒剪好／缺上片連結…）畫在整個 <tr> 上 ══════════
 { ok("**手機上警示色帶畫在整個 <tr>，不是只畫在第一格**",
      /table\.callist tbody tr\.cl-warn\{box-shadow:inset/.test(mob), mob.match(/table\.callist tbody tr\.cl-warn\{[^}]*\}/));
   ok("**手機上蓋掉「只畫在第一格」的舊規則**（不然色帶會變成兩條、對不齊）",
@@ -122,11 +114,11 @@ function reset(videos){
   ok("桌機／列印還是照舊畫在第一格（三欄並排時，色帶本來就該貼著最左邊那一欄）",
      /table\.callist tbody tr\.cl-warn>td:first-child\{box-shadow:inset/.test(rest)); }
 
-// ══════════ ④ 這是純畫面調整：清單本身還是「只能看」，改期照舊要點日期 ══════════
+// ══════════ ⑤ 這是純畫面調整：清單本身還是「只能看」，改期照舊要點日期 ══════════
 { reset([v_("V1",{name:"甲片",scheduledDate:D(3),publishTime:"10:00"})]);
   const l=viewCal();
   ok("日期照舊點得開那天的視窗", l.includes(`openDay('${D(3)}')`));
   ok("沒有夾帶任何會寫資料庫的東西", !/reschedule|unschedule|scheduleSet/i.test(l.slice(l.indexOf('class="vtable callist"')))); }
 
-console.log(`\nv234～v236（月排程清單：手機兩欄——左時段、右名稱兩行）: ${pass} passed, ${fail} failed`);
+console.log(`\nv234～v237（月排程清單：手機三行＋字縮小，騰出寬度給完整名稱）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
