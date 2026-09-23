@@ -108,8 +108,13 @@ reset(); as("小葵","editor");
 { modalHTML=""; toasts=[];
   openQuickSchedule("HERS");
   ok("**改時間視窗開得起來**（editVideo 對這支會被擋，這條路不會）", modalHTML.includes("改上片時間"), modalHTML.slice(0,200));
-  ok("視窗裡看得到是指派給誰（跟鎖住的提示一樣）", modalHTML.includes("郁莚")); }
-// 真的存得進去：只寫 scheduledDate／publishTime 這兩格，其他欄位不動
+  ok("視窗裡看得到是指派給誰（跟鎖住的提示一樣）", modalHTML.includes("郁莚"));
+  // 老闆問：「如果從來都還沒輸入過時間的，是空白的也可以新增時間嗎？」
+  // HERS 這支 fixture 本來就沒排過日期（scheduledDate:null、沒有 publishTime）——
+  // 不是只能「改」，從空白直接「填」也要打得開、填得進去。
+  ok("**從來沒排過的：日期欄是空的，不是硬塞一個日期**", /id="qs_date"[^>]*value=""/.test(modalHTML), modalHTML.slice(0,400));
+  ok("**時間欄預設「不指定」，不是硬塞一個整點**", /<option value="">不指定<\/option>/.test(modalHTML)); }
+// 真的存得進去：從空白（HERS 沒排過日期）填成一個日期時間，只寫這兩格，其他欄位不動
 { let written=null;
   global.window.DB.update=async(col,id,patch)=>{ written={col,id,patch}; };
   fields={qs_date:"2026-10-05", qs_time:"12:00"};
