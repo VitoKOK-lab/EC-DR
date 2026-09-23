@@ -66,8 +66,13 @@ const restCSS=(()=>{ let r=HTML;
      restCSS.match(/table\.callist td \.cl-t\{[^}]*\}/));
   ok("**印表不再強制展開回整段**（原本 v227 蓋回 white-space:normal 的那行已經拿掉）",
      !/table\.callist td \.cl-t\{[^}]*white-space:normal/.test(printCSS), printCSS.match(/table\.callist td \.cl-t\{[^}]*\}/));
-  ok("手機那段不用再自己重複寫一次（已經搬到基本規則，media query 裡只剩欄寬跟字級那些）",
-     !/table\.callist td \.cl-t\{/.test(mobCSS), mobCSS.match(/table\.callist td \.cl-t\{[^}]*\}/)); }
+  // v237：手機那段後來加了 .cl-t 的字級覆寫（縮小字體讓名稱擠得下更多字），
+  // 那是新的、合理的覆寫，不是把單行省略號那條規則重複寫一次——真正要盯的
+  // 是「nowrap／ellipsis 這兩個屬性沒有在手機那段重複宣告」，不是「.cl-t
+  // 這個選擇器完全不能出現在手機那段」（字級覆寫本來就得指名選擇器）。
+  ok("手機那段不會把單行省略號的規則重複寫一次（已經搬到基本規則，手機那段只剩字級覆寫）",
+     !/\.cl-t\{[^}]*(?:white-space:nowrap|text-overflow:ellipsis)/.test(mobCSS),
+     mobCSS.match(/[^\n{]*\.cl-t\{[^}]*\}/g)); }
 
 console.log(`\nv232（月排程清單：70/30 欄寬＋貼文文案單行省略號）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);
