@@ -925,7 +925,12 @@
      正式資料實測：一個月 101 支，貼文文案在 390px 上一列要吃掉 3～5 行，
      整個月要滑非常久，而真正要看的「還沒剪好／還沒審／缺商品」被埋在文字後面。
      手機上片名切成一行（超過就 …，點下去照樣打得開看全文），警示標籤自己一行 ——
-     沒問題的那幾列就變成一行，有問題的才佔兩行，一眼掃得出哪幾天有事。 */
+     沒問題的那幾列就變成一行，有問題的才佔兩行，一眼掃得出哪幾天有事。
+     v232（老闆指定）：桌機也要切成一行了——「貼文文案不用顯示所有的名稱只要一行
+     簡稱就好，要看完整名稱點進去看就可以」，原本只有手機切、桌機不切的規矩就此
+     改掉，所以這條規矩從手機專屬的 media query 搬到下面沒有加條件的基本規則，
+     不分螢幕大小都套用。 */
+  table.callist td .cl-t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* v194（老闆指定）：「日期跟時間不需要佔到兩個格子，他在同一個就可以了，然後時間
      數字可以小一點，空間要留給文字」。兩欄併成一欄，時間縮成小字接在日期後面。
      ⚠️ 欄寬寫在 CSS 不寫在 <col style>：inline style 蓋得過 media query，
@@ -934,7 +939,16 @@
      實測（正式資料、390px、九月 101 支）排到下面會讓每天的第一列多一行：
      整頁 4,161px → 4,696px、一行就結束的列 84 → 61，等於比不改還糟。 */
   table.callist col.cl-cw{width:108px}
-  table.callist col.cl-rw{width:150px}
+  /* v232（老闆指定）：「主要是原始片名的部分要占70%……影片貼文文案30%就好」。
+     編號／原始片名（cl-rw）跟貼文文案（新加的 cl-cap）用 70/30 分——貼文文案
+     現在只印一行省略號，不需要那麼寬；原始片名常常比較長，要放大才看得清楚。
+     ⚠️ 70/30 分的是「扣掉日期欄之後剩下的寬度」，不是整張表——cl-cw 已經固定
+        佔了 108px，如果 cl-rw／cl-cap 又各自照整張表的 70%／30% 算，兩者加
+        起來就等於整張表寬度，再加上 108px 一定會把表格撐出容器，手機、桌機
+        都會多一條不必要的橫向捲軸。用 calc() 先扣掉 cl-cw 再分 70/30，三欄
+        加起來剛好是 100%。 */
+  table.callist col.cl-rw{width:calc((100% - 108px) * .7)}
+  table.callist col.cl-cap{width:calc((100% - 108px) * .3)}
   table.callist td.cl-when{white-space:nowrap}
   table.callist .cl-dt{white-space:nowrap}
   table.callist .cl-tm{margin-left:5px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -943,7 +957,6 @@
   table.callist .cl-code{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   table.callist .cl-rawt{display:block}
   @media(max-width:600px){
-    table.callist td .cl-t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     table.callist td{padding:6px 8px}
     table.callist td .misspill,table.callist td>.pill{margin:3px 4px 0 0}
     table.callist col.cl-cw{width:100px}
@@ -968,9 +981,15 @@
     table.callist{width:100%;font-size:11px}
     table.callist td,table.callist th{border:1px solid #999;padding:4px 6px}
     table.callist tr{break-inside:avoid}
-    table.callist td .cl-t{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+    /* v232（老闆指定）：「這個修改包含顯示還有列印的時候都需要」——印出來的貼文
+       文案也只印一行、超過就省略號，不再強制展開回整段（原本這裡蓋回
+       white-space:normal 是為了印出全文，現在改成印表跟畫面上看到的一樣）。
+       欄寬同樣是「扣掉日期欄之後」70/30 分（cl-cw 14% ＋ 86% 的 70/30 ≈
+       60%／26%）——印表機不能橫向捲動，用 calc() 也行，這裡固定算好百分比
+       更省事，三欄一樣剛好加起來 100%，不會超出紙張。 */
     table.callist col.cl-cw{width:14%}
-    table.callist col.cl-rw{width:26%}
+    table.callist col.cl-rw{width:60%}
+    table.callist col.cl-cap{width:26%}
   }
   /* 影片庫：超過 8 列時用固定高度捲動，表頭釘住 */
   .vidscroll{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
@@ -1059,7 +1078,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=07c47e272590"></script>
-<script type="module" src="fb.js?v=07c47e272590"></script>
+<script src="app.js?v=6d6302459a28"></script>
+<script type="module" src="fb.js?v=6d6302459a28"></script>
 </body>
 </html>
