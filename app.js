@@ -1616,13 +1616,20 @@ function calRowName(v){
 // 左欄：編號／原始片名（v225，老闆指定）。跟 calRowName 分開算 —— 那個抓的是
 // 「貼文文案，沒填退回原始片名」；這個要的是「原始片名本身」，兩者常常不一樣，
 // 混在一起就對不回系統裡的那一筆。版本殼自己沒填原始片名時，比照 calRowName 退回源片。
+// v238（老闆指定）：「(podcast)」這種標籤太長，換成麥克風圖示＋紅色方塊，
+// 不要再印出括號跟英文字——只動這一欄（原始片名），因為老闆截圖裡太長的
+// 正是這一段；半形全形括號、大小寫都要認得出來，畢竟是剪輯自己手動打的。
+const PODCAST_TAG=/[（(]\s*podcast\s*[）)]\s*/i;
 function calRowRaw(v){
   if(!v) return "";
   let raw=stripHash(zhTW(v.rawName||""));
   if(!raw){ const s=srcOf(v); raw=s?stripHash(zhTW(s.rawName||s.name||"")):""; }
   raw=raw||T("(未命名)","(untitled)");
+  const hasPodcast=PODCAST_TAG.test(raw);
+  if(hasPodcast) raw=raw.replace(PODCAST_TAG,"");
+  const badge=hasPodcast?'<span class="cl-podcast" title="Podcast">🎙</span>':"";
   const code=esc(v.code||"");
-  return `${code?`<span class="cl-code">${code}</span>`:""}<span class="cl-rawt">${esc(raw)}</span>`;
+  return `${code?`<span class="cl-code">${code}</span>`:""}<span class="cl-rawt">${badge}${esc(raw)}</span>`;
 }
 const calTimeSort=(a,b)=>String(a.time||"99:99").localeCompare(String(b.time||"99:99"));
 // 台灣社群那一條：排程格（含大流二創）＋預排上片日落在這天的片
