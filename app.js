@@ -6279,6 +6279,29 @@ function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
   return T("已指派給 "+w+"　上片完成前只有他能編輯", "Assigned to "+w+" — locked until it goes live"); }
 function assignLockPill(v){ return assignLocked(v)
   ? `<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T(String(v.assignedTo||""),String(v.assignedTo||"")))}</span>` : ""; }
+// v228（老闆指定）：「指派給別人的影片沒有辦法去修改上片的時間…我現在需要有這個
+// 修改的功能」。老闆的印象是對的——月排程（openDay）本來就沒被指派鎖擋住，
+// 改期、移出排程一直都能做（見那邊的註解「排程跟剪輯是兩條獨立的線」）。
+// 漏掉的是影片庫：那邊的鎖是「整列一次鎖死、沒有例外」，連改時間都點不到。
+// 這裡補一個小出口：只開放改「上片日期／時間」這兩格，其餘欄位（片名、文案、
+// 連結…）維持鎖住——不是把整支片解鎖，指派鎖原本要擋的「別人手滑改到剪輯內容」
+// 這件事沒有變。
+function openQuickSchedule(id){
+  const v=vid(id); if(!v) return;
+  if(VIEW_AS){ toast(T("員工視角為唯讀預覽，離開後才能操作","Read-only preview — leave it first"),true); return; }
+  showModal(T("改上片時間","Change publish time"), `
+    <div class="muted" style="font-size:12px;margin-bottom:10px">${esc(assignLockTip(v))}</div>
+    <label>${T("上片日期","Publish date")}</label>
+    <input id="qs_date" type="date" value="${esc(v.scheduledDate||"")}">
+    <label style="margin-top:10px">${T("上片時間","Publish time")}</label>
+    <select id="qs_time">${hourOptions(v.publishTime)}</select>
+  `, ()=>saveQuickSchedule(id), T("儲存","Save"));
+}
+async function saveQuickSchedule(id){
+  return write("PUT",`/api/videos/${id}`,
+    {video:{scheduledDate:val("qs_date")||null, publishTime:val("qs_time")||""}},
+    T("已改上片時間","Publish time updated"));
+}
 // 審片流程上線日：這天之前完成的舊片不回溯要求審核（可在 settings.reviewSince 調整）
 function reviewSince(){ return String((STATE&&STATE.settings&&STATE.settings.reviewSince)||"2026-07-27").slice(0,10); }
 // 是否「待審核」＝三個條件同時成立：①剪輯完成 ②還沒審過 ③還沒有上傳網址（有網址＝早就上片，不用審）
@@ -6645,7 +6668,7 @@ function vidTableRow(v){
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
       <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="${T("標籤","Tags")}"${tags.length?'':' class="na"'}>${tagHTML}</td>
-    <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
+    <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}${lk?`<button class="btn sm sec" style="margin-left:6px;padding:2px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(v.id))}')">${T("改時間","Change time")}</button>`:''}</td>
     <td data-label="${T("商品","Products")}"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
     <td data-label="${T("剪輯","Editor")}"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
     <td data-label="${T("狀態","Status")}"${(sb||ub)?' class="has-act"':''}><span class="ststack">
@@ -6720,6 +6743,7 @@ function vidCardHTML(v){
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
         <span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
+        ${lk?`<button class="btn sm sec" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(v.id))}')">${T("改時間","Change time")}</button>`:''}
         ${shotBtn(v)}
       </div>
     </div></div>`;

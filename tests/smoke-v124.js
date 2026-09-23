@@ -92,6 +92,41 @@ reset(); as("小葵","editor");
 { const c=vidCardHTML(vid("HERS")), f=vidCardHTML(vid("FREE"));
   ok("圖片模式也鎖", c.includes("vlock") && !c.includes("editVideo("));
   ok("圖片模式沒鎖的照舊", f.includes(`editVideo('FREE')`) && !f.includes("vlock")); }
+
+// ══════════ ③b 指派鎖唯一的出口：改上片時間（v228，老闆指定）══════════
+// 老闆：「指派給別人的影片沒有辦法去修改上片的時間…我現在需要有這個修改的功能」
+// 「我印象中是隨時每個剪輯都可以去修改上面的日期時間，怎麼會被鎖住？」
+// 月排程（openDay，見上面 ④）本來就沒被這個鎖擋住；影片庫漏了這個出口，這裡補上。
+{ const r=vidTableRow(vid("HERS")), f=vidTableRow(vid("FREE"));
+  ok("**鎖住的那列有「改時間」鍵**", /openQuickSchedule\('HERS'\)/.test(r), r);
+  ok("沒鎖的那列不需要這顆鍵（本來就點得開整支）", !/openQuickSchedule/.test(f)); }
+{ const c=vidCardHTML(vid("HERS")), f=vidCardHTML(vid("FREE"));
+  ok("**圖片模式鎖住的那張也有「改時間」鍵**", /openQuickSchedule\('HERS'\)/.test(c));
+  ok("圖片模式沒鎖的不需要", !/openQuickSchedule/.test(f)); }
+// 真的按下去：開得起視窗、預填現在的日期時間，且跟 editVideo 是兩條不同的路
+reset(); as("小葵","editor");
+{ modalHTML=""; toasts=[];
+  openQuickSchedule("HERS");
+  ok("**改時間視窗開得起來**（editVideo 對這支會被擋，這條路不會）", modalHTML.includes("改上片時間"), modalHTML.slice(0,200));
+  ok("視窗裡看得到是指派給誰（跟鎖住的提示一樣）", modalHTML.includes("郁莚")); }
+// 真的存得進去：只寫 scheduledDate／publishTime 這兩格，其他欄位不動
+{ let written=null;
+  global.window.DB.update=async(col,id,patch)=>{ written={col,id,patch}; };
+  fields={qs_date:"2026-10-05", qs_time:"12:00"};
+  saveQuickSchedule("HERS");
+  ok("**寫進去的只有這兩格（＋updatedAt）**",
+     written && written.col==="videos" && written.id==="HERS"
+     && written.patch.scheduledDate==="2026-10-05" && written.patch.publishTime==="12:00"
+     && !("name" in written.patch) && !("videoCopy" in written.patch) && !("stage" in written.patch),
+     written);
+  global.window.DB.update=async()=>{}; }
+// 員工視角（VIEW_AS）：唯讀預覽，這個出口也不能破例
+{ VIEW_AS="郁莚"; modalHTML=""; toasts=[];
+  openQuickSchedule("HERS");
+  ok("**員工視角預覽時，改時間鍵也打不開**（唯讀就是唯讀，沒有例外）",
+     modalHTML==="" && toasts.some(t=>t.includes("唯讀")));
+  VIEW_AS=null; }
+
 // 這是整個設計的重點：不是藏起來，所以清單張數不變
 { VID_VIEW="raw";
   const n=vidVisibleList().length;
