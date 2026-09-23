@@ -1670,7 +1670,11 @@ function calListBody(cfg){
         <td class="cl-when">${i===0?dcell:""}<span class="cl-tm">${esc(r.time)||'—'}</span></td>
         ${/* v225（老闆指定）：貼文文案跟原始片名常常不一樣，要能對回系統裡的那一筆 ——
               拆一欄出來印編號＋原始片名，跟右邊的貼文文案分開看。 */''}
-        <td class="cl-raw">${calRowRaw(r.v)}</td>
+        ${/* v234（老闆指定）：手機上要看得出這一行是「原名」還是「貼文」——
+              桌機有表頭撐著不會搞混，手機把表頭藏了（見下面 media query），
+              少了表頭就得自己標。.cl-lbl 平常（桌機／列印）藏起來，只在手機
+              那段 media query 裡冒出來。 */''}
+        <td class="cl-raw"><span class="cl-lbl">${T("原名：","Raw: ")}</span>${calRowRaw(r.v)}</td>
         ${/* v184（老闆指定）：「如果沒有，在月排程或影片庫，都要有小提醒，讓人看到去補」。
               影片庫本來就有這顆燈（missingPill），清單檢視漏了 —— 補上同一顆，
               不是另做一個，兩份標準遲早會不一樣。 */''}
@@ -1678,7 +1682,7 @@ function calListBody(cfg){
               還沒剪好，還沒有審查或者是缺影片這些才是重點」。
               片名包一層 .cl-t，手機上才切得成一行（超過就 …）；警示標籤自己一行。
               沒問題的那些變成一列一行，101 支滑起來才看得完。 */''}
-        <td><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${
+        <td><span class="cl-lbl">${T("貼文：","Post: ")}</span><span class="cl-t">${r.open?`<a href="javascript:void(0)" onclick="${r.open}">${esc(r.name)}</a>`:esc(r.name)}</span>${
           /* v231（老闆指定）：清單裡的片名旁邊也要有「改時間」——本來只有影片庫的
              鎖住列有這顆鍵，這裡的每一列都對應著一支真的影片，同一個 openQuickSchedule
              搬過來就能用，不用另外寫一套（它本來就不挑「有沒有被指派鎖住」）。 */

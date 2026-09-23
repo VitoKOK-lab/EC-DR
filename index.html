@@ -956,23 +956,53 @@
      原始片名接在下面，兩者都要能換行（片名有時候比貼文文案還長）。 */
   table.callist .cl-code{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
   table.callist .cl-rawt{display:block}
+  /* v234（老闆指定）：手機上標「原名：」「貼文：」用的小字標籤——桌機／列印
+     都不需要（有表頭撐著），平常就藏起來，手機那段 media query 裡才冒出來。 */
+  .cl-lbl{display:none}
   /* v233（老闆指定，手機截圖圈起來）：「用手機看的時候，我要簡化看清楚，只
      for手機介面，給我『原片名一條，短文案一條』寫的滿，不要換行，超過一行
      的就…，其他的資訊不用顯示」。編號、警示藥丸（還沒剪好／缺上片連結…）、
      改時間鍵——手機上全部藏起來，只留日期時間、原始片名、貼文文案三樣，
      各自單行、超過就刪節號（貼文文案早就是這樣，這次是原始片名也比照辦理）。
+     v234（老闆指定，看了 v233 的成果之後追加）：「不對，我看了不是這樣，
+     不是左右，幫我用上下二排，先原片名、下排貼文文案」——v233 把三欄縮
+     窄之後仍然是**並排**的三個窄欄；改成每一列上下疊成三行
+     （日期時間 → 原名 → 貼文）。
+     v235（老闆指定，看了 v234 的成果之後又追加）：「不要這樣，這樣就變
+     很高，原名、貼文，要在同一行就好」——改成日期時間自己一行、原名跟
+     貼文同一行對半分。
+     v236（老闆指定，看了 v235 的成果之後說「全錯」，改口要下面這個版本，
+     並且先用文字確認過一次）：「兩欄，第一欄時段，第二欄名稱；名稱裡面
+     第一行原片名、換行貼文文案」——不是三行疊、也不是原名貼文擠在同一行，
+     是**兩欄並排**：左欄時段（跟原本一樣窄），右欄「名稱」內部再自己
+     分兩行（原名在上、貼文在下）。用 CSS Grid 做：<tr> 兩欄格線，日期
+     那格橫跨兩個格線列（grid-row:1/3，這樣不管右邊是一行還是兩行，日期
+     都對齊在左邊同一整塊，不會被硬切成上下兩截）；原名／貼文兩個 <td>
+     都丟進第二欄，靠瀏覽器自動一個排第一列、一個排第二列。
      ⚠️ 只在這個 media query 裡動，桌機／列印都不受影響——老闆講得很清楚
      是「只for手機介面」。 */
   @media(max-width:600px){
-    table.callist td{padding:6px 8px}
-    table.callist col.cl-cw{width:100px}
-    table.callist col.cl-rw{width:96px}
-    table.callist td.cl-when{padding-right:4px}
+    table.callist{display:block}
+    table.callist thead{display:none}
+    table.callist tbody{display:block}
+    table.callist tbody tr{display:grid;grid-template-columns:92px 1fr;grid-template-rows:auto auto;
+      column-gap:8px;padding:8px 4px;border-bottom:1px solid var(--line)}
+    table.callist tbody tr:last-child{border-bottom:none}
+    /* 還沒剪好／缺上片連結那條警示色帶，並排欄位時畫在第一格左邊就等於畫在
+       整列左邊；分成左右兩欄之後第一格只是最左邊那一小塊，色帶要改畫在
+       整個 <tr> 上，才能跟右邊兩行一樣高。 */
+    table.callist tbody tr.cl-warn>td:first-child{box-shadow:none}
+    table.callist tbody tr.cl-warn{box-shadow:inset 4px 0 0 var(--amber)}
+    table.callist tbody tr.cl-warn.late{box-shadow:inset 4px 0 0 var(--red)}
+    table.callist tbody tr.cl-warn.miss{box-shadow:inset 4px 0 0 var(--gold)}
+    table.callist td{display:block;padding:2px 0;box-sizing:border-box;grid-column:2;min-width:0}
+    table.callist td.cl-when{grid-column:1;grid-row:1/3;padding:2px 8px 2px 4px}
     table.callist .cl-tm{margin-left:4px;font-size:10.5px}
     table.callist .cl-code{display:none}
     table.callist td .cl-rawt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     table.callist td button{display:none}
     table.callist td .misspill,table.callist td .pill{display:none}
+    table.callist .cl-lbl{display:inline}
   }
   table.callist tbody tr:hover{background:var(--panel2)}
   /* v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
@@ -1087,7 +1117,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=6d6302459a28"></script>
-<script type="module" src="fb.js?v=6d6302459a28"></script>
+<script src="app.js?v=0b288dafc87c"></script>
+<script type="module" src="fb.js?v=0b288dafc87c"></script>
 </body>
 </html>

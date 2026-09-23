@@ -267,7 +267,12 @@ async function saveFromTab(tab){
     const mob=(HTML.match(/@media\(max-width:600px\)[\s\S]{0,1200}?table\.callist \.cl-tm\{([^}]*)\}/)||[])[1]||"";
     const msize=parseFloat((mob.match(/font-size:([\d.]+)px/)||[])[1]);
     ok("手機上再小一點", msize>0 && msize<=size, {mob, msize, size}); }
-  ok("手機上欄位還會再縮一點", /@media\(max-width:600px\)[\s\S]{0,900}col\.cl-cw\{width:7\d px?|@media\(max-width:600px\)[\s\S]{0,900}col\.cl-cw\{width:\d+px/.test(HTML));
+  // v234（老闆指定）：手機上這張表改成每個 <td> 自己一整行、上下疊（不是並排
+  // 的窄欄位了），所以「欄寬會再縮一點」這件事現在不是靠 col 寬度做的——
+  // 改成驗證手機那段真的把表格切成上下疊的區塊排版（table.callist{display:block}
+  // 這幾條就是那個開關；改壞了，手機上會變回並排的窄欄位）。
+  ok("手機上這張表改成上下疊的區塊排版（不是並排窄欄位）",
+     /@media\(max-width:600px\)[\s\S]{0,300}?table\.callist\{display:block\}/.test(HTML));
   ok("**欄寬不可以寫在 <col style> 上**（inline 蓋得過 media query，手機就縮不了）",
      !/<col style="width:\d+px"><col style="width:\d+px"><col>/.test(APP) && APP.includes('<col class="cl-cw">'),
      (APP.match(/<colgroup>[^<]*<col[^>]*>/)||[])[0]);
