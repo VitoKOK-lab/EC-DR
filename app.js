@@ -1710,7 +1710,7 @@ function calListBody(cfg){
     </div>
     <div class="muted noprint" style="font-size:12px;margin:2px 0 8px">${T("整個月共 ","This month: ")}<b>${total}</b>${T(" 支。只能看 —— 要改排程請點左邊的日期。"," scheduled. View only — click a date on the left to edit that day.")}</div>
     <div style="overflow-x:auto">
-      <table class="vtable callist"><colgroup><col class="cl-cw"><col class="cl-rw"><col></colgroup>
+      <table class="vtable callist"><colgroup><col class="cl-cw"><col class="cl-rw"><col class="cl-cap"></colgroup>
         <thead><tr><th>${T("日期・時間","Date · time")}</th><th>${T("編號／原始片名","ID / raw title")}</th><th>${T("影片貼文文案（不填則同原始片名）","Post caption (defaults to raw title)")}</th></tr></thead>
         <tbody>${body}</tbody></table>
     </div>

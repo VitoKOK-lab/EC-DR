@@ -97,17 +97,19 @@ function mediaBlocks(css, cond){
   }
   return out;
 }
-{ const mob=mediaBlocks(HTML, "@media(max-width:600px)").join("");
-  const rest=HTML.split("").length && (function(){ let r=HTML; mediaBlocks(HTML,"@media(max-width:600px)").forEach(b=>{ r=r.replace(b,""); }); return r; })();
-  ok("**手機上片名一行（nowrap ＋ 省略號）**",
-     /table\.callist td \.cl-t\{[^}]*white-space:nowrap/.test(mob)
-     && /table\.callist td \.cl-t\{[^}]*text-overflow:ellipsis/.test(mob),
-     (mob.match(/table\.callist td \.cl-t\{[^}]*\}/)||[])[0]);
+// v232（老闆指定）：「貼文文案不用顯示所有的名稱只要一行簡稱就好，要看完整
+// 名稱點進去看就可以」——原本這條規矩只在手機這裡（v193），桌機不切；老闆
+// 現在改口要桌機也切，所以規矩從手機專屬的 media query 搬到沒有條件限制的
+// 基本規則，不分螢幕大小都套用。這裡把原本「桌機不切」的斷言反過來釘住。
+{ const rest=(function(){ let r=HTML; mediaBlocks(HTML,"@media(max-width:600px)").forEach(b=>{ r=r.replace(b,""); }); return r; })();
+  ok("**片名一行（nowrap ＋ 省略號），不分螢幕大小**",
+     /table\.callist td \.cl-t\{[^}]*white-space:nowrap/.test(rest)
+     && /table\.callist td \.cl-t\{[^}]*text-overflow:ellipsis/.test(rest),
+     (rest.match(/table\.callist td \.cl-t\{[^}]*\}/)||[])[0]);
   ok("**要 display:block 標籤才會掉到下一行**",
-     /table\.callist td \.cl-t\{[^}]*display:block/.test(mob));
-  ok("（前提）真的抓到手機那一段", mob.includes("table.callist td .cl-t"), mob.length);
-  ok("**桌機不切**（那邊寬度夠，切了反而看不出是哪一支）",
-     !/\.cl-t\{[^}]*nowrap/.test(rest), (rest.match(/\.cl-t\{[^}]*\}/g)||[])); }
+     /table\.callist td \.cl-t\{[^}]*display:block/.test(rest));
+  ok("（前提）真的抓到基本規則裡的那一條，不是只在某個 media query 裡",
+     rest.includes("table.callist td .cl-t"), rest.length); }
 
 // ══════════ ④ 沒有把 v187 的整列警示弄壞 ══════════
 { reset([ v_("A",{name:"還沒審的片",reviewStatus:"",scheduledDate:D(1)}) ]);
