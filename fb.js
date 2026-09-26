@@ -88,7 +88,7 @@ if (!firebaseConfig || String(firebaseConfig.apiKey || "").includes("PASTE")) {
   //    app 以為不用載、fb 照樣訂閱（或反過來），smoke-v140／v152 會抓。
   // v181：pick（選品行銷）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
   //       永遠是「—」，卻要付整包 986 支影片的下載成本。
-  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "pick", "design"];
+  const NO_VIDEO_ROLES = ["mkt", "svc", "ship", "cs", "pick"];
   function needVideosByRole() {
     let r = "";
     try { r = localStorage.getItem("ecdr_role") || ""; } catch (e) { return true; }
