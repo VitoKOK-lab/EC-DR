@@ -54,7 +54,8 @@ localStorage.setItem("ecdr_user","小葵"); localStorage.setItem("ecdr_role","ed
 tabs=myTabs().map(t=>t[0]);
 // v178：每個人最前面都多了「溝通」分頁（老闆的三塊之一），所以預期清單要跟著加。
 // v204：「二創」整頁拆掉併進「影片成效」，所以 remake 沒了、perf 出現
-ok("editor: cal hub, zones integrated into work (v37)", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","videosDF","cal","perf"]), tabs);
+// v240：「大流量影片」分頁已經整個拿掉（老闆：跟影片成效重複）。
+ok("editor: cal hub, zones integrated into work (v37)", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","cal","perf"]), tabs);
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 tabs=myTabs().map(t=>t[0]);
 ok("intl: same tab ids as editor (v37)", JSON.stringify(tabs)===JSON.stringify(["chat","work","board","videos","cal"]), tabs);
