@@ -7,20 +7,22 @@
 // mkt／svc／ship 是後來加的不剪片職位，權限與畫面比照 cs。
 // pick＝選品行銷（v138）：從「商品」出發幫商品配一支影片、送老闆審核，畫面與權限比照 cs，
 // （原本額外多一頁「選品配對」，v175 整頁移除，老闆要重新設計。）
-// design＝設計師（v210）：整條「選品 → 影片 → 投廣 → 算錢」的第一關。
-// 他只做一件事 —— 從官網挑商品、把網址貼進選品清單。不剪片、不排程、不看成效。
+// design＝設計師（v210）：**已於後續版本移除**（唯一用過這個職位的人 Jessica 帳號已刪除，
+// 選品清單功能對所有人關閉——見下方 PERMS 移除 curate 的說明）。底下的選品清單程式碼
+// （viewCurate 以及一大段輔助函式）刻意保留沒刪，純粹是不會再被任何入口叫到的死碼；
+// 之後真的要重新設計選品功能，這些邏輯可以參考回收。
 const ROLE_LABEL = {boss:"管理員", manager:"經理人", editor:"剪輯", mkt:"行銷", pick:"選品行銷",
-                    design:"設計師", svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
+                    svc:"客服", ship:"出貨", cs:"員工", hr:"人資", intl:"巴基斯坦"};
 const ROLE_LABEL_EN = {boss:"Admin", manager:"Manager", editor:"Editor", mkt:"Marketing", pick:"Curation Marketing",
-                       design:"Designer", svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+                       svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 const roleEn=(r)=>ROLE_LABEL_EN[r]||ROLE_LABEL_EN.editor;
 // 篩選下拉是在挑「一群人」，用複數才讀得順（個人徽章仍用上面的單數）
 const ROLE_GROUP_EN={boss:"Admins", manager:"Managers", editor:"Editors", mkt:"Marketing", pick:"Curation Marketing",
-                     design:"Designers", svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
+                     svc:"Customer service", ship:"Shipping", cs:"Staff", hr:"HR", intl:"Pakistan"};
 // 會打卡、進團隊看板與出勤的所有職位（不含管理員／經理人）。顯示順序見 ROLE_ORDER。
-const STAFF_ROLES=["editor","mkt","pick","design","svc","ship","cs","hr","intl"];
+const STAFF_ROLES=["editor","mkt","pick","svc","ship","cs","hr","intl"];
 // 不剪片的職位：不顯示影片數字、不指派毛片、不用選一創／二創分工
-const NO_EDIT_ROLES=["mkt","pick","design","svc","ship","cs","hr"];
+const NO_EDIT_ROLES=["mkt","pick","svc","ship","cs","hr"];
 // 這個職位的畫面用不用得到影片資料。
 // ⚠️ 判斷依據不是「他有沒有影片庫分頁」，也不是「他剪不剪片」，
 //    而是逐頁比對過「拿掉影片資料畫出來有沒有變」——
@@ -42,10 +44,7 @@ const NO_EDIT_ROLES=["mkt","pick","design","svc","ship","cs","hr"];
 // 硬載 986 支影片只是讓手機開得慢。
 // v181：選品行銷（pick）加進來 —— 她們不剪片，看板上「剪片速度／平均工時」
 // 那幾欄對她們永遠是「—」，卻要付整包影片的下載成本。
-// v210：設計師加進來 —— 他只貼商品網址，畫面上一個影片數字都沒有。
-//       量過：整包影片 2.5 MB（1,061 支）。讓他每次開機付這個成本沒有道理。
-//       「這個品以前賣過幾支」改由 Mac mini 每晚算好寫進商品那一筆（見 docs/選品清單-A）。
-const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick","design"];
+const NO_VIDEO_ROLES=["mkt","svc","ship","cs","pick"];
 function needVideos(role){
   const r=role||currentRole();
   return !NO_VIDEO_ROLES.includes(r);
@@ -84,11 +83,6 @@ const ROLE_TABS = {
 ROLE_TABS.mkt = ROLE_TABS.svc = ROLE_TABS.ship = ROLE_TABS.cs;
 // 選品行銷：畫面與權限比照「員工」。
 ROLE_TABS.pick = ROLE_TABS.cs;
-// 設計師：**刻意是空的**。他只有「傳訊息」（每個人都有，myTabs 自己加）
-// 加上勾起來的「選品」。看板、影片庫、月排程對他都沒有意義。
-// ⚠️ 一定要明寫成 []，不能不寫 —— myTabs 找不到職位時會退回 ROLE_TABS.editor，
-//    漏寫的話設計師會拿到剪輯的整組分頁。
-ROLE_TABS.design = [];
 const PUB_TIMES = ["10:00","12:00","16:00"];   // 固定三個上片時間
 // ── 上片時間一律只選「整點」（v177，老闆指定：「以整點選就好，不用分」）──
 // 為什麼不用 <input type="time">：那個一定會出現分鐘，手機上還要撥兩個滾輪，
@@ -496,10 +490,12 @@ const PERMS = {
   // v210（選品 A-1）：這兩項先只是「勾得起來」，分頁與畫面在 A-2。
   // ⚠️ 刻意**還沒有** tab —— 有 tab 就會長出一個點進去空白的分頁。
   //    A-2 把畫面做出來時才補上 tab:"curate"。
-  curate:{ label:"選品", where:"上面的分頁", tab:"curate", zhOnly:true,
-           why:"貼商品網址、看這個月選了哪些品" },
-  plan:  { label:"排影片", where:"選品 → 點商品", zhOnly:true,
-           why:"幫選中的商品排二創或開新片" },
+  // 選品清單功能已關閉（唯一用過的人 Jessica 帳號已刪除）：curate 這一項整個拿掉，
+  // 沒有任何入口能再點進 viewCurate()，那段程式碼保留但成為死碼。
+  // plan 保留 ——「影片成效 → 帶貨商品排行」的「排二創」按鈕也靠這個權限
+  // （見 canPlanRemake()），不是選品專屬，拿掉會波及那個無關的功能。
+  plan:  { label:"排影片", where:"影片成效 → 帶貨商品排行 → 點商品", zhOnly:true,
+           why:"幫商品排二創或開新片" },
 };
 const PERM_KEYS = Object.keys(PERMS);
 function permsOf(u){ return Array.isArray(u&&u.perms) ? u.perms : []; }
@@ -1443,7 +1439,7 @@ function render(){
   if(needVideos()){ try{ if(window.DB&&window.DB.watchVideos) window.DB.watchVideos(); }catch(e){} }
   // v196：素材索引 4.8 MB，只有真的打開「找影片」的人才下載，一次連線只下載一次。
   try{ needAssets(); }catch(e){}
-  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, curate:viewCurate, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
+  const fn = { chat:viewChat, board:viewBoard, dashboard:viewDashboard, flow:viewFlow, team:viewTeam, output:viewOutput, attend:viewAttend, cal:viewCal, work:viewWork, videos:viewVideos, videosDF:viewVideosDF, assets:viewAssets, settings:viewSettings, log:viewLog, trash:viewTrash, perf:viewPerf, }[CUR_TAB] || (()=>"");
   v.classList.toggle("anim", !same);   // 只在「切換分頁」時做進場動畫；同頁資料同步重繪不動畫（避免閃動）
   // 有兩家以上、而且這台裝置還沒選過 → 先讓他選一次，選完就再也不問
   if(brandMulti() && !brandPicked()){
@@ -2189,7 +2185,7 @@ function renameContact(name){ if(dbBlocked()) return; const input=prompt("修改
 // 沒設定時沿用下面這兩組預設，行為跟以前一樣。
 const WORK_PRESETS=["剪輯當日影片","調整過往未審核影片／封面","吾家影片／封面製作","影片清單整理","文案內容整理"];
 const CS_PRESETS=["回覆客戶訊息","訂單處理／出貨","退換貨處理","客訴追蹤","商品資訊更新"];
-const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["pick","選品行銷"],["design","設計師"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
+const TPL_ROLES=[["all","全部"],["editor","剪輯"],["mkt","行銷"],["pick","選品行銷"],["svc","客服"],["ship","出貨"],["cs","員工"],["intl","巴基斯坦"]];
 function dailyTemplates(){
   const s=(STATE&&STATE.settings&&STATE.settings.dailyTemplates);
   if(Array.isArray(s) && s.length) return s.filter(x=>x&&String(x.t||"").trim());
@@ -3446,7 +3442,7 @@ function futureTasksBody(){
 // ===================================================================
 // 員工顯示順序（所有清單共用）：台灣（剪輯 → 行銷 → 客服 → 出貨 → 員工 → 人資）→ 海外一律排最後；同組內中文名在前、英文名在後
 // 職位在台灣區裡的先後：剪輯 → 行銷 →（其餘）客服 → 出貨 → 員工 → 人資
-const ROLE_ORDER={design:-1, editor:0, mkt:1, pick:1.5, svc:2, ship:3, cs:4, manager:5, hr:6};   // 設計師排最前：他是整條流程的第一關
+const ROLE_ORDER={editor:0, mkt:1, pick:1.5, svc:2, ship:3, cs:4, manager:5, hr:6};
 // 台灣（0）在前、巴基斯坦（1）在後
 const regionRank=(role)=> role==="intl" ? 1 : 0;
 function staffRank(u){
@@ -3478,7 +3474,6 @@ function staffRoleGroups(roles){
     [T("剪輯","Editing"),         isEd],
     [T("行銷","Marketing"),       u=>u.role==="mkt"],
     [T("選品行銷","Curation"),    u=>u.role==="pick"],
-    [T("設計師","Designer"),      u=>u.role==="design"],
     [T("客服","Customer service"),u=>u.role==="svc"],
     [T("出貨","Shipping"),        u=>u.role==="ship"],
     [T("員工","Staff"),           u=>u.role==="cs"],
@@ -3504,7 +3499,7 @@ function staffOptGroups(roles){
 //    v210 加了「設計師」沒有加進來，Jessica 就從登入頁不見了（老闆 2026-09-15 截圖抓到）。
 //    smoke-v210 現在守著這一條：STAFF_ROLES 每一個職位都要在這張表裡出現一次。
 const STAFF_GROUPS=[
-  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt","pick","design"]],
+  ["twmake", "台灣・剪輯行銷", "Taiwan · Editing & Marketing", ["editor","mkt","pick"]],
   ["twrest", "台灣・其他",     "Taiwan · Others",              ["svc","ship","cs","hr"]],
   ["pk",     "巴基斯坦",       "Pakistan",                     ["intl"]],
 ];
