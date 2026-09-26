@@ -258,8 +258,9 @@ const wait=()=>new Promise(r=>setTimeout(r,15));
   ok("**沒有儀表板那一頁**（老闆指定）", !myTabs().map(t=>t[0]).includes("dashboard"), myTabs().map(t=>t[0]));
   ok("也沒有出勤／設定／操作紀錄",
      !["attend","settings","log","trash"].some(t=>myTabs().map(x=>x[0]).includes(t)), myTabs().map(t=>t[0]));
+  // v240：「大流量影片」分頁已經整個拿掉（老闆：跟影片成效重複）。
   ok("他的分頁跟一般剪輯一模一樣（差別只在權限，不在畫面數量）",
-     JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","board","videos","videosDF","cal","perf"]),
+     JSON.stringify(myTabs().map(t=>t[0]))===JSON.stringify(["chat","work","board","videos","cal","perf"]),
      myTabs().map(t=>t[0])); }
 { reset([]); as("小葵","editor");
   ok("一般剪輯不是小主管", isSubLead()===false && canAssignWork()===false && seesLeadBoard()===false); }
