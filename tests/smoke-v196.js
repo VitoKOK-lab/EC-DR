@@ -111,7 +111,7 @@ ok("PUT /api/users 的白名單有放行 canFindAssets",
    /body\.canFindAssets!=null\) patch\.canFindAssets=!!body\.canFindAssets/.test(APP));
 // v202：整合到「設定→權限」那一張表了（老闆：「把各式權限都整合給我在後台設定」）
 ok("設定→權限那一欄畫得出來", /setMemberPerm\('\$\{esc\(jsEsc\(u\.name\)\)\}','\$\{k\}'/.test(APP)
-   && /find:  \{ label:"找影片"/.test(APP));
+   && /find:  \{ label:"Google Drive 影片搜尋"/.test(APP));
 
 // ══════════ ② CSV 解析：引號、逗號、換行、BOM ══════════
 { const rows=csvParse('﻿a,b,c\n1,"帶,逗號",3\n4,"帶""引號""",6\n7,"跨\n行",9\n');
