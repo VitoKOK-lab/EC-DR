@@ -55,8 +55,9 @@ function reset(){
   ok("看板緊接在「溝通」後面（還是她的落地頁）", tabs[0]==="chat" && tabs[1]==="board", tabs);
   // v181：flow 與 team 併進 board 了，能力沒有消失（備片存量、毛片庫存、
   //       待審片、每個人在做什麼都在看板上），所以改問影片那幾頁還在不在。
+  // v240：「大流量影片」分頁已經整個拿掉（老闆：跟影片成效重複），不再檢查。
   ok("影片相關的分頁一個都沒少",
-     ["videos","videosDF","cal"].every(t=>tabs.includes(t)), tabs);
+     ["videos","cal"].every(t=>tabs.includes(t)), tabs);
   // v175：選品配對整頁移除，這一頁不該再冒出來
   ok("選品配對那一頁已經不在了", !tabs.includes("match"), tabs); }
 { reset(); as("小葵","editor");

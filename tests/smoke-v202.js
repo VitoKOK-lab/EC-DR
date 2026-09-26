@@ -223,20 +223,26 @@ ok("設定分頁照舊只認 isOwner()", /if\(isOwner\(\)\)\{ t\.push\(\["settin
   //    但**點進去之後的標題**也要同一個字，不然點進去看到另一個名字，一樣認不出來。
   //    「剪輯產出／剪輯成效」「大流量影片／影片庫大流」就是這樣歪掉的。
   { reset([U("小葵", "editor", { perms: PERM_KEYS.slice() })], "小葵", "editor");
-    const PAGE = { find: viewAssets, perf: viewPerf, output: viewOutput, attend: viewAttend, df: viewVideosDF };
+    // v240：「df」不再有分頁（tab）了——老闆把「大流量影片」那個分頁整個拿掉
+    // （跟影片成效重複），這個權限鍵改成專管「補登到資料庫」那顆按鈕
+    // （見 app.js 的 canAddOldVideo()/unfiledRowHTML）。它現在跟 prod／assign
+    // 一樣是「沒有分頁、靠 where 定位」的那一類，PAGE 這張表只留還有 tab 的。
+    const PAGE = { find: viewAssets, perf: viewPerf, output: viewOutput, attend: viewAttend };
     Object.keys(PAGE).forEach(k => {
       const h2 = (String(PAGE[k]()).match(/<h2[^>]*>([\s\S]*?)<\/h2>/) || ["", ""])[1];
       ok(`點進去的標題跟權限名同一個字：${PERMS[k].label}`,
          h2.indexOf(PERMS[k].label) >= 0, { k, want: PERMS[k].label, h2: h2.slice(0, 120) });
     });
-    // 沒有分頁的那兩個，名字一樣不准亂取。
+    // 沒有分頁的那三個，名字一樣不准亂取。
     // ⚠️ 這裡一定要拿 PERMS[k].label 去比，不能把字寫死 ——
     //    寫死的話「把 label 改回『商品主檔』」照樣是綠的（畫面上那塊還是舊字），
     //    而那正是老闆抱怨的那個病。
     ok("商品那一塊的標題＝權限名（改了權限名就要一起改，不准各叫各的）",
        APP.includes("<b>" + PERMS.prod.label + "</b>"), PERMS.prod.label);
     ok("看板上指派那張卡的標題＝權限名",
-       APP.includes('T("🎬 ' + PERMS.assign.label + '給員工"'), PERMS.assign.label); }
+       APP.includes('T("🎬 ' + PERMS.assign.label + '給員工"'), PERMS.assign.label);
+    ok("「補登到資料庫」那顆按鈕的字＝權限名",
+       APP.includes(">" + PERMS.df.label + "<"), PERMS.df.label); }
   // 手機上勾不到＝這一頁沒用。桌機要 660px 才點得準，手機轉成直列卡片後那個寬度必須讓開，
   // 不然九欄的勾選框整排被推到畫面外（量過：表格 660px、容器只有 334px）。
   // ⚠️ 手機那一段在 index.html 裡比桌機那兩條**早**出現，所以只能靠選擇器權重壓過去 ——

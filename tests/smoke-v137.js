@@ -312,13 +312,17 @@ function lastSlot(){
   ok("大流沒填文案也要標出來", missingPill(d_("9",{driveFolder:"http://d",videoCopy:""})).includes("缺文案"));
   ok("影片庫A 照樣會標缺毛片（沒有連坐改壞）", missingPill(a_("1",{rawLink:""})).includes("缺毛片")); }
 
-// ══════════ ⑦ 權限：海外看不到大流 ══════════
+// ══════════ ⑦ v240（老闆指定）：「大流量影片」分頁已經拿掉，不管誰都選不到 ══════════
+// 「把這一頁的標題移除不要讓人家選擇，因為這個頁面已經跟影片成效重複了」——
+// tab:"videosDF" 從 PERMS.df 拿掉了，導覽列不會再有這個按鈕，不分職位、
+// 不分權限表怎麼勾。df 這個權限鍵沒有整個刪掉，改成專管「補登到資料庫」
+// （影片成效→影片排行→未建檔那幾筆），跟這支測試無關，這裡不重複測。
 { reset([d_("8")]);
-  as("管理員","boss");   ok("管理員看得到影片庫大流", myTabs().some(t=>t[0]==="videosDF"));
-  as("Regina","manager"); ok("經理人看得到", myTabs().some(t=>t[0]==="videosDF"));
-  as("小葵","editor");    ok("剪輯看得到（他們要做二創）", myTabs().some(t=>t[0]==="videosDF"));
-  as("Anna","intl");      ok("海外看不到（海外不做大流）", !myTabs().some(t=>t[0]==="videosDF"));
-  ok("海外就算硬連進來也只看到說明、不會炸", typeof viewVideosDF()==="string"); }
+  as("管理員","boss");   ok("管理員也選不到「大流量影片」分頁了", !myTabs().some(t=>t[0]==="videosDF"));
+  as("Regina","manager"); ok("經理人也選不到", !myTabs().some(t=>t[0]==="videosDF"));
+  as("小葵","editor");    ok("剪輯也選不到", !myTabs().some(t=>t[0]==="videosDF"));
+  as("Anna","intl");      ok("海外本來就看不到（海外不做大流）", !myTabs().some(t=>t[0]==="videosDF"));
+  ok("就算硬連進來也只看到說明、不會炸", typeof viewVideosDF()==="string"); }
 
 // ══════════ ⑧ 唯讀防線：員工視角下不能加片也不能做二創 ══════════
 { reset([d_("8")]); as("管理員","boss"); VIEW_AS="小葵";
