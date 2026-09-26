@@ -285,6 +285,8 @@
   nav{display:flex;gap:4px;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--line);padding:0 12px;position:sticky;top:55px;z-index:29;box-shadow:var(--shadow)}
   /* 分頁底線：從中央「長出」的金線 */
   nav button{position:relative;background:none;border:none;color:var(--muted);padding:14px 16px;font-size:14px;font-weight:700;white-space:nowrap;transition:.15s;letter-spacing:.02em}
+  /* 名字太長的分頁（見 buildNav 的 navwrap）：換成兩行，不要撐開整排或被切字 */
+  nav button.navwrap{white-space:normal;max-width:108px;line-height:1.25;text-align:center}
   nav button::after{content:"";position:absolute;left:50%;bottom:0;width:0;height:2px;background:var(--accent);transition:width .25s ease,left .25s ease}
   nav button:hover{color:var(--txt)}
   nav button.active{color:var(--accent)}
@@ -1128,7 +1130,7 @@
   <button class="relogin" onclick="reLogin()">重新登入</button>
 </div>
 
-<script src="app.js?v=894b052519aa"></script>
-<script type="module" src="fb.js?v=894b052519aa"></script>
+<script src="app.js?v=e6fd0bbf9683"></script>
+<script type="module" src="fb.js?v=e6fd0bbf9683"></script>
 </body>
 </html>

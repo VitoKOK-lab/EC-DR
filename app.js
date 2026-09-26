@@ -199,7 +199,7 @@ function myTabs(){ const t=(ROLE_TABS[currentRole()]||ROLE_TABS.editor).slice();
   // v196：「找影片」給拿到權限的人（老闆、經理人、或設定裡勾過的人）。
   // ⚠️ 海外剪輯（intl）不給 —— 這一頁整頁是中文的素材庫，他們用不到，
   //    而且給了就會有中文漏進英文介面（audit-lang 會抓）。
-  if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","找影片"]);
+  if(currentRole()!=="intl" && canFindAssets()) t.push(["assets","Google Drive 影片搜尋"]);
   // v202：在權限表上被勾起來的分頁，補進來。
   // 海外剪輯（intl）一律不補 —— 這幾頁整頁是中文的，給了就是中文漏進英文介面。
   if(currentRole()!=="intl") PERM_KEYS.forEach(k=>{ const P=PERMS[k];
@@ -469,9 +469,9 @@ const PERMS = {
   // 看板上那張卡的標題就是「🎬 指派毛片給員工」
   assign:{ label:"指派毛片", where:"看板 → 指派毛片給員工", legacy:"canAssign",
            why:"指派毛片給剪輯、排二創、標急件" },
-  find:  { label:"找影片",   where:"上面的分頁", legacy:"canFindAssets",
+  find:  { label:"Google Drive 影片搜尋", where:"上面的分頁", legacy:"canFindAssets",
            why:"搜尋 Google Drive 素材庫" },
-  perf:  { label:"影片成效", where:"上面的分頁", tab:"perf", zhOnly:true,
+  perf:  { label:"meta成效", where:"上面的分頁", tab:"perf", zhOnly:true,
            why:"各平台累計觀看、影片排行（含二創建議與排二創）、帶貨商品排行、剪輯二創成效" },
   output:{ label:"剪輯產出", where:"上面的分頁", tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
@@ -480,15 +480,15 @@ const PERMS = {
   // v240（老闆指定）：「把這一頁的標題移除不要讓人家選擇，因為這個頁面已經跟
   // 影片成效重複了」——「大流量影片」這個分頁（tab:"videosDF"）拿掉，導覽列
   // 不會再有這個按鈕，不管誰的權限表怎麼勾都選不到。
-  // ⚠️ 這個權限鍵沒有整個刪掉：它還兼管「影片成效 → 影片排行 → 未建檔那幾筆」
+  // ⚠️ 這個權限鍵沒有整個刪掉：它還兼管「meta成效 → 影片排行 → 未建檔那幾筆」
   // 右邊的「補登到資料庫」按鈕（canAddOldVideo()，跟大流是同一批人但不是建進
   // 大流——見 v206 那段註解）。分頁關掉了，但補登舊片這件事還在用，所以改成
   // 用那顆按鈕的名字當 label（v208 規矩：label 要跟畫面上看得到的字一模一樣）。
-  df:    { label:"補登到資料庫", where:"影片成效 → 影片排行 → 未建檔那幾筆", zhOnly:true,
+  df:    { label:"補登到資料庫", where:"meta成效 → 影片排行 → 未建檔那幾筆", zhOnly:true,
            why:"把系統裡沒有的舊貼文手動補進正式影片庫（不是建進大流，大流分頁已經關掉）" },
   // v206：商品資料改錯會讓排行上兩個商品黏在一起、或一段歷史斷掉。
   // v208 改名：本來叫「商品主檔」—— 那是資料庫的講法，畫面上沒有那四個字。
-  prod:  { label:"改商品資料", where:"影片成效 → 帶貨商品排行 → 點商品", zhOnly:true,
+  prod:  { label:"改商品資料", where:"meta成效 → 帶貨商品排行 → 點商品", zhOnly:true,
            why:"建檔、改名、換官網連結、標下架、把重複的兩筆合併" },
   // v208 改名：本來叫「主管看板」，但導覽列上只有「看板」一個分頁，
   //            沒有哪一頁叫「主管看板」—— 它是同一頁上主管才看得到的那幾區。
@@ -499,9 +499,9 @@ const PERMS = {
   //    A-2 把畫面做出來時才補上 tab:"curate"。
   // 選品清單功能已關閉（唯一用過的人 Jessica 帳號已刪除）：curate 這一項整個拿掉，
   // 沒有任何入口能再點進 viewCurate()，那段程式碼保留但成為死碼。
-  // plan 保留 ——「影片成效 → 帶貨商品排行」的「排二創」按鈕也靠這個權限
+  // plan 保留 ——「meta成效 → 帶貨商品排行」的「排二創」按鈕也靠這個權限
   // （見 canPlanRemake()），不是選品專屬，拿掉會波及那個無關的功能。
-  plan:  { label:"排影片", where:"影片成效 → 帶貨商品排行 → 點商品", zhOnly:true,
+  plan:  { label:"排影片", where:"meta成效 → 帶貨商品排行 → 點商品", zhOnly:true,
            why:"幫商品排二創或開新片" },
 };
 const PERM_KEYS = Object.keys(PERMS);
@@ -823,6 +823,9 @@ function buildNav(){
   myTabs().forEach(([id,label])=>{
     const b = document.createElement("button"); b.textContent = label; b.dataset.tab = id;
     if(id===CUR_TAB) b.classList.add("active");
+    // 名字太長塞不進一行的分頁（目前只有「Google Drive 影片搜尋」）就給它換行，
+    // 不要整排導覽被撐開或字被切掉。
+    if(id==="assets") b.classList.add("navwrap");
     // v183（老闆指定）：「有人傳訊給你，『傳訊息』會有小紅點提醒」。
     // 數字直接印出來 —— 只有一個點的話，看到了也不知道是一則還是十則。
     if(id==="chat"){ const n=commUnread();
@@ -7866,7 +7869,7 @@ function rmkTrend(v){
   return {rows:rs, vals, read};
 }
 
-// ===== 影片成效：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
+// ===== meta成效：平台總覽 → 影片排行(帶貨/剪輯) → 點影片看跨平台；商品排行 =====
 // v202 改名：分頁本來叫「影片流量」，頁面標題卻寫「平台成效」—— 同一頁兩個名字。
 // 老闆：「影片流量這個名字不好，不明意義」。三處（分頁、標題、權限表）統一成「影片成效」。
 // 影片視窗裡那張卡照舊叫「平台成效」—— 那是「這一支片在各平台的成績」，是另一件事。
@@ -8477,9 +8480,9 @@ function viewPerf(){
         不重複合計 <b>${uniqVids.size}</b> 支，下面的排行就是這 ${uniqVids.size} 支。</div>`
     : "";
 
-  return `<h2>影片成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
+  return `<h2>meta成效${PERF_PLAT?` <span class="muted" style="font-size:13px">目前只看：${esc(PERF_PLAT)}</span>`:""}</h2>
   ${!hasData?`<div class="card" style="border-color:var(--accent);background:var(--amberbg)">
-    <b>尚無影片成效數據</b>
+    <b>尚無 meta 成效數據</b>
     <div class="muted" style="margin-top:6px;line-height:1.8;color:var(--txt)">成效由 Mac mini 上的同步工作抓回來（FB 粉專／IG），以<b>貼文文案</b>比對回影片後自動填入。這頁的數字要等第一次同步跑完才會出現。<br>備註：<b>「本週」</b>總成效需要每天存一份快照才算得出來（官方 API 只給當下的累計數字）；<b>商品實際「銷售」</b>要另接 Shopline 訂單，這裡顯示的是觀看／觸及。</div>
   </div>`:''}
   ${platKeys.length?`<div class="row" style="gap:10px;margin-bottom:6px">${platCards}</div>`:''}
@@ -10373,7 +10376,7 @@ async function assetConfirm(driveId, title){
   try{
     await window.DB.set("assetgroups", id, rec);
     ASSET_GROUPS[id]=rec;
-    logA("確認主成片資料夾：「"+(title||id)+"」", "找影片");
+    logA("確認主成片資料夾：「"+(title||id)+"」", "Google Drive 影片搜尋");
     toast("已確認 —— 下次搜尋這個會排在前面");
     if(ASSET_Q) assetSearch(ASSET_Q);
     render();
@@ -10386,7 +10389,7 @@ async function assetUnconfirm(driveId){
   try{
     await window.DB.del("assetgroups", id);
     const t=(ASSET_GROUPS[id]||{}).title||id; delete ASSET_GROUPS[id];
-    logA("取消確認主成片資料夾：「"+t+"」", "找影片");
+    logA("取消確認主成片資料夾：「"+t+"」", "Google Drive 影片搜尋");
     toast("已取消確認");
     if(ASSET_Q) assetSearch(ASSET_Q);
     render();
@@ -10419,7 +10422,7 @@ async function assetImport(input){
     const meta={ built:nowIso(), by:currentUser(), folders:built.folders.length,
                  files:built.files.length, rows:rows.length-1, source:file.name };
     await window.DB.saveAssetIndex(json, meta, (i,n)=>step("上傳第 "+i+" / "+n+" 份…"));
-    logA("重建影片素材索引："+Object.entries(built.stat).map(([k,v])=>k+" "+v).join("、"), "找影片");
+    logA("重建影片素材索引："+Object.entries(built.stat).map(([k,v])=>k+" "+v).join("、"), "Google Drive 影片搜尋");
     ASSET_BUSY="";
     ASSET_IDX=null; ASSET_STATE="idle";
     await assetLoad(true);
@@ -11062,9 +11065,9 @@ function psFootNote(){
 }
 
 function viewAssets(){
-  if(!canFindAssets()) return `<h2>找影片</h2><p class="muted">你沒有這一頁的權限。</p>`;
+  if(!canFindAssets()) return `<h2>Google Drive 影片搜尋</h2><p class="muted">你沒有這一頁的權限。</p>`;
   const m=(ASSET_IDX&&ASSET_IDX.meta)||{};
-  const head=`<h2>找影片 <span class="muted" style="font-size:13px">Google Drive 素材</span></h2>
+  const head=`<h2>Google Drive 影片搜尋</h2>
     <div class="muted" style="font-size:12px;margin:-6px 0 12px">
       這一頁只讀索引、只帶你去 Drive —— <b>不會動到 Google Drive 上的任何東西</b>。</div>`;
   if(ASSET_STATE==="loading") return head+`<div class="card" style="padding:16px">索引載入中…（第一次會比較久，之後就留在這個分頁裡）</div>`;
