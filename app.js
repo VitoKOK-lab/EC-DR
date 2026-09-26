@@ -6146,6 +6146,11 @@ function copyStr(enc){ const t=decodeURIComponent(enc);
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(()=>toast("已複製連結")).catch(()=>fallbackCopy(t)); }
   else fallbackCopy(t); }
 function fallbackCopy(t){ try{ const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); toast("已複製連結"); }catch(e){ toast("複製失敗，請手動",true); } }
+// v241（老闆指定）：「新增影片，我要強制檔名不能使用() {}[] 「」，只讓員工使用
+// 純文字，任何備註要使用標籤或寫在備註」。半形／全形括號都擋（老闆自己在
+// v238 的訊息裡就同時打過「(」跟「（」，剪輯手動打字不會分那麼細）。
+const BANNED_NAME_CHARS=/[()（）\[\]{}「」]/;
+function firstBannedNameChar(s){ const m=String(s||"").match(BANNED_NAME_CHARS); return m?m[0]:""; }
 // 新增影片：原始片名 ＋ 影片文案 ＋ 商品
 // prefill：從選品清單開新片時帶進來的商品（名稱＋官網連結），行銷不用再複製貼上。
 // ⚠️ 預設是空陣列 —— 原本所有呼叫點都不帶參數，行為一個字都不能變。
@@ -6175,6 +6180,13 @@ function newSimpleVideo(prefill, opts){
   `, async ()=>{
     const name=zhTW(val("sv_name").trim());
     if(!name){ toast(T("請輸入原始片名","Enter the raw title"),true); return false; }
+    // v241（老闆指定）：「新增影片，我要強制檔名不能使用() {}[] 「」，只讓員工
+    // 使用純文字，任何備註要使用標籤或寫在備註」——(podcast) 這種寫法就是這樣
+    // 混進片名的，混進去之後又要花一輪改版才能在畫面上補救（見 v238／v239）。
+    // 從源頭擋下來，比事後在清單上一支一支修簡單。
+    const badChar=firstBannedNameChar(name);
+    if(badChar){ toast(T(`原始片名不能用「${badChar}」這個符號——純文字就好，備註寫在下面的標籤或備註欄`,
+                          `Raw title can't contain "${badChar}" — plain text only; use tags or the note field for extra context`),true); return false; }
     // 文案必填：片名只是代號，文案才說得出要拍什麼。留空的話這支到了拍片那邊等於空殼。
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
