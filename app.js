@@ -6596,8 +6596,15 @@ function claimDayBadge(v){ const c=String(v.claimedAt||"").slice(0,10); if(!c) r
 function editDays(v){ const c=String(v.claimedAt||"").slice(0,10), f=String(v.finishedAt||"").slice(0,10); if(!c||!f) return null; return daysBetween(c,f)+1; }
 function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<=1?"-":String(d); }
 // 審片卡（管理員＋Regina 都可審）：一創與蝦皮/馬來/英/泰二創視窗共用
+// v242（老闆指定）：「讓 HR 也可以幫他審」（陳鋒的片）——HR 的權限表裡本來就
+// 已經勾了「lead」（看板主管版，含「待你審片」那份清單），但清單只是列出來、
+// 點進去沒有「通過／退回」這兩顆鍵可按，因為這裡原本寫死只認 boss／manager
+// 職位，沒有看 lead 這個權限。改成「職位是 boss/manager，或是有 lead 權限」
+// 都算——跟 seesLeadBoard() 用同一條權限，誰看得到那份待審清單、誰就按得動，
+// 不然清單列出來卻按不下去，等於沒給。用 || 加一條、不是整個換掉：
+// 原本寫死 boss／manager 那條照舊留著，不會動到 Regina／管理員現有的使用方式。
 function reviewCardHTML(v){
-  if(!v||!v.id||!["boss","manager"].includes(currentRole())) return "";
+  if(!v||!v.id||!(["boss","manager"].includes(currentRole()) || hasPerm("lead"))) return "";
   return `<div class="card" style="background:var(--panel2)"><b>審片（Regina／管理員）</b>
       <div class="row" style="gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
         <button class="btn sm" type="button" onclick="reviewVid('${v.id}','通過')">通過</button>
