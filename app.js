@@ -475,6 +475,14 @@ const PERMS = {
            why:"各平台累計觀看、影片排行（含二創建議與排二創）、帶貨商品排行、剪輯二創成效" },
   output:{ label:"剪輯產出", where:"上面的分頁", tab:"output", zhOnly:true,
            why:"誰做完幾支、審過沒、檔案在哪" },
+  // v243（老闆指定）：「巧芸可以按所有剪輯的影片審核」——她是一般員工（editor
+  // 職位），不是主管。v242 讓 HR 審得動是借用她已經有的「lead」（看板主管版）
+  // 權限，但 lead 同時還開了備片存量、指派毛片、未來排程、員工視角那一整組
+  // 跟審片無關的東西——巧芸只要能審片，比照辦理等於多給一堆她不需要的東西。
+  // 所以另外開一個單獨的權限，只管審片這一件事，不跟 lead 綁在一起。
+  // 沒有獨立分頁，所以照 prod／plan 那幾個的規矩寫 where，不寫 tab。
+  review:{ label:"審片", where:"剪輯產出 → 點進某一支片", zhOnly:true,
+           why:"通過或退回剪輯剪好的片，不限於自己剪的那些" },
   attend:{ label:"出勤",     where:"上面的分頁", tab:"attend", zhOnly:true,
            why:"打卡紀錄、遲到早退、月報表" },
   // v240（老闆指定）：「把這一頁的標題移除不要讓人家選擇，因為這個頁面已經跟
@@ -5961,18 +5969,20 @@ function viewOutput(){
 // 「這個人的畫面上**看得到**指派卡嗎」——跟「他現在按不按得動」是兩件事。
 // 員工視角預覽要用這一個：預覽的重點就是「他看到什麼」，把它藏掉等於預覽在說謊。
 // 真正的擋門在 canAssignWork()（畫面）與 assignFootage()（寫入），兩道都還在。
+//
+// v244（老闆回報）：「巧芸指派某剪輯去剪」結果那支片還是掉進待認領池，等於沒指派。
+// 查出來是這支函式只認舊旗標 u.canAssign，完全沒看 hasPerm("assign")（設定→權限
+// 那張表勾的）——就算幫她在「設定→權限」勾了「assign」，canAssignWork()（真正
+// 擋寫入的那道門）認得出來、理論上按得下去，但 canAssignShown()（決定這張卡畫
+// 不畫出來）只認舊欄位，卡片根本不會出現在她的「上班計畫」上，她只好改用
+// 「新增影片」——那個表單沒有「指定剪輯」這一格，新片自然生出來就是沒人認領的。
+// 改法：兩道門都改成同一條 hasPerm("assign")（內建已經相容舊旗標，見 hasPerm()
+// 最後一行），不要各寫一份、各自過期一次。這也連帶拿掉了舊版「boss／manager
+// 職位直接給」那個例外——跟這個系統其他地方一樣，職位不再自動帶權限，一律
+// 逐人勾（v207 的規矩），正式資料裡 Regina／Vito 本來就已經各自勾過 assign，
+// 這條線收緊不影響他們現在看到的畫面。
 function canAssignShown(){
-  // ⚠️ 員工視角時**只看被預覽那個人的紀錄**，絕對不能走 currentRole()。
-  //    currentRole() 查不到那個人的時候會退回 localStorage 裡的職位 ——
-  //    那是**真人**（管理員）的職位，於是預覽任何一個不在名單上的人
-  //    都會借到管理員權限，指派卡就冒出來了。正式資料才驗得出來的洞。
-  if(VIEW_AS){
-    const p=(STATE&&STATE.users||[]).find(x=>x&&x.name===VIEW_AS);
-    return !!(p && (p.canAssign || ["boss","manager"].includes(p.role)));
-  }
-  if(["boss","manager"].includes(currentRole())) return true;
-  const u=(STATE&&STATE.users||[]).find(x=>x&&x.name===currentUser());
-  return !!(u && u.canAssign);
+  return hasPerm("assign", VIEW_AS || currentUser());
 }
 function workAssignFold(){
   if(!canAssignShown()) return "";
@@ -6595,7 +6605,7 @@ function claimDayBadge(v){ const c=String(v.claimedAt||"").slice(0,10); if(!c) r
 // 剪輯耗時（天）：認領→完成，當天完成＝「-」，跨 2 天＝2，3 天＝3…（KPI 用）
 function editDays(v){ const c=String(v.claimedAt||"").slice(0,10), f=String(v.finishedAt||"").slice(0,10); if(!c||!f) return null; return daysBetween(c,f)+1; }
 function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<=1?"-":String(d); }
-// 審片卡（管理員＋Regina 都可審）：一創與蝦皮/馬來/英/泰二創視窗共用
+// 審片卡：一創與蝦皮/馬來/英/泰二創視窗共用
 // v242（老闆指定）：「讓 HR 也可以幫他審」（陳鋒的片）——HR 的權限表裡本來就
 // 已經勾了「lead」（看板主管版，含「待你審片」那份清單），但清單只是列出來、
 // 點進去沒有「通過／退回」這兩顆鍵可按，因為這裡原本寫死只認 boss／manager
@@ -6603,9 +6613,15 @@ function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<
 // 都算——跟 seesLeadBoard() 用同一條權限，誰看得到那份待審清單、誰就按得動，
 // 不然清單列出來卻按不下去，等於沒給。用 || 加一條、不是整個換掉：
 // 原本寫死 boss／manager 那條照舊留著，不會動到 Regina／管理員現有的使用方式。
+// v243（老闆指定）：「巧芸可以按所有剪輯的影片審核」——她是一般員工，給她
+// lead 等於連備片存量、指派毛片那些不相干的東西一起給了，所以另外開一個只管
+// 審片的 review 權限（見 PERMS.review），不跟 lead 綁在一起。
+// 標題原本寫死「審片（Regina／管理員）」——現在會審片的人不只這兩種身分，
+// 繼續寫死這兩個名字反而誤導（巧芸會看到一塊寫著別人名字的卡），照 v208
+// 的規矩把標題改回不點名的「審片」，畫面跟誰在看都對得上。
 function reviewCardHTML(v){
-  if(!v||!v.id||!(["boss","manager"].includes(currentRole()) || hasPerm("lead"))) return "";
-  return `<div class="card" style="background:var(--panel2)"><b>審片（Regina／管理員）</b>
+  if(!v||!v.id||!(["boss","manager"].includes(currentRole()) || hasPerm("lead") || hasPerm("review"))) return "";
+  return `<div class="card" style="background:var(--panel2)"><b>審片</b>
       <div class="row" style="gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
         <button class="btn sm" type="button" onclick="reviewVid('${v.id}','通過')">通過</button>
         <button class="btn sm danger" type="button" onclick="reviewVid('${v.id}','退回')">× 退回</button>
