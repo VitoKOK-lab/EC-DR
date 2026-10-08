@@ -101,11 +101,21 @@ const tabIds=()=>myTabs().map(t=>t[0]);
      {role:currentRole(), 結果:canFindAssets()});
   ok("（對照）真的是管理員時本來就有", (VIEW_AS=null, canFindAssets())===true); }
 // 而且判斷一定要「只看被預覽者那筆」，不能摻自己的角色
-ok("**canFindAssets 的員工視角分支只讀被預覽的那一筆**",
+// ⚠️ 這條驗的其實不是 canFindAssets()（它整支只有一行 hasPerm("find")，沒有
+// 自己的 VIEW_AS 分支）——驗的是 v190 漏過的 canAssignShown()，名字是舊的
+// 沒跟著改。v244 把 canAssignShown() 改成直接委派給 hasPerm("assign", VIEW_AS
+// || currentUser())：VIEW_AS 一樣只傳給被預覽那個人，查無此人時 hasPerm()
+// 自己會因為 u 是 null 回傳 false（見 hasPerm() 的 if(!u) return false）——
+// 安全性沒有變，只是不用在這支函式裡再手刻一次同樣的判斷。原本那兩條
+// regex 是在比對「手刻判斷」的寫法，canAssignShown() 已經不是那個寫法了，
+// 所以另外認這個「委派給 hasPerm，而且有把 VIEW_AS 傳進去」的寫法也算數。
+ok("**canAssignShown() 的員工視角只讀被預覽的那一筆**（不是自己的角色）",
    /if\(VIEW_AS\)\{ const p=\(STATE&&STATE\.users\|\|\[\]\)\.find\(x=>x&&x\.name===VIEW_AS\);/
      .test(APP.replace(/\s+/g," ").replace(/\{ /g,"{").replace(/ \}/g,"}"))
-   || /VIEW_AS\)\{[^}]*x\.name===VIEW_AS/.test(APP.replace(/\s+/g," ")),
-   (APP.match(/function canFindAssets\(\)[\s\S]{0,240}/)||[])[0]);
+   || /VIEW_AS\)\{[^}]*x\.name===VIEW_AS/.test(APP.replace(/\s+/g," "))
+   || /function canAssignShown\(\)\{\s*return hasPerm\([^,]+,\s*VIEW_AS\s*\|\|\s*currentUser\(\)\);/
+     .test(APP.replace(/\s+/g," ")),
+   (APP.match(/function canAssignShown\(\)[\s\S]{0,240}/)||[])[0]);
 // 路由白名單：沒放行的話「設定裡勾了沒反應」而且不會有任何錯誤訊息
 ok("PUT /api/users 的白名單有放行 canFindAssets",
    /body\.canFindAssets!=null\) patch\.canFindAssets=!!body\.canFindAssets/.test(APP));
