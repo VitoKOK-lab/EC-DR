@@ -67,8 +67,10 @@ ok("editor 語言選項統一為馬來西亞", modalHTML.includes(">馬來西亞
 VID_LANG=""; VID_VIEW="raw"; VID_TAGS=new Set();
 let h=viewVideos();
 ok("影片庫語言選單用 馬來西亞", h.includes("馬來西亞（"));
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——月排程平台選單不再有馬來西亞，
+// 但建立二創版本、影片庫這兩個下拉不動，照舊看得到。
 CAL_PLAT="tw"; CAL_YM=null; CUR_TAB="cal"; h=viewCal();
-ok("月排程選單用 馬來西亞", h.includes(">馬來西亞<"));
+ok("**月排程選單已經拿掉馬來西亞**", !h.includes(">馬來西亞<"));
 WORK_ZONE="shopee"; h=viewWork();
 ok("建立二創版本選單用 馬來西亞", h.includes(">馬來西亞<"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
@@ -76,7 +78,7 @@ localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl
 h=viewVideos();
 ok("intl 影片庫的原本語言下拉有馬來西亞", h.includes(">Malaysia"));
 CAL_PLAT="tw"; h=viewCal();
-ok("intl 月排程現在也有馬來西亞（v142 不分區）", h.includes(">Malaysia<"));
+ok("**intl 月排程也已經拿掉馬來西亞**", !h.includes(">Malaysia<"));
 WORK_ZONE="en"; h=viewWork();
 ok("intl 建立版本現在也有馬來西亞（二創雙向）", h.includes(">Malaysia<"));
 

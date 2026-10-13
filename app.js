@@ -1785,11 +1785,15 @@ let CAL_PLAT="tw", CAL_PLAT_FOR=null;
 // 使用者自己選了就記下「這個職位的預設已經套過了」，之後不再蓋掉他的選擇
 function calSetPlat(p){ CAL_PLAT=p; CAL_PLAT_FOR=currentRole(); render(); }
 function viewCal(){
-  // 依分區：台灣看 中文／蝦皮／馬來西亞，海外看 英文／泰文。
+  // 依分區：台灣看 中文／蝦皮，海外看 英文。
   // 順序按區分組，這樣自動落點（plats[0]）對兩邊都是最常用的那一個。
-  const allPlats=[["tw",T("中文","Chinese")],["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],
+  // v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——只拿掉這裡平台選單的
+  // 「馬來西亞」「泰文」這兩個選項，不動其他功能（影片庫、審核、成效都不碰）。
+  // 既有的泰文／馬來西亞影片資料照舊留著，只是月排程這個切換器選不到了；
+  // 下面「選了的平台不在清單裡就退回第一個」那條防呆本來就有，不用額外處理。
+  const allPlats=[["tw",T("中文","Chinese")],["shopee",T("蝦皮","Shopee")],
                   ["sunny","Boss Sunny"],
-                  ["en",T("英文","English")],["th",T("泰文","Thai")]];
+                  ["en",T("英文","English")]];
   const plats=allPlats.filter(([k])=> seesZone(zoneOfPlat(k)));
   // 預設落在哪個平台依「職位」給，海外落在英文。
   // ⚠️ 每個職位只套一次：寫成「每次重繪都套」的話，使用者切到別的平台會被彈回來；

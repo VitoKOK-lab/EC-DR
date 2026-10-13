@@ -147,14 +147,16 @@ ok("seesPerson：台灣現在看得到海外的人", (as("小葵","editor"), see
 ok("seesPerson：海外現在看得到台灣的人", (as("Anna","intl"), seesPerson("小葵")));
 
 // ══════════ ⑥ 月排程與建立版本不受影響（還是靠平台代碼推）══════════
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——月排程平台選單拿掉泰文／
+// 馬來西亞，剩下的平台照舊不分區，人人都看得到。
 reset(); as("小葵","editor"); CAL_PLAT="tw"; CAL_YM=null;
 { const c=viewCal();
-  ok("台灣月排程五個平台全在（v142 不分區）",
-     [">中文<",">蝦皮<",">馬來西亞<",">英文<",">泰文<"].every(x=>c.includes(x))); }
+  ok("**台灣月排程剩下的平台全在（v142 不分區），泰文馬來西亞已拿掉**",
+     [">中文<",">蝦皮<"].every(x=>c.includes(x)) && !c.includes(">馬來西亞<") && !c.includes(">泰文<")); }
 reset(); as("Anna","intl"); CAL_PLAT="en"; CAL_YM=null;
 { const c=viewCal();
-  ok("海外月排程五個平台也全在（v142 不分區）",
-     [">English<",">Thai<",">Chinese<",">Shopee<",">Malaysia<"].every(x=>c.includes(x))); }
+  ok("**海外月排程剩下的平台也全在（v142 不分區），泰文馬來西亞已拿掉**",
+     [">English<",">Chinese<",">Shopee<"].every(x=>c.includes(x)) && !c.includes(">Thai<") && !c.includes(">Malaysia<")); }
 
 // ══════════ ⑦ render 不炸 ══════════
 reset();
