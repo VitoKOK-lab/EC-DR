@@ -85,11 +85,13 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   { const r=await modalOK(); await wait(20);
     ok("**沒填存檔資料夾 → 擋下不存**", r===false && !made().length);
     ok("有講原因", toasts.some(t=>t.includes("存檔資料夾"))); }
+  // v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——這一條原本是
+  // 「沒選日期擋下不存」，現在反過來驗「沒選日期照樣存得進去，日期存成 null」。
   reset(); newSimpleVideo();
   fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=""; fields.sv_time="15:00"; fields.sv_lang="";
   { const r=await modalOK(); await wait(20);
-    ok("**沒選預排日期 → 擋下不存**", r===false && !made().length); }
+    ok("**沒選預排日期照樣存得起來（v245），日期存成 null**", r!==false && made().length===1 && made()[0].scheduledDate===null, made()[0]); }
   reset(); newSimpleVideo();
   fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time=""; fields.sv_lang="";

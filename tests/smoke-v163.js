@@ -196,13 +196,14 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
 { reset([], "管理員","boss");
   newSimpleVideo();
   // v184：日期從「選填」變必填 —— 老闆看到月排程清單一整排「—」之後決定的。
-  // 以前這裡驗的是「沒填要存成 null」；現在根本存不進去。
+  // v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——日期這一格
+  // 改回選填，所以這裡反過來驗：沒填日期照樣存得進去，存成 null。
   fields.sv_name="新片"; fields.sv_vcopy="口播內容";
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_lang="";
   fields.sv_date=""; fields.sv_time="15:00";
   const r=await MODAL_OK();
   const w=WRITES.find(x=>x[0]==="set"&&x[1]==="videos");
-  ok("**沒填日期就不給存**", r===false && !w, w&&JSON.stringify(w[3].scheduledDate)); }
+  ok("**沒填日期照樣存得進去（v245），日期存成 null**", r!==false && !!w && w[3].scheduledDate===null, w&&JSON.stringify(w[3].scheduledDate)); }
 
 { reset([], "管理員","boss");
   newSimpleVideo();
