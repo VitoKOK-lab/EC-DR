@@ -79,12 +79,13 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
     ok("片名也對", v.name==="農曆七月串珠" && v.rawName==="農曆七月串珠"); }
 
   // v184：存檔資料夾從「選填」變必填 —— 老闆：「沒有寫，不給存檔」。
+  // v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——改回選填，
+  // 這裡反過來驗：沒填存檔資料夾照樣存得進去，driveFolder 存成空字串。
   // 「還沒拍」照樣開得了片（那靠的是毛片連結 rawLink，不是存檔資料夾）。
   reset(); newSimpleVideo();
   fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_date=D0; fields.sv_time="15:00"; fields.sv_lang="";
   { const r=await modalOK(); await wait(20);
-    ok("**沒填存檔資料夾 → 擋下不存**", r===false && !made().length);
-    ok("有講原因", toasts.some(t=>t.includes("存檔資料夾"))); }
+    ok("**沒填存檔資料夾照樣存得起來（v248）**", r!==false && made().length===1 && made()[0].driveFolder==="", made()[0]); }
   // v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——這一條原本是
   // 「沒選日期擋下不存」，現在反過來驗「沒選日期照樣存得進去，日期存成 null」。
   reset(); newSimpleVideo();
