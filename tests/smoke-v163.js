@@ -167,9 +167,11 @@ const D=(n)=>{ const d=new Date(Date.parse(FROZEN+"T00:00:00Z")+n*864e5); return
   ok("預設留空（不要幫老闆亂填一個日期）", /id="sv_date" type="date" value=""/.test(modalHTML), modalHTML.slice(0,700));
   // v184（老闆：「預排日期和時間和儲存位置是必填，沒有寫，不給存檔」）
   // v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——日期（v245）跟
-  // 存檔資料夾（v248）都改回選填，必填只剩文案跟上片時間兩格。
+  // 存檔資料夾（v248）都改回選填。
+  // v251（老闆指定）：「現在還是要填時間才能送出」——上片時間也改選填，必填
+  // 只剩文案一格。
   ok("**也有上片時間欄，而且只選整點**", /id="sv_time"/.test(modalHTML) && modalHTML.includes(">15:00<"), modalHTML.slice(0,900));
-  ok("文案與上片時間兩格標了必填（日期／存檔資料夾已改選填）", (modalHTML.match(/· 必填/g)||[]).length>=2, (modalHTML.match(/· 必填/g)||[]).length); }
+  ok("文案一格標了必填（日期／存檔資料夾／上片時間都已改選填）", (modalHTML.match(/· 必填/g)||[]).length>=1, (modalHTML.match(/· 必填/g)||[]).length); }
 
 (async()=>{
 // 操作紀錄是在 dbWrite 的 .then() 裡寫的（非同步），要等一個 tick 才看得到

@@ -93,11 +93,13 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=""; fields.sv_time="15:00"; fields.sv_lang="";
   { const r=await modalOK(); await wait(20);
     ok("**沒選預排日期照樣存得起來（v245），日期存成 null**", r!==false && made().length===1 && made()[0].scheduledDate===null, made()[0]); }
+  // v251（老闆指定）：「現在還是要填時間才能送出」——上片時間也改回選填，
+  // 這裡反過來驗：沒填時間照樣存得起來，publishTime 存成空字串。
   reset(); newSimpleVideo();
   fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time=""; fields.sv_lang="";
   { const r=await modalOK(); await wait(20);
-    ok("**沒選上片時間 → 擋下不存**", r===false && !made().length); }
+    ok("**沒選上片時間照樣存得起來（v251）**", r!==false && made().length===1 && made()[0].publishTime==="", made()[0]); }
   reset(); newSimpleVideo();
   fields.sv_name="還沒拍的"; fields.sv_vcopy="口播內容";
   fields.sv_link="https://drive.google.com/drive/folders/F"; fields.sv_date=D0; fields.sv_time="15:00"; fields.sv_lang="";
