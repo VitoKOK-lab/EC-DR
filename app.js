@@ -4827,9 +4827,14 @@ function dashSchedule(){
   // 急件插到最前面（主管自己標的，標了就是要它先被看到）。
   // 以前是照 id 排（≈ 建檔順序），跟「什麼時候要上片」完全無關。
   // v246（老闆指定）：「影片指派時，如果沒有建立雲端連結只有名字，不要出現在指派
-  // 的區域」——只有片名、毛片連結還沒開（vidHasRaw 判斷的就是這一格，見下面的
-  // 定義）的那些片，指派給剪輯也沒東西可剪，不該混進這張挑片清單。
-  const unassignedPool=poolAll.filter(v=>!v.assignedTo && vidHasRaw(v)).sort((a,b)=>
+  // 的區域」——只有片名、毛片連結還沒開的那些片，指派給剪輯也沒東西可剪，
+  // 不該混進這張挑片清單。
+  // v249（老闆指定）：「指派的畫面，裡面的清單，只要出現帶剪的、不要未拍的」——
+  // 這句話講的就是影片庫本來就有的「未拍／待剪」分界（vidShot，見下面的定義），
+  // 比單看雲端連結精準：換成 vidShot(v) 之後 v246 要擋的那種「只有名字」舊片
+  // 也一樣會被擋下來（沒連結就不會有 shotAt／rawLink／claimedBy，vidShot 一樣是
+  // false），不用兩條規則各管各的。
+  const unassignedPool=poolAll.filter(v=>!v.assignedTo && vidShot(v)).sort((a,b)=>
       (isUrgent(b)?1:0)-(isUrgent(a)?1:0)
    || String(a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999").localeCompare(
       String(b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999"))
@@ -6185,8 +6190,11 @@ function newSimpleVideo(prefill, opts){
           結果沒有人回頭補。改成當場擋下來。
           v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——日期這一格
           改回選填，存檔位置／文案兩個必填照舊不動。日期沒填存成 null，月曆本來就是
-          用 null 判斷「沒排」（跟急件那條路一致，見下面存檔那段的註解）。 */''}
-    <label>${T("存檔資料夾 · 必填（毛片跟之後所有版本都放這裡）","Drive folder · required (the raw footage and every later version live here)")}</label>
+          用 null 判斷「沒排」（跟急件那條路一致，見下面存檔那段的註解）。
+          v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——存檔資料夾也
+          改回選填。沒有連結的片本來就進不了 v246 新開的指派清單（vidHasRaw 擋住
+          的就是這個），之後補上連結就會自動出現，不會卡在「新增」這一步。 */''}
+    <label>${T("存檔資料夾（可先不填，之後再補）","Drive folder (optional, can add later)")}</label>
     <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址","Google Drive folder URL")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
@@ -6215,8 +6223,10 @@ function newSimpleVideo(prefill, opts){
     // v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——日期那一格原本
     // 也在這裡擋，現在拿掉，讓片名／文案/存檔位置都寫好的人可以先存起來，上片日期
     // 之後再回來排（跟急件商品開的片一樣，沒日期就是 null，不會卡在這一步）。
+    // v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——存檔資料夾這一格
+    // 原本也在這裡擋，現在拿掉。只有片名、沒有連結的片本來就不會混進 v246 的
+    // 指派清單（vidHasRaw 擋住），之後補上連結自然就會出現，不用先擋在新增這步。
     const svLink=val("sv_link").trim();
-    if(!svLink){ toast(T("請填存檔資料夾 —— 剪好的片要放哪裡，現在就要說清楚","Enter the drive folder — where the finished file goes"),true); return false; }
     const svTime=String(val("sv_time")||"").trim();
     if(!svTime){ toast(T("請選上片時間（整點就好）","Pick the upload time"),true); return false; }
     const svDate=String(val("sv_date")||"").slice(0,10);

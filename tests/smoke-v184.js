@@ -257,7 +257,9 @@ function reset(vids, tasks){
   ok("**新增視窗有這三格**",
      /id="sv_link"/.test(MODAL) && /id="sv_date"/.test(MODAL) && /id="sv_time"/.test(MODAL),
      MODAL.slice(0,200));
-  ok("**三格都標「必填」**", (MODAL.match(/· 必填/g)||[]).length>=3, (MODAL.match(/· 必填/g)||[]).length);
+  // v245／v248（老闆指定）：日期跟存檔資料夾後來都改回選填（見 smoke-v110／v163／v246），
+  // 這裡改成只驗還留著必填的那一格（上片時間）。
+  ok("**上片時間標「必填」（日期／存檔資料夾已改選填，見 v245／v248）**", (MODAL.match(/· 必填/g)||[]).length>=1, (MODAL.match(/· 必填/g)||[]).length);
   ok("時間只給整點選（老闆早就說過不用分）", MODAL.includes(">15:00<") && !MODAL.includes(">15:30<"));
   ok("存檔資料夾的說明不再寫「拍完再補也可以」", !/拍完再補也可以/.test(MODAL)); }
 { reset(); as("管理員","boss");
