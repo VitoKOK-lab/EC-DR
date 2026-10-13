@@ -182,9 +182,11 @@ STATE.videos.push({id:"T1",name:"TH",locale:"th",account:"tiktok",sourceVideoId:
   stage:"待處理",products:[],usageHistory:[],tags:[],metrics:[]});
 CAL_PLAT="en"; CAL_YM=null; INTL_ACCT=""; INTL_CAL_YM=null; viewCal();
 ok("英文頁只算英文的（2 支）", intlDayList(DAY,"tiktok").map(v=>v.id).sort().join(",")==="E1,E2");
-CAL_PLAT="th"; INTL_ACCT=""; viewCal();
-ok("泰文頁只算泰文的（1 支）", intlDayList(DAY,"tiktok").map(v=>v.id).join(",")==="T1");
-ok("換頁之後 INTL_LOC 跟著走", INTL_LOC==="th");
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——泰文已經不在月排程的平台
+// 選單裡了，就算把 CAL_PLAT 硬塞成 "th" 再呼叫 viewCal()，也會被選單的防呆
+// 退回第一個選項（中文），不會再真的切進泰文頁。
+CAL_PLAT="th"; CAL_PLAT_FOR="intl"; INTL_ACCT=""; viewCal();
+ok("**硬塞 th 也會被退回（泰文已經不在月排程選單裡）**", CAL_PLAT!=="th");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

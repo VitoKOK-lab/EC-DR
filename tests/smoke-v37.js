@@ -109,12 +109,16 @@ ok("editor work stays Chinese", h.includes("每日工作") && h.includes("認領
 h=viewVideos();
 ok("editor library stays Chinese", h.includes("影片庫") && h.includes("原本語言"));
 
-// --- 月排程五平台下拉＋英/泰拆分 ---
+// --- 月排程平台下拉＋英文拆分 ---
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——下拉剩三個選項，泰文已經
+// 不能選了，硬塞 CAL_PLAT="th" 會被選單防呆退回。
 localStorage.setItem("ecdr_user","管理員"); localStorage.setItem("ecdr_role","boss");
 CUR_TAB="cal"; CAL_PLAT="tw"; CAL_YM=null; render();
-ok("hub has 5 options 中文/泰文/蝦皮/英文/馬來西亞", ["中文","泰文","蝦皮","英文","馬來西亞"].every(x=>viewEl.innerHTML.includes(x)));
+ok("**hub has 3 options 中文/蝦皮/英文，泰文馬來西亞已拿掉**",
+   ["中文","蝦皮","英文"].every(x=>viewEl.innerHTML.includes(x))
+   && !viewEl.innerHTML.includes("泰文") && !viewEl.innerHTML.includes("馬來西亞"));
 CAL_PLAT="th"; render();
-ok("th platform → TH account only", viewEl.innerHTML.includes("tiktok-TH") && !viewEl.innerHTML.includes("tiktok-EN"));
+ok("**th 已經選不到，硬塞會被退回中文**", CAL_PLAT==="tw" && !viewEl.innerHTML.includes("tiktok-TH"));
 CAL_PLAT="en"; render();
 ok("en platform → EN account only", viewEl.innerHTML.includes("tiktok-EN") && !viewEl.innerHTML.includes("tiktok-TH"));
 

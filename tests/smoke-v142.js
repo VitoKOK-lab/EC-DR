@@ -92,8 +92,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 // ══════════ ②「預設」不是「權限」—— 這兩個最容易被搞混 ══════════
 { reset(); as("Anna","intl"); CUR_TAB="cal"; viewCal();
   ok("海外的月排程預設仍然落在英文", CAL_PLAT==="en");
-  ok("但五個平台全看得到（預設≠牆）",
-     [">Chinese<",">Shopee<",">Malaysia<",">English<",">Thai<"].every(x=>viewCal().includes(x))); }
+  // v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——剩下的平台照舊不分區都看得到。
+  ok("**但剩下的平台全看得到（預設≠牆），泰文馬來西亞已拿掉**",
+     [">Chinese<",">Shopee<",">English<"].every(x=>viewCal().includes(x))
+     && !viewCal().includes(">Malaysia<") && !viewCal().includes(">Thai<")); }
 { reset(); as("小葵","editor"); CUR_TAB="cal"; viewCal();
   ok("台灣的預設落在中文", CAL_PLAT==="tw"); }
 { reset(); as("Anna","intl"); CUR_TAB="cal"; viewCal();
@@ -178,8 +180,10 @@ function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log
 { reset(); as("Regina","manager"); CUR_TAB="cal";
   const h=viewCal();
   ok("月排程的平台選單有 Boss Sunny", h.includes(">Boss Sunny<"));
-  ok("六個平台在同一頁用切換的",
-     [">中文<",">蝦皮<",">馬來西亞<",">Boss Sunny<",">英文<",">泰文<"].every(x=>h.includes(x))); }
+  // v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——六個平台變四個（拿掉馬來西亞／泰文）。
+  ok("**剩下的四個平台在同一頁用切換的，泰文馬來西亞已拿掉**",
+     [">中文<",">蝦皮<",">Boss Sunny<",">英文<"].every(x=>h.includes(x))
+     && !h.includes(">馬來西亞<") && !h.includes(">泰文<")); }
 { reset(); as("Regina","manager");
   ok("建立版本卡也選得到 Boss Sunny", createZoneCard().includes(">Boss Sunny<")); }
 { reset(); as("管理員","boss");

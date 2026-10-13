@@ -99,9 +99,12 @@ ok("editor 影片庫不顯示英文小字", !h.includes("vt-en"));
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");
 // CAL_PLAT_FOR 要一起設，代表「這個職位的預設已經套過」——
 // 不然 viewCal 會把海外的預設（英文）蓋上來（v142）
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——泰文已經不在月排程平台
+// 選單裡，硬塞 CAL_PLAT="th" 會被選單防呆退回（人人都看得到全部平台，退回的是
+// 清單第一個，不保證是英文，重點是不會再真的切進泰文頁）。
 CAL_PLAT="th"; CAL_PLAT_FOR="intl"; CAL_YM=null; INTL_CAL_YM=null; INTL_ACCT="";
 h=viewCal();
-ok("月排程泰文平台只列 TH 帳號", h.includes("tiktok-TH") && !h.includes("tiktok-EN"));
+ok("**泰文已經選不到，硬塞會被退回**", CAL_PLAT!=="th" && !h.includes("tiktok-TH"));
 CAL_PLAT="en"; INTL_ACCT="";
 h=viewCal();
 ok("月排程英文平台只列 EN 帳號", h.includes("tiktok-EN") && !h.includes("tiktok-TH"));

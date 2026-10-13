@@ -76,9 +76,15 @@ CAL_PLAT="en"; INTL_CAL_YM=null; render();
 ok("hub en: 英文月曆（帳號選單）", viewEl.innerHTML.includes("tiktok-EN") && viewEl.innerHTML.includes("支／帳號／天"));
 CAL_PLAT="shopee"; render();
 ok("hub shopee: 蝦皮月曆", viewEl.innerHTML.includes("蝦皮店A") && viewEl.innerHTML.includes("每帳號每天"));
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——馬來西亞已經不在月排程平台
+// 選單裡，硬塞 CAL_PLAT="ms" 再 render() 會被選單的防呆退回中文，不會再真的
+// 畫出馬來月曆。
 CAL_PLAT="ms"; render();
-ok("hub ms: 馬來月曆", viewEl.innerHTML.includes("tiktok-Malaysia"));
-ok("hub selector five options", ["中文","泰文","蝦皮","英文","馬來西亞"].every(x=>viewEl.innerHTML.includes(x)));
+ok("**硬塞 ms 被退回中文（馬來西亞已拿掉），不會畫出馬來月曆**",
+   CAL_PLAT==="tw" && !viewEl.innerHTML.includes("tiktok-Malaysia"));
+ok("**hub selector 剩下三個選項，泰文馬來西亞已拿掉**",
+   ["中文","蝦皮","英文"].every(x=>viewEl.innerHTML.includes(x))
+   && !viewEl.innerHTML.includes("泰文") && !viewEl.innerHTML.includes("馬來西亞"));
 
 // --- intl 角色 Schedule 分頁維持英文 ---
 localStorage.setItem("ecdr_user","Anna"); localStorage.setItem("ecdr_role","intl");

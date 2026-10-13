@@ -114,18 +114,23 @@ ok("人資也是全部", poolAll().length===5);
   ok(n+" 的快選是完整六類", poolCatList().length===6); });
 
 // ══════════ ③ 月排程（R7）══════════
+// v250（老闆指定）：「月排程 泰國馬來西亞可以拿掉」——月排程的平台選單只拿掉
+// 「泰文」「馬來西亞」這兩個選項，其他功能（建立二創版本、影片庫⋯）不動，
+// 下面這幾條因此改成驗「剩下的平台還在、這兩個不見了」。
 reset(); as("小葵","editor"); CUR_TAB="cal";
 { const h=viewCal();
-  ok("台灣月排程五個平台全在（含英文／泰文）",
-     [">中文<",">蝦皮<",">馬來西亞<",">泰文<",">英文<"].every(x=>h.includes(x)));
+  ok("**台灣月排程剩下的平台還在**", [">中文<",">蝦皮<",">英文<"].every(x=>h.includes(x)));
+  ok("**泰文／馬來西亞已經從月排程平台選單拿掉**", !h.includes(">泰文<") && !h.includes(">馬來西亞<"));
   ok("台灣的預設落在中文", CAL_PLAT==="tw"); }
 reset(); as("Anna","intl"); CAL_PLAT="tw"; CUR_TAB="cal";
 { const h=viewCal();
-  ok("海外月排程五個平台也全在",
-     [">Chinese<",">Shopee<",">Malaysia<",">English<",">Thai<"].every(x=>h.includes(x)));
+  ok("**海外月排程剩下的平台也還在**", [">Chinese<",">Shopee<",">English<"].every(x=>h.includes(x)));
+  ok("**海外月排程也拿掉泰文／馬來西亞**", !h.includes(">Thai<") && !h.includes(">Malaysia<"));
   ok("海外的預設仍然落在英文（預設不是牆）", CAL_PLAT==="en"); }
 reset(); as("Regina","manager"); CUR_TAB="cal";
-ok("經理人五個平台全在", ["中文","泰文","蝦皮","英文","馬來西亞"].every(x=>viewCal().includes(">"+x+"<")));
+ok("**經理人剩下的平台全在、泰文馬來西亞不見了**",
+   ["中文","蝦皮","英文"].every(x=>viewCal().includes(">"+x+"<"))
+   && !viewCal().includes(">泰文<") && !viewCal().includes(">馬來西亞<"));
 
 // ══════════ ④ 建立版本卡 ══════════
 reset(); as("小葵","editor");
