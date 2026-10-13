@@ -3772,6 +3772,7 @@ function viewWork(){
   return `
   <h2>${T("每日工作","My Day")}${paren(esc(me))}</h2>
   ${focusBar}
+  ${reviewSpotlightCard()}
   ${/* 卡片順序＝一天的工作順序：先看「有沒有事情在等我」，再做手上的，
         再去抓新的來剪；少用的一律摺疊放到下面，不佔畫面。 */''}
   ${workIssueCard()}
@@ -4825,7 +4826,10 @@ function dashSchedule(){
   // 它們沒有時間壓力，混在有日期的中間只會把急的那些擠下去。
   // 急件插到最前面（主管自己標的，標了就是要它先被看到）。
   // 以前是照 id 排（≈ 建檔順序），跟「什麼時候要上片」完全無關。
-  const unassignedPool=poolAll.filter(v=>!v.assignedTo).sort((a,b)=>
+  // v246（老闆指定）：「影片指派時，如果沒有建立雲端連結只有名字，不要出現在指派
+  // 的區域」——只有片名、毛片連結還沒開（vidHasRaw 判斷的就是這一格，見下面的
+  // 定義）的那些片，指派給剪輯也沒東西可剪，不該混進這張挑片清單。
+  const unassignedPool=poolAll.filter(v=>!v.assignedTo && vidHasRaw(v)).sort((a,b)=>
       (isUrgent(b)?1:0)-(isUrgent(a)?1:0)
    || String(a.scheduledDate?String(a.scheduledDate).slice(0,10):"9999").localeCompare(
       String(b.scheduledDate?String(b.scheduledDate).slice(0,10):"9999"))
@@ -6178,13 +6182,16 @@ function newSimpleVideo(prefill, opts){
     <label>${T("原始片名","Raw title")}</label><input id="sv_name" placeholder="${T("毛片名稱","Raw footage name")}">
     ${/* v184（老闆指定）：「在新增影片時，預排日期和時間和儲存位置是必填，沒有寫，不給存檔」。
           正式資料的月排程清單上一整排「—」就是這樣來的：建檔時可以先跳過，
-          結果沒有人回頭補。改成當場擋下來。 */''}
+          結果沒有人回頭補。改成當場擋下來。
+          v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——日期這一格
+          改回選填，存檔位置／文案兩個必填照舊不動。日期沒填存成 null，月曆本來就是
+          用 null 判斷「沒排」（跟急件那條路一致，見下面存檔那段的註解）。 */''}
     <label>${T("存檔資料夾 · 必填（毛片跟之後所有版本都放這裡）","Drive folder · required (the raw footage and every later version live here)")}</label>
     <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址","Google Drive folder URL")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
     <input id="sv_vcopy" autocomplete="off" placeholder="${T("要講什麼？沒有文案，拍片的人不知道要拍什麼","What should be said? Without it nobody knows what to shoot")}">
     <div class="grid cols2">
-      <div><label>${T("預排上片日期 · 必填","Scheduled upload date · required")}</label>
+      <div><label>${T("預排上片日期（可先不填，之後再排）","Scheduled upload date (optional, can set later)")}</label>
         <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value="${esc(urgentDate)}"></div></div>
       <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
         <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
@@ -6203,19 +6210,21 @@ function newSimpleVideo(prefill, opts){
     // 文案必填：片名只是代號，文案才說得出要拍什麼。留空的話這支到了拍片那邊等於空殼。
     const vcopy=zhTW(val("sv_vcopy").trim());
     if(!vcopy){ toast(T("請輸入影片文案（口播台詞）——只有片名的話，拍片的人不知道要拍什麼","Enter the script — a title alone doesn’t tell anyone what to shoot"),true); return false; }
-    // v184：三個必填，缺一個就不給存 —— 沒有日期時間的片排不進月排程，
-    // 沒有存檔位置的片剪完不知道要放哪、之後也找不回來。
+    // v184：存檔位置跟時間必填，缺一個就不給存——沒有存檔位置的片剪完不知道要放哪、
+    // 之後也找不回來；沒有上片時間排不進當天的排程。
+    // v245（老闆指定）：「新增影片，不用輸入日期也可以按下新增」——日期那一格原本
+    // 也在這裡擋，現在拿掉，讓片名／文案/存檔位置都寫好的人可以先存起來，上片日期
+    // 之後再回來排（跟急件商品開的片一樣，沒日期就是 null，不會卡在這一步）。
     const svLink=val("sv_link").trim();
     if(!svLink){ toast(T("請填存檔資料夾 —— 剪好的片要放哪裡，現在就要說清楚","Enter the drive folder — where the finished file goes"),true); return false; }
-    const svDate=String(val("sv_date")||"").slice(0,10);
-    if(!svDate){ toast(T("請選預排上片日期","Pick the scheduled upload date"),true); return false; }
     const svTime=String(val("sv_time")||"").trim();
     if(!svTime){ toast(T("請選上片時間（整點就好）","Pick the upload time"),true); return false; }
+    const svDate=String(val("sv_date")||"").slice(0,10);
     const svProducts=collectProducts("sv");
     // 預排上片日期：新增時就填得起來（以前只能先存、再點開編輯視窗補一次）。
     // 沒填就是 null —— 跟 newVideoRecord 的預設一致，不要塞空字串（月曆是用 null 判斷「沒排」的）。
     const video={name, rawName:name, driveFolder:svLink, videoCopy:vcopy, products:svProducts,
-      origLang:val("sv_lang")||"", scheduledDate:svDate, publishTime:svTime,
+      origLang:val("sv_lang")||"", scheduledDate:svDate||null, publishTime:svTime,
       tags:svProducts.some(p=>p&&p.name)?["寵粉"]:[]};   // 有銷售商品 → 自動帶「寵粉」標籤
     // v220：急件商品開的片就是急件 —— 跟主管在指派清單上按的那顆寫一樣的欄位
     if(opts.urgent){ video.urgent=true; video.urgentAt=nowIso(); video.urgentBy=currentUser(); }
@@ -6619,14 +6628,56 @@ function editDaysLabel(v){ const d=editDays(v); if(d==null) return ""; return d<
 // 標題原本寫死「審片（Regina／管理員）」——現在會審片的人不只這兩種身分，
 // 繼續寫死這兩個名字反而誤導（巧芸會看到一塊寫著別人名字的卡），照 v208
 // 的規矩把標題改回不點名的「審片」，畫面跟誰在看都對得上。
+// v247：抽出來給下面的「陳鋒待審」臨時卡共用——誰看得到審片視窗裡的通過／退回，
+// 誰就看得到那張快速審核卡，同一條權限來源，不要各寫一份各自過期。
+function canSeeReviewButtons(){
+  return ["boss","manager"].includes(currentRole()) || hasPerm("lead") || hasPerm("review");
+}
 function reviewCardHTML(v){
-  if(!v||!v.id||!(["boss","manager"].includes(currentRole()) || hasPerm("lead") || hasPerm("review"))) return "";
+  if(!v||!v.id||!canSeeReviewButtons()) return "";
   return `<div class="card" style="background:var(--panel2)"><b>審片</b>
       <div class="row" style="gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
         <button class="btn sm" type="button" onclick="reviewVid('${v.id}','通過')">通過</button>
         <button class="btn sm danger" type="button" onclick="reviewVid('${v.id}','退回')">× 退回</button>
         <span class="muted">目前：${v.reviewStatus?(esc(v.reviewStatus)+(v.reviewNote?'（'+esc(v.reviewNote)+'）':'')):'未審'}</span>
       </div></div>`;
+}
+// ===================================================================
+// v247（老闆指定・臨時功能，到期自動消失，到時可以直接刪掉這一段）：
+// 「幫巧芸做一個頁面，把陳鋒所有需要審查審核的影片列出來，讓他可以快速按下審核
+// 確認，還要確定他按得下去，因為有的他無法按」——某個剪輯的片積了一批待審，
+// 審片的人一支一支開進影片視窗點「審片」太慢，直接在清單上列出來、按鈕按下去
+// 就是 reviewVid()，跟審片視窗叫的是同一支函式，不是另外寫一套（兩套「審核」
+// 邏輯遲早分岔，v242／v244 都是這種分岔的教訓）。
+// ⚠️ 要審誰的片、到哪天——**不寫死在這裡**。v185 釘死了一條規矩：旗標／對象
+// 是可以在設定裡設的，不是把名字寫死在程式邏輯裡（那條本來就是在管陳鋒）。
+// 所以對象跟到期日都放 settings.reviewSpotlight（{who, until}），這裡只負責
+// 讀；沒設就什麼都不顯示，跟這段程式碼完全沒掛進去一樣——到期不用等人回來改
+// 程式，設定清掉或日期一過，卡片自動消失。
+function reviewSpotlight(){ return (STATE&&STATE.settings&&STATE.settings.reviewSpotlight)||null; }
+function reviewSpotlightVids(){
+  const sp=reviewSpotlight(); if(!sp||!sp.who) return [];
+  return (STATE.videos||[]).filter(v=>!v.deleted && needsReview(v) && (v.editor||v.claimedBy)===sp.who);
+}
+function canSeeReviewSpotlight(){
+  const sp=reviewSpotlight();
+  return !!(sp && sp.who && sp.until && todayTW()<=String(sp.until).slice(0,10) && canSeeReviewButtons());
+}
+function reviewSpotlightCard(){
+  if(!canSeeReviewSpotlight()) return "";
+  const sp=reviewSpotlight();
+  const list=reviewSpotlightVids();
+  if(!list.length) return "";
+  const rows=list.map(v=>`<div class="row" style="justify-content:space-between;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--panel2)">
+      <span style="flex:1;min-width:0">${esc(vidTitle(v))}</span>
+      <button class="btn sm" type="button" onclick="reviewVid('${v.id}','通過')">通過</button>
+      <button class="btn sm danger" type="button" onclick="reviewVid('${v.id}','退回')">× 退回</button>
+    </div>`).join("");
+  return `<div class="card" style="border-color:var(--gold)">
+    <b style="font-size:16px">🎬 ${esc(sp.who)}待審影片</b>
+    <div class="muted" style="font-size:12px;margin-top:4px">共 ${list.length} 支，直接按通過／退回，不用點進去</div>
+    <div style="margin-top:8px">${rows}</div>
+  </div>`;
 }
 // 已審過通知「知道了」：連結都補齊後，剪輯自己收起（reviewAck）；在那之前會一直亮在審片進度卡
 function ackReviewedVid(id){ write("PUT",`/api/videos/${id}`,{video:{reviewAck:true}},T("已收起","Got it")).then(ok=>{ if(ok) render(); }); }
