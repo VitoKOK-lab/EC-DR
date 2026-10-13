@@ -62,11 +62,11 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
   const r=await modalOK(); await wait(20);
   ok("沒片名還是擋下來（這次只放寬存檔資料夾跟日期）", r===false && !made().length); }
 
-// ══════════ ④ 上片時間照舊必填 ══════════
+// ══════════ ④ 上片時間後來在 v251 也改選填了 ══════════
 { reset(); newSimpleVideo();
   fields.sv_name="只有名字的片"; fields.sv_vcopy="口播內容"; fields.sv_link=""; fields.sv_date=""; fields.sv_time="";
   const r=await modalOK(); await wait(20);
-  ok("上片時間照舊必填（這次沒放寬這格）", r===false && !made().length); }
+  ok("上片時間也改選填了（v251），照樣存得起來", r!==false && made().length===1 && made()[0].publishTime==="", made()[0]); }
 
 // ══════════ ⑤ 整合：這種「只有名字」的新片不會混進 v246 的指派清單 ══════════
 { reset(); newSimpleVideo();

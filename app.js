@@ -6197,7 +6197,10 @@ function newSimpleVideo(prefill, opts){
           用 null 判斷「沒排」（跟急件那條路一致，見下面存檔那段的註解）。
           v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——存檔資料夾也
           改回選填。沒有連結的片本來就進不了 v246 新開的指派清單（vidHasRaw 擋住
-          的就是這個），之後補上連結就會自動出現，不會卡在「新增」這一步。 */''}
+          的就是這個），之後補上連結就會自動出現，不會卡在「新增」這一步。
+          v251（老闆指定）：「現在還是要填時間才能送出」——上片時間是最後一個還在
+          擋的欄位，也改選填。片名跟文案是唯一還必填的兩格，其他（存檔資料夾、
+          日期、時間）都可以先空著存起來，之後再回來補。 */''}
     <label>${T("存檔資料夾（可先不填，之後再補）","Drive folder (optional, can add later)")}</label>
     <input id="sv_link" placeholder="${T("Google 雲端硬碟資料夾網址","Google Drive folder URL")}">
     <label>${T("影片文案（影片中 IP 的口播台詞）· 必填","Script (spoken lines in the video) · required")}</label>
@@ -6205,7 +6208,7 @@ function newSimpleVideo(prefill, opts){
     <div class="grid cols2">
       <div><label>${T("預排上片日期（可先不填，之後再排）","Scheduled upload date (optional, can set later)")}</label>
         <div class="dateField"><span class="dateIco">🗓</span><input id="sv_date" type="date" value="${esc(urgentDate)}"></div></div>
-      <div><label>${T("上片時間 · 必填","Upload time · required")}</label>
+      <div><label>${T("上片時間（可先不填，之後再排）","Upload time (optional, can set later)")}</label>
         <select id="sv_time" style="width:100%">${hourOptions("", T("— 選時間 —","— pick a time —"))}</select></div>
     </div>
     ${productRows("sv", Array.isArray(prefill)?prefill:[])}
@@ -6230,9 +6233,11 @@ function newSimpleVideo(prefill, opts){
     // v248（老闆指定）：「現在的存資料夾 和 日期 不用寫必填」——存檔資料夾這一格
     // 原本也在這裡擋，現在拿掉。只有片名、沒有連結的片本來就不會混進 v246 的
     // 指派清單（vidHasRaw 擋住），之後補上連結自然就會出現，不用先擋在新增這步。
+    // v251（老闆指定）：「現在還是要填時間才能送出」——上片時間是 v184 那三個
+    // 必填裡最後一個還在擋的，一起拿掉。沒填就存成空字串（跟 od_time／qs_time
+    // 那幾條既有的「補排時間」路一致），之後補排日期的同時補上就行。
     const svLink=val("sv_link").trim();
     const svTime=String(val("sv_time")||"").trim();
-    if(!svTime){ toast(T("請選上片時間（整點就好）","Pick the upload time"),true); return false; }
     const svDate=String(val("sv_date")||"").slice(0,10);
     const svProducts=collectProducts("sv");
     // 預排上片日期：新增時就填得起來（以前只能先存、再點開編輯視窗補一次）。
