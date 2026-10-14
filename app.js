@@ -4823,8 +4823,14 @@ function dashKpi(editors, fin, allTasks){
 // 儀表板：排程健康／毛片庫存＋未來 35 天視覺帶
 function dashSchedule(){
   // 防呆：指派毛片只針對台灣毛片，海外(locale)/蝦皮(channel)二創殼不列入計數與可指派清單
+  // v252（老闆指定）：「Asmeer 自己新增的內容，台灣的剪輯不需要看到」——Asmeer
+  // 這種海外同事自己原創拍英文/泰文內容，locale／channel 都是空的（它們是「源片」
+  // 不是「版本殼」），isSourceVid() 判斷不出語言，上面那句註解的防呆其實沒做到——
+  // 一樣會被算進這個池子，混進台灣管理層指派給中文剪輯的清單。改成同時用
+  // zoneOfVideo() 擋掉海外語言的源片，跟影片庫原本「源片看原本語言分區」的規矩
+  // 一致，不是另外發明一條。
   const g=scheduleGlance();
-  const poolAll=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理");
+  const poolAll=(STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && zoneOfVideo(v)==="tw");
   const poolN=poolAll.length;
   // 指派清單照「預排上片日期」排：先要上片的先派。沒排日期的沉到最下面 ——
   // 它們沒有時間壓力，混在有日期的中間只會把急的那些擠下去。
@@ -6557,7 +6563,10 @@ function urgentBtn(v){
 // 把還沒拍的算進去會讓數字虛胖（157 支裡有 128 支其實是只有腳本），警戒線就永遠不會響。
 // 跟待認領池（poolAll 用 !vidNotShot）同一個標準。
 const LOW_STOCK=20;                       // 低於這個支數，老闆就該去拍片了
-function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidShot(v)); }
+// v252（老闆指定）：跟 dashSchedule 的指派清單同一條規矩——海外同事（如 Asmeer）
+// 自己原創的英文/泰文源片不算進台灣的毛片存量，不然台灣存量其實很少、
+// 卻被海外那邊的片墊高，警戒線響不起來。
+function rawStock(){ return (STATE.videos||[]).filter(v=>isSourceVid(v) && v.stage==="待處理" && vidShot(v) && zoneOfVideo(v)==="tw"); }
 // 「毛片存量不足」只能有一個定義。以前這支沒有人呼叫，兩個用到它的地方各自
 // 把 `< LOW_STOCK` 抄了一遍 —— 門檻哪天要改就會改漏一個。
 // 已經算好數量的呼叫端可以直接傳進來，不必再掃一次 STATE.videos。
