@@ -6377,11 +6377,20 @@ function countsAsDone(v){ return isPublished(v) && reviewOK(v); }
 // 拿它來鎖會讓剪輯之間互相點不開對方做的蝦皮／馬來版。
 // 「上片完成」＝階段走到已上片、或已經貼了上片連結（已完成只是剪完，還沒上片）。
 function assignAired(v){ return !!(v && (v.stage==="已上片" || String(v.publishedLink||"").trim())); }
+// v253（老闆回報）：「巧芸說他現在無法點進去審查」——巧芸有 review 權限，
+// 按理可以審任何人的片，但指派鎖這裡的例外名單只寫死了 boss/manager/hr 三個
+// 職位，沒看 hasPerm("review")／hasPerm("lead")，跟 reviewCardHTML() 那邊
+// v242／v243 修過的是同一種漏洞（能不能做 vs 顯不顯示，兩道門各寫一份、
+// 一份沒跟著權限表更新）。陳鋒的片指派給他自己、巧芸不是指派對象，也不是
+// boss/manager/hr，於是整列變灰點不開——卡在審片這一步之前，連打開都打不開。
+// 改成跟 reviewCardHTML 共用同一條 canSeeReviewButtons()，誰看得到審片按鈕、
+// 誰就打得開這支片，不會再各吹各的號。
 function assignLocked(v){
   if(!v || !isSourceVid(v)) return false;
   const who=String(v.assignedTo||"");
   if(!who || who===currentUser()) return false;
   if(["boss","manager","hr"].includes(currentRole())) return false;   // 主管一律看得到、打得開
+  if(canSeeReviewButtons()) return false;   // 審得動的人，指派鎖也打得開
   return !assignAired(v);
 }
 function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
