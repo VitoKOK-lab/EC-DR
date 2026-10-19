@@ -1831,9 +1831,6 @@ function openDay(ds){
     // 剪輯・時間・連結併成標題下方一行小字（省空間、避免欄位被擠到逐字換行）
     const sub=[ ed?`${T("剪輯","Editor")} ${esc(ed)}${reused?T('（重播）',' (rerun)'):''}`:'', tm?esc(tm):'',
       upLink?`<a href="${esc(upLink)}" target="_blank">${T("上傳","Upload")}</a>`:'', drive?`<a href="${esc(drive)}" target="_blank">${T("存檔","File")}</a>`:'' ].filter(Boolean).join(' ・ ');
-    // 指派給別人的照樣列出來（不然月曆上的「排了幾支」會跟看得到的列數對不上），
-    // 但片名不是連結、點不開；改日期與移出排程照舊 —— 排程跟剪輯是兩條獨立的線
-    const lk=v&&assignLocked(v);
     // v185（老闆指定）：「這些片名，不要出現『編號』」。編號是系統流水號，
     // 每一列開頭都長得差不多，會把真正要看的片名擠掉 —— 月排程的清單檢視
     // v173 就拿掉了，這裡（當日影片、排一支影片到這天）當時漏掉。
@@ -1844,8 +1841,8 @@ function openDay(ds){
     // 用 title 屬性看得到完整內容。
     const titleFull=v?vidName(v):(it.videoId||"");
     const titleTxt=esc(titleFull.length>20?titleFull.slice(0,20)+"…":titleFull);
-    return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}" title="${esc(titleFull)}">${titleTxt}</a>${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?reviewStatusPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+    return `<tr>
+      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}" title="${esc(titleFull)}">${titleTxt}</a>${v?calWarnPill(v):""}${v?missingPill(v):""}${v?reviewStatusPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -6375,25 +6372,20 @@ function reviewOK(v){
 //    幾乎永遠是 0，那個欄位就廢了。當日看的是「今天做完了什麼」，
 //    月成效看的是「真正過關的有幾支」——兩個問題不一樣。
 function countsAsDone(v){ return isPublished(v) && reviewOK(v); }
-// ── 指派鎖（v124）────────────────────────────────────────────────────
-// 主管把某支毛片指派給某位剪輯之後，其他剪輯**照樣看得到**它（數字才對得上、
-// 也才知道這支有人在做），但點不開、整列變灰 —— 直到「上片完成」才恢復正常。
-// ⚠️ 只管源片。版本殼的 assignedTo 存的是「誰建立的」而不是指派（見 chNewVersion），
-// 拿它來鎖會讓剪輯之間互相點不開對方做的蝦皮／馬來版。
-// 「上片完成」＝階段走到已上片、或已經貼了上片連結（已完成只是剪完，還沒上片）。
-function assignAired(v){ return !!(v && (v.stage==="已上片" || String(v.publishedLink||"").trim())); }
-// v255（老闆指定）：「不鎖了，開放編輯，讓所有剪輯可以進去改，因為需要寫上
-// 『上片連結』」——上片前後常常要別人幫忙補上片連結，鎖住（哪怕只是 v254 改成
-// 的唯讀）反而擋到這件事。指派鎖整個拿掉，誰都打得開、都能編輯任何人的片。
-// 函式留著（assignLockTip／assignLockPill／呼叫端的 lk 判斷都還在用），
-// 但一律回傳沒鎖——不逐一清呼叫端，少改一處都風險比較低。
+// ── 指派鎖（v124，v255 老闆指定拿掉）───────────────────────────────────
+// 曾經是：主管把某支毛片指派給某位剪輯之後，其他剪輯照樣看得到，但點不開、
+// 整列變灰，直到上片完成才恢復。v255：「不鎖了，開放編輯，讓所有剪輯可以
+// 進去改，因為需要寫上『上片連結』」——鎖住反而擋到這件事，整個拿掉。
+// v257：清掉跟著鎖一起死掉的程式碼（assignLocked 一律 false 之後，
+// assignLockTip／assignLockPill／assignAired 跟呼叫端的 lk 判斷都沒有用了，
+// 不是功能被砍了才留著一堆用不到的函式）。
 function assignLocked(v){
   return false;
 }
-function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
-  return T("已指派給 "+w+"　上片完成前只有他能編輯", "Assigned to "+w+" — locked until it goes live"); }
-function assignLockPill(v){ return assignLocked(v)
-  ? `<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T(String(v.assignedTo||""),String(v.assignedTo||"")))}</span>` : ""; }
+// 單純顯示「指派給誰」的資訊，不再是鎖的提示——openQuickSchedule 的視窗
+// 用得到（跟老闆講這支原本是誰在做）。
+function assignedToTip(v){ const w=String((v&&v.assignedTo)||"");
+  return w ? T("指派給　"+w, "Assigned to "+w) : ""; }
 // v228（老闆指定）：「指派給別人的影片沒有辦法去修改上片的時間…我現在需要有這個
 // 修改的功能」。老闆的印象是對的——月排程（openDay）本來就沒被指派鎖擋住，
 // 改期、移出排程一直都能做（見那邊的註解「排程跟剪輯是兩條獨立的線」）。
@@ -6404,8 +6396,9 @@ function assignLockPill(v){ return assignLocked(v)
 function openQuickSchedule(id){
   const v=vid(id); if(!v) return;
   if(VIEW_AS){ toast(T("員工視角為唯讀預覽，離開後才能操作","Read-only preview — leave it first"),true); return; }
+  const atip=assignedToTip(v);
   showModal(T("改上片時間","Change publish time"), `
-    <div class="muted" style="font-size:12px;margin-bottom:10px">${esc(assignLockTip(v))}</div>
+    ${atip?`<div class="muted" style="font-size:12px;margin-bottom:10px">${esc(atip)}</div>`:''}
     <label>${T("上片日期","Publish date")}</label>
     <input id="qs_date" type="date" value="${esc(v.scheduledDate||"")}">
     <label style="margin-top:10px">${T("上片時間","Publish time")}</label>
@@ -6832,16 +6825,14 @@ function vidTableRow(v){
           if(nUse) o+=` <span class="pill" style="font-size:10px;background:transparent;border:1px solid var(--line);color:var(--muted)" title="重播 ${nUse} 次">↻ ${nUse}</span>`;
           return o; })());
   // 手機版精簡：沒有內容的欄位標 na（手機隱藏、桌機照舊顯示 —）
-  // 指派給別人的照樣列出來（數字才對得上），但整列變灰、點不開
-  const lk=assignLocked(v);
   // 二創殼開它自己的視窗（蝦皮／馬來走 openChModal、英／泰走 openIntlModal），
   // 源片才走主編輯視窗 —— 其他清單本來就是這個三元式，影片庫以前漏掉了。
-  return `<tr class="${lk?'vlock':''}" onclick="${vidOpenFn(v)}" style="cursor:pointer" title="${lk?esc(assignLockTip(v)):''}">
+  return `<tr onclick="${vidOpenFn(v)}" style="cursor:pointer">
     <td data-label="${T("影片","Video")}" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
+      <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
     <td data-label="${T("標籤","Tags")}"${tags.length?'':' class="na"'}>${tagHTML}</td>
-    <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}${lk?`<button class="btn sm sec" style="margin-left:6px;padding:2px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(v.id))}')">${T("改時間","Change time")}</button>`:''}</td>
+    <td data-label="${VID_VIEW==="old"?T("上片日期","Aired"):T("預排上片","Scheduled")}"${sch?'':' class="na"'} style="white-space:nowrap">${sch||'<span class="muted">—</span>'}</td>
     <td data-label="${T("商品","Products")}"${(prod||prodCount)?'':' class="na"'}>${prodHTML}</td>
     <td data-label="${T("剪輯","Editor")}"${(v.editor||v.claimedBy)?'':' class="na"'}>${esc(v.editor||v.claimedBy||"")||'<span class="muted">—</span>'}</td>
     <td data-label="${T("狀態","Status")}"${(sb||ub)?' class="has-act"':''}><span class="ststack">
@@ -6907,16 +6898,14 @@ function vidVisibleList(){
 function vidCardHTML(v){
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
-  const lk=assignLocked(v);
-  return `<div class="vcard${lk?' vlock':''}" onclick="${vidOpenFn(v)}" title="${lk?esc(assignLockTip(v)):esc(vidTitle(v))}">
+  return `<div class="vcard" onclick="${vidOpenFn(v)}" title="${esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
-      <div class="vcard-t">${esc(vidNameZoned(v))}${assignLockPill(v)}${missingPill(v, vidImplied())}</div>
+      <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v, vidImplied())}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
         <span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
-        ${lk?`<button class="btn sm sec" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(v.id))}')">${T("改時間","Change time")}</button>`:''}
         ${shotBtn(v)}
       </div>
     </div></div>`;
@@ -8646,15 +8635,9 @@ function viewPerf(){
 //    要不要清是另一件事，等新設計定案再說。
 // ===================================================================
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
-// 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
 // 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
-// v254（老闆指定）：「雖然有鎖定的狀態，我還是需要讓所有員工都可以點進去看，
-// 只是他們不能修改」——別人要幫忙複製連結、看文案，不代表要搶著改內容。
-// 原本指派鎖是「整支片連打開都打不開」，改成「打得開＝唯讀檢視，改不了」：
-// 鎖住時退回唯讀視窗（vidViewModal，本來就有複製連結／看文案），不再整個擋掉。
-function editVideo(id){ const v=vid(id);
-  if(assignLocked(v)){ openVideoModal(id, false); return; }
-  openVideoModal(id, true); }
+// v255（老闆指定）：指派鎖整個拿掉了，誰都直接進編輯模式，不用先過唯讀視窗。
+function editVideo(id){ openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
 function tryExitVideoEdit(){ if(MODAL_DIRTY){ warnUnsaved(); return; } closeModal(); }
@@ -9126,8 +9109,7 @@ function openVideoModal(id, edit, fromWork){
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">${T("影片內容","Video details")}</h3>
       <div style="display:flex;gap:6px;align-items:center">
-        ${edit?'':(assignLocked(v)?`<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T("唯讀","View only"))}</span>`
-          :`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`)}
+        ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`}
         <button class="btn sec sm" type="button" onclick="${edit?'tryExitVideoEdit()':'closeModal()'}" title="${T("關閉","Close")}">×</button>
       </div></div>`;
 
