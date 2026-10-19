@@ -1838,9 +1838,14 @@ function openDay(ds){
     // 每一列開頭都長得差不多，會把真正要看的片名擠掉 —— 月排程的清單檢視
     // v173 就拿掉了，這裡（當日影片、排一支影片到這天）當時漏掉。
     // 搜尋照樣打得到編號（那是比對資料，不是顯示）。
-    const titleTxt=esc(v?vidName(v):(it.videoId||""));
+    // v256（老闆指定）：「文字太長了，留20個字就好」——貼文文案常常是一整段，
+    // 整句印在這張「當日影片」清單裡會把一列撐成十幾行。只在這裡（顯示用）截斷，
+    // vidName() 本身不動（搜尋、編輯視窗、其他清單都還是讀全文），滑鼠移上去
+    // 用 title 屬性看得到完整內容。
+    const titleFull=v?vidName(v):(it.videoId||"");
+    const titleTxt=esc(titleFull.length>20?titleFull.slice(0,20)+"…":titleFull);
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}" title="${esc(titleFull)}">${titleTxt}</a>${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?reviewStatusPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
