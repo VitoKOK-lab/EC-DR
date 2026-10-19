@@ -81,16 +81,16 @@ for(const [u,r] of [["管理員","boss"],["Regina","manager"],["HR小姐","hr"]]
 as("郁莚","editor");
 ok("被指派的本人自己打得開", !assignLocked(vid("HERS")) && !assignLocked(vid("WIP")));
 
-// ══════════ ③ 影片庫：照樣列出來，但那一列是灰的、沒有 onclick ══════════
+// ══════════ ③ 影片庫：照樣列出來，整列變灰，但還是點得開（v254：唯讀，不是擋死）══════════
 reset(); as("小葵","editor");
 { const r=vidTableRow(vid("HERS"));
   ok("鎖住的那列標了 vlock", r.includes('class="vlock"'));
-  ok("鎖住的那列沒有 onclick", !r.includes("editVideo("));
+  ok("鎖住的那列還是有 onclick（打得開，只是唯讀）", r.includes("editVideo("));
   ok("鎖住的那列寫出是誰的", r.includes("lockpill") && r.includes("郁莚"));
   const f=vidTableRow(vid("FREE"));
   ok("沒鎖的那列照舊點得開", f.includes(`editVideo('FREE')`) && !f.includes("vlock")); }
 { const c=vidCardHTML(vid("HERS")), f=vidCardHTML(vid("FREE"));
-  ok("圖片模式也鎖", c.includes("vlock") && !c.includes("editVideo("));
+  ok("圖片模式也標灰，但一樣打得開", c.includes("vlock") && c.includes("editVideo("));
   ok("圖片模式沒鎖的照舊", f.includes(`editVideo('FREE')`) && !f.includes("vlock")); }
 
 // ══════════ ③b 指派鎖唯一的出口：改上片時間（v228，老闆指定）══════════
@@ -145,15 +145,15 @@ STATE.videos.forEach(v=>{ if(isSourceVid(v)) v.scheduledDate=T0; });
 CAL_YM=T0.slice(0,7); openDay(T0);
 { const h=modalHTML;
   ok("日視窗列得出鎖住的那支", h.includes("片HERS"));
-  ok("鎖住的片名不是連結", !h.includes(`editVideo('HERS')`));
+  ok("鎖住的片名照舊點得開（唯讀）", h.includes(`editVideo('HERS')`));
   ok("沒鎖的片名照舊是連結", h.includes(`editVideo('FREE')`));
   ok("鎖住的那列改日期還是能按", /rescheduleVid\('HERS'/.test(h));
   ok("鎖住的那列移出排程還是能按", /unscheduleVid\('HERS'/.test(h)); }
 
-// ══════════ ⑤ 守門在 editVideo，不是只有外觀 ══════════
+// ══════════ ⑤ 守門在 editVideo，不是只有外觀（v254：鎖住＝唯讀，不是打不開）══════════
 reset(); as("小葵","editor");
 modalHTML=""; editVideo("HERS");
-ok("直接呼叫也打不開", modalHTML==="" && toasts.some(t=>t.includes("郁莚")));
+ok("鎖住的片，打得開但是唯讀視窗（沒有編輯欄位）", modalHTML.includes("影片內容") && !modalHTML.includes('id="e_name"'));
 modalHTML=""; toasts=[]; editVideo("FREE");
 ok("沒鎖的照樣打得開", modalHTML.includes("影片內容"));
 as("管理員","boss"); modalHTML=""; editVideo("HERS");

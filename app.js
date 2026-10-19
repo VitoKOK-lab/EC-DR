@@ -1840,7 +1840,7 @@ function openDay(ds){
     // 搜尋照樣打得到編號（那是比對資料，不是顯示）。
     const titleTxt=esc(v?vidName(v):(it.videoId||""));
     return `<tr${lk?` class="vlock" title="${esc(assignLockTip(v))}"`:''}>
-      <td data-label="${T("影片","Video")}">${lk?`<span>${titleTxt}</span>`:`<a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>`}${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
+      <td data-label="${T("影片","Video")}"><a href="javascript:void(0)" onclick="${vidOpenFn(v||{id:it.videoId})}">${titleTxt}</a>${v?assignLockPill(v):""}${v?calWarnPill(v):""}${v?missingPill(v):""}${v?typeTagOf(v):""}${reused?` <span class="tag" style="background:var(--chip);color:var(--gold-dk)">${T("重播","Rerun")}</span>`:''}${reused?dfVerPill(it.slot):''}
         <div class="muted" style="font-size:12px;margin-top:3px">${sub||'—'}</div></td>
       <td data-label="${T("改上片日","Move to")}"><input type="date" value="${ds}" style="font-size:12px;padding:4px;min-width:128px" onchange="${onChg}"></td>
       <td data-label="${T("操作","Action")}"><button class="btn sec sm" style="white-space:nowrap" onclick="${reused?`unscheduleReuse('${it.videoId}','${ds}',${si})`:`unscheduleVid('${it.videoId}','${ds}')`}" title="${T("只把這支移出這天的排程，影片本身不會刪除","Removes from this day only — the video stays")}">${T("移出排程","Unschedule")}</button></td>
@@ -6839,7 +6839,7 @@ function vidTableRow(v){
   const lk=assignLocked(v);
   // 二創殼開它自己的視窗（蝦皮／馬來走 openChModal、英／泰走 openIntlModal），
   // 源片才走主編輯視窗 —— 其他清單本來就是這個三元式，影片庫以前漏掉了。
-  return `<tr ${lk?`class="vlock" title="${esc(assignLockTip(v))}"`:`onclick="${vidOpenFn(v)}" style="cursor:pointer"`}>
+  return `<tr class="${lk?'vlock':''}" onclick="${vidOpenFn(v)}" style="cursor:pointer" title="${lk?esc(assignLockTip(v)):''}">
     <td data-label="${T("影片","Video")}" class="cv-name"><span class="vt-line">
       ${coverThumbHTML(v)}<span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
       <span class="vt-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(vidNameZoned(v))}</span>${assignLockPill(v)}${missingPill(v, vidImplied())}${langBadge}</span>${enSubLine(v)}</td>
@@ -6911,7 +6911,7 @@ function vidCardHTML(v){
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   const stageCol={"待處理":"var(--muted)","剪輯中":"var(--accent)","待審核":"var(--amber)","已完成":"var(--green)","已上片":"var(--green)"}[dispStage(v)]||"var(--muted)";
   const lk=assignLocked(v);
-  return `<div class="vcard${lk?' vlock':''}" ${lk?`title="${esc(assignLockTip(v))}"`:`onclick="${vidOpenFn(v)}" title="${esc(vidTitle(v))}"`}>
+  return `<div class="vcard${lk?' vlock':''}" onclick="${vidOpenFn(v)}" title="${lk?esc(assignLockTip(v)):esc(vidTitle(v))}">
     <div class="vcard-img">${coverThumbHTML(v,"vcard-th")}</div>
     <div class="vcard-b">
       <div class="vcard-t">${esc(vidNameZoned(v))}${assignLockPill(v)}${missingPill(v, vidImplied())}</div>
@@ -8651,8 +8651,12 @@ function viewPerf(){
 // 影片內容：預設檢視（不可改）；右上「編輯」才進編輯、右上「×」關閉
 // 真正的守門在這裡 —— 灰掉只是外觀，這一行才是「別人打不開」。
 // 所有點影片的入口（影片庫、月排程日視窗、待認領池）最後都走這裡。
+// v254（老闆指定）：「雖然有鎖定的狀態，我還是需要讓所有員工都可以點進去看，
+// 只是他們不能修改」——別人要幫忙複製連結、看文案，不代表要搶著改內容。
+// 原本指派鎖是「整支片連打開都打不開」，改成「打得開＝唯讀檢視，改不了」：
+// 鎖住時退回唯讀視窗（vidViewModal，本來就有複製連結／看文案），不再整個擋掉。
 function editVideo(id){ const v=vid(id);
-  if(assignLocked(v)){ toast(assignLockTip(v), true); return; }
+  if(assignLocked(v)){ openVideoModal(id, false); return; }
   openVideoModal(id, true); }
 // 編輯模式離開保護：有改動時，必須按「儲存修改」或「取消編輯」
 function cancelVideoEdit(){ MODAL_DIRTY=false; closeModal(); }
@@ -9112,7 +9116,8 @@ function openVideoModal(id, edit, fromWork){
   const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px">
       <h3 style="margin:0">${T("影片內容","Video details")}</h3>
       <div style="display:flex;gap:6px;align-items:center">
-        ${edit?'':`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`}
+        ${edit?'':(assignLocked(v)?`<span class="lockpill" title="${esc(assignLockTip(v))}">🔒 ${esc(T("唯讀","View only"))}</span>`
+          :`<button class="btn sec sm" type="button" onclick="openVideoModal('${id}',true)">${T("編輯","Edit")}</button>`)}
         <button class="btn sec sm" type="button" onclick="${edit?'tryExitVideoEdit()':'closeModal()'}" title="${T("關閉","Close")}">×</button>
       </div></div>`;
 
