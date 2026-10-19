@@ -60,7 +60,7 @@ function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.l
 { reset(); as("小葵","editor"); modalHTML="";
   ok("**沒有 review 權限的人，指派鎖照舊鎖著**", assignLocked(vid("V1"))===true);
   editVideo("V1");
-  ok("**按下去被擋下來，跳出「已指派給」的提示**", TOASTS.some(t=>t.includes("已指派給")) && modalHTML==="", TOASTS); }
+  ok("**按下去打得開，但是唯讀視窗（v254：只能看不能改）**", modalHTML.includes("影片內容") && !modalHTML.includes('id="e_name"'), modalHTML.slice(0,80)); }
 
 // ══════════ ③ manager 職位（Regina）跟指派對象本人（陳鋒）那兩條舊路都還通 ══════════
 { reset(); as("Regina","manager");
