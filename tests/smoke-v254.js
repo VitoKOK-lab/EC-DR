@@ -1,7 +1,7 @@
-// v254（老闆指定）：「雖然有鎖定的狀態，我還是需要讓所有員工都可以點進去看，
-// 只是他們不能修改而已，因為其他人有可能要協助複製裡面的連結或者是看裡面的
-// 文案」——指派鎖原本整支片連打開都打不開，改成打得開＝唯讀檢視（能看、能複製
-// 連結跟文案），改不了（沒有編輯欄位、沒有存檔鍵）。
+// v254 把指派鎖改成「唯讀可以看，但不能改」。v255 老闆再往前一步，直接說
+// 「不鎖了，開放編輯」——因為上片連結常常要別人幫忙補，唯讀也會卡住這件事。
+// 這支測試改成確認 v255 的結果：被指派給別人的片，誰都打得開**編輯視窗**
+// （不是唯讀），文案、連結都看得到也改得了。
 const fs = require("fs");
 let src = fs.readFileSync(require("path").join(__dirname,"..","app.js"), "utf8");
 src = src.replace(/^let /gm, "").replace(/^const /gm, "");
@@ -26,8 +26,7 @@ toast = (m,e) => { TOASTS.push(String(m)); };
 
 function reset(){
   STATE = {
-    users:[ {name:"小葵",role:"editor",perms:[]}, {name:"郁莚",role:"editor",perms:[]},
-             {name:"Regina",role:"manager",perms:[]} ],
+    users:[ {name:"小葵",role:"editor",perms:[]}, {name:"郁莚",role:"editor",perms:[]} ],
     settings:{ dailyTarget:4, videoTags:["舊片"], sources:["srcA"], postPlatforms:[],
       intlAccounts:[], shopeeAccounts:[], msAccounts:[], exchangeRates:{} },
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
@@ -35,41 +34,25 @@ function reset(){
       videoCopy:"這是文案內容", driveFolder:"https://drive.google.com/drive/folders/XYZ",
       finishedAt:"",publishedLink:"",reviewStatus:"",locale:"",channel:"",usageHistory:[],tags:[],products:[],metrics:[]} ],
   };
-  modalHTML=""; VIEW_AS=null; TOASTS=[];
+  modalHTML=""; TOASTS=[];
 }
 const as=(name,role)=>{ localStorage.setItem("ecdr_user",name); localStorage.setItem("ecdr_role",role); };
 
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n, x===undefined?"":JSON.stringify(x).slice(0,220));} }
 
-// ══════════ ① 沒有權限的人點被鎖的片：打得開，但是唯讀視窗 ══════════
+// ══════════ v255：沒有權限的人點被指派給別人的片，直接打得開編輯視窗 ══════════
 { reset(); as("小葵","editor");
   editVideo("V1");
-  ok("**打得開（不是空白、不是被擋）**", modalHTML.includes("影片內容"), modalHTML.slice(0,80));
-  ok("**沒有編輯欄位（唯讀，不是編輯模式）**", !modalHTML.includes('id="e_name"'));
-  ok("**文案內容看得到（可以複製）**", modalHTML.includes("這是文案內容"));
-  ok("**存檔資料夾連結看得到（可以複製連結）**", modalHTML.includes("drive.google.com/drive/folders/XYZ"));
-  ok("**看得到是誰的（不是裝作沒鎖）**", modalHTML.includes("唯讀") || modalHTML.includes("🔒")); }
+  ok("**打得開**", modalHTML.includes("影片內容"), modalHTML.slice(0,80));
+  ok("**是編輯模式，不是唯讀（有編輯欄位）**", modalHTML.includes('id="e_name"'));
+  ok("**文案欄位看得到、改得了**", modalHTML.includes("這是文案內容")); }
 
-// ══════════ ② 唯讀視窗裡沒有藏著一條能跳過鎖直接進編輯模式的路 ══════════
-{ reset(); as("小葵","editor");
-  editVideo("V1");
-  ok("**唯讀視窗沒有「編輯」按鈕給沒權限的人**", !modalHTML.includes(">${T(\"編輯\"") , modalHTML.slice(0,400));
-  ok("**唯讀視窗沒有一般的「編輯」文字按鈕**", !/>編輯<\/button>/.test(modalHTML), modalHTML); }
-
-// ══════════ ③ 指派對象本人、manager 一樣能直接進編輯模式（沒被這次改動動到）══════════
-{ reset(); as("郁莚","editor");
-  editVideo("V1");
-  ok("本人照舊打得開編輯模式", modalHTML.includes('id="e_name"')); }
-{ reset(); as("Regina","manager");
-  editVideo("V1");
-  ok("manager 照舊打得開編輯模式", modalHTML.includes('id="e_name"')); }
-
-// ══════════ ④ 影片庫清單：鎖住的列整列變灰，但還是點得開（不再是完全擋死）══════════
+// ══════════ 影片庫清單：不再變灰、不再標 vlock ══════════
 { reset(); as("小葵","editor");
   const row = vidTableRow(vid("V1"));
-  ok("**列上還是有 editVideo() 的 onclick（打得開）**", row.includes("editVideo("), row);
-  ok("列上還是標了 vlock（視覺上變灰，提醒是別人的）", row.includes("vlock")); }
+  ok("**沒有 vlock 了（不再是別人鎖住的樣子）**", !row.includes("vlock"), row);
+  ok("**照舊點得開**", row.includes("editVideo("), row); }
 
-console.log(`\nv254（指派鎖＝唯讀檢視，不是整支片打不開；能看文案能複製連結，不能改）: ${pass} passed, ${fail} failed`);
+console.log(`\nv254→v255（指派鎖整個拿掉，唯讀視窗不再是鎖住片的出路，直接開放編輯）: ${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

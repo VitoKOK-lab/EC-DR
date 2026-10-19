@@ -1,10 +1,7 @@
-// v124：指派鎖 —— 主管把毛片指派給某位剪輯之後，其他剪輯照樣看得到那支片
-// （數字才對得上、也才知道有人在做），但整列變灰、點不開，直到「上片完成」才恢復。
-//
-// 三個關鍵界線，這支測的就是這三條：
-//   ① 只鎖源片 —— 版本殼的 assignedTo 是「誰建立的」不是指派，鎖了會讓剪輯互相點不開
-//   ② 主管（管理員／經理人／人資）一律不鎖，被指派的本人也不鎖
-//   ③ 解鎖點是「上片完成」（已上片／有上片連結），不是「已完成」（那只是剪完）
+// v124 原本的指派鎖（鎖住、唯讀、改時間後門…）在 v255 被老闆直接取消了：
+// 「不鎖了，開放編輯，讓所有剪輯可以進去改，因為需要寫上『上片連結』」。
+// assignLocked() 現在一律回傳 false，這支測試改成只確認這件事、不再測鎖的細節
+// （鎖的細節測試留在 v255 那支）。
 const fs=require("fs"), path=require("path");
 let src=fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8")
   .replace(/^let /gm,"").replace(/^const /gm,"");
@@ -36,23 +33,12 @@ const V=(id,o)=>Object.assign({id,code:"26"+id,name:"片"+id,rawName:"片"+id,vi
   usageHistory:[],metrics:[]},o||{});
 function reset(){
   modalHTML=""; fields={}; toasts=[];
-  STATE={ users:[{name:"小葵",role:"editor"},{name:"郁莚",role:"editor"},
-                 {name:"HR小姐",role:"hr"},{name:"Regina",role:"manager"},{name:"管理員",role:"boss"}],
+  STATE={ users:[{name:"小葵",role:"editor"},{name:"郁莚",role:"editor"}],
     settings:{dailyTarget:4,videoTags:[],sources:[],postPlatforms:[],intlAccounts:[],
       shopeeAccounts:["蝦皮A"],msAccounts:[],exchangeRates:{},contacts:[],reviewSince:"2020-01-01",
       workStart:"09:00",workEnd:"18:00"},
     schedule:{}, tasks:{}, shifts:{}, logs:[], deletedVideos:[],
-    videos:[
-      V("FREE"),                                                    // 沒指派 → 誰都點得開
-      V("MINE",{assignedTo:"小葵"}),                                 // 指派給我 → 點得開
-      V("HERS",{assignedTo:"郁莚"}),                                 // 指派給別人 → 鎖
-      V("WIP",{assignedTo:"郁莚",stage:"剪輯中",editor:"郁莚"}),       // 還在剪 → 仍然鎖
-      V("DONE",{assignedTo:"郁莚",stage:"已完成",editor:"郁莚"}),      // 剪完但沒上片 → 仍然鎖
-      V("AIRED",{assignedTo:"郁莚",stage:"已上片",editor:"郁莚",published:true,
-                 scheduledDate:T0,publishedLink:"http://post",driveFolder:"http://d"}),  // 上片完成 → 解鎖
-      V("LINKED",{assignedTo:"郁莚",stage:"已完成",editor:"郁莚",publishedLink:"http://post"}), // 貼了連結 → 解鎖
-      V("SHELL",{assignedTo:"郁莚",channel:"shopee",sourceVideoId:"FREE",account:"蝦皮A"}),      // 版本殼 → 不鎖
-    ] };
+    videos:[ V("FREE"), V("HERS",{assignedTo:"郁莚"}) ] };
   CUR_TAB=null; VIEW_AS=null; VID_LANG=""; VID_TAGS=new Set(); VID_Q=""; VID_UNSCHED=false;
   ZONE_VIEW="tw"; VID_MODE="list"; ORIG_AUTO_RAN=true;
   global.window.DB={ set:async()=>{}, update:async()=>{}, del:async()=>{},
@@ -62,119 +48,12 @@ const as=(u,r)=>{ localStorage.setItem("ecdr_user",u); localStorage.setItem("ecd
 let pass=0, fail=0;
 function ok(n,c){ if(c){pass++;console.log("PASS:",n);} else {fail++;console.log("FAIL:",n);} }
 
-// ══════════ ① 鎖誰、不鎖誰 ══════════
 reset(); as("小葵","editor");
-ok("沒指派的不鎖", !assignLocked(vid("FREE")));
-ok("指派給自己的不鎖", !assignLocked(vid("MINE")));
-ok("指派給別人的鎖起來", assignLocked(vid("HERS")));
-ok("別人正在剪的仍然鎖", assignLocked(vid("WIP")));
-ok("剪完但還沒上片的仍然鎖（已完成≠上片完成）", assignLocked(vid("DONE")));
-ok("已上片就解鎖", !assignLocked(vid("AIRED")));
-ok("貼了上片連結就解鎖", !assignLocked(vid("LINKED")));
-ok("版本殼不鎖（assignedTo 是建立者不是指派）", !assignLocked(vid("SHELL")));
-
-// ══════════ ② 主管一律不鎖 ══════════
-for(const [u,r] of [["管理員","boss"],["Regina","manager"],["HR小姐","hr"]]){
-  as(u,r);
-  ok(`${r} 看得到也打得開別人被指派的`, !assignLocked(vid("HERS")) && !assignLocked(vid("WIP")));
-}
-as("郁莚","editor");
-ok("被指派的本人自己打得開", !assignLocked(vid("HERS")) && !assignLocked(vid("WIP")));
-
-// ══════════ ③ 影片庫：照樣列出來，整列變灰，但還是點得開（v254：唯讀，不是擋死）══════════
-reset(); as("小葵","editor");
+ok("v255：指派給別人的片不再鎖（老闆取消了指派鎖）", assignLocked(vid("HERS"))===false);
 { const r=vidTableRow(vid("HERS"));
-  ok("鎖住的那列標了 vlock", r.includes('class="vlock"'));
-  ok("鎖住的那列還是有 onclick（打得開，只是唯讀）", r.includes("editVideo("));
-  ok("鎖住的那列寫出是誰的", r.includes("lockpill") && r.includes("郁莚"));
-  const f=vidTableRow(vid("FREE"));
-  ok("沒鎖的那列照舊點得開", f.includes(`editVideo('FREE')`) && !f.includes("vlock")); }
-{ const c=vidCardHTML(vid("HERS")), f=vidCardHTML(vid("FREE"));
-  ok("圖片模式也標灰，但一樣打得開", c.includes("vlock") && c.includes("editVideo("));
-  ok("圖片模式沒鎖的照舊", f.includes(`editVideo('FREE')`) && !f.includes("vlock")); }
-
-// ══════════ ③b 指派鎖唯一的出口：改上片時間（v228，老闆指定）══════════
-// 老闆：「指派給別人的影片沒有辦法去修改上片的時間…我現在需要有這個修改的功能」
-// 「我印象中是隨時每個剪輯都可以去修改上面的日期時間，怎麼會被鎖住？」
-// 月排程（openDay，見上面 ④）本來就沒被這個鎖擋住；影片庫漏了這個出口，這裡補上。
-{ const r=vidTableRow(vid("HERS")), f=vidTableRow(vid("FREE"));
-  ok("**鎖住的那列有「改時間」鍵**", /openQuickSchedule\('HERS'\)/.test(r), r);
-  ok("沒鎖的那列不需要這顆鍵（本來就點得開整支）", !/openQuickSchedule/.test(f)); }
-{ const c=vidCardHTML(vid("HERS")), f=vidCardHTML(vid("FREE"));
-  ok("**圖片模式鎖住的那張也有「改時間」鍵**", /openQuickSchedule\('HERS'\)/.test(c));
-  ok("圖片模式沒鎖的不需要", !/openQuickSchedule/.test(f)); }
-// 真的按下去：開得起視窗、預填現在的日期時間，且跟 editVideo 是兩條不同的路
-reset(); as("小葵","editor");
-{ modalHTML=""; toasts=[];
-  openQuickSchedule("HERS");
-  ok("**改時間視窗開得起來**（editVideo 對這支會被擋，這條路不會）", modalHTML.includes("改上片時間"), modalHTML.slice(0,200));
-  ok("視窗裡看得到是指派給誰（跟鎖住的提示一樣）", modalHTML.includes("郁莚"));
-  // 老闆問：「如果從來都還沒輸入過時間的，是空白的也可以新增時間嗎？」
-  // HERS 這支 fixture 本來就沒排過日期（scheduledDate:null、沒有 publishTime）——
-  // 不是只能「改」，從空白直接「填」也要打得開、填得進去。
-  ok("**從來沒排過的：日期欄是空的，不是硬塞一個日期**", /id="qs_date"[^>]*value=""/.test(modalHTML), modalHTML.slice(0,400));
-  ok("**時間欄預設「不指定」，不是硬塞一個整點**", /<option value="">不指定<\/option>/.test(modalHTML)); }
-// 真的存得進去：從空白（HERS 沒排過日期）填成一個日期時間，只寫這兩格，其他欄位不動
-{ let written=null;
-  global.window.DB.update=async(col,id,patch)=>{ written={col,id,patch}; };
-  fields={qs_date:"2026-10-05", qs_time:"12:00"};
-  saveQuickSchedule("HERS");
-  ok("**寫進去的只有這兩格（＋updatedAt）**",
-     written && written.col==="videos" && written.id==="HERS"
-     && written.patch.scheduledDate==="2026-10-05" && written.patch.publishTime==="12:00"
-     && !("name" in written.patch) && !("videoCopy" in written.patch) && !("stage" in written.patch),
-     written);
-  global.window.DB.update=async()=>{}; }
-// 員工視角（VIEW_AS）：唯讀預覽，這個出口也不能破例
-{ VIEW_AS="郁莚"; modalHTML=""; toasts=[];
-  openQuickSchedule("HERS");
-  ok("**員工視角預覽時，改時間鍵也打不開**（唯讀就是唯讀，沒有例外）",
-     modalHTML==="" && toasts.some(t=>t.includes("唯讀")));
-  VIEW_AS=null; }
-
-// 這是整個設計的重點：不是藏起來，所以清單張數不變
-{ VID_VIEW="raw";
-  const n=vidVisibleList().length;
-  as("郁莚","editor"); const n2=vidVisibleList().length;
-  as("管理員","boss");  const n3=vidVisibleList().length;
-  ok("三個人看到的影片支數完全一樣（鎖不是藏）", n===n2 && n2===n3 && n>0); }
-
-// ══════════ ④ 月排程日視窗：列得出來、片名點不開、日期與移出照舊 ══════════
-reset(); as("小葵","editor");
-STATE.videos.forEach(v=>{ if(isSourceVid(v)) v.scheduledDate=T0; });
-CAL_YM=T0.slice(0,7); openDay(T0);
-{ const h=modalHTML;
-  ok("日視窗列得出鎖住的那支", h.includes("片HERS"));
-  ok("鎖住的片名照舊點得開（唯讀）", h.includes(`editVideo('HERS')`));
-  ok("沒鎖的片名照舊是連結", h.includes(`editVideo('FREE')`));
-  ok("鎖住的那列改日期還是能按", /rescheduleVid\('HERS'/.test(h));
-  ok("鎖住的那列移出排程還是能按", /unscheduleVid\('HERS'/.test(h)); }
-
-// ══════════ ⑤ 守門在 editVideo，不是只有外觀（v254：鎖住＝唯讀，不是打不開）══════════
-reset(); as("小葵","editor");
+  ok("影片庫那一列照舊點得開（editVideo）", r.includes(`editVideo('HERS')`)); }
 modalHTML=""; editVideo("HERS");
-ok("鎖住的片，打得開但是唯讀視窗（沒有編輯欄位）", modalHTML.includes("影片內容") && !modalHTML.includes('id="e_name"'));
-modalHTML=""; toasts=[]; editVideo("FREE");
-ok("沒鎖的照樣打得開", modalHTML.includes("影片內容"));
-as("管理員","boss"); modalHTML=""; editVideo("HERS");
-ok("管理員打得開", modalHTML.includes("影片內容"));
-
-// ══════════ ⑥ 待認領池：維持原本的「看不到」（那一頁的意思是「你可以認領的」）══════════
-reset(); as("小葵","editor");
-{ const ids=poolAll().map(v=>v.id);
-  ok("池子看不到指派給別人的", !ids.includes("HERS"));
-  ok("池子看得到沒指派的", ids.includes("FREE"));
-  // v164：指派給自己的改成直接進「本日工作」，不再放在收合的待認領裡
-  //（以前兩邊都放＝同一支片在同一頁出現兩次，而且被指派的人不點開就看不到）
-  ok("指派給自己的**不在**池子裡了", !ids.includes("MINE"), ids);
-  const assigned=myAssignedVids().map(v=>v.id);
-  ok("——改成在本日工作那一份清單裡", assigned.includes("MINE"), assigned);
-  ok("本日工作那份也看不到指派給別人的", !assigned.includes("HERS"), assigned);
-  ok("本日工作那份不會混進沒指派的", !assigned.includes("FREE"), assigned);
-  // 兩份加起來要等於原本的池子，一支都不能漏
-  ok("池子＋指派給我的＝原本全部（沒有片被弄不見）",
-     ids.concat(assigned).sort().join()===["FREE","MINE"].sort().join(),
-     {ids, assigned}); }
+ok("直接打得開編輯視窗（不是唯讀，e_name 欄位在）", modalHTML.includes('id="e_name"'), modalHTML.slice(0,80));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail?1:0);

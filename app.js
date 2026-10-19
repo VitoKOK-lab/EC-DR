@@ -1715,7 +1715,7 @@ function calListBody(cfg){
              鎖住列有這顆鍵，這裡的每一列都對應著一支真的影片，同一個 openQuickSchedule
              搬過來就能用，不用另外寫一套（它本來就不挑「有沒有被指派鎖住」）。 */
           r.v?`<button class="btn sm sec noprint" style="margin-left:6px;padding:1px 8px;font-size:11px" onclick="event.stopPropagation();openQuickSchedule('${esc(jsEsc(r.v.id))}')">${T("改時間","Change time")}</button>`:""
-        }${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}</td></tr>`;
+        }${r.v?calWarnPill(r.v):""}${r.v?missingPill(r.v):""}${r.v?reviewStatusPill(r.v):""}</td></tr>`;
     });
   }
   // v227（老闆指定）：「匯出表格格式，用 A4 格式列印，一次一個月份」。
@@ -6377,21 +6377,13 @@ function countsAsDone(v){ return isPublished(v) && reviewOK(v); }
 // 拿它來鎖會讓剪輯之間互相點不開對方做的蝦皮／馬來版。
 // 「上片完成」＝階段走到已上片、或已經貼了上片連結（已完成只是剪完，還沒上片）。
 function assignAired(v){ return !!(v && (v.stage==="已上片" || String(v.publishedLink||"").trim())); }
-// v253（老闆回報）：「巧芸說他現在無法點進去審查」——巧芸有 review 權限，
-// 按理可以審任何人的片，但指派鎖這裡的例外名單只寫死了 boss/manager/hr 三個
-// 職位，沒看 hasPerm("review")／hasPerm("lead")，跟 reviewCardHTML() 那邊
-// v242／v243 修過的是同一種漏洞（能不能做 vs 顯不顯示，兩道門各寫一份、
-// 一份沒跟著權限表更新）。陳鋒的片指派給他自己、巧芸不是指派對象，也不是
-// boss/manager/hr，於是整列變灰點不開——卡在審片這一步之前，連打開都打不開。
-// 改成跟 reviewCardHTML 共用同一條 canSeeReviewButtons()，誰看得到審片按鈕、
-// 誰就打得開這支片，不會再各吹各的號。
+// v255（老闆指定）：「不鎖了，開放編輯，讓所有剪輯可以進去改，因為需要寫上
+// 『上片連結』」——上片前後常常要別人幫忙補上片連結，鎖住（哪怕只是 v254 改成
+// 的唯讀）反而擋到這件事。指派鎖整個拿掉，誰都打得開、都能編輯任何人的片。
+// 函式留著（assignLockTip／assignLockPill／呼叫端的 lk 判斷都還在用），
+// 但一律回傳沒鎖——不逐一清呼叫端，少改一處都風險比較低。
 function assignLocked(v){
-  if(!v || !isSourceVid(v)) return false;
-  const who=String(v.assignedTo||"");
-  if(!who || who===currentUser()) return false;
-  if(["boss","manager","hr"].includes(currentRole())) return false;   // 主管一律看得到、打得開
-  if(canSeeReviewButtons()) return false;   // 審得動的人，指派鎖也打得開
-  return !assignAired(v);
+  return false;
 }
 function assignLockTip(v){ const w=String((v&&v.assignedTo)||"");
   return T("已指派給 "+w+"　上片完成前只有他能編輯", "Assigned to "+w+" — locked until it goes live"); }
@@ -9034,6 +9026,19 @@ function jumpToField(id, k){
   if(fid==="e_vcopy") vcopyOpen();   // 文案欄平常收成一排，跳過去之前先展開，不然看不到游標在哪
   if(el.scrollIntoView) el.scrollIntoView({block:"center"});
   el.focus();
+}
+// v255（老闆指定）：「月報表加上圖示『審核完成』、『未審核』，在上片日過後自動消失」
+// 月排程清單（calListBody／calRowsLine 那張表）本來沒有審核狀態，加這顆燈：
+// 通過→審核完成、還在等審→未審核；排定的上片日一過，這顆燈就不再出現
+// （已經上片的舊片不需要再提醒誰去審）。沒有審核紀錄（reviewSince 之前的舊片）
+// 不算「未審核」，跟 needsReview() 原本的規矩一致，不要把幾百支舊片都標成未審。
+function reviewStatusPill(v){
+  if(!v) return "";
+  const sd=String(v.scheduledDate||"").slice(0,10);
+  if(sd && sd < todayTW()) return "";   // 上片日過後自動消失
+  if(v.reviewStatus==="通過") return `<span class="pill ok" style="font-size:10px">✔ ${T("審核完成","Reviewed")}</span>`;
+  if(needsReview(v)) return `<span class="pill wa" style="font-size:10px">${T("未審核","Not reviewed")}</span>`;
+  return "";
 }
 // 小燈號：只寫最要緊的那一項，其餘掛在 title 裡（手機上點不到 hover，所以主要那項一定用文字寫出來）
 // implied＝這個畫面／分頁已經說明過的事，不用在每一列再寫一次。
