@@ -6799,8 +6799,11 @@ function vidTableRow(v){
   const prodCount=(Array.isArray(v.products)?v.products.filter(p=>p&&p.name):[]).length;
   const prodHTML=prod?`<a href="${esc(prod)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${T("商品頁","Product")}${prodCount?paren(prodCount):""}</a>`
     :(prodCount?`<span class="muted" style="font-size:12px">${T(prodCount+" 項",prodCount+" items")}</span>`:'<span class="muted" style="font-size:12px">—</span>');
-  const rev=v.reviewStatus==="通過"?`<span class="pill ok" style="font-size:10px">${T("已審","Reviewed")}</span>`
-    :(v.reviewStatus==="退回"?`<span class="pill em" style="font-size:10px">× ${T("退回","Sent back")}</span>`:'');
+  // v258（老闆說明）：「沒審過的片，是泓儒會去追蹤、丟上來給我們審——主要是他
+  // 在分辨哪些快要上片了可是還沒審」。光是「未審核」還不夠分輕重緩急，加上
+  // calWarnPill（月排程表本來就有的「還沒審」／「過期還沒審」，快到上片日才會
+  // 冒出來、過期還會變紅），影片庫也看得到哪些是急件，不用切去月排程才看得到。
+  const rev=reviewStatusPill(v, {noExpiry:true})+calWarnPill(v);
   const sch=v.scheduledDate?String(v.scheduledDate).slice(0,10):"";
   // 手機版的影片庫只留片名那一格，其他欄位一律收起來（見 index.html 的
   // `table.vtable.responsive td:not(.cv-name){display:none}`）—— 那條規則寫在
@@ -6904,6 +6907,7 @@ function vidCardHTML(v){
       <div class="vcard-t">${esc(vidNameZoned(v))}${missingPill(v, vidImplied())}</div>
       <div class="vcard-m">
         <span class="pill" style="font-size:10px;background:transparent;border:1px solid ${stageCol};color:${stageCol}">${esc(stageLabel(v.stage))}</span>
+        ${reviewStatusPill(v, {noExpiry:true})}${calWarnPill(v)}
         ${sch?`<span class="muted" style="font-size:11px">${esc(sch)}</span>`:''}
         <span class="vt-code" title="${T("影片編號","Video code")}">${esc(vidCode(v))}</span>
         ${shotBtn(v)}
@@ -9020,11 +9024,23 @@ function jumpToField(id, k){
 // 通過→審核完成、還在等審→未審核；排定的上片日一過，這顆燈就不再出現
 // （已經上片的舊片不需要再提醒誰去審）。沒有審核紀錄（reviewSince 之前的舊片）
 // 不算「未審核」，跟 needsReview() 原本的規矩一致，不要把幾百支舊片都標成未審。
-function reviewStatusPill(v){
+//
+// v258（老闆回報）：「綠色剪輯完成 是審過了 但是點進去是沒審過的，然後有的是
+// 多一個已審的標籤」——影片庫（vidTableRow／vidCardHTML）那顆綠色「剪輯完成」
+// 只是**階段**顏色（剪完＝已完成，跟月排程、已上片共用同一個綠色），不代表
+// 審過了；旁邊另外有一顆獨立的「已審」小標籤（舊措辭，跟這裡的「審核完成」
+// 不是同一套字），而且沒過審的那些列乾脆什麼都不顯示，看起來像是「少了一塊」，
+// 老闆才會覺得忽有忽無、搞不清楚規則。改成影片庫也用這同一顆燈，字一致、
+// 退回也顯示，而且不跟著上片日過期（opts.noExpiry）——影片庫是常駐清單，
+// 不是排程表，審核狀態要一直看得到，不能因為日期過了就不見。
+function reviewStatusPill(v, opts){
   if(!v) return "";
-  const sd=String(v.scheduledDate||"").slice(0,10);
-  if(sd && sd < todayTW()) return "";   // 上片日過後自動消失
+  if(!(opts && opts.noExpiry)){
+    const sd=String(v.scheduledDate||"").slice(0,10);
+    if(sd && sd < todayTW()) return "";   // 上片日過後自動消失（只有排程表這樣）
+  }
   if(v.reviewStatus==="通過") return `<span class="pill ok" style="font-size:10px">✔ ${T("審核完成","Reviewed")}</span>`;
+  if(v.reviewStatus==="退回") return `<span class="pill em" style="font-size:10px">× ${T("退回","Sent back")}</span>`;
   if(needsReview(v)) return `<span class="pill wa" style="font-size:10px">${T("未審核","Not reviewed")}</span>`;
   return "";
 }
