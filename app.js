@@ -551,7 +551,7 @@ function setBrand(id){
   BRAND=v;
   // 換家等於換一整份資料：重新切片再重畫（月曆／分頁的暫存狀態也一起歸零）
   CAL_YM=null; INTL_CAL_YM=null; CH_CAL={shopee:{ym:null,acct:""},ms:{ym:null,acct:""}};
-  VID_Q=""; POOL_Q=""; AFP_Q=""; POOL_FILTER="all"; VID_TAGS=new Set(); CUR_TAB=null;
+  VID_Q=""; POOL_Q=""; AFP_Q=""; WORK_Q=""; POOL_FILTER="all"; VID_TAGS=new Set(); CUR_TAB=null;
   applyState(LAST_RAW);
 }
 // 齒輪選單裡的「切換影音帳號」：忘掉這次的選擇，回到選擇畫面
@@ -2783,41 +2783,65 @@ function reviewStateHTML(v){
 // 最近 7 天剪完的片（預設摺疊）：一眼看得出哪幾支審過了、哪幾支還在等、等多久。
 // 上面那張「審片進度」只講今天要處理的事；這一張是給剪輯自己盤點用的 ——
 // 「這三支等五天了」拿得出去提醒主管，「好像還沒審」不行。
-function workRecent7Card(me){
+// 清單本身（workRecent7Card 跟 workFilter 共用，搜尋重畫時不要抄第二份）
+function workRecent7List(me){
   // v184（老闆指定）：「目前的待審的片子，記錄七天，改成沒有上限，
   //   只要還沒審過的都會出現」。七天一到就消失，等於幫人忘記 ——
   //   等超過七天本來就很常見（當時只有 Regina 能按「審過」，更常見；
   //   2026-09-11 復原給剪輯自己按之後，這條規矩照舊有用）。
   //   規矩：**還沒審過的一律留著**，審過的才只留最近七天。
   const from=new Date(Date.now()+288e5-6*864e5).toISOString().slice(0,10);   // 含今天共 7 天
-  const list=(STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
+  return (STATE.videos||[]).filter(v=>!v.deleted && (v.editor===me||v.claimedBy===me)
       && String(v.finishedAt||"").trim()
       && (needsReview(v) || String(v.finishedAt||"").slice(0,10)>=from))
     .sort((a,b)=>String(b.finishedAt||"").localeCompare(String(a.finishedAt||"")));
-  if(!list.length) return "";
-  const nWait=list.filter(needsReview).length;
+}
+function workRecent7Rows(shown){
   const openFn=vidOpenFn;   // v153：這行本來是把 vidOpenFn 的內容再抄一遍
+  if(!shown.length) return `<p class="muted" style="font-size:13px;margin:8px 0 0">${T("找不到符合的片","Nothing matches")}</p>`;
   // ⚠️（老闆截圖回報：「這些鴻儒還是不能按已審核」）這張卡以前**只講狀態、不給動作**——
   // 「還沒審／等 N 天」是給剪輯自己盤點、拿去問 Regina 用的參考清單，真正能按的
   // 「✓ 審過」鍵原本只長在上面那張「審片進度」卡的「待審核」那一段。同一支片在
   // 同一頁分成兩張卡出現，一張能按一張不能按，剪輯很自然會點著看得到「還沒審」
   // 字樣的這一張，點不下去就以為系統壞了。兩張卡背後是同一份 needsReview 清單，
   // 沒有理由讓其中一張變成「看得到、按不到」——這裡比照那邊的鍵，一併補上。
-  const rows=list.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
+  return shown.map(v=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)">
       <span style="min-width:0;flex:1 1 220px">
         <a href="javascript:void(0)" onclick="${openFn(v)}">${shpBadge(v)}${esc(vidTitle(v))}</a>
         <span class="muted" style="font-size:11px;margin-left:5px">${T("剪完","done")} ${esc(String(v.finishedAt||"").slice(5,10))}</span></span>
       <span style="flex:none;display:flex;gap:6px;align-items:center">${reviewStateHTML(v)}${
         needsReview(v)&&canReview()?`<button class="btn sec sm" style="padding:4px 10px;font-size:12px;white-space:nowrap" onclick="editorMarkReviewed('${v.id}')" title="${T("審過了 → 標記通過，剪輯就能上傳雲端＋補連結","Approve — the editor can then upload & add links")}">✓ ${T("審過","Approve")}</button>`:""
       }</span></div>`).join("");
+}
+function workRecent7Card(me){
+  const list=workRecent7List(me);
+  if(!list.length) return "";
+  const nWait=list.filter(needsReview).length;
+  const shown=list.filter(workMatch);
   return `<details class="fold" ${foldState("work.recent7", false)}>
-    <summary>${nWait?T("剪完等審的片","Finished — waiting on review"):T("最近 7 天剪完的片","Finished in the last 7 days")}<span class="n">${list.length}</span>${
+    <summary>${nWait?T("剪完等審的片","Finished — waiting on review"):T("最近 7 天剪完的片","Finished in the last 7 days")}<span id="work_n" class="n">${list.length}</span>${
       nWait?`<span class="pill wa" style="font-size:10px;margin-left:6px">${T(nWait+" 支還沒審", nWait+" not reviewed")}</span>`:""}</summary>
     <div class="foldbody">
       <div class="muted" style="font-size:12px;margin-bottom:4px">${T(
         "還沒審過的**一直留在這裡**（不管過多久），審過的只留最近七天。等了幾天會寫出來，可以直接拿這個去問 Regina。",
         "Anything still unreviewed stays here no matter how old; approved ones drop off after 7 days.")}</div>
-      ${rows}</div></details>`;
+      ${/* v260（老闆指定）：「幫我加一個搜尋欄位」——久了這張卡會愈堆愈長 */''}
+      <div class="row" style="gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        <input id="work_q" value="${esc(WORK_Q)}" placeholder="${T("找影片（片名、編號、網址、備註…）","Find a video (name, code, URL, notes…)")}"
+          style="flex:1;min-width:150px" oninput="setWorkQ(this.value)" onkeydown="if(enterKey(event))setWorkQ(this.value)">
+        <span id="work_clear">${workClearHTML()}</span>
+      </div>
+      <div id="work_list">${workRecent7Rows(shown)}</div></div></details>`;
+}
+// 邊打邊篩（比照待認領的 poolFilter）：只換清單跟清除鍵，折疊維持展開、游標留在搜尋框
+function workFilter(){
+  const l=document.getElementById("work_list"); if(!l){ render(); return; }
+  const me=currentUser(), list=workRecent7List(me), shown=list.filter(workMatch);
+  l.innerHTML=workRecent7Rows(shown);
+  const clr=document.getElementById("work_clear"); if(clr) clr.innerHTML=workClearHTML();
+  // 折疊標題上的數字維持「總共幾支」不跟著搜尋變——跟待認領那顆「全部/符合」
+  // 雙數字不同，這裡只有一個數字，改成「符合幾支」反而會讓人誤以為片不見了。
+  const n=document.getElementById("work_n"); if(n) n.textContent=String(list.length);
 }
 // 天數標記：今天＝新，昨天＝2，前天＝3…（越久顏色越警示）
 function dayBadge(v){ const b=claimDayBadge(v); const n=(b==="新")?1:(+b); const col=n>=4?'var(--red)':(n>=2?'var(--amber)':'var(--accent)');
@@ -3826,6 +3850,14 @@ function setWorkZone(z){ WORK_ZONE=z; render(); }
 // 待認領快選：all=全部、tw=台灣毛片/原本、shopee/ms=平台殼、en/th=語言殼
 let POOL_FILTER="all";
 function setPoolFilter(k){ POOL_FILTER=k; poolFilter(); }
+// v260（老闆指定）：「剪完等審的片，幫我加一個搜尋欄位」——這張卡不會過期
+// （還沒審過的一律留著，見下面 workRecent7Card 的註解），久了會愈堆愈長，
+// 要找特定一支只能用眼睛掃。做法照抄「待認領」那欄搜尋（poolFilter 那一套）：
+// 邊打邊篩，只換清單跟清除鍵，不整頁重繪——不然這個折疊會被重繪收回去。
+let WORK_Q="";
+function setWorkQ(v){ WORK_Q=String(v||"").trim(); workFilter(); }
+function workMatch(v){ if(!WORK_Q) return true; return vidSearchText(v).includes(String(WORK_Q).toLowerCase()); }
+function workClearHTML(){ return WORK_Q?`<button class="btn sec sm" style="flex:none" onclick="document.getElementById('work_q').value='';setWorkQ('')">${T("清除","Clear")}</button>`:""; }
 // 待認領的搜尋（v86）：影片變多了，快選分類之外還要能直接找
 let POOL_Q="";
 // 邊打邊篩（比照影片庫）：只重畫待認領那張卡的內容，不整頁重繪 ——

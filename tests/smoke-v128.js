@@ -95,7 +95,7 @@ STATE.videos=[
      c.includes("八天前剪完的"));
   ok("別人剪的不列", !c.includes("別人剪的"));
   ok("還沒剪完的不列（還沒到審片這一步）", !c.includes("還在剪的"));
-  ok("summary 的數字＝真的列出來的支數", c.includes('<span class="n">5</span>'), (c.match(/<span class="n">\d+<\/span>/)||[])[0]);
+  ok("summary 的數字＝真的列出來的支數", c.includes('>5</span>') && /id="work_n"[^>]*>5</.test(c), (c.match(/<span[^>]*class="n"[^>]*>\d+<\/span>/)||[])[0]);
   ok("summary 標出還有幾支沒審", c.includes("2 支還沒審"), (c.match(/\d+ 支還沒審/)||[])[0]);
   ok("預設是收起來的", !/^<details class="fold" open/.test(c) && !c.includes("<details class=\"fold\" open"));
   ok("看得出誰審的、誰是自己標的", c.includes("Regina") && c.includes("自己標的"));
