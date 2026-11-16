@@ -2859,7 +2859,10 @@ function daySmall(v){
 }
 // 平台/語言小圖示（蝦/馬/EN/TH）：跟一般影片合併同一份清單顯示，靠這個小圖分辨
 function shpBadge(v){ return isRemake(v)
-  ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="二創（原片再剪一次）">二創</span>`
+  // v261（老闆指定）：「要讓接收到的人清楚知道這是要做二創（三創/四創/五創 以此類推）」——
+  // 這顆小圖示本來寫死「二創」，不管實際上是第幾次都一樣，剪輯分不出這支跟
+  // 上一支是不是同一輪。改成讀 rmkOrdLabel()，系統自己算是第幾創。
+  ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(rmkOrdLabel(v))}（原片再剪一次，第 ${rmkNoOf(v)} 次）">${esc(rmkOrdLabel(v))}</span>`
   : (v.channel&&CHANNELS[v.channel])
   ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${T(CHANNELS[v.channel].verName,CHANNELS[v.channel].verNameEn)}">${T(CHANNELS[v.channel].short,CHANNELS[v.channel].shortEn)}</span>`
   : v.locale ? `<span class="pill" style="font-size:10px;background:var(--accent);color:#fff;margin-right:5px" title="${esc(localeName(v.locale))} version">${localeShort(v.locale)}</span>` : ''; }
@@ -3919,7 +3922,17 @@ function poolCat(v){
 function createZoneCard(){
   // 全員相同：四個二創排程線合在同一個選單（蝦皮／馬來西亞／英文／泰文），任何人都能新增任一線
   const zones=[["shopee",T("蝦皮","Shopee")],["ms",T("馬來西亞","Malaysia")],["sunny","Boss Sunny"],["en",T("英文 TikTok","English (TikTok)")],["th",T("泰文 TikTok","Thai (TikTok)")]]
-    .filter(([k])=>seesZone(zoneOfPlat(k)));
+    .filter(([k])=>seesZone(zoneOfPlat(k)))
+    // v261（老闆指定）：「二創版本現在只能做蝦皮跟馬來影片的版本，改成不限版本——
+    // 預防溱姐想要臨時增加什麼版本的二創就可以馬上分派給剪輯師處理，讓系統上也能有
+    // 資料可以做紀錄」。上面五條線都是「自己挑、自己做」，綁死在固定平台（各自有
+    // 帳號、排程、日目標）；溱姐要的是「不管什麼版本，先指派給剪輯、系統留紀錄」——
+    // 那正是既有的「二創流程」（openRmkPlan，channel="remake"）在做的事：
+    // 片名自取、不綁平台、直接指定剪輯，而且第幾次做（二創/三創/四創…）系統自己算，
+    // 一直都有，只是入口被藏在「選品」「成效排行」兩個頁面，溱姐/老闆平常不會點進去。
+    // 這裡加一個入口，沒有重做一套——共用同一條寫入路徑。
+    // 只有排得動工作的人（canPlanRemake）看得到：這是「指派給別人」，不是「自己挑來做」。
+    .concat(canPlanRemake()?[["remake",T("其他／自訂版本（指派給剪輯）","Other / custom version (assign)")]]:[]);
   if(!zones.length) return "";   // 這個人沒有任何一條線可以建（fold 收到空字串就整塊不出現）
   if(!zones.some(z=>z[0]===WORK_ZONE)) WORK_ZONE=zones[0][0];
   const sel=`<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
@@ -3934,18 +3947,51 @@ function createZoneCard(){
   // 所以改成收起來 —— 打開的那一刻才畫（見 lazyFill）。要挑片的人才付這個成本。
   const K="work.mkver", open=foldIsOpen(K, false);
   const isIntl=(WORK_ZONE==="en"||WORK_ZONE==="th");
-  const pool=isIntl?intlSourcePool():chSourcePool();
-  const listId=isIntl?"intl_list":(CHANNELS[WORK_ZONE].pfx+"_list");
-  const qId=isIntl?"intl_q":(CHANNELS[WORK_ZONE].pfx+"_q");
-  const qVal=isIntl?INTL_Q:CH_Q[WORK_ZONE];
+  const isRmkMk=WORK_ZONE==="remake";
+  const pool=isIntl?intlSourcePool():isRmkMk?lineSourcePool():chSourcePool();
+  const listId=isIntl?"intl_list":isRmkMk?"rmk_mk_list":(CHANNELS[WORK_ZONE].pfx+"_list");
+  const qId=isIntl?"intl_q":isRmkMk?"rmk_mk_q":(CHANNELS[WORK_ZONE].pfx+"_q");
+  const qVal=isIntl?INTL_Q:isRmkMk?RMK_MK_Q:CH_Q[WORK_ZONE];
   const onIn=isIntl?"INTL_Q=this.value;intlFilter()"
-                   :`CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')`;
+             :isRmkMk?"RMK_MK_Q=this.value;rmkMkFilter()"
+             :`CH_Q['${WORK_ZONE}']=this.value;chFilter('${WORK_ZONE}')`;
   const body=`<details class="fold" ${foldState(K,false)} data-lazy="${esc(WORK_ZONE)}" style="margin-top:10px">
       <summary>${T("挑一支舊片來做","Pick an old video")}<span class="n">${pool.length}</span></summary>
       <input id="${qId}" placeholder="🔍 ${T("搜尋片名／編號","Search title / code")}" value="${esc(qVal||"")}" oninput="${onIn}" style="width:100%;max-width:360px;margin:10px 0">
-      <div id="${listId}" class="${pool.length>8?'vidscroll':''}">${open?(isIntl?intlLibRows(WORK_ZONE):chLibRows(WORK_ZONE)):""}</div>
+      <div id="${listId}" class="${pool.length>8?'vidscroll':''}">${open?(isIntl?intlLibRows(WORK_ZONE):isRmkMk?rmkMkLibRows():chLibRows(WORK_ZONE)):""}</div>
     </details>`;
   return `<div class="card" style="margin-top:16px">${sel}${body}</div>`;
+}
+// v261：「其他／自訂版本」的清單——跟蝦皮／馬來那份共用同一個來源池
+// （lineSourcePool，已完整上傳的中文舊片），但按下去不是「自己領」，是開
+// openRmkPlan 直接指派給指定的剪輯（片名自取、不綁平台、第幾創系統自己算）。
+let RMK_MK_Q="";
+function rmkMkFilter(){ const el=document.getElementById("rmk_mk_list"); if(el) el.innerHTML=rmkMkLibRows(); }
+function rmkMkLibRows(){
+  const q=String(RMK_MK_Q||'').toLowerCase().trim();
+  let src=lineSourcePool();
+  if(q) src=src.filter(v=>[v.name,v.rawName,v.code].map(x=>String(x||'').toLowerCase()).join("  ").includes(q));
+  src.sort((a,b)=>String(b.updatedAt||b.finishedAt||"").localeCompare(String(a.updatedAt||a.finishedAt||"")));
+  if(!src.length) return `<div class="emptyState"><span class="es-mk">✦</span>${T("目前沒有可以排二創的影片（要是完整已上傳的舊片）。","No videos available yet — they must be fully published.")}</div>`;
+  return src.map(v=>{
+    const zhTitle=stripHash(v.name||v.rawName)||"(未命名)";
+    const kids=remakesOfSrc(v.id);
+    const chips=kids.map(k=>`<span class="pill ${(k.published||k.stage==='已完成')&&dispStage(k)!=='待審核'?'ok':'wa'}" style="cursor:pointer;font-size:11px"
+        onclick="editVideo('${k.id}')" title="${esc(k.editor||k.claimedBy||k.assignedTo||'')}">${esc(rmkOrdLabel(k))} · ${esc(k.editor||k.claimedBy||k.assignedTo||'')||T('未指定','unassigned')}</span>`).join(" ");
+    const prodChips=(v.products||[]).filter(p=>p&&p.name).map(p=>`<span class="tag">${esc(p.name)}</span>`).join(" ");
+    return `<div class="ilib-card">
+      <div style="min-width:0;flex:1">
+        <div class="ilib-zh">${esc(zhTitle)} <span class="ilib-code">${esc(vidCode(v))}</span></div>
+        ${prodChips?`<div class="ilib-meta">${prodChips}</div>`:''}
+        ${chips?`<div class="ilib-meta">${chips}</div>`:''}
+      </div>
+      <div class="ilib-actions">
+        <div class="row" style="gap:6px;align-items:center;width:100%">
+          <button class="btn sm" style="flex:1" onclick="openRmkPlan('${v.id}')">${PLUS()} ${T("排"+rmkOrdLabelOfN(kids.length+1),"Assign version (#"+(kids.length+1)+")")}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
 }
 // 下班匯報：自動彙整今日完成上架 ＋ 交辦工作狀況；確認後打下班卡並回登入頁
 function clockOutReport(){
@@ -7684,6 +7730,15 @@ function remakesOfSrc(id){ return rmkIndex()[String(id||"")] || []; }
 function rmkSrcOf(v){ return isRemake(v) ? vid(v.sourceVideoId) : null; }
 function rmkNoOf(v){ const s=rmkSrcOf(v); if(!s) return 0;
   return remakesOfSrc(s.id).findIndex(x=>x.id===v.id)+1; }
+// v261（老闆指定）：「要讓接收到的人清楚知道這是要做二創（三創/四創/五創 以此類推）」——
+// 原片本身算「一創」，它的第 1 支衍生版本就是「二創」、第 2 支是「三創」……
+// 以此類推，所以中文序數要再 +1。中文數字只排到十五（這套系統一支片很難真的
+// 二創超過十次），超過的話退回「第 N 創」，不要印出空字串。
+const RMK_ORD_CN=["","一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五"];
+// n＝第幾支衍生版本（1 起算）；回傳給人看的「二創／三創／四創…」字樣。
+function rmkOrdLabelOfN(n){ if(!n) return "";
+  const ord=n+1; return ord<RMK_ORD_CN.length ? RMK_ORD_CN[ord]+"創" : "第"+ord+"創"; }
+function rmkOrdLabel(v){ return rmkOrdLabelOfN(rmkNoOf(v)); }
 // 最後一次二創是誰剪的。建議選單的「上次誰剪」要看這個，不是原片的剪輯 ——
 // 要排下一次的人想知道的是「上一次交給誰」，不是半年前第一次是誰剪的。
 // 「上次誰剪」跟「上次二創幾成」必須是**同一個人、同一支**。
@@ -7743,14 +7798,16 @@ function openRmkPlan(sourceId){
   const eds=(STATE.users||[]).filter(u=>u.role==="editor").map(u=>u.name);
   if(!eds.length){ toast("成員名單裡還沒有剪輯可以指派",true); return; }
   const done=remakesOfSrc(s.id);
+  const nextOrd=rmkOrdLabelOfN(done.length+1);
   const hist=done.length?`<div class="muted" style="font-size:12px;margin-top:10px;line-height:1.8">
       這支已經二創過 ${done.length} 次：<br>${done.map((k,i)=>
-        `${i+1}. ${esc(zhTW(k.name||""))}・${esc(k.editor||k.claimedBy||k.assignedTo||"")}・${
+        `${i+1}. （${esc(rmkOrdLabelOfN(i+1))}）${esc(zhTW(k.name||""))}・${esc(k.editor||k.claimedBy||k.assignedTo||"")}・${
           esc(String(k.scheduledDate||"").slice(0,10))||"沒排日期"}`).join("<br>")}</div>`:"";
   const copy=String(s.videoCopy||"");
   showModal("排二創："+zhTW(vidTitle(s)), `
     <div class="muted" style="font-size:13px;line-height:1.7">
-      排好之後這支會出現在指定剪輯的「每日工作」，他按 <b>認領開始剪</b> 才算拿到舊片素材、
+      <b style="color:var(--text)">這次排的是「${esc(nextOrd)}」</b>——排好之後這支會出現在指定剪輯的「每日工作」，
+      上面會清楚標著「${esc(nextOrd)}」，他按 <b>認領開始剪</b> 才算拿到舊片素材、
       才開始計剪片天數。剪完存回同一個資料夾，走原本的審片、上片流程。
     </div>
     <div class="card" style="background:var(--panel2);margin-top:10px">
@@ -7795,7 +7852,7 @@ function openRmkPlan(sourceId){
 function rmkVersionsCard(v){
   if(!v||!v.id) return "";
   if(isRemake(v)) return lineBackToSourceCard(v,
-    {head:"原片（這支是它的二創）", tail:"第 "+rmkNoOf(v)+" 次二創"});
+    {head:"原片（這支是它的二創）", tail:rmkOrdLabel(v)+"（第 "+rmkNoOf(v)+" 次）"});
   const kids=remakesOfSrc(v.id); if(!kids.length) return "";
   const age=rmkSrcAgeDays(v), sv=vidViews(v);
   const rows=kids.map((k,i)=>{ const c=rmkCompare(k);
