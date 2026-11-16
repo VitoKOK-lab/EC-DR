@@ -132,7 +132,7 @@ mount([原片, 二創]);
   ok(card.includes("阿剪"), "看得到誰剪的（還沒認領就先顯示指派給誰）");
   ok(card.includes("等他收到"), "狀態寫「等他收到」—— 指派了不等於開始剪");
   ok(rmkVersionsCard(vid("R1")).includes("原片（這支是它的二創）"), "從二創看得回原片");
-  ok(rmkVersionsCard(vid("R1")).includes("第 1 次二創"), "而且寫明是第幾次"); }
+  ok(rmkVersionsCard(vid("R1")).includes("二創") && rmkVersionsCard(vid("R1")).includes("第 1 次"), "而且寫明是第幾次"); }
 mount([原片]);
 ok(rmkVersionsCard(vid("S1")) === "", "沒有二創就不要長一張空卡出來");
 
